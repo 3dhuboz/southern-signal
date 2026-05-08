@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { query } from "../lib/db/db";
 import { verifyAuditChain } from "../lib/db/auditLog";
 import s from "./View.module.css";
@@ -60,6 +60,28 @@ export function Review() {
       };
     });
 
+  const handleExport = useCallback(async () => {
+    const all = await query<AuditEntry>("SELECT * FROM audit_log ORDER BY seq ASC");
+    const verification = await verifyAuditChain();
+    const exportPayload = {
+      schema: "southern-signal.audit-chain.v1",
+      generated_at: new Date().toISOString(),
+      app_version: "0.1.0",
+      verification,
+      entries: all,
+    };
+    const blob = new Blob([JSON.stringify(exportPayload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    a.href = url;
+    a.download = `southern-signal-audit-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, []);
+
   return (
     <section className={s.view}>
       <div className={s.titleBlock}>
@@ -77,6 +99,9 @@ export function Review() {
           <>
             <strong>CHAIN VERIFIED</strong>
             <span> · {entries.length} entries · SHA-256 hash-chained · download the entire log to reproduce</span>
+            <button type="button" className={r.downloadButton} onClick={handleExport}>
+              Download chain (JSON)
+            </button>
           </>
         )}
         {chainStatus === "broken" && (

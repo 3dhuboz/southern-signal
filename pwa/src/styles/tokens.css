@@ -49,3 +49,47 @@
   /* Layout */
   --bottom-nav-height: 64px;
 }
+
+/* ==========================================================================
+   Scotopic red mode — preserves rod-cell adaptation in low-light fieldwork.
+   Cyan accents kill dark vision in 6–8 seconds; #8B0000 below 650 nm does not.
+   Triggered by data-theme="scotopic" on <html>.
+   ========================================================================== */
+:root[data-theme="scotopic"] {
+  color-scheme: dark;
+
+  --bg-canvas:      #0A0000;
+  --bg-surface:     #110000;
+  --bg-elevated:    #1A0202;
+  --bg-inset:       #0A0000;
+  --bg-overlay:     #220404;
+
+  --border-subtle:  #2A0808;
+  --border-default: #3A0C0C;
+  --border-strong:  #5C1414;
+
+  --text-primary:   #B41616;
+  --text-secondary: #8B1010;
+  --text-muted:     #5C0808;
+  --text-dim:       #3A0606;
+  --text-on-accent: #0A0000;
+
+  /* Repurpose "signal" tokens to red so existing components inherit. */
+  --signal:         #C41E3A;
+  --signal-dim:     #7C0F1F;
+  --signal-glow:    #E33645;
+  --signal-wash:    #2A0808;
+
+  --warning:        #C41E3A;
+  --warning-wash:   #2A0808;
+  --danger:         #E33645;
+  --danger-wash:    #2A0808;
+}
+
+/* No additive cyan glow in scotopic mode — replace with deep-red glow. */
+:root[data-theme="scotopic"] body {
+  background:
+    radial-gradient(1200px 700px at 12% -10%, rgba(196, 30, 58, 0.04), transparent 60%),
+    radial-gradient(900px 500px at 95% 5%, rgba(227, 54, 69, 0.03), transparent 60%),
+    var(--bg-canvas) !important;
+}

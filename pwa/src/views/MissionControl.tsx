@@ -12,6 +12,7 @@ import {
   summary as calibrationSummary,
   type CalibrationState,
 } from "../lib/audio/calibration";
+import { LiveAnalyzer } from "../lib/audio/liveAnalyzer";
 import { type SectorReading } from "../lib/audio/sectorIndicator";
 import { ensureTodayInvestigation } from "../lib/bootstrap";
 import { recordEvent, startInvestigation, stopInvestigation } from "../lib/db/repo";
@@ -50,7 +51,11 @@ export function MissionControl() {
   const [calibration, setCalibration] = useState<CalibrationState>(() => createCalibrationState());
   const [siteSession, setSiteSession] = useState<SiteSession>(() => createSiteSession());
   const [posterior, setPosterior] = useState<number>(siteSession.state.prior);
-  const [sectorReading] = useState<SectorReading | null>(null);
+  const [sectorReading, setSectorReading] = useState<SectorReading | null>(null);
+  const [audioRms, setAudioRms] = useState<number>(0.05);
+  const analyzerRef = useRef<LiveAnalyzer | null>(null);
+  const sectorReadingRef = useRef<SectorReading | null>(null);
+  const lastAcousticEmitTsRef = useRef<number>(0);
 
   const ledgerStreams = useMemo<LedgerStream[]>(() => {
     const now = Date.now();
@@ -94,24 +99,24 @@ export function MissionControl() {
     setPosterior(getPosterior(result.session.state, Date.now()));
   }, [siteSession]);
 
-  // Acoustic transient: when Vibration tile alerts (z>3 sustained), emit an acoustic-transient event.
+  // Vibration anomaly is now a backup channel — when LiveAnalyzer is wired,
+  // the acoustic-transient channel comes from real audio in the worklet path.
   useEffect(() => {
-    if (!running || !sensors.vibration?.alert) return;
+    if (!running || analyzerRef.current) return; // skip if real audio analyzer is running
+    if (!sensors.vibration?.alert) return;
     const now = Date.now();
     const last = lastEmissionTsRef.current.acoustic;
-    if (last && now - last < 2000) return; // 2s debounce
+    if (last && now - last < 2000) return;
     lastEmissionTsRef.current.acoustic = now;
-
-    // Without the FFT pipeline yet, treat the vibration spike as a coherence-3-band acoustic event.
     const evidence = emitAcousticTransient({
-      coherence: 0.82,
-      subBandsAgreed: 4,
+      coherence: 0.7,
+      subBandsAgreed: 3,
       sector: sectorReading?.sector ?? "REAR-C",
       sectorPersistedFromPrior: false,
       isFirstInWindow: true,
     });
     if (!evidence) return;
-    void emitEvidence({ channel: evidence.channel, logLr: evidence.logLr, reason: evidence.reason, metadata: evidence.metadata, nowMs: now });
+    void emitEvidence({ channel: evidence.channel, logLr: evidence.logLr, reason: `${evidence.reason} (vibration fallback)`, metadata: evidence.metadata, nowMs: now });
   }, [running, sensors.vibration?.alert, sectorReading, emitEvidence]);
 
   // Magnetometer anomaly: when EMF tile alerts.
@@ -141,6 +146,58 @@ export function MissionControl() {
 
   // ----- UI handlers -----
 
+  const startLiveAnalyzer = useCallback(async () => {
+    if (analyzerRef.current) return;
+    const analyzer = new LiveAnalyzer({
+      onSectorReading: (reading) => {
+        sectorReadingRef.current = reading;
+        setSectorReading(reading);
+      },
+      onLevel: (rms) => setAudioRms(rms),
+      onAcousticTransient: (reading, _rms, _frameTs) => {
+        const now = Date.now();
+        // 2s debounce
+        if (now - lastAcousticEmitTsRef.current < 2000) return;
+        lastAcousticEmitTsRef.current = now;
+        const sector = reading.sector;
+        if (!sector) return;
+        const evidence = emitAcousticTransient({
+          coherence: reading.coherence,
+          subBandsAgreed: reading.passingBands,
+          sector,
+          sectorPersistedFromPrior: false,
+          isFirstInWindow: true,
+        });
+        if (!evidence) return;
+        void emitEvidence({
+          channel: evidence.channel,
+          logLr: evidence.logLr,
+          reason: evidence.reason,
+          metadata: evidence.metadata,
+          nowMs: now,
+        });
+      },
+      onError: (err) => {
+        setStatusMsg(`Audio analyzer error: ${err.message}`);
+      },
+    });
+    try {
+      await analyzer.start();
+      analyzerRef.current = analyzer;
+    } catch {
+      // already surfaced via onError
+    }
+  }, [emitEvidence]);
+
+  const stopLiveAnalyzer = useCallback(async () => {
+    const analyzer = analyzerRef.current;
+    if (!analyzer) return;
+    analyzerRef.current = null;
+    await analyzer.stop();
+    setSectorReading(null);
+    sectorReadingRef.current = null;
+  }, []);
+
   const handleBegin = useCallback(async () => {
     setBusy(true);
     try {
@@ -158,18 +215,21 @@ export function MissionControl() {
       setSiteSession(createSiteSession());
       setRunning(true);
       setStartedAt(Date.now());
+      // Kick off real-time stereo audio analyzer (FFT → cross-spectrum → ASI).
+      void startLiveAnalyzer();
       setStatusMsg("Recording. Calibrate the rig before trusting any sector reading.");
     } catch (err) {
       setStatusMsg(`Couldn't start: ${(err as Error).message}`);
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [startLiveAnalyzer]);
 
   const handleStop = useCallback(async () => {
     if (!session.current) return;
     setBusy(true);
     try {
+      await stopLiveAnalyzer();
       await stopInvestigation(session.current.id);
       await recordEvent({ investigation_id: session.current.id, source: "system", event_type: "session_stop", title: "Session ended" });
       setRunning(false);
@@ -178,7 +238,7 @@ export function MissionControl() {
     } finally {
       setBusy(false);
     }
-  }, [session.current]);
+  }, [session.current, stopLiveAnalyzer]);
 
   const handleMarker = useCallback(async () => {
     if (!session.current) return;
@@ -202,8 +262,14 @@ export function MissionControl() {
     setCalibration((prev) => recordAttempt(prev, { measured, coherence: 0.85, itdMs: 0, ts: Date.now() }));
   }, []);
 
+  // Stop the analyzer when the component unmounts.
+  useEffect(() => {
+    return () => { void stopLiveAnalyzer(); };
+  }, [stopLiveAnalyzer]);
+
   const trustworthy = isInstrumentTrustworthy(calibration);
-  const noiseFloor = Math.max(0.04, Math.min(0.6, (sensors.vibration?.value ?? 0.05) / 4));
+  // Prefer real audio RMS for the breath-line; fall back to vibration sensor when audio not running.
+  const noiseFloor = Math.max(0.04, Math.min(0.6, audioRms > 0 ? audioRms * 4 : (sensors.vibration?.value ?? 0.05) / 4));
 
   return (
     <section className={s.view}>
