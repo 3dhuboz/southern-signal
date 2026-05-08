@@ -1,41 +1,30 @@
 /**
- * Cloud AI router (Step 10 — scaffold).
+ * Cloud AI router (Step 10 — V1 implementation: Anthropic only).
  *
- * **Status: scaffold with privacy guardrails enforced.** Multi-provider
- * routing (Anthropic / OpenAI / Gemini) for: question generation, auto-
- * debunker, report writer, AI second-blind-reviewer.
+ * Privacy guardrails (decided 2026-05-08, enforced here, NOT at the UI):
+ *   - Disabled by default. User-supplied keys live in IndexedDB (keyStore.ts).
+ *   - Hard-coded refusal at this layer for any case flagged
+ *     `culturallySensitive: true`.
+ *   - Hard-coded refusal when the global culturalSensitivity preference flag
+ *     is on for this device.
+ *   - User key flows through `dangerouslyAllowBrowser: true` — appropriate
+ *     because the key is the user's own (their billing, their account).
+ *   - Prompt caching is applied to the system prompt so repeated turns
+ *     within a session benefit from the cache discount.
  *
- * V1 commitments (decided 2026-05-08):
- *   - Cloud AI is **disabled by default**. Users supply their own API keys
- *     in Settings → AI assistance. Steve never holds keys.
- *   - Hard-coded refusal at the router layer for any case flagged
- *     `culturallySensitive: true`. The flag is checked here, not in the UI,
- *     so a buggy UI cannot leak audio.
- *   - On-device fallbacks (Phi-3-mini via WebLLM) plug in here when the
- *     user has no key OR when the case is sensitive.
- *
- * Bring-up checklist:
- *   1. Add IndexedDB-backed key store (origin-bound, never synced).
- *   2. Add per-provider clients (anthropic.ts / openai.ts / gemini.ts).
- *   3. Expose React hooks: `useQuestionSuggestions`, `useAutoDebunker`,
- *      `useReportWriter`.
- *   4. Wire WebLLM with Phi-3-mini Q4 (~2.2 GB) for offline fallback.
- *   5. Audit-log every cloud call (`prompt_hash`, `provider`, `model`,
- *      `latency_ms`, `tokens`) — never the prompt or response.
+ * V1.1 lands OpenAI + Gemini providers behind the same router.
  */
 
-export type CloudProvider = "anthropic" | "openai" | "gemini";
+import Anthropic from "@anthropic-ai/sdk";
+import { getApiKey } from "./keyStore";
+import { getPreferences } from "../preferences";
 
-export interface CloudKey {
-  provider: CloudProvider;
-  apiKey: string;
-  preferredModel?: string;
-}
+export type CloudProvider = "anthropic" | "openai" | "gemini";
 
 export interface CloudCallContext {
   /** Investigation ID. */
   investigationId: string;
-  /** True if the case is flagged culturally sensitive — REFUSED at router. */
+  /** True if this case is flagged culturally sensitive. */
   culturallySensitive: boolean;
 }
 
@@ -46,34 +35,139 @@ export class CloudGuardError extends Error {
   }
 }
 
+export class CloudKeyMissingError extends Error {
+  provider: CloudProvider;
+  constructor(provider: CloudProvider) {
+    super(`No ${provider} API key configured. Add one in Settings → AI assistance.`);
+    this.name = "CloudKeyMissingError";
+    this.provider = provider;
+  }
+}
+
 export async function ensureRoutable(ctx: CloudCallContext): Promise<void> {
-  if (ctx.culturallySensitive) {
+  const prefs = getPreferences();
+  if (ctx.culturallySensitive || prefs.globalCulturalSensitivityFlag) {
     throw new CloudGuardError(
-      "Cloud AI is refused for culturally-sensitive cases. Audio and notes from this case cannot leave the device. Use on-device tools instead.",
+      "Cloud AI is refused for culturally-sensitive cases. Audio and notes from this case cannot leave the device. Use on-device tools.",
     );
   }
 }
 
-export async function generateQuestion(
-  _context: { siteContext?: string; tone?: "respectful" | "forensic" | "bold"; priorQuestions?: string[] },
+async function getAnthropic(): Promise<Anthropic> {
+  const apiKey = await getApiKey("anthropic");
+  if (!apiKey) throw new CloudKeyMissingError("anthropic");
+  return new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+}
+
+const QUESTION_SYSTEM_PROMPT = `You are a thoughtful, respectful research assistant for a paranormal investigator.
+
+The investigator is using ITC-style techniques (EVP recording, spirit box, Ovilus) to attempt communication with the deceased. They take this work seriously. Your job is to suggest QUESTIONS the investigator could ask out loud during a session.
+
+Principles for the questions:
+- Respectful, never goading. Treat the deceased as a person, not a subject.
+- Open-ended. Avoid yes/no when possible — invite description.
+- Specific to context when context is provided. Generic when not.
+- One sentence each, conversational tone.
+- Australian context: avoid sacred-site language; if the user mentions Country, acknowledge it without performing.
+- Neutral on theology — investigators come from all traditions.
+
+Output format: a JSON array of 5 strings. No preamble, no commentary, just the array. Example:
+["What is your name, if you'd like to share it?", "Can you describe the room you're in?", "Is there anything you want us to know?", "Were you happy here?", "Is there someone you're waiting for?"]`;
+
+const DEBUNKER_SYSTEM_PROMPT = `You are a forensically-trained skeptical investigator helping a paranormal field team rule out mundane explanations for an event before treating it as evidence.
+
+Given an event description and any sensor / contamination context, propose 3 to 6 mundane explanations to test, ranked by plausibility. Be specific. Suggest a concrete test for each (what to measure or rule out).
+
+Output format: a JSON array of objects { "hypothesis": string, "plausibility": 0..1, "test": string }. Plausibility is your honest estimate that the mundane explanation accounts for the observation.
+
+Be concise. The team is in the field at night.`;
+
+export async function generateQuestions(
+  context: { siteContext?: string; tone?: "respectful" | "forensic" | "bold"; priorQuestions?: string[] },
   ctx: CloudCallContext,
 ): Promise<string[]> {
   await ensureRoutable(ctx);
-  throw new Error("cloudAi.generateQuestion() is a scaffold — provider wiring lands in step 10 build.");
+  const client = await getAnthropic();
+  const prefs = getPreferences();
+  const userPrompt = [
+    context.siteContext ? `Site context: ${context.siteContext}` : "No site context provided.",
+    context.tone ? `Preferred tone: ${context.tone}.` : "",
+    context.priorQuestions?.length
+      ? `Avoid repeating these prior questions:\n- ${context.priorQuestions.join("\n- ")}`
+      : "",
+    "Suggest 5 fresh questions.",
+  ].filter(Boolean).join("\n\n");
+
+  const response = await client.messages.create({
+    model: prefs.ai.anthropicModel,
+    max_tokens: 512,
+    system: [
+      {
+        type: "text",
+        text: QUESTION_SYSTEM_PROMPT,
+        cache_control: { type: "ephemeral" },
+      },
+    ],
+    messages: [{ role: "user", content: userPrompt }],
+  });
+
+  const text = response.content
+    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("");
+  return parseJsonArray(text);
+}
+
+export interface DebunkResult {
+  hypothesis: string;
+  plausibility: number;
+  test: string;
 }
 
 export async function autoDebunk(
-  _input: { transcript: string; sensorSummary: string; contaminationMarkers: string[] },
+  input: { eventTitle: string; eventDescription?: string; sensorSummary?: string; contaminationMarkers?: string[] },
   ctx: CloudCallContext,
-): Promise<{ explanations: { hypothesis: string; plausibility: number; reasoning: string }[] }> {
+): Promise<DebunkResult[]> {
   await ensureRoutable(ctx);
-  throw new Error("cloudAi.autoDebunk() is a scaffold — provider wiring lands in step 10 build.");
+  const client = await getAnthropic();
+  const prefs = getPreferences();
+
+  const userPrompt = [
+    `Event: ${input.eventTitle}`,
+    input.eventDescription ? `Description: ${input.eventDescription}` : "",
+    input.sensorSummary ? `Sensor summary: ${input.sensorSummary}` : "",
+    input.contaminationMarkers?.length
+      ? `Contamination markers logged in this session: ${input.contaminationMarkers.join(", ")}`
+      : "",
+    "List mundane explanations to rule out.",
+  ].filter(Boolean).join("\n\n");
+
+  const response = await client.messages.create({
+    model: prefs.ai.anthropicModel,
+    max_tokens: 1024,
+    system: [
+      { type: "text", text: DEBUNKER_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+    ],
+    messages: [{ role: "user", content: userPrompt }],
+  });
+
+  const text = response.content
+    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("");
+  return parseJsonArray<DebunkResult>(text);
 }
 
-export async function writeReport(
-  _input: { caseSummary: string; tone?: "client" | "technical" | "academic" },
-  ctx: CloudCallContext,
-): Promise<string> {
-  await ensureRoutable(ctx);
-  throw new Error("cloudAi.writeReport() is a scaffold — provider wiring lands in step 10 build.");
+function parseJsonArray<T = unknown>(text: string): T[] {
+  // Extract first JSON array from the response. Sonnet usually returns it
+  // raw, but be defensive.
+  const match = text.match(/\[[\s\S]*\]/);
+  if (!match) throw new Error("AI did not return a JSON array");
+  try {
+    const parsed = JSON.parse(match[0]) as T[];
+    if (!Array.isArray(parsed)) throw new Error("Response was not an array");
+    return parsed;
+  } catch (err) {
+    throw new Error(`Failed to parse AI response: ${(err as Error).message}`);
+  }
 }
