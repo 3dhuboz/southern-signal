@@ -1,3 +1,4 @@
+import { ScotopicToggle } from "./ScotopicToggle";
 import styles from "./AppHeader.module.css";
 
 export function AppHeader() {
@@ -16,10 +17,7 @@ export function AppHeader() {
           <span className={styles.mark} aria-hidden="true" />
           <span className={styles.wordmark}>SOUTHERN SIGNAL</span>
         </div>
-        <button className={styles.modePill} type="button" aria-label="Investigation mode">
-          <span className={styles.modeDot} aria-hidden="true" />
-          <span>STANDALONE</span>
-        </button>
+        <ScotopicToggle />
       </div>
     </header>
   );

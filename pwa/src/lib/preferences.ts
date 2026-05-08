@@ -10,9 +10,14 @@
 import { useEffect, useState } from "react";
 
 export type Theme = "phosphor" | "scotopic";
+export type ScotopicLevel = "dim" | "mid" | "max";
 
 export interface AppPreferences {
   theme: Theme;
+  /** Brightness preset for scotopic mode — only consulted when theme === "scotopic". */
+  scotopicLevel: ScotopicLevel;
+  /** When true and geolocation is granted, suggest scotopic mode after civil twilight. */
+  scotopicAutoEngage: boolean;
   acknowledgementOfCountry: {
     accepted: boolean;
     acceptedAt: string | null;
@@ -32,6 +37,8 @@ export interface AppPreferences {
 
 const DEFAULTS: AppPreferences = {
   theme: "phosphor",
+  scotopicLevel: "mid",
+  scotopicAutoEngage: true,
   acknowledgementOfCountry: { accepted: false, acceptedAt: null, statement: null },
   ai: { provider: null, blockOnSensitive: true, anthropicModel: "claude-sonnet-4-6" },
   globalCulturalSensitivityFlag: false,
@@ -88,6 +95,11 @@ export function usePreferences(): [AppPreferences, (patch: Partial<AppPreference
 }
 
 /** Apply theme class to <html> so CSS can switch palettes. */
-export function applyTheme(theme: Theme): void {
+export function applyTheme(theme: Theme, level?: ScotopicLevel): void {
   document.documentElement.dataset.theme = theme;
+  if (theme === "scotopic") {
+    document.documentElement.dataset.scotopicLevel = level ?? "mid";
+  } else {
+    delete document.documentElement.dataset.scotopicLevel;
+  }
 }

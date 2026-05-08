@@ -93,3 +93,29 @@
     radial-gradient(900px 500px at 95% 5%, rgba(227, 54, 69, 0.03), transparent 60%),
     var(--bg-canvas) !important;
 }
+
+/* Three brightness presets for scotopic. Affects text + accent intensity
+   without changing the underlying hue (still all >=650nm where rod-cell
+   adaptation is preserved). */
+:root[data-theme="scotopic"][data-scotopic-level="dim"] {
+  --text-primary:   #6E0E0E;
+  --text-secondary: #5C0808;
+  --text-muted:     #3A0606;
+  --text-dim:       #220404;
+  --signal:         #7C0F1F;
+  --signal-glow:    #9C1A2C;
+  --signal-dim:     #4E0810;
+  --warning:        #7C0F1F;
+  --danger:         #9C1A2C;
+}
+:root[data-theme="scotopic"][data-scotopic-level="max"] {
+  --text-primary:   #D63838;
+  --text-secondary: #B41616;
+  --text-muted:     #8B1010;
+  --text-dim:       #5C0808;
+  --signal:         #E33645;
+  --signal-glow:    #FF4858;
+  --signal-dim:     #A21626;
+  --warning:        #E33645;
+  --danger:         #FF4858;
+}

@@ -1,0 +1,44 @@
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: var(--r-full);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  transition: background 120ms, border-color 120ms, color 120ms;
+}
+.toggle:hover { border-color: var(--border-strong); }
+
+.off .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #5C0808;
+  box-shadow: inset 0 0 0 1px rgba(255, 0, 0, 0.2);
+}
+
+.on {
+  background: rgba(196, 30, 58, 0.12);
+  border-color: #7C0F1F;
+  color: #E33645;
+}
+.on .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #E33645;
+  box-shadow: 0 0 8px #C41E3A;
+}
+
+.label {
+  font-family: var(--font-mono);
+}
