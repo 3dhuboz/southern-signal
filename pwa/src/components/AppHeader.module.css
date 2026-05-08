@@ -39,6 +39,12 @@
   flex-shrink: 0;
 }
 
+.toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .mark {
   width: 22px;
   height: 22px;

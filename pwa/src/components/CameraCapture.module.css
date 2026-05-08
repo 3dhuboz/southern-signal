@@ -1,0 +1,203 @@
+.wrap {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  padding: var(--s-12) var(--s-14);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.eyebrow {
+  font-size: 10px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--signal);
+  font-weight: 700;
+}
+
+.note {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.openButton {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 18px 14px;
+  border-radius: var(--r-lg);
+  border: 1px dashed var(--border-default);
+  background: var(--bg-surface);
+  font-family: inherit;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: center;
+  transition: background 120ms, border-color 120ms;
+}
+.openButton:hover { background: var(--bg-overlay); border-color: var(--signal-dim); }
+.openButton:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.openIcon { font-size: 28px; line-height: 1; }
+.openLabel { font-size: 14px; font-weight: 700; letter-spacing: 0.2px; }
+.openHint  { font-size: 11px; color: var(--text-muted); }
+
+.error {
+  font-size: 12px;
+  color: var(--danger);
+  background: var(--danger-wash);
+  border: 1px solid var(--danger);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.errorRetry {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  border-radius: var(--r-full);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.stage {
+  position: relative;
+  background: #000;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+}
+
+.video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.video.boost {
+  filter: brightness(1.6) contrast(1.25) saturate(0.7);
+}
+
+.hiddenCanvas {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+}
+
+.shotCounter {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.55);
+  color: var(--text-on-accent, #fff);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1px;
+  padding: 4px 8px;
+  border-radius: var(--r-full);
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.shutter {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 3px solid var(--text-primary);
+  background: var(--bg-surface);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: transform 80ms;
+}
+.shutter:active { transform: scale(0.94); }
+.shutter:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.shutterRing {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--signal);
+  display: block;
+}
+
+.sideControls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.switch input {
+  accent-color: var(--signal);
+  width: 14px;
+  height: 14px;
+}
+
+.closeButton {
+  align-self: flex-start;
+  background: transparent;
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  border-radius: var(--r-full);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.thumbRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.thumb {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-default);
+}
+
+.thumbCaption {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.3;
+}

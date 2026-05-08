@@ -11,6 +11,7 @@ import { useEffect, useState } from "react";
 
 export type Theme = "phosphor" | "scotopic";
 export type ScotopicLevel = "dim" | "mid" | "max";
+export type ExperienceMode = "simple" | "pro";
 
 export interface AppPreferences {
   theme: Theme;
@@ -18,6 +19,8 @@ export interface AppPreferences {
   scotopicLevel: ScotopicLevel;
   /** When true and geolocation is granted, suggest scotopic mode after civil twilight. */
   scotopicAutoEngage: boolean;
+  /** Friendly default for amateurs; "pro" surfaces posterior/log-LR/Merkle math. */
+  experienceMode: ExperienceMode;
   acknowledgementOfCountry: {
     accepted: boolean;
     acceptedAt: string | null;
@@ -39,6 +42,7 @@ const DEFAULTS: AppPreferences = {
   theme: "phosphor",
   scotopicLevel: "mid",
   scotopicAutoEngage: true,
+  experienceMode: "simple",
   acknowledgementOfCountry: { accepted: false, acceptedAt: null, statement: null },
   ai: { provider: null, blockOnSensitive: true, anthropicModel: "claude-sonnet-4-6" },
   globalCulturalSensitivityFlag: false,

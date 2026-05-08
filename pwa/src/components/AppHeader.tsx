@@ -1,3 +1,4 @@
+import { ExperienceToggle } from "./ExperienceToggle";
 import { ScotopicToggle } from "./ScotopicToggle";
 import styles from "./AppHeader.module.css";
 
@@ -14,10 +15,12 @@ export function AppHeader() {
             height={28}
           />
           <span className={styles.partnerDivider} aria-hidden="true" />
-          <span className={styles.mark} aria-hidden="true" />
           <span className={styles.wordmark}>SOUTHERN SIGNAL</span>
         </div>
-        <ScotopicToggle />
+        <div className={styles.toolbar}>
+          <ExperienceToggle />
+          <ScotopicToggle />
+        </div>
       </div>
     </header>
   );

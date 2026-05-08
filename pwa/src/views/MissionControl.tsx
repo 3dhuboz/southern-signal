@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AcousticSectorIndicator } from "../components/AcousticSectorIndicator";
 import { AiAssistant } from "../components/AiAssistant";
+import { CameraCapture } from "../components/CameraCapture";
 import { ContaminationMarker } from "../components/ContaminationMarker";
 import { DispositionPicker } from "../components/DispositionPicker";
 import { EvidenceLedger, type LedgerStream } from "../components/EvidenceLedger";
 import { OvilusTool } from "../components/OvilusTool";
 import { PosteriorBar } from "../components/PosteriorBar";
 import { ScreenRecordButton } from "../components/ScreenRecordButton";
+import { SimpleMissionView } from "../components/SimpleMissionView";
 import { SpiritBoxTool } from "../components/SpiritBoxTool";
+import { usePreferences } from "../lib/preferences";
 import {
   createCalibrationState,
   isInstrumentTrustworthy,
@@ -46,6 +49,8 @@ function formatHMS(totalSeconds: number): string {
 const SECTOR_DEMO_PLAN = ["FRONT-R", "REAR-C", "FRONT-L"] as const;
 
 export function MissionControl() {
+  const [prefs] = usePreferences();
+  const isPro = prefs.experienceMode === "pro";
   const session = useSession();
   const sensors = useSensors(session.permissionsGranted);
   const [busy, setBusy] = useState(false);
@@ -61,7 +66,12 @@ export function MissionControl() {
   const analyzerRef = useRef<LiveAnalyzer | null>(null);
   const sectorReadingRef = useRef<SectorReading | null>(null);
   const lastAcousticEmitTsRef = useRef<number>(0);
+  const aiAssistantRef = useRef<HTMLDivElement | null>(null);
   const [pendingDispositionFor, setPendingDispositionFor] = useState<string | null>(null);
+
+  const handleAskQuestion = useCallback(() => {
+    aiAssistantRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, []);
 
   const ledgerStreams = useMemo<LedgerStream[]>(() => {
     const now = Date.now();
@@ -307,7 +317,29 @@ export function MissionControl() {
 
   return (
     <section className={s.view}>
-      {/* INSTRUMENT CLUSTER */}
+      {!isPro && (
+        <SimpleMissionView
+          running={running}
+          busy={busy}
+          posterior={posterior}
+          elapsedSeconds={elapsedSeconds}
+          caseId={session.current?.id ?? null}
+          caseTitle={session.current?.title ?? null}
+          statusMsg={statusMsg}
+          recentIncrements={siteSession.recentIncrements}
+          trustworthy={trustworthy}
+          hasInvestigation={!!session.current}
+          investigationId={session.current?.id ?? null}
+          onBegin={handleBegin}
+          onStop={handleStop}
+          onMarker={handleMarker}
+          onAskQuestion={handleAskQuestion}
+          emitEvidence={emitEvidence}
+        />
+      )}
+
+      {isPro && (
+      /* INSTRUMENT CLUSTER */
       <div className={m.instrumentCluster}>
         <div className={m.heroRow}>
           <div className={m.hero}>
@@ -401,6 +433,7 @@ export function MissionControl() {
           )}
         </div>
       </div>
+      )}
 
       {/* DISPOSITION PICKER — shown after a session stops, before review */}
       {pendingDispositionFor && (
@@ -413,29 +446,38 @@ export function MissionControl() {
         />
       )}
 
-      {/* CONTAMINATION MARKERS — quick-tap labels during a live session */}
-      <ContaminationMarker
-        investigationId={session.current?.id ?? null}
-        running={running}
-        emitEvidence={emitEvidence}
-      />
+      {/* CAMERA — scene snapshots, hash-chained */}
+      <CameraCapture investigationId={session.current?.id ?? null} running={running} />
+
+      {/* CONTAMINATION MARKERS — Pro grid (Simple mode uses an in-place sheet) */}
+      {isPro && (
+        <ContaminationMarker
+          investigationId={session.current?.id ?? null}
+          running={running}
+          emitEvidence={emitEvidence}
+        />
+      )}
 
       {/* AI ASSIST — question generator + auto-debunker */}
-      <AiAssistant
-        investigationId={session.current?.id ?? null}
-        posterior={posterior}
-        recentIncrements={siteSession.recentIncrements}
-        siteContext={session.current?.location_name ? `Location: ${session.current.location_name}.` : ""}
-        culturallySensitive={false}
-      />
+      <div ref={aiAssistantRef}>
+        <AiAssistant
+          investigationId={session.current?.id ?? null}
+          posterior={posterior}
+          recentIncrements={siteSession.recentIncrements}
+          siteContext={session.current?.location_name ? `Location: ${session.current.location_name}.` : ""}
+          culturallySensitive={false}
+        />
+      </div>
 
       {/* ITC TOOLS */}
       <SpiritBoxTool entropy={sensors.snapshot.magnetometer?.magnitude ?? sensors.snapshot.motion?.accelMagnitude ?? 0} />
       <OvilusTool entropy={sensors.snapshot.magnetometer?.magnitude ?? sensors.snapshot.orientation?.heading ?? 0} investigationId={session.current?.id ?? null} />
 
-      <p className={m.disclaimer}>
-        Sector accuracy ±60°. Posterior is a model estimate, not a measurement of presence. Every increment is hash-chained — receipts in the audit log.
-      </p>
+      {isPro && (
+        <p className={m.disclaimer}>
+          Sector accuracy ±60°. Posterior is a model estimate, not a measurement of presence. Every increment is hash-chained — receipts in the audit log.
+        </p>
+      )}
     </section>
   );
 }

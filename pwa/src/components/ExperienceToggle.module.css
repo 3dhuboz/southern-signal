@@ -1,0 +1,30 @@
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: var(--r-full);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  cursor: pointer;
+  white-space: nowrap;
+  border: 1px solid var(--border-default);
+  transition: background 120ms, border-color 120ms, color 120ms;
+}
+.toggle:hover { border-color: var(--border-strong); }
+
+.simple {
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+}
+
+.pro {
+  background: var(--signal-wash);
+  color: var(--signal);
+  border-color: var(--signal-dim);
+}
+
+.label {
+  display: inline-block;
+}
