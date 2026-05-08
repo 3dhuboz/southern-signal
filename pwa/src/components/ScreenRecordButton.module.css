@@ -1,0 +1,151 @@
+.btn, .btnRec {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  cursor: pointer;
+  font-family: inherit;
+  min-height: 36px;
+}
+.btn:hover {
+  background: var(--bg-overlay);
+  border-color: var(--border-strong);
+}
+.btnRec {
+  background: var(--danger-wash);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.btnRec:hover {
+  background: rgba(239, 110, 110, 0.18);
+}
+
+.dot, .dotRec {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+  flex-shrink: 0;
+}
+.dotRec {
+  background: var(--danger);
+  box-shadow: 0 0 8px var(--danger);
+  animation: rec-pulse 1.2s infinite ease-in-out;
+}
+@keyframes rec-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+
+.label {
+  font-family: var(--font-mono);
+  letter-spacing: 0.4px;
+}
+
+.error {
+  font-size: 11px;
+  color: var(--danger);
+  margin: 4px 0 0;
+}
+
+/* iOS Control Center tip dialog */
+
+.tipOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(7, 9, 12, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: var(--s-20);
+}
+
+.tipPanel {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-xl);
+  padding: var(--s-20);
+  max-width: 420px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-12);
+}
+
+.tipTitle {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.tipBody {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.tipSteps {
+  margin: 0;
+  padding-left: var(--s-20);
+  font-size: 13px;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  line-height: 1.55;
+}
+.tipSteps strong {
+  color: var(--text-primary);
+}
+
+.tipFootnote {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  line-height: 1.5;
+  padding-top: var(--s-8);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.tipActions {
+  display: flex;
+  gap: 8px;
+  margin-top: var(--s-4);
+}
+
+.tipDone, .tipCancel {
+  flex: 1;
+  padding: 11px 14px;
+  border-radius: var(--r-md);
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px solid;
+  font-family: inherit;
+  min-height: 44px;
+}
+.tipDone {
+  background: var(--signal);
+  color: var(--text-on-accent);
+  border-color: var(--signal);
+}
+.tipDone:hover { background: var(--signal-glow); }
+.tipCancel {
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  border-color: var(--border-default);
+}
+.tipCancel:hover { background: var(--bg-overlay); }

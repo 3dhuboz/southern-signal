@@ -3,6 +3,7 @@ import { AcousticSectorIndicator } from "../components/AcousticSectorIndicator";
 import { EvidenceLedger, type LedgerStream } from "../components/EvidenceLedger";
 import { OvilusTool } from "../components/OvilusTool";
 import { PosteriorBar } from "../components/PosteriorBar";
+import { ScreenRecordButton } from "../components/ScreenRecordButton";
 import { SpiritBoxTool } from "../components/SpiritBoxTool";
 import {
   createCalibrationState,
@@ -282,6 +283,7 @@ export function MissionControl() {
                 <span className={m.recPillDot} />
                 <span>{running ? "RECORDING" : "STANDBY"}</span>
               </span>
+              <ScreenRecordButton investigationId={session.current?.id ?? null} />
               <span className={m.caseId}>
                 {session.current ? `CASE ${session.current.id.slice(0, 8).toUpperCase()}` : "NO CASE"}
               </span>
