@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#080908" />
+    <title>Southern Signal Pi Hub</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="app-sidebar" aria-label="Primary">
+        <div class="sidebar-top">
+          <div class="brand-block">
+            <div class="brand-mark" aria-hidden="true">SS</div>
+            <div class="brand-text">
+              <strong>Southern Signal</strong>
+              <span>Investigation Hub</span>
+            </div>
+          </div>
+          <button id="app-info-toggle" class="icon-button info-toggle" type="button" aria-label="App info" aria-expanded="false" aria-controls="app-info-drawer">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 11v5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="8" r="1" fill="currentColor"/></svg>
+          </button>
+        </div>
+
+        <nav class="app-nav" aria-label="App sections">
+          <button class="nav-item active" data-view="mission" type="button">
+            <span class="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
+            </span>
+            <span class="nav-label">Mission</span>
+          </button>
+          <button class="nav-item" data-view="review" type="button">
+            <span class="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>
+            </span>
+            <span class="nav-label">Review</span>
+          </button>
+          <button class="nav-item" data-view="setup" type="button">
+            <span class="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 4v3M12 17v3M4.5 7.5l2 2M17.5 14.5l2 2M4 12h3M17 12h3M4.5 16.5l2-2M17.5 9.5l2-2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+            </span>
+            <span class="nav-label">Setup</span>
+          </button>
+          <button class="nav-item" data-view="export-view" type="button">
+            <span class="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 19h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            </span>
+            <span class="nav-label">Export</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-status">
+          <div id="app-state" class="app-state">Loading app state...</div>
+          <div id="health" class="status">Checking...</div>
+          <button id="export" class="ghost-button" type="button" disabled>Export Bundle</button>
+        </div>
+      </aside>
+
+      <section class="workspace">
+        <header class="app-header">
+          <div class="header-bar">
+            <button id="drawer-toggle" class="icon-button drawer-toggle" type="button" aria-label="Open hub menu" aria-expanded="false" aria-controls="app-info-drawer">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+            </button>
+            <div class="header-titles">
+              <h1>Investigation Hub</h1>
+              <p class="header-tagline">Capture, tag, and review synchronized field evidence.</p>
+            </div>
+            <button id="mode-badge" class="mode-badge" type="button" aria-haspopup="dialog" aria-controls="mode-modal">
+              <span class="mode-dot" aria-hidden="true"></span>
+              <span id="mode-badge-label">Standalone mode</span>
+            </button>
+          </div>
+          <div id="case-strip" class="case-strip">
+            <span>No case loaded</span>
+          </div>
+          <div id="selected" class="selected compact-selected">No investigation selected</div>
+        </header>
+
+        <section class="view active" data-view-panel="mission">
+          <div class="mission-layout">
+            <section class="stack">
+              <section class="panel selected-panel">
+                <h2>Mission Control</h2>
+                <div class="actions command-actions">
+                  <button id="start" class="primary-action" type="button" disabled>Start</button>
+                  <button id="stop" type="button" disabled>Stop</button>
+                  <button id="capture" type="button" disabled>Capture Still</button>
+                </div>
+                <p id="capture-hint" class="hint subtle-hint">Phone uploads work right now. Connect a Raspberry Pi to add live sensor capture.</p>
+              </section>
+
+              <section class="panel">
+                <div class="section-heading">
+                  <h2>Live Readings</h2>
+                  <span>1.5s refresh</span>
+                </div>
+                <div id="readings" class="readings"></div>
+                <p id="readings-hint" class="hint subtle-hint">Synthetic sensor — connect a Pi to enable live capture.</p>
+              </section>
+
+              <section class="panel">
+                <h2>Log observation</h2>
+                <form id="observation-form" class="form compact" novalidate>
+                  <label class="form-row">
+                    <span class="form-label">Observation type</span>
+                    <select id="observation-type" disabled>
+                      <option value="">Observations coming online...</option>
+                    </select>
+                  </label>
+                  <p id="observation-helper" class="hint subtle-hint">Choose what you noticed. Strength = how unmistakable it was.</p>
+                  <label class="form-row">
+                    <span class="form-label">
+                      Strength
+                      <span class="form-meta"><span id="observation-intensity-value">3</span> / 5</span>
+                    </span>
+                    <input id="observation-intensity" type="range" min="1" max="5" step="1" value="3" />
+                    <span class="range-legend"><span>faint</span><span>unmistakable</span></span>
+                  </label>
+                  <label class="form-row">
+                    <span class="form-label">Title <span class="form-meta">optional</span></span>
+                    <input id="observation-title" type="text" placeholder="Short label (defaults to type)" />
+                  </label>
+                  <label class="form-row">
+                    <span class="form-label">Description <span class="form-meta">optional</span></span>
+                    <textarea id="observation-description" placeholder="What did you experience?"></textarea>
+                  </label>
+                  <button id="observation-button" class="primary-action" type="submit" disabled>Log observation</button>
+                </form>
+              </section>
+
+              <section class="panel">
+                <h2>Recent observations</h2>
+                <div id="recent-observations" class="timeline observations-list"></div>
+              </section>
+
+              <section class="panel">
+                <h2>Upload from phone</h2>
+                <p class="hint subtle-hint">Capture-ready when you connect a Pi camera or mic. Phone uploads work right now.</p>
+                <div class="upload-grid">
+                  <button id="upload-audio-trigger" class="upload-button" type="button" disabled>
+                    <span class="upload-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="12" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>
+                    </span>
+                    <span class="upload-text">
+                      <strong>Upload audio</strong>
+                      <small>From your phone or device</small>
+                    </span>
+                  </button>
+                  <button id="upload-photo-trigger" class="upload-button" type="button" disabled>
+                    <span class="upload-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="13" r="3.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9 6l1.4-2h3.2L15 6" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>
+                    </span>
+                    <span class="upload-text">
+                      <strong>Upload photo</strong>
+                      <small>Camera or gallery</small>
+                    </span>
+                  </button>
+                </div>
+                <input id="upload-audio-input" class="visually-hidden" type="file" accept="audio/*" />
+                <input id="upload-photo-input" class="visually-hidden" type="file" accept="image/*" capture="environment" />
+                <label class="form-row upload-options">
+                  <span class="checkbox-row">
+                    <input id="upload-attach-observation" type="checkbox" />
+                    <span>Also log as observation</span>
+                  </span>
+                </label>
+                <label id="upload-observation-row" class="form-row hidden">
+                  <span class="form-label">Observation type for upload</span>
+                  <select id="upload-observation-type" disabled>
+                    <option value="">Observations coming online...</option>
+                  </select>
+                </label>
+                <p id="upload-status" class="hint subtle-hint" aria-live="polite"></p>
+              </section>
+
+              <section class="panel">
+                <h2>Field Tags</h2>
+                <div class="tag-grid">
+                  <form id="marker-form" class="form compact">
+                    <input id="marker-title" placeholder="Marker title" />
+                    <textarea id="marker-description" placeholder="Marker note"></textarea>
+                    <button id="marker-button" type="submit" disabled>Add Marker</button>
+                  </form>
+                  <form id="contamination-form" class="form compact contamination-card">
+                    <select id="contamination-type" disabled></select>
+                    <textarea id="contamination-description" placeholder="Ordinary cause note"></textarea>
+                    <div id="quick-tags" class="quick-tags"></div>
+                    <button id="contamination-button" type="submit" disabled>Tag Ordinary Cause</button>
+                  </form>
+                </div>
+              </section>
+            </section>
+
+            <section class="stack">
+              <section class="panel">
+                <h2>Evidence Report</h2>
+                <div id="report" class="report">
+                  <div class="empty-state">
+                    <strong>No active case file</strong>
+                    <span>Select or create an investigation to build a report.</span>
+                  </div>
+                </div>
+              </section>
+
+              <section class="panel">
+                <h2>Timeline</h2>
+                <div id="events" class="timeline"></div>
+              </section>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="review">
+          <div class="review-layout">
+            <section class="panel">
+              <h2>Detected Anomalies</h2>
+              <div id="anomalies" class="timeline"></div>
+            </section>
+
+            <section class="panel">
+              <h2>Replay Windows</h2>
+              <div id="review-windows" class="timeline"></div>
+            </section>
+
+            <section class="panel">
+              <h2>Media Assets</h2>
+              <div id="media" class="timeline"></div>
+            </section>
+
+            <section class="panel">
+              <h2>Evidence Score</h2>
+              <div id="score" class="score-card">Score a candidate event after review.</div>
+              <div class="actions two">
+                <button id="score-weak" type="button">Test Weak</button>
+                <button id="score-strong" type="button">Test Strong</button>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="setup">
+          <div class="setup-layout">
+            <section class="panel">
+              <h2>New Investigation</h2>
+              <p class="hint subtle-hint">Works on phone alone. A Raspberry Pi adds live sensor capture but isn't required.</p>
+              <form id="create-form" class="form compact">
+                <input id="title" required placeholder="Title" value="Baseline test" />
+                <input id="location" placeholder="Location" />
+                <textarea id="notes" placeholder="Notes"></textarea>
+                <button type="submit">Create Investigation</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <h2>Sessions</h2>
+              <div id="sessions" class="list session-list"></div>
+            </section>
+
+            <section class="panel">
+              <h2>Protocols</h2>
+              <div id="protocols" class="list"></div>
+            </section>
+
+            <section class="panel">
+              <h2>Hardware</h2>
+              <div id="hardware" class="hardware">Detecting hardware...</div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="export-view">
+          <div class="export-layout">
+            <section class="panel hero-panel">
+              <h2>Evidence Bundle</h2>
+              <p>Export the current investigation with raw logs, media assets, anomaly cards, hardware status, and report metadata.</p>
+              <button id="export-panel-button" class="primary-action" type="button" disabled>Export Bundle</button>
+            </section>
+
+            <section class="panel">
+              <h2>Media Assets</h2>
+              <div id="media-export" class="timeline"></div>
+            </section>
+          </div>
+        </section>
+      </section>
+
+      <nav class="bottom-nav" aria-label="Mobile sections">
+        <button class="bottom-nav-item active" data-view="mission" type="button">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
+          </span>
+          <span class="nav-label">Mission</span>
+        </button>
+        <button class="bottom-nav-item" data-view="review" type="button">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>
+          </span>
+          <span class="nav-label">Review</span>
+        </button>
+        <button class="bottom-nav-item" data-view="setup" type="button">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M12 4v3M12 17v3M4.5 7.5l2 2M17.5 14.5l2 2M4 12h3M17 12h3M4.5 16.5l2-2M17.5 9.5l2-2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+          </span>
+          <span class="nav-label">Setup</span>
+        </button>
+        <button class="bottom-nav-item" data-view="export-view" type="button">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 19h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+          </span>
+          <span class="nav-label">Export</span>
+        </button>
+      </nav>
+
+      <div id="app-info-drawer" class="drawer" role="dialog" aria-modal="true" aria-labelledby="app-info-drawer-title" hidden>
+        <div class="drawer-backdrop" data-drawer-close></div>
+        <div class="drawer-panel">
+          <div class="drawer-header">
+            <h2 id="app-info-drawer-title">Hub status</h2>
+            <button class="icon-button" type="button" data-drawer-close aria-label="Close menu">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M6 18L18 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+            </button>
+          </div>
+          <div class="drawer-body">
+            <div class="drawer-brand">
+              <div class="brand-mark" aria-hidden="true">SS</div>
+              <div>
+                <strong>Southern Signal</strong>
+                <span>Pi Investigation Hub</span>
+              </div>
+            </div>
+            <div id="drawer-app-state" class="app-state drawer-app-state">Loading hub state...</div>
+            <div id="drawer-health" class="status">Checking...</div>
+            <button id="drawer-export" class="ghost-button" type="button" disabled>Export Bundle</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="mode-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="mode-modal-title" hidden>
+        <div class="modal-backdrop" data-modal-close></div>
+        <div class="modal-panel" role="document">
+          <div class="modal-header">
+            <h2 id="mode-modal-title">Standalone mode</h2>
+            <button class="icon-button" type="button" data-modal-close aria-label="Close">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M6 18L18 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <p id="mode-modal-description">You can run a full investigation right now from your phone — log observations, upload audio and photos, mark contamination, and export evidence bundles. The hub generates synthetic sensor data so the workflow stays end-to-end.</p>
+            <p id="mode-modal-hint" class="hint">Connect a Raspberry Pi to add live sensor capture, microphone audio, and camera stills alongside your phone uploads.</p>
+          </div>
+        </div>
+      </div>
+
+      <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
