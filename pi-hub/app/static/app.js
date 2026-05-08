@@ -572,6 +572,7 @@ async function selectInvestigation(id) {
 
   const session = await api(`/api/investigations/${id}`);
   if (requestId !== selectionRequestId) return;
+  cachedSession = session;
   $("selected").innerHTML = `
     <strong>${escapeHtml(session.title)}</strong>
     <span>${escapeHtml(session.location_name || "No location")} - <b class="status-pill ${escapeHtml(session.status)}">${escapeHtml(session.status)}</b></span>
@@ -590,6 +591,8 @@ async function selectInvestigation(id) {
     refreshAnomalies(),
     refreshReport(),
     refreshLive(),
+    refreshDuration(),
+    refreshInterference(),
   ]);
   startPolling();
 }
@@ -597,8 +600,14 @@ async function selectInvestigation(id) {
 function clearSelectedInvestigation() {
   selectedId = null;
   selectionRequestId += 1;
+  cachedSession = null;
   localStorage.removeItem(STORAGE_KEYS.selectedId);
   stopPolling();
+  if (heroTickHandle) { clearInterval(heroTickHandle); heroTickHandle = null; }
+  if ($("session-hero")) $("session-hero").classList.add("hidden");
+  if ($("mission-idle")) $("mission-idle").classList.remove("hidden");
+  paintDurationControls({ target_minutes: null });
+  refreshInterference();
   $("selected").textContent = "No investigation selected";
   $("case-strip").innerHTML = "<span>No case loaded</span>";
   $("readings").innerHTML = "";
@@ -767,6 +776,305 @@ async function refreshLive() {
       `;
     })
     .join("");
+  renderSessionHero(live);
+}
+
+let cachedSession = null;
+let heroTickHandle = null;
+
+function pad2(n) { return String(Math.max(0, Math.floor(n))).padStart(2, "0"); }
+
+function formatHHMMSS(totalSeconds) {
+  const t = Math.max(0, Math.floor(totalSeconds || 0));
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  const s = t % 60;
+  return `${pad2(h)}:${pad2(m)}:${pad2(s)}`;
+}
+
+function formatMMSS(totalSeconds) {
+  const t = Math.max(0, Math.floor(totalSeconds || 0));
+  const m = Math.floor(t / 60);
+  const s = t % 60;
+  return `${pad2(m)}:${pad2(s)}`;
+}
+
+function renderSessionHero(live) {
+  const hero = $("session-hero");
+  const idle = $("mission-idle");
+  if (!hero || !idle) return;
+  const running = Boolean(live && live.running);
+  const duration = (live && live.duration) || null;
+
+  if (!running) {
+    hero.classList.add("hidden");
+    idle.classList.remove("hidden");
+    if (heroTickHandle) {
+      clearInterval(heroTickHandle);
+      heroTickHandle = null;
+    }
+    return;
+  }
+
+  hero.classList.remove("hidden");
+  idle.classList.add("hidden");
+
+  const session = cachedSession || {};
+  $("session-hero-title").textContent = session.title || "Investigation";
+  const subtitle = [session.location_name || "Location pending", session.started_at ? `Started ${formatTime(session.started_at)}` : null]
+    .filter(Boolean)
+    .join(" · ");
+  $("session-hero-sub").textContent = subtitle;
+  $("session-hero-case").textContent = session.id ? `CASE ${String(session.id).slice(0, 8).toUpperCase()}` : "";
+
+  const startedAt = (duration && duration.started_at) || session.started_at;
+  const targetEnd = duration && duration.target_end ? duration.target_end : null;
+  const targetMinutes = duration && duration.target_minutes ? duration.target_minutes : null;
+
+  hero.dataset.startedAt = startedAt || "";
+  hero.dataset.targetEnd = targetEnd || "";
+  hero.dataset.targetMinutes = targetMinutes || "";
+
+  if (targetMinutes && targetEnd) {
+    $("session-hero-progress").classList.remove("hidden");
+    $("session-hero-target-label").textContent = `TARGET ${formatMMSS(targetMinutes * 60)}`;
+  } else {
+    $("session-hero-progress").classList.add("hidden");
+  }
+
+  paintHero();
+
+  if (!heroTickHandle) {
+    heroTickHandle = setInterval(paintHero, 1000);
+  }
+}
+
+function paintHero() {
+  const hero = $("session-hero");
+  if (!hero || hero.classList.contains("hidden")) return;
+  const startedAt = hero.dataset.startedAt;
+  const targetEnd = hero.dataset.targetEnd;
+  const targetMinutes = parseFloat(hero.dataset.targetMinutes || "0");
+  if (!startedAt) return;
+
+  const now = Date.now();
+  const startedMs = new Date(startedAt).getTime();
+  const elapsedSec = Math.max(0, Math.floor((now - startedMs) / 1000));
+  $("session-hero-elapsed").textContent = formatHHMMSS(elapsedSec);
+
+  if (targetEnd && targetMinutes) {
+    const endMs = new Date(targetEnd).getTime();
+    const remainingSec = Math.max(0, Math.floor((endMs - now) / 1000));
+    $("session-hero-remaining").textContent = `${formatMMSS(remainingSec)} LEFT`;
+
+    const totalSec = targetMinutes * 60;
+    const fillPct = Math.min(100, Math.max(0, (1 - remainingSec / totalSec) * 100));
+    const fill = $("session-hero-fill");
+    if (fill) fill.style.width = `${fillPct}%`;
+
+    const isComplete = remainingSec === 0;
+    hero.classList.toggle("complete", isComplete);
+    if (isComplete) $("session-hero-remaining").textContent = "TIME'S UP";
+  }
+}
+
+async function refreshDuration() {
+  if (!selectedId) return;
+  try {
+    const status = await api(`/api/investigations/${selectedId}/duration`, { quiet: true });
+    paintDurationControls(status);
+  } catch (error) {
+    paintDurationControls({ target_minutes: null });
+  }
+}
+
+function paintDurationControls(status) {
+  const statusEl = $("duration-status");
+  const input = $("duration-input");
+  const setBtn = $("duration-set");
+  const clearBtn = $("duration-clear");
+  if (!statusEl || !input || !setBtn || !clearBtn) return;
+  const t = status && status.target_minutes;
+  if (t) {
+    statusEl.textContent = `Target ${t} min`;
+    input.value = t;
+    setBtn.textContent = "Update";
+    clearBtn.classList.remove("hidden");
+  } else {
+    statusEl.textContent = "No target set";
+    input.value = "";
+    setBtn.textContent = "Set target";
+    clearBtn.classList.add("hidden");
+  }
+}
+
+async function setDurationTarget() {
+  if (!selectedId) return;
+  const input = $("duration-input");
+  const minutes = parseInt(input && input.value, 10);
+  if (!minutes || minutes < 1) {
+    notify("Enter a positive number of minutes", "error");
+    return;
+  }
+  try {
+    const result = await api(`/api/investigations/${selectedId}/duration`, {
+      method: "POST",
+      body: JSON.stringify({ target_minutes: minutes }),
+    });
+    paintDurationControls(result);
+    notify(`Target set to ${minutes} min`, "success");
+    refreshLive();
+  } catch (error) {
+    /* api() already toasted */
+  }
+}
+
+async function clearDurationTarget() {
+  if (!selectedId) return;
+  try {
+    await api(`/api/investigations/${selectedId}/duration`, { method: "DELETE" });
+    paintDurationControls({ target_minutes: null });
+    notify("Duration target cleared", "success");
+    refreshLive();
+  } catch (error) {
+    /* toasted */
+  }
+}
+
+let interferenceItems = [];
+let interferenceAnswers = {};
+
+async function refreshInterferenceItems() {
+  try {
+    interferenceItems = await api("/api/interference-items", { quiet: true });
+  } catch {
+    interferenceItems = [];
+  }
+}
+
+async function refreshInterference() {
+  if (!selectedId) {
+    interferenceAnswers = {};
+    renderInterferenceList();
+    paintInterferenceSummary(null);
+    if ($("interference-saved-at")) $("interference-saved-at").textContent = "";
+    return;
+  }
+  try {
+    const record = await api(`/api/investigations/${selectedId}/interference`, { quiet: true });
+    interferenceAnswers = (record && record.answers) || {};
+    renderInterferenceList();
+    paintInterferenceSummary(record && record.computed);
+    if ($("interference-saved-at") && record && record.saved_at) {
+      $("interference-saved-at").textContent = `Saved ${formatTime(record.saved_at)}`;
+    }
+  } catch (error) {
+    if (error && error.status === 404) {
+      interferenceAnswers = {};
+      renderInterferenceList();
+      paintInterferenceSummary(null);
+      if ($("interference-saved-at")) $("interference-saved-at").textContent = "Not yet saved";
+    }
+  }
+}
+
+function paintInterferenceSummary(computed) {
+  const el = $("interference-score-summary");
+  if (!el) return;
+  if (!computed) {
+    el.textContent = "";
+    el.className = "interference-summary";
+    return;
+  }
+  el.textContent = `${computed.score} / 100  ·  coverage ${computed.coverage}%  ·  ${computed.issue_count} issue${computed.issue_count === 1 ? "" : "s"}`;
+  if (computed.score >= 80 && computed.coverage >= 70) {
+    el.className = "interference-summary ok";
+  } else if (computed.coverage >= 50) {
+    el.className = "interference-summary warn";
+  } else {
+    el.className = "interference-summary";
+  }
+}
+
+function renderInterferenceList() {
+  const list = $("interference-list");
+  if (!list) return;
+  if (!interferenceItems || !interferenceItems.length) {
+    list.innerHTML = `<p class="hint subtle-hint" style="padding: 14px;">Checklist offline.</p>`;
+    return;
+  }
+  const groups = new Map();
+  for (const item of interferenceItems) {
+    const cat = item.category || "general";
+    if (!groups.has(cat)) groups.set(cat, []);
+    groups.get(cat).push(item);
+  }
+  const html = [...groups.entries()]
+    .map(([category, items]) => {
+      const rows = items
+        .map((item) => {
+          const current = interferenceAnswers[item.id];
+          const yesActive = current === "yes" ? "active yes" : "yes";
+          const noActive = current === "no" ? "active no" : "no";
+          const skipActive = current === undefined || current === null || current === "skip" ? "active skip" : "skip";
+          return `
+            <div class="interference-row" data-item-id="${escapeHtml(item.id)}">
+              <span class="interference-label">${escapeHtml(item.label)}</span>
+              <div class="interference-tristate" role="radiogroup" aria-label="${escapeHtml(item.label)}">
+                <button type="button" class="${yesActive}" data-answer="yes">Yes</button>
+                <button type="button" class="${noActive}" data-answer="no">No</button>
+                <button type="button" class="${skipActive}" data-answer="skip">Skip</button>
+              </div>
+            </div>
+          `;
+        })
+        .join("");
+      return `
+        <div class="interference-group">
+          <div class="interference-group-head">${escapeHtml(category)}</div>
+          ${rows}
+        </div>
+      `;
+    })
+    .join("");
+  list.innerHTML = html;
+  const saveBtn = $("interference-save");
+  if (saveBtn) saveBtn.disabled = !selectedId;
+}
+
+function handleInterferenceClick(event) {
+  const btn = event.target.closest(".interference-tristate button");
+  if (!btn) return;
+  const row = btn.closest(".interference-row");
+  if (!row) return;
+  const id = row.dataset.itemId;
+  const answer = btn.dataset.answer;
+  if (answer === "skip") {
+    delete interferenceAnswers[id];
+  } else {
+    interferenceAnswers[id] = answer;
+  }
+  renderInterferenceList();
+}
+
+async function saveInterference() {
+  if (!selectedId) {
+    notify("Select an investigation first", "error");
+    return;
+  }
+  try {
+    const record = await api(`/api/investigations/${selectedId}/interference`, {
+      method: "POST",
+      body: JSON.stringify({ answers: interferenceAnswers }),
+    });
+    paintInterferenceSummary(record && record.computed);
+    if ($("interference-saved-at") && record && record.saved_at) {
+      $("interference-saved-at").textContent = `Saved ${formatTime(record.saved_at)}`;
+    }
+    notify("Checklist saved", "success");
+  } catch (error) {
+    /* toasted */
+  }
 }
 
 async function scoreEvidence(kind) {
@@ -1144,9 +1452,30 @@ document.addEventListener("keydown", (event) => {
 
 /* ---------- Initialization ---------- */
 
+function wireDurationAndInterference() {
+  const durationSet = $("duration-set");
+  const durationClear = $("duration-clear");
+  const durationInput = $("duration-input");
+  if (durationSet) durationSet.addEventListener("click", () => setDurationTarget());
+  if (durationClear) durationClear.addEventListener("click", () => clearDurationTarget());
+  if (durationInput) {
+    durationInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        setDurationTarget();
+      }
+    });
+  }
+  const interferenceList = $("interference-list");
+  if (interferenceList) interferenceList.addEventListener("click", handleInterferenceClick);
+  const saveBtn = $("interference-save");
+  if (saveBtn) saveBtn.addEventListener("click", () => saveInterference());
+}
+
 async function initializeApp() {
   setSelectedControls(false);
   setView(localStorage.getItem(STORAGE_KEYS.view) || "mission");
+  wireDurationAndInterference();
   const results = await Promise.allSettled([
     refreshHealth(),
     refreshHardware(),
@@ -1154,8 +1483,10 @@ async function initializeApp() {
     refreshProtocols(),
     refreshContaminationTags(),
     refreshObservationTypes(),
+    refreshInterferenceItems(),
     refreshSessions(),
   ]);
+  renderInterferenceList();
 
   results
     .filter((result) => result.status === "rejected")

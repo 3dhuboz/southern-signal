@@ -90,13 +90,48 @@
           <div class="mission-layout">
             <section class="stack">
               <section class="panel selected-panel">
-                <h2>Mission Control</h2>
-                <div class="actions command-actions">
-                  <button id="start" class="primary-action" type="button" disabled>Start</button>
-                  <button id="stop" type="button" disabled>Stop</button>
-                  <button id="capture" type="button" disabled>Capture Still</button>
+                <div id="session-hero" class="session-hero hidden">
+                  <div class="session-hero-top">
+                    <span class="rec-pill"><span class="rec-pill-dot"></span><span>RECORDING</span></span>
+                    <span id="session-hero-case" class="session-hero-case"></span>
+                  </div>
+                  <div class="session-hero-titles">
+                    <h2 id="session-hero-title">Investigation</h2>
+                    <p id="session-hero-sub"></p>
+                  </div>
+                  <div class="session-hero-timer">
+                    <div id="session-hero-elapsed" class="hero-timer">00:00:00</div>
+                    <div class="hero-timer-label">ELAPSED</div>
+                  </div>
+                  <div id="session-hero-progress" class="hero-progress hidden">
+                    <div class="hero-progress-row">
+                      <span id="session-hero-target-label">TARGET</span>
+                      <span id="session-hero-remaining">00:00 LEFT</span>
+                    </div>
+                    <div class="hero-progress-track"><div id="session-hero-fill" class="hero-progress-fill"></div></div>
+                  </div>
                 </div>
-                <p id="capture-hint" class="hint subtle-hint">Phone uploads work right now. Connect a Raspberry Pi to add live sensor capture.</p>
+                <div id="mission-idle">
+                  <h2>Mission Control</h2>
+                  <div class="actions command-actions">
+                    <button id="start" class="primary-action" type="button" disabled>Start</button>
+                    <button id="stop" type="button" disabled>Stop</button>
+                    <button id="capture" type="button" disabled>Capture Still</button>
+                  </div>
+                  <p id="capture-hint" class="hint subtle-hint">Phone uploads work right now. Connect a Raspberry Pi to add live sensor capture.</p>
+                </div>
+                <div class="duration-controls">
+                  <div class="duration-controls-head">
+                    <span class="form-label">SESSION TARGET</span>
+                    <span id="duration-status" class="duration-status">No target set</span>
+                  </div>
+                  <div class="duration-controls-row">
+                    <input id="duration-input" type="number" min="1" max="1440" placeholder="20" inputmode="numeric" />
+                    <span class="duration-unit">min</span>
+                    <button id="duration-set" type="button">Set target</button>
+                    <button id="duration-clear" type="button" class="ghost-button hidden">Clear</button>
+                  </div>
+                </div>
               </section>
 
               <section class="panel">
@@ -274,6 +309,21 @@
             <section class="panel">
               <h2>Hardware</h2>
               <div id="hardware" class="hardware">Detecting hardware...</div>
+            </section>
+
+            <section class="panel">
+              <div class="section-heading">
+                <h2>Interference Checklist</h2>
+                <span id="interference-score-summary" class="interference-summary"></span>
+              </div>
+              <p class="hint subtle-hint">Quick pre-investigation environmental check. Feeds your evidence score.</p>
+              <div id="interference-list" class="interference-list">
+                <p class="hint subtle-hint">Loading checklist…</p>
+              </div>
+              <div class="interference-actions">
+                <button id="interference-save" type="button" class="primary-action" disabled>Save checklist</button>
+                <span id="interference-saved-at" class="hint subtle-hint"></span>
+              </div>
             </section>
           </div>
         </section>
