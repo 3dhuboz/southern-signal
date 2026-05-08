@@ -9,23 +9,57 @@
 .card {
   position: relative;
   overflow: hidden;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-default);
-  border-radius: var(--r-xl);
-  padding: var(--s-16);
+  isolation: isolate;
+  background:
+    linear-gradient(180deg, rgba(20, 26, 36, 0.85), rgba(8, 12, 18, 0.9)),
+    var(--bg-elevated);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 24px;
+  padding: 28px 22px 24px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  transition: border-color 240ms ease, background 240ms ease;
+  min-height: 360px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 -120px 80px -80px var(--accent-deep, rgba(93, 242, 199, 0.18)) inset,
+    0 40px 80px -40px rgba(0, 0, 0, 0.6);
+  transition: box-shadow 480ms ease, border-color 480ms ease;
 }
 
+/* Aurora field — animated mesh gradient that drifts. Color comes from band. */
 .card::before {
   content: "";
   position: absolute;
-  inset: 0;
-  background: radial-gradient(220px 110px at 50% 0%, var(--accent-glow, rgba(93, 242, 199, 0.08)), transparent 70%);
+  inset: -20%;
+  background:
+    radial-gradient(40% 30% at 30% 30%, var(--accent-a, rgba(93, 242, 199, 0.30)), transparent 60%),
+    radial-gradient(50% 40% at 70% 60%, var(--accent-b, rgba(127, 252, 215, 0.18)), transparent 70%),
+    radial-gradient(35% 25% at 50% 90%, var(--accent-c, rgba(43, 163, 134, 0.18)), transparent 70%);
+  filter: blur(40px) saturate(1.1);
+  animation: ss-aurora-drift 18s ease-in-out infinite;
+  z-index: -1;
   pointer-events: none;
+}
+
+/* Faint scanline texture for "field instrument" feel */
+.card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.018) 0px,
+      rgba(255, 255, 255, 0.018) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+  z-index: 0;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+  opacity: 0.7;
 }
 
 .cardTopRow {
@@ -34,7 +68,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  z-index: 1;
+  z-index: 2;
+  position: relative;
 }
 
 .statusPill {
@@ -73,48 +108,117 @@
   color: var(--text-muted);
 }
 
-.activityHead {
+.caseTitleLabel {
+  font-family: var(--font-display);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text-secondary);
+  letter-spacing: -0.01em;
+  text-align: center;
   margin-top: 6px;
-  z-index: 1;
+  z-index: 2;
+  position: relative;
+}
+
+/* Activity dial — concentric SVG rings with pulse ring layer */
+.dial {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  margin: 8px auto 4px;
+  z-index: 2;
+}
+
+.dialRingPulse, .dialRingPulse2 {
+  position: absolute;
+  inset: 12%;
+  border-radius: 50%;
+  border: 1px solid var(--accent-stroke, rgba(93, 242, 199, 0.35));
+  opacity: 0;
+  animation: ss-pulse-ring 2.4s ease-out infinite;
+}
+.dialRingPulse2 { animation-delay: 1.2s; }
+.dialQuiet .dialRingPulse, .dialQuiet .dialRingPulse2 { animation: none; opacity: 0; }
+
+.dialSvg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.dialLabel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  pointer-events: none;
+}
+
+.activityHead {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2.4px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
 }
 
 .activityLabel {
-  font-size: 30px;
-  font-weight: 800;
-  letter-spacing: -0.6px;
-  color: var(--text-primary);
-  z-index: 1;
-  line-height: 1.05;
-}
-
-.gauge {
-  width: 100%;
-  z-index: 1;
-  margin-top: 6px;
-}
-.gaugeTrack {
-  width: 100%;
-  height: 8px;
-  background: var(--bg-inset);
-  border-radius: var(--r-full);
-  overflow: hidden;
-}
-.gaugeFill {
-  display: block;
-  height: 100%;
-  background: linear-gradient(90deg, var(--signal-dim), var(--signal));
-  border-radius: var(--r-full);
-  transition: width 480ms ease-out;
+  font-family: var(--font-display);
+  font-size: 38px;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  background: linear-gradient(180deg, var(--text-primary), var(--accent-strong, var(--signal)));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-align: center;
+  margin: 4px 0 6px;
 }
 
 .activityHint {
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--text-secondary);
   text-align: center;
-  z-index: 1;
+  max-width: 220px;
+  line-height: 1.35;
+  z-index: 2;
+  position: relative;
+}
+
+/* Live spectrum strip beneath the dial */
+.spectrum {
+  width: 100%;
+  height: 40px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 3px;
+  margin-top: 14px;
+  z-index: 2;
+  position: relative;
+}
+.spectrum span {
+  display: block;
+  width: 4px;
+  background: linear-gradient(180deg, var(--accent-strong, var(--signal)), var(--accent-soft, var(--signal-dim)));
+  border-radius: 2px;
+  transition: height 220ms ease-out;
+  opacity: 0.85;
+}
+
+.timerRow {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 14px;
+  z-index: 2;
+  position: relative;
 }
 
 .timer {
@@ -123,24 +227,46 @@
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: 1.5px;
-  margin-top: 8px;
-  z-index: 1;
 }
+
 .timerLabel {
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 1.6px;
   color: var(--text-muted);
-  z-index: 1;
 }
+
+.listeningRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  margin-top: 6px;
+  z-index: 2;
+  position: relative;
+}
+.listeningRow .listenDot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent-strong, var(--signal));
+  animation: ss-listening-dot 1.2s ease-in-out infinite;
+}
+.listeningRow .listenDot:nth-child(2) { animation-delay: 0.15s; }
+.listeningRow .listenDot:nth-child(3) { animation-delay: 0.30s; }
 
 .statusMsg {
   font-size: 12px;
   color: var(--text-muted);
   text-align: center;
-  margin: 6px 0 0;
+  margin: 8px 0 0;
   font-style: italic;
-  z-index: 1;
+  z-index: 2;
+  position: relative;
 }
 
 .calibrationNudge {
@@ -148,27 +274,159 @@
   color: var(--warning);
   text-align: center;
   margin: 4px 0 0;
-  z-index: 1;
+  z-index: 2;
+  position: relative;
 }
 
 .partnerWatermark {
   position: absolute;
-  right: 10px;
-  bottom: 10px;
+  right: 14px;
+  bottom: 14px;
   width: 36px;
   height: 36px;
   border-radius: 6px;
-  opacity: 0.55;
+  opacity: 0.4;
   pointer-events: none;
   z-index: 0;
 }
 
-/* Activity colour bands — subtle accent shifts */
-.band_calm    { --accent-glow: rgba(93, 242, 199, 0.05); }
-.band_light   { --accent-glow: rgba(93, 242, 199, 0.10); }
-.band_possible{ --accent-glow: rgba(242, 185, 93, 0.16); }
-.band_notable { --accent-glow: rgba(242, 122, 93, 0.22); border-color: var(--warning); }
-.band_strong  { --accent-glow: rgba(242, 93, 93, 0.30); border-color: var(--danger); }
+/* Activity colour bands — drives aurora colors + pulse ring + gradient text */
+.band_calm {
+  --accent-a: rgba(93, 242, 199, 0.20);
+  --accent-b: rgba(127, 252, 215, 0.10);
+  --accent-c: rgba(43, 163, 134, 0.10);
+  --accent-deep: rgba(93, 242, 199, 0.10);
+  --accent-stroke: rgba(93, 242, 199, 0.30);
+  --accent-strong: var(--signal);
+  --accent-soft: var(--signal-dim);
+}
+.band_light {
+  --accent-a: rgba(93, 242, 199, 0.30);
+  --accent-b: rgba(127, 252, 215, 0.20);
+  --accent-c: rgba(93, 242, 199, 0.16);
+  --accent-deep: rgba(93, 242, 199, 0.18);
+  --accent-stroke: rgba(127, 252, 215, 0.45);
+  --accent-strong: var(--signal-glow);
+  --accent-soft: var(--signal);
+}
+.band_possible {
+  --accent-a: rgba(242, 185, 93, 0.32);
+  --accent-b: rgba(255, 215, 110, 0.20);
+  --accent-c: rgba(180, 130, 50, 0.18);
+  --accent-deep: rgba(242, 185, 93, 0.22);
+  --accent-stroke: rgba(242, 185, 93, 0.55);
+  --accent-strong: var(--warning);
+  --accent-soft: rgba(242, 185, 93, 0.55);
+}
+.band_notable {
+  --accent-a: rgba(242, 122, 93, 0.40);
+  --accent-b: rgba(239, 110, 110, 0.30);
+  --accent-c: rgba(200, 70, 70, 0.22);
+  --accent-deep: rgba(239, 110, 110, 0.30);
+  --accent-stroke: rgba(239, 110, 110, 0.65);
+  --accent-strong: var(--danger);
+  --accent-soft: rgba(239, 110, 110, 0.55);
+  border-color: rgba(239, 110, 110, 0.35);
+}
+.band_strong {
+  --accent-a: rgba(255, 90, 90, 0.55);
+  --accent-b: rgba(255, 130, 130, 0.40);
+  --accent-c: rgba(180, 40, 40, 0.30);
+  --accent-deep: rgba(255, 80, 80, 0.40);
+  --accent-stroke: rgba(255, 100, 100, 0.85);
+  --accent-strong: #ff6e6e;
+  --accent-soft: rgba(255, 100, 100, 0.7);
+  border-color: rgba(255, 90, 90, 0.45);
+}
+
+/* ------------------------------ Narrator ------------------------------ */
+
+.narrator {
+  position: relative;
+  background:
+    linear-gradient(180deg, rgba(20, 26, 36, 0.8), rgba(8, 12, 18, 0.85)),
+    var(--bg-elevated);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  padding: 12px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.narrator::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent, var(--accent-strong, var(--signal)) 40%, transparent 60%);
+  background-size: 200% 100%;
+  animation: ss-shimmer 3.6s linear infinite;
+  opacity: 0;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  transition: opacity 240ms ease;
+  z-index: -1;
+}
+
+.narratorActive::before { opacity: 0.18; }
+
+.narratorHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.narratorEyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 2.4px;
+  text-transform: uppercase;
+  color: var(--signal);
+  font-weight: 700;
+}
+
+.narratorSpeak {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.narratorSpeak .narratorSpeakDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.narratorSpeakOn {
+  background: var(--signal-wash);
+  color: var(--signal);
+  border-color: var(--signal-dim);
+}
+.narratorSpeakOn .narratorSpeakDot {
+  background: var(--signal);
+  box-shadow: 0 0 8px var(--signal);
+}
+
+.narratorBody {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--text-primary);
+  line-height: 1.4;
+  min-height: 18px;
+}
 
 /* ------------------------------ Controls ------------------------------ */
 

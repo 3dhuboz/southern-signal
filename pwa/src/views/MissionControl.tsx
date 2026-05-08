@@ -4,6 +4,8 @@ import { AiAssistant } from "../components/AiAssistant";
 import { CameraCapture } from "../components/CameraCapture";
 import { ContaminationMarker } from "../components/ContaminationMarker";
 import { DispositionPicker } from "../components/DispositionPicker";
+import { LiveARView } from "../components/LiveARView";
+import { useLiveNarrator } from "../lib/posterior/liveNarrator";
 import { EvidenceLedger, type LedgerStream } from "../components/EvidenceLedger";
 import { OvilusTool } from "../components/OvilusTool";
 import { PosteriorBar } from "../components/PosteriorBar";
@@ -68,10 +70,17 @@ export function MissionControl() {
   const lastAcousticEmitTsRef = useRef<number>(0);
   const aiAssistantRef = useRef<HTMLDivElement | null>(null);
   const [pendingDispositionFor, setPendingDispositionFor] = useState<string | null>(null);
+  const [narrationSpeak, setNarrationSpeak] = useState<boolean>(false);
 
   const handleAskQuestion = useCallback(() => {
     aiAssistantRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, []);
+
+  // Live narrator — plain-English caption per posterior increment, optionally spoken.
+  const narratorCaption = useLiveNarrator(siteSession.recentIncrements, {
+    speak: narrationSpeak && running,
+    captionMs: 7000,
+  });
 
   const ledgerStreams = useMemo<LedgerStream[]>(() => {
     const now = Date.now();
@@ -330,6 +339,11 @@ export function MissionControl() {
           trustworthy={trustworthy}
           hasInvestigation={!!session.current}
           investigationId={session.current?.id ?? null}
+          audioRms={audioRms}
+          sectorReading={sectorReading ? { sector: sectorReading.sector, coherence: sectorReading.coherence, trustworthy: sectorReading.trustworthy } : null}
+          narratorCaption={narratorCaption}
+          narratorSpeak={narrationSpeak}
+          onToggleNarratorSpeak={setNarrationSpeak}
           onBegin={handleBegin}
           onStop={handleStop}
           onMarker={handleMarker}
@@ -446,8 +460,23 @@ export function MissionControl() {
         />
       )}
 
-      {/* CAMERA — scene snapshots, hash-chained */}
-      <CameraCapture investigationId={session.current?.id ?? null} running={running} />
+      {/* LIVE AR VIEW — camera feed with sensor overlays (Simple mode centerpiece) */}
+      {!isPro && (
+        <LiveARView
+          investigationId={session.current?.id ?? null}
+          running={running}
+          posterior={posterior}
+          audioRms={audioRms}
+          sector={sectorReading?.sector ?? null}
+          coherence={sectorReading?.coherence ?? 0}
+          caption={narratorCaption}
+        />
+      )}
+
+      {/* CAMERA — scene snapshots (Pro plain tile) */}
+      {isPro && (
+        <CameraCapture investigationId={session.current?.id ?? null} running={running} />
+      )}
 
       {/* CONTAMINATION MARKERS — Pro grid (Simple mode uses an in-place sheet) */}
       {isPro && (

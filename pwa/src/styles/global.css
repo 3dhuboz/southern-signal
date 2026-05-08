@@ -1,7 +1,37 @@
 @import "./tokens.css";
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap");
 
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
+
+/* Global animation primitives — used by hero card, AR overlay, etc. */
+@keyframes ss-aurora-drift {
+  0%   { transform: translate(0, 0) rotate(0deg)   scale(1.0); opacity: 0.55; }
+  50%  { transform: translate(2%, -3%) rotate(180deg) scale(1.12); opacity: 0.85; }
+  100% { transform: translate(0, 0) rotate(360deg) scale(1.0); opacity: 0.55; }
+}
+
+@keyframes ss-pulse-ring {
+  0%   { transform: scale(0.6); opacity: 0.7; }
+  80%  { transform: scale(1.6); opacity: 0; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+@keyframes ss-shimmer {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes ss-listening-dot {
+  0%, 100% { opacity: 0.25; transform: translateY(0); }
+  50%      { opacity: 1;    transform: translateY(-2px); }
+}
+
+@keyframes ss-arrow-bob {
+  0%, 100% { transform: translate(-50%, -50%) translateY(0); }
+  50%      { transform: translate(-50%, -50%) translateY(-4px); }
+}
 
 body {
   font-family: var(--font-sans);

@@ -14,7 +14,7 @@
  * fuller instrument cluster instead.
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ScreenRecordButton } from "./ScreenRecordButton";
 import type { LogIncrement } from "../lib/posterior/posterior";
 import {
@@ -59,6 +59,11 @@ interface SimpleMissionViewProps {
   trustworthy: boolean;
   hasInvestigation: boolean;
   investigationId: string | null;
+  audioRms: number;
+  sectorReading: { sector: string | null; coherence: number; trustworthy: boolean } | null;
+  narratorCaption: string | null;
+  narratorSpeak: boolean;
+  onToggleNarratorSpeak: (next: boolean) => void;
   onBegin: () => void;
   onStop: () => void;
   onMarker: () => void;
@@ -80,6 +85,78 @@ function formatHMS(totalSeconds: number): string {
   return `${hh}:${mm}:${ss}`;
 }
 
+const SECTOR_ANGLE: Record<string, number> = {
+  "FRONT-L": 300,
+  "FRONT-C": 0,
+  "FRONT-R": 60,
+  "REAR-R": 120,
+  "REAR-C": 180,
+  "REAR-L": 240,
+};
+
+function ActivityDial({ posterior, sector }: { posterior: number; sector: string | null }) {
+  // Donut arc: stroke-dashoffset proportional to posterior.
+  const r = 95;
+  const circ = 2 * Math.PI * r;
+  const filled = Math.max(0, Math.min(1, posterior));
+  const angle = sector != null ? SECTOR_ANGLE[sector] ?? null : null;
+
+  // sector dot position relative to centre (110, 110) on a 220px viewBox.
+  let dotX = 0;
+  let dotY = 0;
+  if (angle != null) {
+    const rad = (angle - 90) * (Math.PI / 180);
+    dotX = 110 + r * Math.cos(rad);
+    dotY = 110 + r * Math.sin(rad);
+  }
+
+  return (
+    <svg viewBox="0 0 220 220" className={s.dialSvg} aria-hidden="true">
+      <defs>
+        <linearGradient id="ssDialFill" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="var(--accent-soft)" />
+          <stop offset="100%" stopColor="var(--accent-strong)" />
+        </linearGradient>
+        <radialGradient id="ssDialGlow" cx="50%" cy="50%" r="55%">
+          <stop offset="0%" stopColor="var(--accent-strong)" stopOpacity="0.45" />
+          <stop offset="60%" stopColor="var(--accent-strong)" stopOpacity="0.10" />
+          <stop offset="100%" stopColor="var(--accent-strong)" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <circle cx={110} cy={110} r={r} fill="url(#ssDialGlow)" />
+      <circle cx={110} cy={110} r={r} stroke="rgba(255,255,255,0.07)" strokeWidth={2} fill="none" />
+      <circle
+        cx={110}
+        cy={110}
+        r={r}
+        stroke="url(#ssDialFill)"
+        strokeWidth={6}
+        strokeLinecap="round"
+        strokeDasharray={circ}
+        strokeDashoffset={circ * (1 - filled)}
+        transform="rotate(-90 110 110)"
+        fill="none"
+        style={{ transition: "stroke-dashoffset 480ms ease-out" }}
+      />
+      {/* Tick marks every 60° for the 6 sectors */}
+      {[0, 60, 120, 180, 240, 300].map((a) => {
+        const rad = (a - 90) * (Math.PI / 180);
+        const x1 = 110 + (r - 8) * Math.cos(rad);
+        const y1 = 110 + (r - 8) * Math.sin(rad);
+        const x2 = 110 + (r - 2) * Math.cos(rad);
+        const y2 = 110 + (r - 2) * Math.sin(rad);
+        return <line key={a} x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgba(255,255,255,0.18)" strokeWidth={1} />;
+      })}
+      {angle != null && (
+        <>
+          <circle cx={dotX} cy={dotY} r={9} fill="var(--accent-strong)" opacity="0.18" />
+          <circle cx={dotX} cy={dotY} r={5} fill="var(--accent-strong)" />
+        </>
+      )}
+    </svg>
+  );
+}
+
 function relativeTime(now: number, ts: number): string {
   const dt = Math.max(0, Math.floor((now - ts) / 1000));
   if (dt < 5) return "just now";
@@ -92,12 +169,31 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
   const {
     running, busy, posterior, elapsedSeconds, caseId, caseTitle, statusMsg,
     recentIncrements, trustworthy, hasInvestigation, investigationId,
+    audioRms, sectorReading, narratorCaption, narratorSpeak, onToggleNarratorSpeak,
     onBegin, onStop, onMarker, onAskQuestion, emitEvidence,
   } = props;
   const [markSheetOpen, setMarkSheetOpen] = useState(false);
   const [latched, setLatched] = useState<string | null>(null);
+  const [spectrum, setSpectrum] = useState<number[]>(() => Array(24).fill(0.04));
 
   const activity = describeActivity(posterior);
+
+  // Cheap spectrum-like animation: shift bars left, push a new sample seeded
+  // on the rolling RMS. Looks alive without needing a real FFT in this layer.
+  useEffect(() => {
+    if (!running) {
+      setSpectrum((prev) => prev.map((v) => v * 0.85 + 0.04 * 0.15));
+      return;
+    }
+    const rmsClamped = Math.max(0.04, Math.min(1, audioRms * 6));
+    setSpectrum((prev) => {
+      const next = prev.slice(1);
+      // Wide spread: a fundamental + harmonics with random jitter so it looks like a live spectrum.
+      const noise = (Math.random() - 0.5) * 0.12;
+      next.push(Math.max(0.04, Math.min(1, rmsClamped + noise)));
+      return next;
+    });
+  }, [audioRms, running]);
 
   const handleContamination = useCallback(async (opt: ContaminationOpt) => {
     if (!investigationId || !running) return;
@@ -133,7 +229,7 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
 
   return (
     <section className={s.wrap}>
-      {/* ACTIVITY CARD */}
+      {/* ACTIVITY CARD — animated aurora hero */}
       <div className={`${s.card} ${s[`band_${activity.id}`]}`}>
         <div className={s.cardTopRow}>
           <span className={`${s.statusPill} ${running ? s.statusPillActive : ""}`.trim()}>
@@ -144,23 +240,45 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
           {caseId && <span className={s.caseId}>{caseId.slice(0, 8).toUpperCase()}</span>}
         </div>
 
-        <div className={s.activityHead}>{caseTitle ?? "Tap Begin to start"}</div>
-        <div className={s.activityLabel}>{activity.label}</div>
-        <div className={s.gauge} aria-hidden="true">
-          <div className={s.gaugeTrack}>
-            <span className={s.gaugeFill} style={{ width: `${Math.round(posterior * 100)}%` }} />
+        {caseTitle && <div className={s.caseTitleLabel}>{caseTitle}</div>}
+
+        <div className={`${s.dial} ${activity.id === "calm" ? s.dialQuiet : ""}`.trim()}>
+          <span className={s.dialRingPulse} aria-hidden="true" />
+          <span className={s.dialRingPulse2} aria-hidden="true" />
+          <ActivityDial posterior={posterior} sector={sectorReading?.sector ?? null} />
+          <div className={s.dialLabel}>
+            <span className={s.activityHead}>ACTIVITY</span>
+            <span className={s.activityLabel}>{activity.label}</span>
           </div>
         </div>
+
         <div className={s.activityHint}>{activity.hint}</div>
 
-        <div className={s.timer}>{formatHMS(elapsedSeconds)}</div>
-        <div className={s.timerLabel}>SESSION TIME</div>
+        <div className={s.spectrum} aria-hidden="true">
+          {spectrum.map((v, i) => (
+            <span key={i} style={{ height: `${Math.max(8, v * 100)}%` }} />
+          ))}
+        </div>
+
+        <div className={s.timerRow}>
+          <span className={s.timer}>{formatHMS(elapsedSeconds)}</span>
+          <span className={s.timerLabel}>SESSION TIME</span>
+        </div>
+
+        {running && (
+          <span className={s.listeningRow}>
+            <span className={s.listenDot} />
+            <span className={s.listenDot} />
+            <span className={s.listenDot} />
+            Listening to room
+          </span>
+        )}
 
         <p className={s.statusMsg}>{statusMsg}</p>
 
         {!trustworthy && running && (
           <p className={s.calibrationNudge}>
-            Tip: switch to Pro mode to run the 3-of-3 calibration check before trusting direction readings.
+            Tip: Pro mode runs a 3-of-3 calibration before trusting direction readings.
           </p>
         )}
 
@@ -172,6 +290,25 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
           width={36}
           height={36}
         />
+      </div>
+
+      {/* AI CO-INVESTIGATOR — live narration + speech toggle */}
+      <div className={`${s.narrator} ${narratorCaption ? s.narratorActive : ""}`.trim()}>
+        <div className={s.narratorHead}>
+          <span className={s.narratorEyebrow}>AI CO-INVESTIGATOR</span>
+          <button
+            type="button"
+            className={`${s.narratorSpeak} ${narratorSpeak ? s.narratorSpeakOn : ""}`.trim()}
+            onClick={() => onToggleNarratorSpeak(!narratorSpeak)}
+            aria-pressed={narratorSpeak}
+          >
+            <span className={s.narratorSpeakDot} aria-hidden="true" />
+            {narratorSpeak ? "Speaking" : "Mute"}
+          </button>
+        </div>
+        <p className={s.narratorBody}>
+          {narratorCaption ?? (running ? "Watching the room. I'll narrate what I see." : "Ready when you are. Begin a session and I'll start watching.")}
+        </p>
       </div>
 
       {/* PRIMARY CALL TO ACTION */}
