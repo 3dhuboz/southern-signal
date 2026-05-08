@@ -13,7 +13,7 @@ const DB_NAME = "ss-keys";
 const STORE = "keys";
 const DB_VERSION = 1;
 
-type Provider = "anthropic" | "openai" | "gemini";
+type Provider = "anthropic" | "openai" | "gemini" | "openrouter";
 
 interface KeyRecord {
   provider: Provider;

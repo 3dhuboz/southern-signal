@@ -42,7 +42,8 @@ export function CameraCapture({ investigationId, running }: CameraCaptureProps) 
   const motionTimerRef = useRef<number | null>(null);
   const lastMotionSnapTsRef = useRef<number>(0);
 
-  const [streamOn, setStreamOn] = useState(false);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const streamOn = stream != null;
   const [busy, setBusy] = useState(false);
   const [boost, setBoost] = useState(false);
   const [motionMode, setMotionMode] = useState(false);
@@ -51,42 +52,63 @@ export function CameraCapture({ investigationId, running }: CameraCaptureProps) 
   const [photoCount, setPhotoCount] = useState(0);
 
   const start = useCallback(async () => {
-    if (streamOn || busy) return;
+    if (stream || busy) return;
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setError("This browser doesn't expose a camera API. HTTPS is required.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-        audio: false,
-      });
-      const v = videoRef.current;
-      if (!v) {
-        stream.getTracks().forEach((t) => t.stop());
-        return;
+      let s: MediaStream;
+      try {
+        s = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+          audio: false,
+        });
+      } catch {
+        s = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       }
-      v.srcObject = stream;
-      await v.play();
-      setStreamOn(true);
+      setStream(s);
     } catch (err) {
-      setError((err as Error).message || "Camera unavailable");
+      const e = err as Error & { name?: string };
+      console.error("CameraCapture getUserMedia failed:", e);
+      const msg =
+        e.name === "NotAllowedError" ? "Camera permission was denied. Allow camera access in your browser settings."
+        : e.name === "NotFoundError" ? "No camera found on this device."
+        : e.name === "NotReadableError" ? "Camera is busy in another app or tab."
+        : (e.message || "Camera unavailable");
+      setError(msg);
     } finally {
       setBusy(false);
     }
-  }, [streamOn, busy]);
+  }, [stream, busy]);
 
   const stop = useCallback(() => {
-    const v = videoRef.current;
-    const stream = (v?.srcObject as MediaStream | null);
     if (stream) stream.getTracks().forEach((t) => t.stop());
+    const v = videoRef.current;
     if (v) v.srcObject = null;
-    setStreamOn(false);
+    setStream(null);
     setMotionMode(false);
     if (motionTimerRef.current != null) {
       window.clearInterval(motionTimerRef.current);
       motionTimerRef.current = null;
     }
     motionPrevRef.current = null;
-  }, []);
+  }, [stream]);
+
+  // Attach stream once video element mounts.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !stream) return;
+    v.srcObject = stream;
+    const playPromise = v.play();
+    if (playPromise && typeof playPromise.catch === "function") {
+      playPromise.catch((err) => {
+        console.warn("CameraCapture video.play() rejected:", err);
+      });
+    }
+  }, [stream]);
 
   const captureFrameBlob = useCallback(async (): Promise<{ blob: Blob; thumbDataUrl: string } | null> => {
     const v = videoRef.current;

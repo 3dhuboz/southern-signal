@@ -1,25 +1,26 @@
 /**
- * Cloud AI router (Step 10 — V1 implementation: Anthropic only).
+ * Cloud AI router.
  *
- * Privacy guardrails (decided 2026-05-08, enforced here, NOT at the UI):
- *   - Disabled by default. User-supplied keys live in IndexedDB (keyStore.ts).
- *   - Hard-coded refusal at this layer for any case flagged
- *     `culturallySensitive: true`.
- *   - Hard-coded refusal when the global culturalSensitivity preference flag
- *     is on for this device.
- *   - User key flows through `dangerouslyAllowBrowser: true` — appropriate
- *     because the key is the user's own (their billing, their account).
- *   - Prompt caching is applied to the system prompt so repeated turns
- *     within a session benefit from the cache discount.
+ * Architecture (2026-05-09): the operator wires AI in via a server-side
+ * Cloudflare Pages Function at /api/ai/chat that proxies to OpenRouter.
+ * The OPENROUTER_API_KEY lives as a Pages environment secret — end users
+ * never see it. This is the default, recommended, and only-visible path.
  *
- * V1.1 lands OpenAI + Gemini providers behind the same router.
+ * BYOK is preserved as a developer escape hatch (Anthropic SDK path) for
+ * local hacking when no proxy is reachable.
+ *
+ * Privacy guardrails (still enforced here, NOT at the UI):
+ *   - Hard-coded refusal for any case flagged `culturallySensitive: true`.
+ *   - Hard-coded refusal when the global culturalSensitivity flag is on.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getApiKey } from "./keyStore";
 import { getPreferences } from "../preferences";
 
-export type CloudProvider = "anthropic" | "openai" | "gemini";
+export type CloudProvider = "anthropic" | "openai" | "gemini" | "openrouter" | "proxy";
+
+const PROXY_PATH = "/api/ai/chat";
 
 export interface CloudCallContext {
   /** Investigation ID. */
@@ -53,10 +54,62 @@ export async function ensureRoutable(ctx: CloudCallContext): Promise<void> {
   }
 }
 
-async function getAnthropic(): Promise<Anthropic> {
+async function callProxy(opts: { system: string; user: string; maxTokens?: number; temperature?: number; model?: string }): Promise<string | null> {
+  try {
+    const resp = await fetch(PROXY_PATH, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        system: opts.system,
+        user: opts.user,
+        max_tokens: opts.maxTokens,
+        temperature: opts.temperature,
+        model: opts.model,
+      }),
+    });
+    if (resp.status === 503) {
+      // Proxy is reachable but not configured — fall through to BYOK.
+      return null;
+    }
+    if (!resp.ok) {
+      const detail = await resp.text().catch(() => "");
+      throw new Error(`AI proxy ${resp.status}: ${detail.slice(0, 240)}`);
+    }
+    const data = await resp.json() as { text?: string };
+    if (!data.text) throw new Error("Proxy returned no text.");
+    return data.text;
+  } catch (err) {
+    // Network error → fall through to BYOK if configured. Re-throw real errors.
+    if (err instanceof TypeError) return null;
+    throw err;
+  }
+}
+
+async function callAnthropicBYOK(opts: { system: string; user: string; maxTokens?: number }): Promise<string> {
   const apiKey = await getApiKey("anthropic");
   if (!apiKey) throw new CloudKeyMissingError("anthropic");
-  return new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+  const prefs = getPreferences();
+  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+  const response = await client.messages.create({
+    model: prefs.ai.anthropicModel,
+    max_tokens: opts.maxTokens ?? 768,
+    system: [{ type: "text", text: opts.system, cache_control: { type: "ephemeral" } }],
+    messages: [{ role: "user", content: opts.user }],
+  });
+  return response.content
+    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("");
+}
+
+/**
+ * Provider-agnostic chat runner. Returns the assistant's text body.
+ * Order: server proxy (default) → Anthropic BYOK (dev fallback).
+ */
+async function runChat(opts: { system: string; user: string; maxTokens?: number; temperature?: number }): Promise<string> {
+  const proxied = await callProxy(opts);
+  if (proxied != null) return proxied;
+  return callAnthropicBYOK(opts);
 }
 
 const QUESTION_SYSTEM_PROMPT = `You are a thoughtful, respectful research assistant for a paranormal investigator.
@@ -87,8 +140,6 @@ export async function generateQuestions(
   ctx: CloudCallContext,
 ): Promise<string[]> {
   await ensureRoutable(ctx);
-  const client = await getAnthropic();
-  const prefs = getPreferences();
   const userPrompt = [
     context.siteContext ? `Site context: ${context.siteContext}` : "No site context provided.",
     context.tone ? `Preferred tone: ${context.tone}.` : "",
@@ -98,23 +149,12 @@ export async function generateQuestions(
     "Suggest 5 fresh questions.",
   ].filter(Boolean).join("\n\n");
 
-  const response = await client.messages.create({
-    model: prefs.ai.anthropicModel,
-    max_tokens: 512,
-    system: [
-      {
-        type: "text",
-        text: QUESTION_SYSTEM_PROMPT,
-        cache_control: { type: "ephemeral" },
-      },
-    ],
-    messages: [{ role: "user", content: userPrompt }],
+  const text = await runChat({
+    system: QUESTION_SYSTEM_PROMPT,
+    user: userPrompt,
+    maxTokens: 512,
+    temperature: 0.85,
   });
-
-  const text = response.content
-    .filter((b): b is Anthropic.TextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("");
   return parseJsonArray(text);
 }
 
@@ -129,8 +169,6 @@ export async function autoDebunk(
   ctx: CloudCallContext,
 ): Promise<DebunkResult[]> {
   await ensureRoutable(ctx);
-  const client = await getAnthropic();
-  const prefs = getPreferences();
 
   const userPrompt = [
     `Event: ${input.eventTitle}`,
@@ -142,19 +180,12 @@ export async function autoDebunk(
     "List mundane explanations to rule out.",
   ].filter(Boolean).join("\n\n");
 
-  const response = await client.messages.create({
-    model: prefs.ai.anthropicModel,
-    max_tokens: 1024,
-    system: [
-      { type: "text", text: DEBUNKER_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
-    ],
-    messages: [{ role: "user", content: userPrompt }],
+  const text = await runChat({
+    system: DEBUNKER_SYSTEM_PROMPT,
+    user: userPrompt,
+    maxTokens: 1024,
+    temperature: 0.6,
   });
-
-  const text = response.content
-    .filter((b): b is Anthropic.TextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("");
   return parseJsonArray<DebunkResult>(text);
 }
 

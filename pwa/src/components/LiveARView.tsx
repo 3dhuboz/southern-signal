@@ -53,7 +53,8 @@ export function LiveARView({ investigationId, running, posterior, audioRms, sect
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const lastAutoSnapRef = useRef<number>(0);
 
-  const [streamOn, setStreamOn] = useState(false);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const streamOn = stream != null;
   const [busy, setBusy] = useState(false);
   const [boost, setBoost] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,36 +65,61 @@ export function LiveARView({ investigationId, running, posterior, audioRms, sect
   const activity = describeActivity(posterior);
 
   const start = useCallback(async () => {
-    if (streamOn || busy) return;
+    if (stream || busy) return;
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setError("This browser doesn't expose a camera API. HTTPS is required.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-        audio: false,
-      });
-      const v = videoRef.current;
-      if (!v) {
-        stream.getTracks().forEach((t) => t.stop());
-        return;
+      let s: MediaStream;
+      try {
+        // Prefer rear camera at high res.
+        s = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+          audio: false,
+        });
+      } catch {
+        // Fallback: any camera, any size (desktops, laptops).
+        s = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       }
-      v.srcObject = stream;
-      await v.play();
-      setStreamOn(true);
+      setStream(s);
     } catch (err) {
-      setError((err as Error).message || "Camera unavailable");
+      const e = err as Error & { name?: string };
+      console.error("LiveARView getUserMedia failed:", e);
+      const msg =
+        e.name === "NotAllowedError" ? "Camera permission was denied. Allow camera access in your browser settings."
+        : e.name === "NotFoundError" ? "No camera found on this device."
+        : e.name === "NotReadableError" ? "Camera is busy in another app or tab."
+        : (e.message || "Camera unavailable");
+      setError(msg);
     } finally {
       setBusy(false);
     }
-  }, [streamOn, busy]);
+  }, [stream, busy]);
 
   const stop = useCallback(() => {
-    const v = videoRef.current;
-    const stream = (v?.srcObject as MediaStream | null);
     if (stream) stream.getTracks().forEach((t) => t.stop());
+    const v = videoRef.current;
     if (v) v.srcObject = null;
-    setStreamOn(false);
-  }, []);
+    setStream(null);
+  }, [stream]);
+
+  // Attach stream to video once both exist. Order-independent — the video
+  // element only mounts when streamOn flips true after stream is set.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !stream) return;
+    v.srcObject = stream;
+    const playPromise = v.play();
+    if (playPromise && typeof playPromise.catch === "function") {
+      playPromise.catch((err) => {
+        console.warn("LiveARView video.play() rejected:", err);
+        setError("Playback couldn't start. Tap the camera again.");
+      });
+    }
+  }, [stream]);
 
   const captureBlob = useCallback(async (): Promise<{ blob: Blob; thumb: string } | null> => {
     const v = videoRef.current;

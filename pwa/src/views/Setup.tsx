@@ -1,43 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { applyTheme, usePreferences } from "../lib/preferences";
-import { deleteApiKey, listProvidersWithKeys, setApiKey } from "../lib/ai/keyStore";
 import s from "./View.module.css";
 import st from "./Setup.module.css";
 
 export function Setup() {
   const [prefs, setPrefs] = usePreferences();
-  const [providersWithKeys, setProvidersWithKeys] = useState<string[]>([]);
-  const [anthropicKeyInput, setAnthropicKeyInput] = useState("");
-  const [keyMessage, setKeyMessage] = useState<string | null>(null);
-  const [keyHasSecret, setKeyHasSecret] = useState(false);
 
-  useEffect(() => {
-    void listProvidersWithKeys().then((list) => {
-      setProvidersWithKeys(list);
-      setKeyHasSecret(list.includes("anthropic"));
-    });
-  }, []);
-
-  const saveKey = async () => {
-    try {
-      await setApiKey("anthropic", anthropicKeyInput);
-      setAnthropicKeyInput("");
-      setKeyMessage("Key saved.");
-      setKeyHasSecret(true);
-      setProvidersWithKeys(await listProvidersWithKeys());
-      setPrefs({ ai: { ...prefs.ai, provider: "anthropic" } });
-    } catch (err) {
-      setKeyMessage((err as Error).message);
-    }
-  };
-
-  const removeKey = async () => {
-    await deleteApiKey("anthropic");
-    setKeyHasSecret(false);
-    setProvidersWithKeys(await listProvidersWithKeys());
-    setKeyMessage("Key removed.");
-    if (prefs.ai.provider === "anthropic") setPrefs({ ai: { ...prefs.ai, provider: null } });
-  };
+  useEffect(() => { /* no key listing needed — AI is server-side */ }, []);
 
   return (
     <section className={s.view}>
@@ -77,53 +46,6 @@ export function Setup() {
         </div>
       </section>
 
-      {/* AI assistance */}
-      <section className={st.panel}>
-        <header className={st.panelHeader}>
-          <h2 className={st.panelTitle}>AI assistance</h2>
-          <span className={st.panelBadge}>{keyHasSecret ? "Key on file" : "No key"}</span>
-        </header>
-        <p className={st.panelLede}>
-          Bring your own Anthropic API key. We never see it; it stays in this device's encrypted IndexedDB. Used for question generation, mundane-cause hypothesis testing, and report drafting.
-        </p>
-        <div className={st.field}>
-          <label htmlFor="anthropic-key" className={st.fieldLabel}>Anthropic API key</label>
-          <input
-            id="anthropic-key"
-            type="password"
-            placeholder={keyHasSecret ? "•••••••••••••• (replace)" : "sk-ant-..."}
-            className={st.input}
-            value={anthropicKeyInput}
-            onChange={(e) => setAnthropicKeyInput(e.target.value)}
-            autoComplete="off"
-            spellCheck={false}
-          />
-        </div>
-        <div className={st.actionsRow}>
-          <button type="button" className={st.primary} onClick={saveKey} disabled={!anthropicKeyInput.trim()}>Save key</button>
-          {keyHasSecret && (
-            <button type="button" className={st.danger} onClick={removeKey}>Remove key</button>
-          )}
-        </div>
-        {keyMessage && <p className={st.statusLine}>{keyMessage}</p>}
-
-        <div className={st.fieldRow}>
-          <span className={st.fieldLabel}>Default model</span>
-          <select
-            className={st.input}
-            value={prefs.ai.anthropicModel}
-            onChange={(e) => setPrefs({ ai: { ...prefs.ai, anthropicModel: e.target.value } })}
-          >
-            <option value="claude-haiku-4-5">Haiku 4.5 — fastest, cheapest</option>
-            <option value="claude-sonnet-4-6">Sonnet 4.6 — recommended</option>
-            <option value="claude-opus-4-7">Opus 4.7 — deep reasoning</option>
-          </select>
-        </div>
-
-        <p className={st.privacyNote}>
-          AI calls are routed off-device only when you opt in per case AND the case is not flagged culturally sensitive. Audio is never sent to AI providers in V1.
-        </p>
-      </section>
 
       {/* Privacy */}
       <section className={st.panel}>
@@ -165,9 +87,6 @@ export function Setup() {
         )}
       </section>
 
-      <p className={st.footerNote}>
-        Key providers configured: {providersWithKeys.length === 0 ? "none" : providersWithKeys.join(", ")}.
-      </p>
     </section>
   );
 }

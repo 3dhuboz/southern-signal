@@ -28,11 +28,13 @@ export interface AppPreferences {
     statement: string | null;
   };
   ai: {
-    provider: "anthropic" | "openai" | "gemini" | null;
+    provider: "anthropic" | "openai" | "gemini" | "openrouter" | null;
     /** Hard-coded refusal of cloud AI for cases flagged sensitive — defended in cloudAi.ts. */
     blockOnSensitive: true;
     /** Default model per provider. */
     anthropicModel: string;
+    /** Default OpenRouter model (slug like "anthropic/claude-sonnet-4.6"). */
+    openrouterModel: string;
   };
   /** Investigators tag the current site as culturally sensitive — disables ALL cloud AI for this device's cases until untoggled. */
   globalCulturalSensitivityFlag: boolean;
@@ -44,7 +46,7 @@ const DEFAULTS: AppPreferences = {
   scotopicAutoEngage: true,
   experienceMode: "simple",
   acknowledgementOfCountry: { accepted: false, acceptedAt: null, statement: null },
-  ai: { provider: null, blockOnSensitive: true, anthropicModel: "claude-sonnet-4-6" },
+  ai: { provider: null, blockOnSensitive: true, anthropicModel: "claude-sonnet-4-6", openrouterModel: "anthropic/claude-sonnet-4.6" },
   globalCulturalSensitivityFlag: false,
 };
 
