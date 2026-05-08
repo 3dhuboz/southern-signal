@@ -22,6 +22,23 @@
   min-width: 0;
 }
 
+.partnerLogo {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  object-fit: contain;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.partnerDivider {
+  width: 1px;
+  height: 18px;
+  background: var(--border-default);
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
 .mark {
   width: 22px;
   height: 22px;

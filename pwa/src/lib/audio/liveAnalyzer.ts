@@ -12,6 +12,7 @@
 
 import { ASI_CONSTANTS, aggregateSector, processFrame, type SectorReading } from "./sectorIndicator";
 import { applyHann, bandCrossSpectrum, fft, hzToBin } from "./fft";
+import { InfrasoundDetector, type InfrasoundDetection } from "./infrasound";
 
 const PHONE_MIC_SPACING_MM = 146; // iPhone 14 default; Pixel 8 ~10 mm — caller can override.
 
@@ -28,6 +29,8 @@ export interface AnalyzerEvents {
   onAcousticTransient: (reading: SectorReading, rms: number, frameTs: number) => void;
   /** Fires every frame with rolling RMS for the EvidenceLedger. */
   onLevel: (rms: number) => void;
+  /** Fires when the AGC-envelope infrasound detector finds a sustained 7-19 Hz peak. */
+  onInfrasound: (detection: InfrasoundDetection) => void;
   /** Surface fatal errors (worklet load, getUserMedia, etc.) */
   onError: (err: Error) => void;
 }
@@ -45,6 +48,7 @@ export class LiveAnalyzer {
   private internals: AnalyzerInternals | null = null;
   private rollingRms = 0;
   private rmsAlpha = 0.05; // ~ first-order smoother
+  private infrasound: InfrasoundDetector;
 
   constructor(events: AnalyzerEvents, options: LiveAnalyzerOptions = {}) {
     this.events = events;
@@ -52,6 +56,7 @@ export class LiveAnalyzer {
       micSpacingMm: options.micSpacingMm ?? PHONE_MIC_SPACING_MM,
       transientThreshold: options.transientThreshold ?? 0.18,
     };
+    this.infrasound = new InfrasoundDetector();
   }
 
   async start(): Promise<void> {
@@ -113,6 +118,10 @@ export class LiveAnalyzer {
     const rms = Math.sqrt(sumSq / left.length);
     this.rollingRms = this.rollingRms + this.rmsAlpha * (rms - this.rollingRms);
     this.events.onLevel(rms);
+
+    // Infrasound detector (AGC envelope reconstruction).
+    const detection = this.infrasound.pushFrameRms(rms, frameTs);
+    if (detection) this.events.onInfrasound(detection);
 
     // Run FFT on both channels.
     const lImag = new Float32Array(left.length);

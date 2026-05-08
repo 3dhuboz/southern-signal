@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AcousticSectorIndicator } from "../components/AcousticSectorIndicator";
+import { AiAssistant } from "../components/AiAssistant";
 import { EvidenceLedger, type LedgerStream } from "../components/EvidenceLedger";
 import { OvilusTool } from "../components/OvilusTool";
 import { PosteriorBar } from "../components/PosteriorBar";
@@ -19,6 +20,7 @@ import { ensureTodayInvestigation } from "../lib/bootstrap";
 import { recordEvent, startInvestigation, stopInvestigation } from "../lib/db/repo";
 import {
   emitAcousticTransient,
+  emitInfrasoundPulse,
   emitMagnetometerAnomaly,
   emitTemporalCoupling,
 } from "../lib/posterior/likelihoods";
@@ -92,7 +94,7 @@ export function MissionControl() {
 
   // ----- Sensor anomaly → likelihood emission → posterior update -----
 
-  const lastEmissionTsRef = useRef<{ acoustic: number | null; magnetometer: number | null }>({ acoustic: null, magnetometer: null });
+  const lastEmissionTsRef = useRef<{ acoustic: number | null; magnetometer: number | null; infrasound: number | null }>({ acoustic: null, magnetometer: null, infrasound: null });
 
   const emitEvidence = useCallback(async (input: Parameters<typeof applyAndAudit>[1]) => {
     const result = await applyAndAudit(siteSession, input);
@@ -170,6 +172,7 @@ export function MissionControl() {
           isFirstInWindow: true,
         });
         if (!evidence) return;
+        lastEmissionTsRef.current.acoustic = now;
         void emitEvidence({
           channel: evidence.channel,
           logLr: evidence.logLr,
@@ -177,6 +180,32 @@ export function MissionControl() {
           metadata: evidence.metadata,
           nowMs: now,
         });
+      },
+      onInfrasound: (detection) => {
+        const now = Date.now();
+        const evidence = emitInfrasoundPulse({
+          peakHz: detection.peakHz,
+          durationSeconds: detection.durationSeconds,
+          envelopeDb: detection.envelopeDb,
+          baselineEnvelopeDb: detection.baselineEnvelopeDb,
+        });
+        if (!evidence) return;
+        lastEmissionTsRef.current.infrasound = now;
+        void emitEvidence({
+          channel: evidence.channel,
+          logLr: evidence.logLr,
+          reason: evidence.reason,
+          metadata: evidence.metadata,
+          nowMs: now,
+        });
+        // Cross-channel coupling check (acoustic + infrasound).
+        const tA = lastEmissionTsRef.current.acoustic;
+        if (tA && Math.abs(now - tA) <= 200) {
+          const coupling = emitTemporalCoupling({ channels: ["acoustic", "infrasound"], deltaMs: Math.abs(now - tA) });
+          if (coupling) {
+            void emitEvidence({ channel: coupling.channel, logLr: coupling.logLr, reason: coupling.reason, metadata: coupling.metadata, nowMs: now });
+          }
+        }
       },
       onError: (err) => {
         setStatusMsg(`Audio analyzer error: ${err.message}`);
@@ -292,6 +321,14 @@ export function MissionControl() {
             <p className={m.heroSub}>{statusMsg}</p>
             <div className={m.heroTimer}>{formatHMS(elapsedSeconds)}</div>
             <div className={m.heroTimerLabel}>ELAPSED</div>
+            <img
+              className={m.heroPartnerWatermark}
+              src="/yep-boys-logo.svg"
+              alt=""
+              aria-hidden="true"
+              width={40}
+              height={40}
+            />
           </div>
           <AcousticSectorIndicator reading={sectorReading} trustworthy={trustworthy} />
         </div>
@@ -360,6 +397,15 @@ export function MissionControl() {
           )}
         </div>
       </div>
+
+      {/* AI ASSIST — question generator + auto-debunker */}
+      <AiAssistant
+        investigationId={session.current?.id ?? null}
+        posterior={posterior}
+        recentIncrements={siteSession.recentIncrements}
+        siteContext={session.current?.location_name ? `Location: ${session.current.location_name}.` : ""}
+        culturallySensitive={false}
+      />
 
       {/* ITC TOOLS */}
       <SpiritBoxTool entropy={sensors.snapshot.magnetometer?.magnitude ?? sensors.snapshot.motion?.accelMagnitude ?? 0} />

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { AcknowledgementGate } from "./components/AcknowledgementGate";
 import { AppHeader } from "./components/AppHeader";
 import { BottomNav } from "./components/BottomNav";
 import { MissionControl } from "./views/MissionControl";
@@ -27,6 +28,7 @@ export default function App() {
         </Routes>
       </main>
       <BottomNav />
+      <AcknowledgementGate />
     </BrowserRouter>
   );
 }

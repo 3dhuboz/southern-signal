@@ -33,6 +33,18 @@
   background: linear-gradient(90deg, transparent, var(--signal-dim), transparent);
 }
 
+.heroPartnerWatermark {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  opacity: 0.55;
+  pointer-events: none;
+  filter: saturate(0.85);
+}
+
 .heroTopRow {
   width: 100%;
   display: flex;

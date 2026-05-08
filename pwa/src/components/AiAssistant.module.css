@@ -1,0 +1,184 @@
+.wrap {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  padding: var(--s-14);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-12);
+}
+
+.head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.eyebrow {
+  font-size: 10px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--signal);
+  font-weight: 700;
+}
+
+.note {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.actions {
+  display: flex;
+  gap: var(--s-8);
+  flex-wrap: wrap;
+}
+
+.actionPrimary, .action {
+  flex: 1;
+  min-width: 160px;
+  padding: 10px 14px;
+  border-radius: var(--r-md);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px solid;
+  font-family: inherit;
+  min-height: 44px;
+}
+.actionPrimary {
+  background: var(--signal);
+  color: var(--text-on-accent);
+  border-color: var(--signal);
+}
+.actionPrimary:hover { background: var(--signal-glow); }
+.actionPrimary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.action {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+.action:hover { background: var(--bg-overlay); border-color: var(--border-strong); }
+.action:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.error {
+  font-size: 12px;
+  color: var(--danger);
+  background: var(--danger-wash);
+  border: 1px solid var(--danger);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-8);
+}
+
+.questionRow {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.questionRow:hover {
+  border-color: var(--signal-dim);
+  background: var(--bg-overlay);
+}
+
+.questionMark {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  color: var(--signal);
+  line-height: 0.5;
+}
+
+.questionText {
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.questionAction {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--signal);
+  font-weight: 700;
+}
+
+.debunkRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+}
+
+.debunkHeader {
+  position: relative;
+  height: 6px;
+  background: var(--bg-inset);
+  border-radius: var(--r-full);
+  overflow: visible;
+}
+
+.debunkBar {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--warning), var(--danger));
+  border-radius: var(--r-full);
+  transition: width 240ms ease-out;
+}
+
+.debunkPlaus {
+  position: absolute;
+  right: 0;
+  top: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.debunkHypothesis {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+.debunkTest {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.debunkTest strong {
+  color: var(--signal);
+  font-weight: 600;
+}
+
+.disclaimer {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin: 0;
+  line-height: 1.5;
+  font-style: italic;
+}
