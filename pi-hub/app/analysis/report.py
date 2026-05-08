@@ -3,8 +3,14 @@ from __future__ import annotations
 from typing import Any
 
 from app.analysis.anomalies import detect_sensor_anomalies
+from app.analysis.blind_review import compute_blind_review_agreement
+from app.analysis.calibration import (
+    calibration_ok as _calibration_ok,
+    load_calibration,
+)
 from app.analysis.review_windows import build_review_windows
 from app.analysis.scoring import score_evidence
+from app.interference import has_acceptable_interference, load_interference_responses
 from app.store import InvestigationStore
 
 
@@ -15,15 +21,48 @@ def build_evidence_report(store: InvestigationStore, investigation_id: str) -> d
     media = store.list_media_assets(investigation_id)
     anomalies = detect_sensor_anomalies(samples)
     review_windows = build_review_windows(anomalies, events, media)
+
+    calibration_record = load_calibration(store.sessions_dir, investigation_id)
+    calibration_passed = _calibration_ok(store.sessions_dir, investigation_id)
+
+    interference_record = load_interference_responses(
+        store.sessions_dir, investigation_id
+    )
+    interference_passed = has_acceptable_interference(
+        store.sessions_dir, investigation_id
+    )
+    interference_score: int | None
+    if interference_record is None:
+        interference_score = None
+    else:
+        computed = interference_record.get("computed") or {}
+        raw_score = computed.get("score")
+        if raw_score is None:
+            interference_score = None
+        else:
+            try:
+                interference_score = int(raw_score)
+            except (TypeError, ValueError):
+                interference_score = None
+
+    blind_review_agreement = compute_blind_review_agreement(
+        store, store.sessions_dir, investigation_id
+    )
+    blind_reviewer_agreement_count = int(
+        blind_review_agreement.get("blind_reviewer_agreement_count", 0) or 0
+    )
+
     confidence = score_evidence(
         {
             "audio_spike": _has_audio_signal(anomalies),
             "sensor_correlation_count": len({anomaly["sensor_type"] for anomaly in anomalies}),
             "media_support": bool(media),
             "unattended_room": _mentions(events, "unattended"),
-            "blind_reviewer_agreement_count": 0,
+            "blind_reviewer_agreement_count": blind_reviewer_agreement_count,
             "contamination_count": _contamination_count(events),
-            "calibration_ok": _mentions(events, "calibration passed") or bool(samples),
+            "calibration_ok": calibration_passed,
+            "interference_ok": interference_passed,
+            "interference_score": interference_score,
             "sync_confidence": 0.85 if samples and media else 0.6 if samples else 0.0,
         }
     )
@@ -42,6 +81,9 @@ def build_evidence_report(store: InvestigationStore, investigation_id: str) -> d
         "confidence": confidence,
         "review_windows": review_windows,
         "review_next_steps": _next_steps(anomalies, media),
+        "calibration": calibration_record,
+        "interference": interference_record,
+        "blind_review_agreement": blind_review_agreement,
     }
 
 

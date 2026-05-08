@@ -270,7 +270,7 @@ function setHealth(label, cls) {
 
 async function refreshAppState() {
   const state = await api("/api/app-state", { quiet: true });
-  const providerLabel = pickFriendlyProviderLabel(state, cachedHardware);
+  const providerLabel = pickFriendlyProviderLabel(state, cachedHardware).replace(/\s*mode\s*$/i, "");
   const html = `
     <div>
       <strong>${escapeHtml(state.app_version)}</strong>

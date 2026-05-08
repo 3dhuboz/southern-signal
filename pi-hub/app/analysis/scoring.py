@@ -20,6 +20,16 @@ def score_evidence(context: dict[str, Any]) -> dict[str, Any]:
     )
     contamination_count = _non_negative_int(context.get("contamination_count", 0))
     calibration_ok = bool(context.get("calibration_ok", False))
+    interference_ok = bool(context.get("interference_ok", False))
+    interference_score_raw = context.get("interference_score")
+    interference_score: int | None
+    if interference_score_raw is None:
+        interference_score = None
+    else:
+        try:
+            interference_score = int(interference_score_raw)
+        except (TypeError, ValueError):
+            interference_score = None
     sync_confidence = _clamp_float(context.get("sync_confidence", 0.0), 0.0, 1.0)
 
     score = 0
@@ -75,6 +85,18 @@ def score_evidence(context: dict[str, Any]) -> dict[str, Any]:
         reasons.append("Calibration was missing or failed, reducing confidence.")
     else:
         reasons.append("Calibration checks passed.")
+
+    if interference_score is not None:
+        if interference_ok:
+            score += 15
+            reasons.append(
+                f"Interference checklist passed (score: {interference_score}/100)"
+            )
+        else:
+            score -= 15
+            reasons.append(
+                f"Interference checklist below threshold (score: {interference_score}/100)"
+            )
 
     if sync_confidence < 0.5:
         score -= 15

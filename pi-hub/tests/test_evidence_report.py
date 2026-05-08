@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from app.analysis.calibration import save_calibration
 from app.analysis.report import build_evidence_report
 from app.store import InvestigationStore
 
@@ -52,6 +53,26 @@ class EvidenceReportTests(unittest.TestCase):
                     unit="uT",
                     timestamp=f"2026-05-07T10:00:{index:02d}+00:00",
                 )
+            save_calibration(
+                store.sessions_dir,
+                investigation["id"],
+                {
+                    "started_at": "2026-05-07T09:00:00+00:00",
+                    "ended_at": "2026-05-07T09:00:59+00:00",
+                    "duration_seconds": 59.0,
+                    "sample_count": 60,
+                    "sensors": {
+                        "mock_magnetometer": {
+                            "count": 60,
+                            "mean": 45.0,
+                            "stdev": 0.1,
+                            "min": 44.8,
+                            "max": 45.2,
+                            "unit": "uT",
+                        }
+                    },
+                },
+            )
             before = build_evidence_report(store, investigation["id"])
             store.add_event(
                 investigation_id=investigation["id"],
