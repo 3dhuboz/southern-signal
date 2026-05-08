@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AcousticSectorIndicator } from "../components/AcousticSectorIndicator";
 import { AiAssistant } from "../components/AiAssistant";
+import { ContaminationMarker } from "../components/ContaminationMarker";
 import { EvidenceLedger, type LedgerStream } from "../components/EvidenceLedger";
 import { OvilusTool } from "../components/OvilusTool";
 import { PosteriorBar } from "../components/PosteriorBar";
@@ -397,6 +398,13 @@ export function MissionControl() {
           )}
         </div>
       </div>
+
+      {/* CONTAMINATION MARKERS — quick-tap labels during a live session */}
+      <ContaminationMarker
+        investigationId={session.current?.id ?? null}
+        running={running}
+        emitEvidence={emitEvidence}
+      />
 
       {/* AI ASSIST — question generator + auto-debunker */}
       <AiAssistant
