@@ -45,13 +45,13 @@ const items: NavItem[] = [
     ),
   },
   {
-    to: "/export",
-    label: "Export",
+    to: "/floorplan",
+    label: "Floorplan",
     icon: (
       <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M12 3v12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        <path d="M7 8l5-5 5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-        <path d="M5 19h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        <rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" strokeWidth="1.6" />
+        <path d="M3 12h6M9 12v9M9 12h6M15 12V3M15 12h6" stroke="currentColor" strokeWidth="1.4" />
+        <circle cx="6" cy="17" r="1.6" fill="currentColor" />
       </svg>
     ),
   },

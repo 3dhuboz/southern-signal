@@ -4,7 +4,7 @@ import { BottomNav } from "./components/BottomNav";
 import { MissionControl } from "./views/MissionControl";
 import { Review } from "./views/Review";
 import { Setup } from "./views/Setup";
-import { Export } from "./views/Export";
+import { Floorplan } from "./views/Floorplan";
 import "./styles/global.css";
 
 export default function App() {
@@ -16,7 +16,7 @@ export default function App() {
           <Route path="/" element={<MissionControl />} />
           <Route path="/review" element={<Review />} />
           <Route path="/setup" element={<Setup />} />
-          <Route path="/export" element={<Export />} />
+          <Route path="/floorplan" element={<Floorplan />} />
         </Routes>
       </main>
       <BottomNav />

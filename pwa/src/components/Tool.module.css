@@ -1,0 +1,135 @@
+.tool {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  padding: var(--s-16);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-12);
+}
+
+.toolHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.toolHeaderActions {
+  display: flex;
+  gap: 6px;
+}
+
+.toolEyebrow {
+  font-size: 11px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.toolStart, .toolStop, .toolSecondary {
+  border-radius: var(--r-full);
+  padding: 6px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  font-family: inherit;
+  min-height: 32px;
+}
+.toolStart {
+  background: var(--signal);
+  color: var(--text-on-accent);
+  border-color: var(--signal);
+}
+.toolStart:hover { background: var(--signal-glow); }
+.toolStop {
+  background: var(--danger-wash);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.toolStop:hover { background: rgba(239, 110, 110, 0.18); }
+.toolSecondary {
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  border-color: var(--border-default);
+}
+.toolSecondary:hover { background: var(--bg-overlay); border-color: var(--border-strong); }
+
+.toolDisplay {
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  padding: var(--s-16);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 80px;
+}
+.toolDisplayValue {
+  font-family: var(--font-mono);
+  font-size: 28px;
+  font-weight: 500;
+  color: var(--signal);
+  letter-spacing: -0.5px;
+}
+
+.toolHistory {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 28px;
+}
+.toolHistoryEmpty {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.toolHistoryItem {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 4px 10px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-full);
+  color: var(--text-secondary);
+}
+
+.toolControls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.toolControl {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+.toolControl span:first-child { width: 110px; flex-shrink: 0; }
+.toolControl input[type="range"] {
+  flex: 1;
+  height: 4px;
+}
+.toolControlValue {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-primary);
+  width: 56px;
+  text-align: right;
+  text-transform: none;
+}
+
+.toolNote {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+.toolNote strong { color: var(--text-secondary); font-weight: 600; }

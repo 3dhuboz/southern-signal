@@ -1,0 +1,211 @@
+.hero {
+  background:
+    radial-gradient(180px 90px at 50% 0%, rgba(93, 242, 199, 0.10), transparent 70%),
+    var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-xl);
+  padding: var(--s-20);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-12);
+}
+.hero::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 8%; right: 8%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--signal-dim), transparent);
+}
+
+.heroTopRow {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.recPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-radius: var(--r-full);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+}
+.recPillActive { background: var(--signal-wash); color: var(--signal); }
+.recPillIdle { background: var(--bg-inset); color: var(--text-muted); border: 1px solid var(--border-default); }
+.recPillDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.recPillActive .recPillDot {
+  box-shadow: 0 0 8px var(--signal);
+  animation: rec-pulse 1.5s infinite ease-in-out;
+}
+@keyframes rec-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+.caseId {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 0.6px;
+}
+
+.heroTitle {
+  font-size: 18px;
+  color: var(--text-primary);
+  font-weight: 600;
+  margin: 0;
+  text-align: center;
+}
+
+.heroSub {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0;
+  text-align: center;
+  max-width: 420px;
+}
+
+.heroTimer {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 56px;
+  letter-spacing: -1px;
+  color: var(--signal);
+  line-height: 1;
+  margin-top: var(--s-8);
+}
+
+.heroTimerLabel {
+  font-size: 10px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.heroActions {
+  display: flex;
+  gap: var(--s-10);
+  width: 100%;
+  margin-top: var(--s-8);
+}
+
+.primaryAction, .secondaryAction, .dangerAction {
+  flex: 1;
+  border-radius: var(--r-md);
+  padding: 12px 14px;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  border: 1px solid;
+  font-family: inherit;
+  min-height: 48px;
+  transition: background-color 120ms ease, transform 80ms ease;
+}
+.primaryAction {
+  background: var(--signal);
+  color: var(--text-on-accent);
+  border-color: var(--signal);
+}
+.primaryAction:hover { background: var(--signal-glow); }
+.primaryAction:disabled { opacity: 0.55; cursor: progress; }
+
+.secondaryAction {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border-color: var(--border-default);
+  font-weight: 600;
+}
+.secondaryAction:hover { background: var(--bg-overlay); border-color: var(--border-strong); }
+
+.dangerAction {
+  background: var(--danger-wash);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.dangerAction:hover { background: rgba(239, 110, 110, 0.18); }
+
+/* Sensor tiles */
+
+.tilesGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-10);
+}
+
+.tile {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tileAlert {
+  border-color: var(--warning);
+  background: linear-gradient(180deg, var(--warning-wash), var(--bg-elevated) 60%);
+}
+
+.tileLabelRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.tileLabel {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 1.4px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+.tileUnit {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+}
+.tileValue {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--text-primary);
+  letter-spacing: -0.4px;
+}
+.tileAlert .tileValue { color: var(--warning); }
+.tileMeta {
+  display: flex;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 0.4px;
+}
+.z { color: var(--text-muted); }
+.zAlert { color: var(--warning); font-weight: 600; }
+.tileUnavailable {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.platformNote {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 4px 0 0;
+  line-height: 1.5;
+}

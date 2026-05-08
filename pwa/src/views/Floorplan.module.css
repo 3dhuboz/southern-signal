@@ -1,0 +1,45 @@
+.toolbar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tool, .toolActive {
+  padding: 8px 14px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+  cursor: pointer;
+  font-family: inherit;
+  min-height: 36px;
+}
+.tool:hover { background: var(--bg-overlay); color: var(--text-primary); }
+.tool:disabled { opacity: 0.4; cursor: not-allowed; }
+.toolActive {
+  background: var(--signal-wash);
+  color: var(--signal);
+  border-color: var(--signal-dim);
+  font-weight: 600;
+}
+
+.canvas {
+  width: 100%;
+  height: 60vh;
+  min-height: 420px;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-inset);
+  touch-action: none;
+  display: block;
+}
+
+.note {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.5;
+}

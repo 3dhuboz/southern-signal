@@ -44,6 +44,7 @@ from .protocols import get_protocol, list_protocols
 from .recorder import RecorderManager
 from .settings import AppSettings, SettingsStore
 from .store import InvestigationStore
+from .sync import import_bundle
 from .uploads import save_upload
 
 
@@ -625,3 +626,38 @@ async def upload_media(
             timestamp=event_kwargs["timestamp"],
         )
     return response
+
+
+@app.post("/api/sync/import")
+async def sync_import(
+    bundle: UploadFile = File(...),
+    strict: bool = Form(False),
+) -> dict:
+    """Accept a PWA-exported bundle.zip and ingest it into the Pi's store.
+
+    The PWA is the V1 product; this endpoint lets users archive their
+    sessions to a Pi over local WiFi. Strict mode rejects on any manifest
+    hash mismatch; non-strict logs issues but ingests what it can.
+    """
+    if not bundle.filename or not bundle.filename.endswith(".zip"):
+        raise HTTPException(status_code=400, detail="Expected a .zip bundle")
+    payload = await bundle.read()
+    if not payload:
+        raise HTTPException(status_code=400, detail="Bundle is empty")
+    try:
+        result = import_bundle(
+            store=store,
+            sessions_dir=store.sessions_dir,
+            bundle_bytes=payload,
+            strict=strict,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {
+        "investigation_id": result.investigation_id,
+        "events_imported": result.events_imported,
+        "samples_imported": result.samples_imported,
+        "media_imported": result.media_imported,
+        "manifest_verified": result.manifest_verified,
+        "issues": result.issues,
+    }
