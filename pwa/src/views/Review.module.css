@@ -17,6 +17,16 @@
 .ok strong { color: var(--signal); }
 .broken { border-color: var(--danger); color: var(--danger); background: var(--danger-wash); }
 
+.merkleLine code {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-primary);
+  background: var(--bg-inset);
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  margin-left: 2px;
+}
+
 .downloadButton {
   margin-left: auto;
   padding: 6px 12px;

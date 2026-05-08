@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AcousticSectorIndicator } from "../components/AcousticSectorIndicator";
 import { AiAssistant } from "../components/AiAssistant";
 import { ContaminationMarker } from "../components/ContaminationMarker";
+import { DispositionPicker } from "../components/DispositionPicker";
 import { EvidenceLedger, type LedgerStream } from "../components/EvidenceLedger";
 import { OvilusTool } from "../components/OvilusTool";
 import { PosteriorBar } from "../components/PosteriorBar";
@@ -60,6 +61,7 @@ export function MissionControl() {
   const analyzerRef = useRef<LiveAnalyzer | null>(null);
   const sectorReadingRef = useRef<SectorReading | null>(null);
   const lastAcousticEmitTsRef = useRef<number>(0);
+  const [pendingDispositionFor, setPendingDispositionFor] = useState<string | null>(null);
 
   const ledgerStreams = useMemo<LedgerStream[]>(() => {
     const now = Date.now();
@@ -265,7 +267,8 @@ export function MissionControl() {
       await recordEvent({ investigation_id: session.current.id, source: "system", event_type: "session_stop", title: "Session ended" });
       setRunning(false);
       setStartedAt(null);
-      setStatusMsg("Session stopped. Review evidence in the Review tab.");
+      setPendingDispositionFor(session.current.id);
+      setStatusMsg("Session stopped. Classify the disposition before reviewing.");
     } finally {
       setBusy(false);
     }
@@ -398,6 +401,17 @@ export function MissionControl() {
           )}
         </div>
       </div>
+
+      {/* DISPOSITION PICKER — shown after a session stops, before review */}
+      {pendingDispositionFor && (
+        <DispositionPicker
+          investigationId={pendingDispositionFor}
+          onChosen={() => {
+            setPendingDispositionFor(null);
+            setStatusMsg("Disposition recorded. Review tab has the chain.");
+          }}
+        />
+      )}
 
       {/* CONTAMINATION MARKERS — quick-tap labels during a live session */}
       <ContaminationMarker

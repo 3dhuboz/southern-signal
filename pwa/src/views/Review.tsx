@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
+import { BaseRatePanel } from "../components/BaseRatePanel";
 import { query } from "../lib/db/db";
 import { verifyAuditChain } from "../lib/db/auditLog";
+import { buildManifest } from "../lib/forensic/manifest";
 import s from "./View.module.css";
 import r from "./Review.module.css";
 
@@ -29,6 +31,7 @@ export function Review() {
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [chainStatus, setChainStatus] = useState<"checking" | "ok" | "broken">("checking");
   const [chainBrokenSeq, setChainBrokenSeq] = useState<number | null>(null);
+  const [merkleRoot, setMerkleRoot] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -41,6 +44,10 @@ export function Review() {
         setChainStatus("broken");
         setChainBrokenSeq(verification.brokenAtSeq);
       }
+      try {
+        const manifest = await buildManifest();
+        setMerkleRoot(manifest.global_audit_chain.merkle_root);
+      } catch { /* manifest is best-effort in the banner */ }
     })();
   }, []);
 
@@ -62,12 +69,12 @@ export function Review() {
 
   const handleExport = useCallback(async () => {
     const all = await query<AuditEntry>("SELECT * FROM audit_log ORDER BY seq ASC");
-    const verification = await verifyAuditChain();
+    const manifest = await buildManifest();
     const exportPayload = {
-      schema: "southern-signal.audit-chain.v1",
+      schema: "southern-signal.export.v1",
       generated_at: new Date().toISOString(),
       app_version: "0.1.0",
-      verification,
+      manifest,
       entries: all,
     };
     const blob = new Blob([JSON.stringify(exportPayload, null, 2)], { type: "application/json" });
@@ -75,7 +82,7 @@ export function Review() {
     const a = document.createElement("a");
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     a.href = url;
-    a.download = `southern-signal-audit-${stamp}.json`;
+    a.download = `southern-signal-bundle-${stamp}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -98,9 +105,15 @@ export function Review() {
         {chainStatus === "ok" && (
           <>
             <strong>CHAIN VERIFIED</strong>
-            <span> · {entries.length} entries · SHA-256 hash-chained · download the entire log to reproduce</span>
+            <span> · {entries.length} entries · SHA-256 hash-chained</span>
+            {merkleRoot && (
+              <span className={r.merkleLine}>
+                {" · Merkle root "}
+                <code>{merkleRoot.slice(0, 12)}…{merkleRoot.slice(-8)}</code>
+              </span>
+            )}
             <button type="button" className={r.downloadButton} onClick={handleExport}>
-              Download chain (JSON)
+              Download bundle (JSON)
             </button>
           </>
         )}
@@ -117,6 +130,9 @@ export function Review() {
         <span className={r.ahtBannerLabel}>AHT POST-ROLL</span>
         <span className={r.ahtBannerNote}>AHT eliminates explanations; it does not confirm causes.</span>
       </div>
+
+      {/* Base-rate dashboard — null results count too */}
+      <BaseRatePanel />
 
       {/* H0: AI insufficiency meta-card */}
       <div className={r.h0Card}>
