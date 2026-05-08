@@ -8,6 +8,11 @@ pi-hub/data/
 pi-hub/app/**/__pycache__/
 pi-hub/tests/**/__pycache__/
 
+# pwa
+pwa/node_modules/
+pwa/dist/
+pwa/.vite/
+
 *.log
 .DS_Store
 Thumbs.db

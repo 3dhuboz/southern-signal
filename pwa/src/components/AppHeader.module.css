@@ -1,0 +1,70 @@
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  background: linear-gradient(180deg, rgba(7, 9, 12, 0.92) 0%, rgba(7, 9, 12, 0.78) 80%, rgba(7, 9, 12, 0) 100%);
+  padding: calc(var(--s-12) + var(--safe-top)) var(--s-20) var(--s-12);
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-12);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mark {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background:
+    linear-gradient(45deg, transparent 35%, var(--signal) 35%, var(--signal) 65%, transparent 65%),
+    var(--signal-wash);
+  background-size: 12px 12px, auto;
+  background-position: center, center;
+  background-repeat: no-repeat, no-repeat;
+  border: 1px solid var(--signal-dim);
+  flex-shrink: 0;
+}
+
+.wordmark {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  color: var(--text-primary);
+}
+
+.modePill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--signal-dim);
+  background: var(--signal-wash);
+  color: var(--signal);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.modeDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--signal);
+  box-shadow: 0 0 8px var(--signal);
+}

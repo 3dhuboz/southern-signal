@@ -1,0 +1,126 @@
+.view {
+  flex: 1;
+  padding: var(--s-16) var(--s-20) calc(var(--bottom-nav-height) + var(--safe-bottom) + var(--s-32));
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-16);
+}
+
+.titleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: var(--s-8);
+}
+
+.eyebrow {
+  font-size: 10px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.title {
+  font-size: 22px;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.lede {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.panel {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  padding: var(--s-16);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-10);
+}
+
+.panelHeading {
+  font-size: 11px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.placeholderHero {
+  background:
+    radial-gradient(180px 90px at 50% 0%, rgba(93, 242, 199, 0.08), transparent 70%),
+    var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-xl);
+  padding: var(--s-20);
+  position: relative;
+  overflow: hidden;
+}
+
+.placeholderHero::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 8%; right: 8%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--signal-dim), transparent);
+}
+
+.heroLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  color: var(--signal);
+  text-transform: uppercase;
+}
+
+.heroTitle {
+  margin-top: 4px;
+  font-size: 20px;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.heroBody {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.checklist li {
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.checklist li::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin-top: 7px;
+  border-radius: 50%;
+  background: var(--signal-dim);
+  flex-shrink: 0;
+}
+
+.kicker {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.6px;
+}

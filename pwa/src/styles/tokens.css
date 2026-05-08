@@ -1,0 +1,51 @@
+:root {
+  color-scheme: dark;
+
+  /* Color */
+  --bg-canvas:      #07090C;
+  --bg-surface:     #0E1218;
+  --bg-elevated:    #151A22;
+  --bg-inset:       #0A0E14;
+  --bg-overlay:     #1F2632;
+
+  --border-subtle:  #1B2129;
+  --border-default: #262E3A;
+  --border-strong:  #3A4252;
+
+  --text-primary:   #E7ECF3;
+  --text-secondary: #9BA6B8;
+  --text-muted:     #5C6677;
+  --text-dim:       #3F4858;
+  --text-on-accent: #021410;
+
+  --signal:         #5DF2C7;
+  --signal-dim:     #2BA386;
+  --signal-glow:    #7FFCD7;
+  --signal-wash:    #0F2A24;
+
+  --warning:        #F2B95D;
+  --warning-wash:   #2A210F;
+  --danger:         #EF6E6E;
+  --danger-wash:    #2A1313;
+
+  /* Spacing scale */
+  --s-2: 2px; --s-4: 4px; --s-6: 6px; --s-8: 8px; --s-10: 10px;
+  --s-12: 12px; --s-14: 14px; --s-16: 16px; --s-20: 20px;
+  --s-24: 24px; --s-28: 28px; --s-32: 32px; --s-40: 40px; --s-48: 48px;
+
+  /* Radii */
+  --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-xl: 20px; --r-2xl: 28px; --r-full: 999px;
+
+  /* Type */
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+  /* Safe areas */
+  --safe-top:    env(safe-area-inset-top, 0px);
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
+  --safe-left:   env(safe-area-inset-left, 0px);
+  --safe-right:  env(safe-area-inset-right, 0px);
+
+  /* Layout */
+  --bottom-nav-height: 64px;
+}
