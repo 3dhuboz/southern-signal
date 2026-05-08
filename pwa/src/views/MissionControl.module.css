@@ -1,16 +1,29 @@
+.instrumentCluster {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-12);
+}
+
+.heroRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--s-12);
+  align-items: stretch;
+}
+
 .hero {
   background:
     radial-gradient(180px 90px at 50% 0%, rgba(93, 242, 199, 0.10), transparent 70%),
     var(--bg-elevated);
   border: 1px solid var(--border-default);
   border-radius: var(--r-xl);
-  padding: var(--s-20);
+  padding: var(--s-16);
   position: relative;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--s-12);
+  gap: var(--s-8);
 }
 .hero::before {
   content: "";
@@ -63,7 +76,7 @@
 }
 
 .heroTitle {
-  font-size: 18px;
+  font-size: 16px;
   color: var(--text-primary);
   font-weight: 600;
   margin: 0;
@@ -71,25 +84,25 @@
 }
 
 .heroSub {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-secondary);
   margin: 0;
   text-align: center;
-  max-width: 420px;
+  max-width: 320px;
 }
 
 .heroTimer {
   font-family: var(--font-mono);
   font-weight: 500;
-  font-size: 56px;
+  font-size: 36px;
   letter-spacing: -1px;
   color: var(--signal);
   line-height: 1;
-  margin-top: var(--s-8);
+  margin-top: 4px;
 }
 
 .heroTimerLabel {
-  font-size: 10px;
+  font-size: 9px;
   letter-spacing: 1.6px;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -100,7 +113,6 @@
   display: flex;
   gap: var(--s-10);
   width: 100%;
-  margin-top: var(--s-8);
 }
 
 .primaryAction, .secondaryAction, .dangerAction {
@@ -113,7 +125,6 @@
   border: 1px solid;
   font-family: inherit;
   min-height: 48px;
-  transition: background-color 120ms ease, transform 80ms ease;
 }
 .primaryAction {
   background: var(--signal);
@@ -138,74 +149,101 @@
 }
 .dangerAction:hover { background: rgba(239, 110, 110, 0.18); }
 
-/* Sensor tiles */
+/* Calibration panel */
 
-.tilesGrid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--s-10);
-}
-
-.tile {
+.calibration {
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-md);
-  padding: 12px;
+  padding: var(--s-12);
   display: flex;
   flex-direction: column;
-  gap: 6px;
-}
-.tileAlert {
-  border-color: var(--warning);
-  background: linear-gradient(180deg, var(--warning-wash), var(--bg-elevated) 60%);
+  gap: var(--s-10);
 }
 
-.tileLabelRow {
+.calibrationHead {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-}
-.tileLabel {
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 1.4px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-}
-.tileUnit {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 400;
-  letter-spacing: 0.4px;
-  color: var(--text-muted);
-}
-.tileValue {
-  font-family: var(--font-mono);
-  font-size: 22px;
-  font-weight: 500;
-  color: var(--text-primary);
-  letter-spacing: -0.4px;
-}
-.tileAlert .tileValue { color: var(--warning); }
-.tileMeta {
-  display: flex;
-  gap: 10px;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  color: var(--text-dim);
-  letter-spacing: 0.4px;
-}
-.z { color: var(--text-muted); }
-.zAlert { color: var(--warning); font-weight: 600; }
-.tileUnavailable {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--text-secondary);
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
-.platformNote {
-  font-size: 11px;
+.calibrationEyebrow {
+  font-size: 10px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
   color: var(--text-muted);
-  margin: 4px 0 0;
+  font-weight: 600;
+}
+
+.calibrationStatus {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  letter-spacing: 0.4px;
+}
+.calibrationPassed {
+  color: var(--signal);
+}
+
+.calibrationStart {
+  appearance: none;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  padding: 10px 14px;
+  border-radius: var(--r-md);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+  min-height: 44px;
+}
+.calibrationStart:hover { background: var(--bg-overlay); border-color: var(--border-strong); }
+
+.calibrationStep p {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0 0 8px;
   line-height: 1.5;
+}
+.calibrationStep p strong {
+  color: var(--signal);
+  font-family: var(--font-mono);
+}
+
+.calibrationButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.calibrationOption {
+  appearance: none;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  border-radius: var(--r-full);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  cursor: pointer;
+  min-height: 36px;
+}
+.calibrationOption:hover {
+  background: var(--bg-overlay);
+  color: var(--signal);
+  border-color: var(--signal-dim);
+}
+
+.disclaimer {
+  font-size: 10px;
+  color: var(--text-dim);
+  text-align: center;
+  margin: var(--s-8) 0 0;
+  line-height: 1.5;
+  font-style: italic;
 }

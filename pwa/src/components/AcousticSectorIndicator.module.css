@@ -1,0 +1,79 @@
+.hud {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  padding: var(--s-10);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 132px;
+}
+
+.header {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.eyebrow {
+  font-size: 9px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+.dotGreen {
+  background: var(--signal);
+  box-shadow: 0 0 6px var(--signal);
+}
+.dotAmber {
+  background: var(--warning);
+  box-shadow: 0 0 5px var(--warning);
+}
+.dotOff {
+  background: var(--text-dim);
+}
+
+.svg {
+  width: 96px;
+  height: 96px;
+}
+
+.label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.sector {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.6px;
+}
+
+.itd {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-muted);
+  letter-spacing: 0.4px;
+}
+
+.degraded {
+  font-size: 9px;
+  color: var(--danger);
+  margin: 2px 0 0;
+  letter-spacing: 0.6px;
+  font-weight: 600;
+}

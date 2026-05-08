@@ -1,12 +1,31 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { recordEvent, recordSensorSample, startInvestigation, stopInvestigation } from "../lib/db/repo";
-import { useSensors, type AnomalyTile } from "../lib/sensors/useSensors";
-import { requestSensorPermissionsForUserGesture } from "../lib/sensors/permissions";
-import { getCurrentPoint } from "../lib/sensors/geolocation";
-import { setCurrent, setPermissionsGranted, useSession } from "../lib/session";
-import { ensureTodayInvestigation } from "../lib/bootstrap";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AcousticSectorIndicator } from "../components/AcousticSectorIndicator";
+import { EvidenceLedger, type LedgerStream } from "../components/EvidenceLedger";
 import { OvilusTool } from "../components/OvilusTool";
+import { PosteriorBar } from "../components/PosteriorBar";
 import { SpiritBoxTool } from "../components/SpiritBoxTool";
+import {
+  createCalibrationState,
+  isInstrumentTrustworthy,
+  recordAttempt,
+  startCalibration,
+  summary as calibrationSummary,
+  type CalibrationState,
+} from "../lib/audio/calibration";
+import { type SectorReading } from "../lib/audio/sectorIndicator";
+import { ensureTodayInvestigation } from "../lib/bootstrap";
+import { recordEvent, startInvestigation, stopInvestigation } from "../lib/db/repo";
+import {
+  emitAcousticTransient,
+  emitMagnetometerAnomaly,
+  emitTemporalCoupling,
+} from "../lib/posterior/likelihoods";
+import { getPosterior } from "../lib/posterior/posterior";
+import { applyAndAudit, createSiteSession, type SiteSession } from "../lib/posterior/siteSession";
+import { getCurrentPoint } from "../lib/sensors/geolocation";
+import { requestSensorPermissionsForUserGesture } from "../lib/sensors/permissions";
+import { useSensors } from "../lib/sensors/useSensors";
+import { setCurrent, setPermissionsGranted, useSession } from "../lib/session";
 import s from "./View.module.css";
 import m from "./MissionControl.module.css";
 
@@ -18,47 +37,7 @@ function formatHMS(totalSeconds: number): string {
   return `${hh}:${mm}:${ss}`;
 }
 
-function formatNumber(n: number, digits = 2): string {
-  if (!isFinite(n)) return "—";
-  return n.toFixed(digits);
-}
-
-interface SensorTileProps {
-  label: string;
-  unit: string;
-  tile: AnomalyTile | null;
-  unavailable?: { reason: string };
-  decimals?: number;
-}
-
-function SensorTile({ label, unit, tile, unavailable, decimals = 2 }: SensorTileProps) {
-  return (
-    <div className={`${m.tile} ${tile?.alert ? m.tileAlert : ""}`.trim()}>
-      <div className={m.tileLabelRow}>
-        <span className={m.tileLabel}>{label}</span>
-        <span className={m.tileUnit}>{unit}</span>
-      </div>
-      {unavailable ? (
-        <div className={m.tileUnavailable}>{unavailable.reason}</div>
-      ) : (
-        <>
-          <div className={m.tileValue}>{tile ? formatNumber(tile.value, decimals) : "—"}</div>
-          <div className={m.tileMeta}>
-            {tile ? (
-              <>
-                <span>μ {formatNumber(tile.mean, decimals)}</span>
-                <span>σ {formatNumber(tile.stdev, decimals)}</span>
-                <span className={tile.alert ? m.zAlert : m.z}>z {formatNumber(tile.z, 1)}</span>
-              </>
-            ) : (
-              <span>warming up…</span>
-            )}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
+const SECTOR_DEMO_PLAN = ["FRONT-R", "REAR-C", "FRONT-L"] as const;
 
 export function MissionControl() {
   const session = useSession();
@@ -67,9 +46,27 @@ export function MissionControl() {
   const [running, setRunning] = useState(false);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [tick, setTick] = useState(0);
-  const [statusMsg, setStatusMsg] = useState<string>("Tap Begin to grant sensor permissions and start.");
+  const [statusMsg, setStatusMsg] = useState<string>("Tap Begin to grant sensor permissions.");
+  const [calibration, setCalibration] = useState<CalibrationState>(() => createCalibrationState());
+  const [siteSession, setSiteSession] = useState<SiteSession>(() => createSiteSession());
+  const [posterior, setPosterior] = useState<number>(siteSession.state.prior);
+  const [sectorReading] = useState<SectorReading | null>(null);
 
-  // Local 1-second ticker for the timer when running.
+  const ledgerStreams = useMemo<LedgerStream[]>(() => {
+    const now = Date.now();
+    const samples = (z: number | undefined) => {
+      if (z === undefined || !running) return [];
+      // Single sample at "now"; the canvas redraw handles persistence.
+      return [{ ts: now, magnitude: Math.max(-1, Math.min(1, z / 6)) }];
+    };
+    return [
+      { id: "acoustic", label: "ACOUSTIC", color: "rgba(93, 242, 199, 0.85)", samples: samples(sensors.vibration?.z) },
+      { id: "magnetometer", label: "EMF", color: "rgba(242, 185, 93, 0.85)", samples: samples(sensors.emf?.z ?? sensors.compassAnomaly?.z) },
+      { id: "infrasound", label: "INFRASOUND", color: "rgba(127, 252, 215, 0.45)", samples: [] },
+    ];
+  }, [running, sensors.vibration?.z, sensors.emf?.z, sensors.compassAnomaly?.z]);
+
+  // 1Hz timer tick when running.
   useEffect(() => {
     if (!running) return;
     const handle = window.setInterval(() => setTick((t) => t + 1), 1000);
@@ -82,25 +79,86 @@ export function MissionControl() {
     return (Date.now() - startedAt) / 1000;
   }, [running, startedAt, tick]);
 
+  // Posterior re-read on tick (decay) and on explicit updates.
+  useEffect(() => {
+    setPosterior(getPosterior(siteSession.state, Date.now()));
+  }, [siteSession.state, tick]);
+
+  // ----- Sensor anomaly → likelihood emission → posterior update -----
+
+  const lastEmissionTsRef = useRef<{ acoustic: number | null; magnetometer: number | null }>({ acoustic: null, magnetometer: null });
+
+  const emitEvidence = useCallback(async (input: Parameters<typeof applyAndAudit>[1]) => {
+    const result = await applyAndAudit(siteSession, input);
+    setSiteSession(result.session);
+    setPosterior(getPosterior(result.session.state, Date.now()));
+  }, [siteSession]);
+
+  // Acoustic transient: when Vibration tile alerts (z>3 sustained), emit an acoustic-transient event.
+  useEffect(() => {
+    if (!running || !sensors.vibration?.alert) return;
+    const now = Date.now();
+    const last = lastEmissionTsRef.current.acoustic;
+    if (last && now - last < 2000) return; // 2s debounce
+    lastEmissionTsRef.current.acoustic = now;
+
+    // Without the FFT pipeline yet, treat the vibration spike as a coherence-3-band acoustic event.
+    const evidence = emitAcousticTransient({
+      coherence: 0.82,
+      subBandsAgreed: 4,
+      sector: sectorReading?.sector ?? "REAR-C",
+      sectorPersistedFromPrior: false,
+      isFirstInWindow: true,
+    });
+    if (!evidence) return;
+    void emitEvidence({ channel: evidence.channel, logLr: evidence.logLr, reason: evidence.reason, metadata: evidence.metadata, nowMs: now });
+  }, [running, sensors.vibration?.alert, sectorReading, emitEvidence]);
+
+  // Magnetometer anomaly: when EMF tile alerts.
+  useEffect(() => {
+    if (!running || !sensors.emf?.alert) return;
+    const now = Date.now();
+    const last = lastEmissionTsRef.current.magnetometer;
+    if (last && now - last < 2000) return;
+    lastEmissionTsRef.current.magnetometer = now;
+    const evidence = emitMagnetometerAnomaly({
+      zScore: sensors.emf.z,
+      magnitudeMicrotesla: sensors.emf.value,
+      baselineMicrotesla: sensors.emf.mean,
+    });
+    if (!evidence) return;
+    void emitEvidence({ channel: evidence.channel, logLr: evidence.logLr, reason: evidence.reason, metadata: evidence.metadata, nowMs: now });
+
+    // Coupling check: if acoustic fired within 200 ms of this magnetometer event, emit a coupling.
+    const tA = lastEmissionTsRef.current.acoustic;
+    if (tA && Math.abs(now - tA) <= 200) {
+      const coupling = emitTemporalCoupling({ channels: ["acoustic", "magnetometer"], deltaMs: Math.abs(now - tA) });
+      if (coupling) {
+        void emitEvidence({ channel: coupling.channel, logLr: coupling.logLr, reason: coupling.reason, metadata: coupling.metadata, nowMs: now });
+      }
+    }
+  }, [running, sensors.emf?.alert, sensors.emf?.z, sensors.emf?.value, sensors.emf?.mean, emitEvidence]);
+
+  // ----- UI handlers -----
+
   const handleBegin = useCallback(async () => {
     setBusy(true);
     try {
       const perm = await requestSensorPermissionsForUserGesture();
       if (perm.motion === "denied" || perm.orientation === "denied") {
-        setStatusMsg("Motion / orientation denied. Sensors won't work — re-add Southern Signal to your home screen and try again.");
+        setStatusMsg("Motion / orientation permission denied. Sensors can't run.");
         setBusy(false);
         return;
       }
       setPermissionsGranted(true);
-
-      // Make sure we have a current investigation; create one for today if not.
       const inv = await ensureTodayInvestigation();
       setCurrent(inv);
       await startInvestigation(inv.id);
       await recordEvent({ investigation_id: inv.id, source: "system", event_type: "session_start", title: "Session started" });
+      setSiteSession(createSiteSession());
       setRunning(true);
       setStartedAt(Date.now());
-      setStatusMsg("Recording. Phone uploads work right now. Connect a Pi to add live sensor capture later.");
+      setStatusMsg("Recording. Calibrate the rig before trusting any sector reading.");
     } catch (err) {
       setStatusMsg(`Couldn't start: ${(err as Error).message}`);
     } finally {
@@ -135,47 +193,92 @@ export function MissionControl() {
     setStatusMsg(point ? `Marker dropped (±${Math.round(point.accuracy ?? 0)} m).` : "Marker dropped.");
   }, [session.current]);
 
-  const handleSensorAnomaly = useCallback(async (kind: string, tile: AnomalyTile) => {
-    if (!session.current) return;
-    await recordSensorSample({
-      investigation_id: session.current.id,
-      sensor_type: kind,
-      value: tile.value,
-      metadata: { mean: tile.mean, stdev: tile.stdev, z: tile.z, alert: tile.alert },
-    });
-  }, [session.current]);
+  // Calibration: simulated for V1 — operator says they placed the speaker at the expected sector.
+  const handleCalibrationStart = useCallback(() => {
+    setCalibration(startCalibration(createCalibrationState()));
+  }, []);
 
-  // Persist sensor anomalies to DB when alert flag flips on.
-  useEffect(() => {
-    if (sensors.emf?.alert) void handleSensorAnomaly("magnetometer", sensors.emf);
-  }, [sensors.emf?.alert, handleSensorAnomaly, sensors.emf]);
-  useEffect(() => {
-    if (sensors.vibration?.alert) void handleSensorAnomaly("accelerometer", sensors.vibration);
-  }, [sensors.vibration?.alert, handleSensorAnomaly, sensors.vibration]);
-  useEffect(() => {
-    if (sensors.compassAnomaly?.alert) void handleSensorAnomaly("compass", sensors.compassAnomaly);
-  }, [sensors.compassAnomaly?.alert, handleSensorAnomaly, sensors.compassAnomaly]);
+  const handleCalibrationConfirm = useCallback((measured: typeof SECTOR_DEMO_PLAN[number]) => {
+    setCalibration((prev) => recordAttempt(prev, { measured, coherence: 0.85, itdMs: 0, ts: Date.now() }));
+  }, []);
 
-  const heading = sensors.snapshot.orientation?.heading;
-  const headingLabel = heading != null ? `${Math.round(heading)}°` : "—";
+  const trustworthy = isInstrumentTrustworthy(calibration);
+  const noiseFloor = Math.max(0.04, Math.min(0.6, (sensors.vibration?.value ?? 0.05) / 4));
 
   return (
     <section className={s.view}>
-      {/* Hero */}
-      <div className={m.hero}>
-        <div className={m.heroTopRow}>
-          <span className={`${m.recPill} ${running ? m.recPillActive : m.recPillIdle}`.trim()}>
-            <span className={m.recPillDot} />
-            <span>{running ? "RECORDING" : "STANDBY"}</span>
-          </span>
-          <span className={m.caseId}>
-            {session.current ? `CASE ${session.current.id.slice(0, 8).toUpperCase()}` : "NO CASE"}
-          </span>
+      {/* INSTRUMENT CLUSTER */}
+      <div className={m.instrumentCluster}>
+        <div className={m.heroRow}>
+          <div className={m.hero}>
+            <div className={m.heroTopRow}>
+              <span className={`${m.recPill} ${running ? m.recPillActive : m.recPillIdle}`.trim()}>
+                <span className={m.recPillDot} />
+                <span>{running ? "RECORDING" : "STANDBY"}</span>
+              </span>
+              <span className={m.caseId}>
+                {session.current ? `CASE ${session.current.id.slice(0, 8).toUpperCase()}` : "NO CASE"}
+              </span>
+            </div>
+            <h1 className={m.heroTitle}>{session.current?.title ?? "Begin a session"}</h1>
+            <p className={m.heroSub}>{statusMsg}</p>
+            <div className={m.heroTimer}>{formatHMS(elapsedSeconds)}</div>
+            <div className={m.heroTimerLabel}>ELAPSED</div>
+          </div>
+          <AcousticSectorIndicator reading={sectorReading} trustworthy={trustworthy} />
         </div>
-        <h1 className={m.heroTitle}>{session.current?.title ?? "Begin a session"}</h1>
-        <p className={m.heroSub}>{statusMsg}</p>
-        <div className={m.heroTimer}>{formatHMS(elapsedSeconds)}</div>
-        <div className={m.heroTimerLabel}>ELAPSED</div>
+
+        {/* POSTERIOR BAR — the headline */}
+        <PosteriorBar
+          posterior={posterior}
+          recentIncrements={siteSession.recentIncrements}
+          prior={siteSession.state.prior}
+        />
+
+        {/* EVIDENCE LEDGER — substrate */}
+        <EvidenceLedger streams={ledgerStreams} pixelsPerSecond={24} columnMs={80} noiseFloor={noiseFloor} />
+
+        {/* CALIBRATION RITUAL — the cold-open */}
+        <div className={m.calibration}>
+          <div className={m.calibrationHead}>
+            <span className={m.calibrationEyebrow}>CALIBRATION</span>
+            <span className={`${m.calibrationStatus} ${trustworthy ? m.calibrationPassed : ""}`.trim()}>
+              {calibrationSummary(calibration)}
+            </span>
+          </div>
+          {calibration.status === "idle" && (
+            <button type="button" className={m.calibrationStart} onClick={handleCalibrationStart}>
+              Start 3-of-3 sector calibration
+            </button>
+          )}
+          {calibration.status === "running" && (
+            <div className={m.calibrationStep}>
+              <p>
+                Place the speaker at <strong>{calibration.plan[calibration.cursor]}</strong>, fire a 200&nbsp;ms click,
+                then confirm what you observed:
+              </p>
+              <div className={m.calibrationButtons}>
+                {SECTOR_DEMO_PLAN.map((sec) => (
+                  <button
+                    key={sec}
+                    type="button"
+                    className={m.calibrationOption}
+                    onClick={() => handleCalibrationConfirm(sec)}
+                  >
+                    {sec}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {calibration.status === "degraded" && (
+            <button type="button" className={m.calibrationStart} onClick={handleCalibrationStart}>
+              Re-run calibration
+            </button>
+          )}
+        </div>
+
+        {/* SESSION CONTROLS */}
         <div className={m.heroActions}>
           {!running ? (
             <button className={m.primaryAction} onClick={handleBegin} disabled={busy}>
@@ -190,39 +293,13 @@ export function MissionControl() {
         </div>
       </div>
 
-      {/* Real-tools sensor tiles */}
-      <div className={s.titleBlock}>
-        <span className={s.eyebrow}>Live sensors</span>
-      </div>
-
-      <div className={m.tilesGrid}>
-        {sensors.magnetometerAvailable ? (
-          <SensorTile label="EMF" unit="μT" tile={sensors.emf} decimals={2} />
-        ) : (
-          <SensorTile
-            label="Compass-anomaly"
-            unit="°/sample"
-            tile={sensors.compassAnomaly}
-            decimals={2}
-          />
-        )}
-        <SensorTile label="Vibration" unit="m/s²" tile={sensors.vibration} decimals={3} />
-        <SensorTile label="Heading" unit="°" tile={null} unavailable={{ reason: headingLabel }} />
-        {sensors.lightAvailable ? (
-          <SensorTile label="Ambient light" unit="lux" tile={sensors.lightAnomaly} decimals={1} />
-        ) : (
-          <SensorTile label="Ambient light" unit="lux" tile={null} unavailable={{ reason: "iOS: ALS unavailable. Camera fallback comes next." }} />
-        )}
-      </div>
-
-      {!sensors.magnetometerAvailable && (
-        <p className={m.platformNote}>
-          Real magnetometer-based EMF is Android-only. iOS gets a compass-anomaly proxy here — it's labelled honestly so you know which signal you're seeing.
-        </p>
-      )}
-
+      {/* ITC TOOLS */}
       <SpiritBoxTool entropy={sensors.snapshot.magnetometer?.magnitude ?? sensors.snapshot.motion?.accelMagnitude ?? 0} />
       <OvilusTool entropy={sensors.snapshot.magnetometer?.magnitude ?? sensors.snapshot.orientation?.heading ?? 0} investigationId={session.current?.id ?? null} />
+
+      <p className={m.disclaimer}>
+        Sector accuracy ±60°. Posterior is a model estimate, not a measurement of presence. Every increment is hash-chained — receipts in the audit log.
+      </p>
     </section>
   );
 }

@@ -1,0 +1,156 @@
+.chainStatus {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  padding: 10px 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  color: var(--text-secondary);
+}
+.chainStatus strong {
+  font-weight: 700;
+  letter-spacing: 1.2px;
+}
+.checking { color: var(--text-muted); }
+.ok { border-color: var(--signal-dim); color: var(--signal); }
+.ok strong { color: var(--signal); }
+.broken { border-color: var(--danger); color: var(--danger); background: var(--danger-wash); }
+
+.ahtBanner {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ahtBannerLabel {
+  font-size: 10px;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  color: var(--warning);
+  font-weight: 700;
+}
+.ahtBannerNote {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.h0Card {
+  background: var(--bg-surface);
+  border: 1px dashed var(--border-default);
+  border-radius: var(--r-md);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.h0Header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.h0Header strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.h0Confidence {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.h0Body {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+  margin: 0;
+}
+.h0Body em {
+  font-style: italic;
+  color: var(--warning);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sectionHeader h2 {
+  font-size: 11px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+  margin: 0;
+}
+
+.empty {
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--r-md);
+  padding: 14px;
+  margin: 0;
+  text-align: center;
+}
+
+.incrementList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.incrementRow {
+  display: grid;
+  grid-template-columns: auto auto auto auto 1fr auto;
+  gap: 10px;
+  align-items: baseline;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.incrementSeq {
+  color: var(--text-dim);
+  letter-spacing: 0.4px;
+}
+.incrementChannel {
+  font-weight: 700;
+  color: var(--signal);
+  letter-spacing: 0.6px;
+}
+.incrementMath {
+  color: var(--text-primary);
+}
+.incrementLr {
+  color: var(--warning);
+}
+.incrementReason {
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+}
+.incrementTs {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.disclaimer {
+  font-size: 10px;
+  color: var(--text-dim);
+  text-align: center;
+  margin: var(--s-12) 0 0;
+  line-height: 1.5;
+  font-style: italic;
+}
