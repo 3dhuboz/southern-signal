@@ -1,17 +1,28 @@
-import { useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AcknowledgementGate } from "./components/AcknowledgementGate";
 import { AppHeader } from "./components/AppHeader";
 import { BottomNav } from "./components/BottomNav";
 import { MissionControl } from "./views/MissionControl";
-import { Review } from "./views/Review";
-import { Setup } from "./views/Setup";
-import { Floorplan } from "./views/Floorplan";
-import { EvpReview } from "./views/EvpReview";
-import { Estes } from "./views/Estes";
 import { isPastCivilTwilight } from "./lib/sensors/civilTwilight";
 import { applyTheme, setPreferences, usePreferences } from "./lib/preferences";
 import "./styles/global.css";
+
+// Code-split secondary routes — MissionControl is the entry screen, the rest
+// load on demand to keep first paint fast on field cell connections.
+const Review = lazy(() => import("./views/Review").then((m) => ({ default: m.Review })));
+const Setup = lazy(() => import("./views/Setup").then((m) => ({ default: m.Setup })));
+const Floorplan = lazy(() => import("./views/Floorplan").then((m) => ({ default: m.Floorplan })));
+const EvpReview = lazy(() => import("./views/EvpReview").then((m) => ({ default: m.EvpReview })));
+const Estes = lazy(() => import("./views/Estes").then((m) => ({ default: m.Estes })));
+
+function RouteFallback() {
+  return (
+    <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--text-muted)", fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: 1.4, textTransform: "uppercase" }}>
+      Loading…
+    </div>
+  );
+}
 
 export default function App() {
   const [prefs] = usePreferences();
@@ -50,14 +61,16 @@ export default function App() {
     <BrowserRouter>
       <AppHeader />
       <main>
-        <Routes>
-          <Route path="/" element={<MissionControl />} />
-          <Route path="/review" element={<Review />} />
-          <Route path="/evp" element={<EvpReview />} />
-          <Route path="/estes" element={<Estes />} />
-          <Route path="/setup" element={<Setup />} />
-          <Route path="/floorplan" element={<Floorplan />} />
-        </Routes>
+        <Suspense fallback={<RouteFallback />}>
+          <Routes>
+            <Route path="/" element={<MissionControl />} />
+            <Route path="/review" element={<Review />} />
+            <Route path="/evp" element={<EvpReview />} />
+            <Route path="/estes" element={<Estes />} />
+            <Route path="/setup" element={<Setup />} />
+            <Route path="/floorplan" element={<Floorplan />} />
+          </Routes>
+        </Suspense>
       </main>
       <BottomNav />
       <AcknowledgementGate />
