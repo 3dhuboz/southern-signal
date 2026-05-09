@@ -32,6 +32,12 @@ interface LiveStreamViewProps {
   caseId: string | null;
   caseTitle: string | null;
   caption: string | null;
+  /** Live sensor values for the on-canvas mini-readout. Each is optional;
+   *  rows render only when a finite number is supplied. */
+  lightLux?: number;
+  magnetometerUt?: number;
+  motionMs2?: number;
+  temperatureC?: number;
 }
 
 async function sha256Hex(buf: ArrayBuffer): Promise<string> {
@@ -40,7 +46,10 @@ async function sha256Hex(buf: ArrayBuffer): Promise<string> {
 }
 
 export function LiveStreamView(props: LiveStreamViewProps) {
-  const { investigationId, running, posterior, audioRms, sector, coherence, caseId, caseTitle, caption } = props;
+  const {
+    investigationId, running, posterior, audioRms, sector, coherence, caseId, caseTitle, caption,
+    lightLux, magnetometerUt, motionMs2, temperatureC,
+  } = props;
 
   const sourceVideoRef = useRef<HTMLVideoElement | null>(null);
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -89,6 +98,15 @@ export function LiveStreamView(props: LiveStreamViewProps) {
 
   useEffect(() => {
     const activity = describeActivity(posterior);
+    // Only build the sensors object if at least one channel has a finite value;
+    // an empty/undefined field tells the compositor to skip the readout.
+    const sensors: NonNullable<OverlayState["sensors"]> = {};
+    if (typeof lightLux === "number" && Number.isFinite(lightLux)) sensors.light = lightLux;
+    if (typeof magnetometerUt === "number" && Number.isFinite(magnetometerUt)) sensors.magnetometer = magnetometerUt;
+    if (typeof motionMs2 === "number" && Number.isFinite(motionMs2)) sensors.motion = motionMs2;
+    if (typeof temperatureC === "number" && Number.isFinite(temperatureC)) sensors.temperature = temperatureC;
+    const hasAnySensor = Object.keys(sensors).length > 0;
+
     overlayStateRef.current = {
       caseId: caseId ?? undefined,
       caseTitle: caseTitle ?? undefined,
@@ -102,8 +120,9 @@ export function LiveStreamView(props: LiveStreamViewProps) {
       audioRms,
       recording,
       liveStreaming: liveOn,
+      sensors: hasAnySensor ? sensors : undefined,
     };
-  }, [posterior, audioRms, sector, coherence, caseId, caseTitle, caption, recording, liveOn]);
+  }, [posterior, audioRms, sector, coherence, caseId, caseTitle, caption, recording, liveOn, lightLux, magnetometerUt, motionMs2, temperatureC]);
 
   const openCamera = useCallback(async (mode: "environment" | "user"): Promise<MediaStream> => {
     try {

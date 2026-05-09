@@ -34,6 +34,12 @@ export interface OverlayState {
   audioRms: number;
   recording: boolean;
   liveStreaming: boolean;
+  sensors?: {
+    light?: number;
+    magnetometer?: number;
+    motion?: number;
+    temperature?: number;
+  };
 }
 
 export interface CanvasCompositorOptions {
@@ -142,6 +148,9 @@ function renderFrame(
   // 3. Top HUD strip.
   drawTopHud(ctx, W, H, overlay, band);
 
+  // 3b. Sensor mini-readout under the Activity pill (top-left).
+  drawSensorReadout(ctx, W, H, overlay, band);
+
   // 4. Direction arrow (only if sector + coherence are valid).
   if (overlay.sector && overlay.coherence >= 0.5) {
     drawDirectionArrow(ctx, W, H, overlay.sector, overlay.coherence, band);
@@ -181,6 +190,115 @@ function drawTopHud(ctx: CanvasRenderingContext2D, W: number, H: number, overlay
   drawPill(ctx, W - padding - pWidth, padding, pWidth, pillH, "rgba(0,0,0,0.55)", band.stroke);
   ctx.fillStyle = band.fill;
   ctx.fillText(pPct, W - padding - pWidth + padding, padding + pillH / 2);
+
+  ctx.restore();
+}
+
+function drawSensorReadout(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  H: number,
+  overlay: OverlayState,
+  band: { stroke: string; fill: string },
+) {
+  const sensors = overlay.sensors;
+  if (!sensors) return;
+
+  // Build the row list — only entries with finite numeric values.
+  type Row = { label: string; value: string; unit: string };
+  const rows: Row[] = [];
+  if (typeof sensors.light === "number" && Number.isFinite(sensors.light)) {
+    rows.push({ label: "LIGHT", value: Math.round(sensors.light).toString(), unit: "lux" });
+  }
+  if (typeof sensors.magnetometer === "number" && Number.isFinite(sensors.magnetometer)) {
+    rows.push({ label: "MAG", value: sensors.magnetometer.toFixed(1), unit: "µT" });
+  }
+  if (typeof sensors.motion === "number" && Number.isFinite(sensors.motion)) {
+    rows.push({ label: "MOTION", value: sensors.motion.toFixed(2), unit: "m/s²" });
+  }
+  if (typeof sensors.temperature === "number" && Number.isFinite(sensors.temperature)) {
+    rows.push({ label: "TEMP", value: sensors.temperature.toFixed(1), unit: "°C" });
+  }
+  if (rows.length === 0) return;
+
+  // Geometry — match drawTopHud's padding/pillH math so the block
+  // sits cleanly below the Activity pill.
+  const padding = Math.round(W * 0.018);
+  const pillH = Math.max(36, Math.round(H * 0.05));
+  const blockX = padding;
+  const blockY = padding + pillH + 8;
+
+  const labelFontPx = Math.max(9, Math.round(H * 0.012));
+  const valueFontPx = Math.max(14, Math.round(H * 0.019));
+  const unitFontPx = Math.max(10, Math.round(H * 0.013));
+  const rowH = Math.max(valueFontPx + 6, Math.round(H * 0.032));
+  const innerPadX = Math.round(padding * 0.9);
+  const innerPadY = Math.round(padding * 0.5);
+  const labelGap = Math.round(padding * 0.45);
+  const unitGap = Math.round(padding * 0.25);
+  const letterSpacingPx = 1.4;
+
+  ctx.save();
+
+  // Measure widths for each row to size the block.
+  const measureLabel = (s: string) => {
+    ctx.font = `700 ${labelFontPx}px "Space Grotesk", Inter, sans-serif`;
+    // letter-spacing adds (n - 1) * spacing across n characters.
+    return ctx.measureText(s).width + Math.max(0, s.length - 1) * letterSpacingPx;
+  };
+  const measureValue = (s: string) => {
+    ctx.font = `700 ${valueFontPx}px "JetBrains Mono", monospace`;
+    return ctx.measureText(s).width;
+  };
+  const measureUnit = (s: string) => {
+    ctx.font = `500 ${unitFontPx}px "Space Grotesk", Inter, sans-serif`;
+    return ctx.measureText(s).width;
+  };
+
+  let maxLabelW = 0;
+  let maxValueW = 0;
+  let maxUnitW = 0;
+  for (const r of rows) {
+    maxLabelW = Math.max(maxLabelW, measureLabel(r.label));
+    maxValueW = Math.max(maxValueW, measureValue(r.value));
+    maxUnitW = Math.max(maxUnitW, measureUnit(r.unit));
+  }
+  const blockW = innerPadX * 2 + maxLabelW + labelGap + maxValueW + unitGap + maxUnitW;
+  const blockH = innerPadY * 2 + rows.length * rowH;
+
+  // Background pill — match Activity pill style.
+  drawPill(ctx, blockX, blockY, blockW, blockH, "rgba(0,0,0,0.55)", band.stroke);
+
+  // Render each row.
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "left";
+  let y = blockY + innerPadY + rowH / 2;
+  for (const r of rows) {
+    // Label: small mono-style caps with letter-spacing — drawn char-by-char
+    // since canvas has no native letter-spacing in 2D context.
+    ctx.font = `700 ${labelFontPx}px "Space Grotesk", Inter, sans-serif`;
+    ctx.fillStyle = "rgba(255,255,255,0.62)";
+    let lx = blockX + innerPadX;
+    for (let i = 0; i < r.label.length; i++) {
+      const ch = r.label[i];
+      ctx.fillText(ch, lx, y);
+      lx += ctx.measureText(ch).width + (i < r.label.length - 1 ? letterSpacingPx : 0);
+    }
+
+    // Value: bold mono.
+    const valX = blockX + innerPadX + maxLabelW + labelGap;
+    ctx.font = `700 ${valueFontPx}px "JetBrains Mono", monospace`;
+    ctx.fillStyle = "#fff";
+    ctx.fillText(r.value, valX, y);
+
+    // Unit: muted small.
+    const unitX = valX + maxValueW + unitGap;
+    ctx.font = `500 ${unitFontPx}px "Space Grotesk", Inter, sans-serif`;
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.fillText(r.unit, unitX, y);
+
+    y += rowH;
+  }
 
   ctx.restore();
 }

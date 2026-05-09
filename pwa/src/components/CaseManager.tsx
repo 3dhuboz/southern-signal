@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { exec, query } from "../lib/db/db";
 import { readFile, deletePath } from "../lib/opfs";
 import { appendAuditEntry } from "../lib/db/auditLog";
+import { setCulturallySensitive } from "../lib/db/repo";
 import { buildExportBundle, downloadBlob } from "../lib/forensic/exportBundle";
 import type { EvidenceEvent, Investigation, MediaAsset } from "../lib/db/schema";
 import s from "./CaseManager.module.css";
@@ -157,6 +158,18 @@ export function CaseManager() {
       refresh();
     } catch (err) {
       setStatusMsg(`Save failed: ${(err as Error).message}`);
+    }
+  };
+
+  const handleToggleCulturallySensitive = async (next: boolean) => {
+    if (!openCaseId) return;
+    setStatusMsg(null);
+    try {
+      await setCulturallySensitive(openCaseId, next);
+      setStatusMsg(next ? "Marked culturally sensitive — cloud AI and sync blocked for this case." : "Cultural-sensitivity flag cleared.");
+      refresh();
+    } catch (err) {
+      setStatusMsg(`Failed: ${(err as Error).message}`);
     }
   };
 
@@ -337,6 +350,20 @@ export function CaseManager() {
                       rows={3}
                       value={editing.notes}
                       onChange={(e) => setEditing({ ...editing, notes: e.target.value })}
+                    />
+                  </label>
+
+                  <label className={s.sensitiveRow}>
+                    <span className={s.sensitiveText}>
+                      <strong>Culturally sensitive site</strong>
+                      <span className={s.sensitiveHint}>
+                        Blocks cloud AI and cloud sync for this case. Audit chain still records locally.
+                      </span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={Number(c.culturally_sensitive ?? 0) === 1}
+                      onChange={(e) => handleToggleCulturallySensitive(e.target.checked)}
                     />
                   </label>
 

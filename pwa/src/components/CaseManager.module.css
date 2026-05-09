@@ -176,6 +176,69 @@
 .secondary:hover { background: var(--bg-overlay); border-color: var(--signal-dim); }
 .secondary:disabled { opacity: 0.4; cursor: not-allowed; }
 
+.sensitiveRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+  padding: 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+}
+.sensitiveText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.sensitiveText strong {
+  display: block;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.sensitiveHint {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  font-weight: 400;
+}
+.sensitiveRow input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 36px;
+  height: 22px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.sensitiveRow input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  transition: transform 120ms ease, background 120ms ease;
+}
+.sensitiveRow input[type="checkbox"]:checked {
+  background: var(--signal-wash);
+  border-color: var(--signal-dim);
+}
+.sensitiveRow input[type="checkbox"]:checked::after {
+  transform: translateX(14px);
+  background: var(--signal);
+  box-shadow: 0 0 6px var(--signal);
+}
+
 .dispoGroup {
   display: flex;
   align-items: center;

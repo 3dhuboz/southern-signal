@@ -8,7 +8,7 @@
 import { appendAuditEntry } from "./auditLog";
 import { exec, query } from "./db";
 import type { EvidenceEvent, Investigation, MediaAsset, SensorSample } from "./schema";
-import { enqueue } from "../sync/queue";
+import { clearSensitivityCache, enqueue } from "../sync/queue";
 
 async function safeEnqueue(args: Parameters<typeof enqueue>[0]): Promise<void> {
   try { await enqueue(args); } catch (err) { console.warn("[sync] enqueue failed", err); }
@@ -40,6 +40,7 @@ export async function createInvestigation(input: { title: string; location_name?
     status: "created",
     disposition: null,
     source: "pwa",
+    culturally_sensitive: 0,
   };
   await exec(
     `INSERT INTO investigations (id, title, location_name, notes, created_at, status, source)
@@ -85,6 +86,26 @@ export async function stopInvestigation(id: string, disposition?: string): Promi
 export async function setDisposition(id: string, disposition: "null" | "inconclusive" | "flagged" | "confirmed_mundane"): Promise<void> {
   await exec("UPDATE investigations SET disposition = ? WHERE id = ?", [disposition, id]);
   await appendAuditEntry({ actor: ACTOR_DEFAULT, kind: "investigation.disposition", payload: { id, disposition } });
+}
+
+/**
+ * v3: Toggle the per-case cultural-sensitivity flag.
+ *
+ * When set, cloud AI is hard-refused for this case AND its rows + media
+ * are skipped at sync-enqueue time. Audit chain still records locally —
+ * chain integrity matters even when the data never leaves the device.
+ */
+export async function setCulturallySensitive(id: string, value: boolean): Promise<void> {
+  const v = value ? 1 : 0;
+  await exec("UPDATE investigations SET culturally_sensitive = ? WHERE id = ?", [v, id]);
+  // Invalidate the sync gate's per-case cache so the new value applies on the
+  // very next enqueue, rather than waiting for the 30s TTL.
+  clearSensitivityCache();
+  await appendAuditEntry({
+    actor: ACTOR_DEFAULT,
+    kind: "investigation.cultural_sensitivity",
+    payload: { id, culturally_sensitive: v },
+  });
 }
 
 // ---------------------- sensor samples ----------------------

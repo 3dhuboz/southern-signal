@@ -19,7 +19,94 @@ interface EnqueueInput {
   file_path?: string | null;
 }
 
+// ---------------------------------------------------------------------------
+// Per-case cultural-sensitivity gate (v3).
+//
+// When an investigation is flagged sensitive, NONE of its rows or media bytes
+// should leave the device. We check at enqueue() time so the row never even
+// lands in the queue. Audit-log entries (kind === "audit") are NEVER skipped
+// here — the audit chain integrity must hold regardless of sync state, and
+// audit payloads don't carry an investigation_id field anyway.
+//
+// We cache investigation_id -> sensitive boolean for at most 30s so a burst
+// of enqueues during recording doesn't hammer the DB.
+// ---------------------------------------------------------------------------
+
+const SENSITIVITY_TTL_MS = 30_000;
+interface SensitivityCacheEntry { value: boolean; cachedAt: number; }
+const sensitivityCache = new Map<string, SensitivityCacheEntry>();
+
+async function isSensitive(investigationId: string): Promise<boolean> {
+  const now = Date.now();
+  const hit = sensitivityCache.get(investigationId);
+  if (hit && now - hit.cachedAt < SENSITIVITY_TTL_MS) return hit.value;
+  try {
+    const rows = await query<{ culturally_sensitive: number | bigint }>(
+      "SELECT culturally_sensitive FROM investigations WHERE id = ?",
+      [investigationId],
+    );
+    const raw = rows[0]?.culturally_sensitive ?? 0;
+    const value = Number(raw) === 1;
+    sensitivityCache.set(investigationId, { value, cachedAt: now });
+    return value;
+  } catch {
+    // Fail open here is safer than fail closed for sync, but this query is
+    // simple and shouldn't fail. If it does, leave cached value alone.
+    return hit?.value ?? false;
+  }
+}
+
+/** Public helper so callers (e.g. tests) can clear the cache. */
+export function clearSensitivityCache(): void {
+  sensitivityCache.clear();
+}
+
+/**
+ * Pull the investigation_id out of an enqueue payload. For investigation
+ * rows themselves, the row's own `id` IS the investigation_id.
+ */
+function extractInvestigationId(input: EnqueueInput): string | null {
+  if (input.kind === "investigation") {
+    const id = input.payload.id;
+    return typeof id === "string" ? id : null;
+  }
+  const ref = input.payload.investigation_id;
+  return typeof ref === "string" ? ref : null;
+}
+
+async function logSkip(input: EnqueueInput, investigationId: string): Promise<void> {
+  // Append a hash-chained audit entry recording the sync skip. The audit
+  // module re-enters enqueue() for its own kind="audit" row, but those are
+  // never gated (no investigation_id in payload) so there is no recursion.
+  // Lazy-import to avoid a circular module-load.
+  try {
+    const { appendAuditEntry } = await import("../db/auditLog");
+    await appendAuditEntry({
+      actor: "system",
+      kind: "sync.skip_sensitive",
+      payload: {
+        kind: input.kind,
+        ref_id: input.ref_id,
+        investigation_id: investigationId,
+      },
+    });
+  } catch (err) {
+    console.warn("[sync] failed to audit skip_sensitive", err);
+  }
+}
+
 export async function enqueue(input: EnqueueInput): Promise<void> {
+  // Audit-log entries always sync — chain integrity is non-negotiable.
+  if (input.kind !== "audit") {
+    const investigationId = extractInvestigationId(input);
+    if (investigationId) {
+      const sensitive = await isSensitive(investigationId);
+      if (sensitive) {
+        await logSkip(input, investigationId);
+        return;
+      }
+    }
+  }
   const ts = new Date().toISOString();
   await exec(
     `INSERT INTO sync_queue (kind, ref_id, payload_json, file_path, status, attempts, enqueued_at, next_attempt_at)

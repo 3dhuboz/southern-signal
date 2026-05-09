@@ -22,9 +22,10 @@
 
 import { query } from "../db/db";
 import { readFile, exists } from "../opfs";
+import { getPreferences } from "../preferences";
 import { buildManifest } from "./manifest";
 import { buildZip, jsonEntry, textEntry, type ZipEntry } from "./zip";
-import type { AuditLogEntry, EvidenceEvent, Investigation, MediaAsset } from "../db/schema";
+import type { AuditLogEntry, EvidenceEvent, Investigation, MediaAsset, SensorSample } from "../db/schema";
 
 interface TranscriptRow {
   id: string;
@@ -66,6 +67,11 @@ App version: ${APP_VERSION}
 - \`transcripts.json\` — Whisper / cloud transcripts of EVP / spirit-box clips.
 - \`media/<investigation_id>/<media_id>.<ext>\` — original audio/image/video binaries.
   The file path matches the \`file_path\` column in \`media_assets\` (less the case prefix).
+- \`sensors/<investigation_id>/baseline.json\` — first 5 minutes of sensor samples
+  per investigation, ordered by timestamp ASC. Snapshot of "what was normal at
+  the site" for reviewers. Omitted for investigations with no sensor data.
+- \`acknowledgement.txt\` — the user's Acknowledgement of Country statement, or a
+  placeholder note if no acknowledgement has been recorded.
 - \`README.md\` — this file.
 - \`verify.html\` — open in a browser to re-verify the chain locally, no network.
 - \`verify.js\` — \`node verify.js audit_log.jsonl\` for the same check.
@@ -113,8 +119,9 @@ On Windows:
 - It does not prove the original event was paranormal. It proves the
   recording, audit, and transcript pipeline weren't tampered with after
   capture.
-- It does not include sensor baseline data (excluded from V1.1 — too
-  high-volume to be useful in case review).
+- It does not include the full sensor stream — only the first 5 minutes per
+  investigation as a baseline snapshot. Full sensor data is too high-volume
+  for case review and lives on the device.
 - It does not redact culturally sensitive material. Investigators must
   apply that gate before sharing the bundle externally.
 `;
@@ -304,6 +311,53 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
   })));
   entries.push(textEntry("verify.html", VERIFY_HTML));
   entries.push(textEntry("verify.js", VERIFY_JS));
+
+  // 6. Acknowledgement of Country — always included so reviewers can see
+  // whether the user recorded an acknowledgement. Placeholder if not.
+  const aoc = getPreferences().acknowledgementOfCountry;
+  const aocText = aoc.accepted && aoc.statement
+    ? `Acknowledgement of Country\n` +
+      `==========================\n\n` +
+      `Accepted: yes\n` +
+      `Accepted at: ${aoc.acceptedAt ?? "(unknown)"}\n\n` +
+      `Statement\n---------\n\n${aoc.statement}\n`
+    : `Acknowledgement of Country\n` +
+      `==========================\n\n` +
+      `The user of this device has not recorded an Acknowledgement of Country.\n` +
+      `No statement is available for this case bundle.\n`;
+  entries.push(textEntry("acknowledgement.txt", aocText));
+
+  // 7. Per-investigation sensor baseline — first 5 minutes of samples.
+  // Skipped when an investigation has no samples.
+  const FIVE_MINUTES_MS = 5 * 60 * 1000;
+  for (const inv of investigations) {
+    const samples = await query<SensorSample>(
+      "SELECT * FROM sensor_samples WHERE investigation_id = ? ORDER BY timestamp ASC",
+      [inv.id],
+    );
+    if (samples.length === 0) continue;
+
+    const startedAt = samples[0].timestamp;
+    const startMs = Date.parse(startedAt);
+    // If the first timestamp isn't parseable, fall back to including everything
+    // (defensive — sensor writers should produce ISO-8601, but don't drop the
+    // baseline file if one row is malformed).
+    const baselineSamples = Number.isFinite(startMs)
+      ? samples.filter((s) => {
+          const t = Date.parse(s.timestamp);
+          return !Number.isFinite(t) || (t - startMs) <= FIVE_MINUTES_MS;
+        })
+      : samples;
+    const endedAt = baselineSamples[baselineSamples.length - 1].timestamp;
+
+    entries.push(jsonEntry(`sensors/${inv.id}/baseline.json`, {
+      investigation_id: inv.id,
+      started_at: startedAt,
+      ended_at: endedAt,
+      sample_count: baselineSamples.length,
+      samples: baselineSamples,
+    }));
+  }
 
   const blob = buildZip(entries);
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");

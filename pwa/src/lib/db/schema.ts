@@ -6,7 +6,7 @@
  * via a `source` column so cross-device sync can union rows safely.
  */
 
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -37,17 +37,21 @@ CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue (status, next_att
 CREATE INDEX IF NOT EXISTS idx_sync_queue_kind   ON sync_queue (kind, ref_id);
 
 CREATE TABLE IF NOT EXISTS investigations (
-  id              TEXT PRIMARY KEY,
-  title           TEXT NOT NULL,
-  location_name   TEXT,
-  notes           TEXT,
-  created_at      TEXT NOT NULL,
-  started_at      TEXT,
-  ended_at        TEXT,
-  status          TEXT NOT NULL DEFAULT 'created',
-  disposition     TEXT,
+  id                    TEXT PRIMARY KEY,
+  title                 TEXT NOT NULL,
+  location_name         TEXT,
+  notes                 TEXT,
+  created_at            TEXT NOT NULL,
+  started_at            TEXT,
+  ended_at              TEXT,
+  status                TEXT NOT NULL DEFAULT 'created',
+  disposition           TEXT,
   -- 'null' / 'inconclusive' / 'flagged' / 'confirmed_mundane' (skeptic Tier 1)
-  source          TEXT NOT NULL DEFAULT 'pwa'
+  source                TEXT NOT NULL DEFAULT 'pwa',
+  -- v3: per-case cultural sensitivity. When 1, blocks cloud AI calls AND
+  -- suppresses sync enqueue for this case's rows + media. The audit chain
+  -- still records locally so chain integrity is preserved.
+  culturally_sensitive  INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS sensor_samples (
@@ -139,6 +143,8 @@ export interface Investigation {
   status: string;
   disposition: string | null;
   source: string;
+  /** v3: 0 or 1. SQLite has no native boolean. */
+  culturally_sensitive: number;
 }
 
 export interface SensorSample {

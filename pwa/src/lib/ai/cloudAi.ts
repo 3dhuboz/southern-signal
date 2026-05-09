@@ -17,6 +17,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getApiKey } from "./keyStore";
 import { getPreferences } from "../preferences";
+import { query } from "../db/db";
 
 export type CloudProvider = "anthropic" | "openai" | "gemini" | "openrouter" | "proxy";
 
@@ -45,9 +46,32 @@ export class CloudKeyMissingError extends Error {
   }
 }
 
+/**
+ * Authoritative DB-backed check for the per-case cultural-sensitivity flag.
+ *
+ * Callers should prefer this over trusting `CloudCallContext.culturallySensitive`
+ * alone — the context flag may be stale if the user toggled it between
+ * call-time and now. We OR the two so either wins.
+ */
+export async function isInvestigationSensitive(investigationId: string): Promise<boolean> {
+  try {
+    const rows = await query<{ culturally_sensitive: number | bigint }>(
+      "SELECT culturally_sensitive FROM investigations WHERE id = ?",
+      [investigationId],
+    );
+    const raw = rows[0]?.culturally_sensitive ?? 0;
+    return Number(raw) === 1;
+  } catch {
+    // Fail closed: if we can't read the flag, refuse cloud routing.
+    return true;
+  }
+}
+
 export async function ensureRoutable(ctx: CloudCallContext): Promise<void> {
   const prefs = getPreferences();
-  if (ctx.culturallySensitive || prefs.globalCulturalSensitivityFlag) {
+  // DB check is authoritative; ctx flag and global pref are belt-and-braces.
+  const dbSensitive = await isInvestigationSensitive(ctx.investigationId);
+  if (dbSensitive || ctx.culturallySensitive || prefs.globalCulturalSensitivityFlag) {
     throw new CloudGuardError(
       "Cloud AI is refused for culturally-sensitive cases. Audio and notes from this case cannot leave the device. Use on-device tools.",
     );

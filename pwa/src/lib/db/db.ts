@@ -34,10 +34,22 @@ export async function getDb(): Promise<Database> {
         console.warn("[sqlite] OPFS VFS unavailable — running in-memory only. Data will not persist.");
       }
       db.exec(SCHEMA_SQL);
+      // v2 -> v3 migration: SQLite has no IF NOT EXISTS for ADD COLUMN, so
+      // try/swallow. CREATE TABLE IF NOT EXISTS above already handles fresh DBs.
+      try {
+        db.exec("ALTER TABLE investigations ADD COLUMN culturally_sensitive INTEGER NOT NULL DEFAULT 0");
+      } catch {
+        /* column already exists (v3+ DB) — fine */
+      }
       // Stamp schema version
       db.exec({
         sql: "INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('schema_version', ?)",
         bind: [String(CURRENT_SCHEMA_VERSION)],
+      });
+      // Bump schema_version on already-stamped older DBs.
+      db.exec({
+        sql: "UPDATE schema_meta SET value = ? WHERE key = 'schema_version' AND CAST(value AS INTEGER) < ?",
+        bind: [String(CURRENT_SCHEMA_VERSION), CURRENT_SCHEMA_VERSION],
       });
       return { sqlite3, db };
     })();

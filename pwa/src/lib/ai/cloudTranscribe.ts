@@ -6,7 +6,7 @@
  * OPENAI key is held server-side — never exposed to the client.
  */
 
-import { CloudGuardError, ensureRoutable, type CloudCallContext } from "./cloudAi";
+import { CloudGuardError, ensureRoutable, isInvestigationSensitive, type CloudCallContext } from "./cloudAi";
 
 const TRANSCRIBE_PATH = "/api/ai/transcribe";
 
@@ -76,4 +76,4 @@ export async function transcribeAudio(
   };
 }
 
-export { CloudGuardError };
+export { CloudGuardError, isInvestigationSensitive };
