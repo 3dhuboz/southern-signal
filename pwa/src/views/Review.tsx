@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { BaseRatePanel } from "../components/BaseRatePanel";
 import { CaseManager } from "../components/CaseManager";
 import { query } from "../lib/db/db";
-import { verifyAuditChain } from "../lib/db/auditLog";
+import { verifyAuditChain, appendAuditEntry } from "../lib/db/auditLog";
 import { buildManifest } from "../lib/forensic/manifest";
+import { buildExportBundle, downloadBlob } from "../lib/forensic/exportBundle";
 import s from "./View.module.css";
 import r from "./Review.module.css";
 
@@ -68,6 +69,9 @@ export function Review() {
       };
     });
 
+  const [exportStatus, setExportStatus] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+
   const handleExport = useCallback(async () => {
     const all = await query<AuditEntry>("SELECT * FROM audit_log ORDER BY seq ASC");
     const manifest = await buildManifest();
@@ -89,6 +93,27 @@ export function Review() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }, []);
+
+  const handleExportZip = useCallback(async () => {
+    if (exporting) return;
+    setExporting(true);
+    setExportStatus("Building bundle…");
+    try {
+      const { blob, summary } = await buildExportBundle();
+      downloadBlob(blob, summary.filename);
+      const sizeMb = (summary.byteLength / 1024 / 1024).toFixed(1);
+      setExportStatus(`Bundle exported · ${sizeMb} MB · ${summary.investigationIds.length} cases · ${summary.mediaIncluded} media${summary.mediaMissing ? ` (${summary.mediaMissing} missing)` : ""}`);
+      await appendAuditEntry({
+        actor: "user",
+        kind: "bundle.export",
+        payload: { scope: "all", bytes: summary.byteLength, cases: summary.investigationIds.length, media_included: summary.mediaIncluded, media_missing: summary.mediaMissing },
+      }).catch(() => { /* ignore */ });
+    } catch (err) {
+      setExportStatus(`Bundle failed: ${(err as Error).message}`);
+    } finally {
+      setExporting(false);
+    }
+  }, [exporting]);
 
   return (
     <section className={s.view}>
@@ -116,8 +141,11 @@ export function Review() {
                 <code>{merkleRoot.slice(0, 12)}…{merkleRoot.slice(-8)}</code>
               </span>
             )}
+            <button type="button" className={r.downloadButton} onClick={handleExportZip} disabled={exporting}>
+              {exporting ? "Building zip…" : "Export full bundle (.zip)"}
+            </button>
             <button type="button" className={r.downloadButton} onClick={handleExport}>
-              Download bundle (JSON)
+              Manifest + chain (.json)
             </button>
           </>
         )}
@@ -177,8 +205,10 @@ export function Review() {
         )}
       </div>
 
+      {exportStatus && <p className={r.disclaimer}>{exportStatus}</p>}
+
       <p className={r.disclaimer}>
-        Hash-chain receipts are downloadable in V1.1 export. AHT eliminates explanations; it does not confirm causes.
+        The full bundle (.zip) ships the audit chain as JSONL, all media binaries, and a drop-in <code>verify.html</code> any reviewer can open offline. AHT eliminates explanations; it does not confirm causes.
       </p>
     </section>
   );

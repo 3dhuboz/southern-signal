@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { exec, query } from "../lib/db/db";
 import { readFile, deletePath } from "../lib/opfs";
 import { appendAuditEntry } from "../lib/db/auditLog";
+import { buildExportBundle, downloadBlob } from "../lib/forensic/exportBundle";
 import type { EvidenceEvent, Investigation, MediaAsset } from "../lib/db/schema";
 import s from "./CaseManager.module.css";
 
@@ -202,6 +203,24 @@ export function CaseManager() {
     setStatusMsg(`Triggered ${openMedia.length} downloads.`);
   };
 
+  const handleExportBundle = async () => {
+    if (!openCaseId) return;
+    setStatusMsg("Building bundle…");
+    try {
+      const { blob, summary } = await buildExportBundle(openCaseId);
+      downloadBlob(blob, summary.filename);
+      const sizeMb = (summary.byteLength / 1024 / 1024).toFixed(1);
+      setStatusMsg(`Bundle exported · ${sizeMb} MB · ${summary.mediaIncluded} media files${summary.mediaMissing ? ` (${summary.mediaMissing} missing)` : ""}`);
+      await appendAuditEntry({
+        actor: "user",
+        kind: "case.export",
+        payload: { investigation_id: openCaseId, bytes: summary.byteLength, media_included: summary.mediaIncluded, media_missing: summary.mediaMissing },
+      }).catch(() => { /* ignore */ });
+    } catch (err) {
+      setStatusMsg(`Bundle failed: ${(err as Error).message}`);
+    }
+  };
+
   const handleDeleteMedia = async (asset: MediaAsset) => {
     if (!confirm(`Delete media file ${asset.file_path}? The audit-chain entry remains.`)) return;
     try {
@@ -353,10 +372,17 @@ export function CaseManager() {
                       <button
                         type="button"
                         className={s.secondary}
+                        onClick={handleExportBundle}
+                      >
+                        Export bundle (.zip)
+                      </button>
+                      <button
+                        type="button"
+                        className={s.secondary}
                         onClick={handleDownloadAll}
                         disabled={openMedia.length === 0}
                       >
-                        Download all
+                        Download media only
                       </button>
                     </div>
                     {openMedia.length === 0 ? (
