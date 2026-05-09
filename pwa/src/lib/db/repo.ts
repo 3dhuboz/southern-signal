@@ -122,6 +122,18 @@ export interface SensorSampleInput {
   metadata?: Record<string, unknown>;
 }
 
+// Per-(investigation,sensor) last-enqueue timestamps. Bursty IMU readings can
+// fire 50+ Hz; we still record every sample locally at full fidelity, but only
+// mirror one row per minute per (investigation_id, sensor_type) to the cloud
+// queue. This keeps D1/R2 cost bounded without losing on-device detail.
+const SENSOR_SYNC_THROTTLE_MS = 60_000;
+const lastSensorEnqueueAt = new Map<string, number>();
+
+/** Test/diagnostic helper — wipes the throttle map. */
+export function clearSensorEnqueueThrottle(): void {
+  lastSensorEnqueueAt.clear();
+}
+
 export async function recordSensorSample(input: SensorSampleInput): Promise<SensorSample> {
   const id = uuid();
   const ts = input.timestamp ?? nowUtc();
@@ -142,6 +154,14 @@ export async function recordSensorSample(input: SensorSampleInput): Promise<Sens
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [sample.id, sample.investigation_id, sample.timestamp, sample.sensor_type, sample.value, sample.x, sample.y, sample.z, sample.unit, sample.metadata_json],
   );
+  // Throttled mirror to the sync queue. Local insert above is unconditional.
+  const throttleKey = `${sample.investigation_id}|${sample.sensor_type}`;
+  const now = Date.now();
+  const lastAt = lastSensorEnqueueAt.get(throttleKey) ?? 0;
+  if (now - lastAt >= SENSOR_SYNC_THROTTLE_MS) {
+    lastSensorEnqueueAt.set(throttleKey, now);
+    await safeEnqueue({ kind: "sensor", ref_id: id, payload: sample as unknown as Record<string, unknown> });
+  }
   return sample;
 }
 

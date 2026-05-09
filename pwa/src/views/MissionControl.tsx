@@ -27,7 +27,7 @@ import {
 import { LiveAnalyzer } from "../lib/audio/liveAnalyzer";
 import { type SectorReading } from "../lib/audio/sectorIndicator";
 import { ensureTodayInvestigation } from "../lib/bootstrap";
-import { recordEvent, startInvestigation, stopInvestigation } from "../lib/db/repo";
+import { getInvestigation, recordEvent, setCulturallySensitive, startInvestigation, stopInvestigation } from "../lib/db/repo";
 import {
   emitAcousticTransient,
   emitInfrasoundPulse,
@@ -74,6 +74,39 @@ export function MissionControl() {
   const aiAssistantRef = useRef<HTMLDivElement | null>(null);
   const [pendingDispositionFor, setPendingDispositionFor] = useState<string | null>(null);
   const [narrationSpeak, setNarrationSpeak] = useState<boolean>(false);
+  const [culturallySensitive, setCulturallySensitiveState] = useState<boolean>(false);
+
+  // Reflect the active investigation's stored cultural-sensitivity flag.
+  useEffect(() => {
+    const id = session.current?.id;
+    if (!id) {
+      setCulturallySensitiveState(false);
+      return;
+    }
+    let cancelled = false;
+    void getInvestigation(id).then((inv) => {
+      if (!cancelled) setCulturallySensitiveState(!!inv && inv.culturally_sensitive === 1);
+    });
+    return () => { cancelled = true; };
+  }, [session.current?.id]);
+
+  const handleToggleSensitive = useCallback(async () => {
+    const id = session.current?.id;
+    if (!id) return;
+    if (culturallySensitive) {
+      // Turning protection OFF: confirm first (high risk — cloud + sync resume).
+      const ok = window.confirm("Clear cultural-sensitivity flag for this case? Cloud AI and sync will resume.");
+      if (!ok) return;
+      await setCulturallySensitive(id, false);
+      setCulturallySensitiveState(false);
+      setStatusMsg("Cultural-sensitivity flag cleared. Cloud AI and sync re-enabled for this case.");
+    } else {
+      // Turning protection ON: low risk, flip immediately.
+      await setCulturallySensitive(id, true);
+      setCulturallySensitiveState(true);
+      setStatusMsg("Site flagged as culturally sensitive. Cloud AI and sync are blocked for this case.");
+    }
+  }, [session.current?.id, culturallySensitive]);
 
   const handleAskQuestion = useCallback(() => {
     aiAssistantRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -366,6 +399,17 @@ export function MissionControl() {
                 <span>{running ? "RECORDING" : "STANDBY"}</span>
               </span>
               <ScreenRecordButton investigationId={session.current?.id ?? null} />
+              {session.current && (
+                <button
+                  type="button"
+                  className={`${m.sensitivePill} ${culturallySensitive ? m.sensitivePillActive : ""}`.trim()}
+                  onClick={handleToggleSensitive}
+                  title={culturallySensitive ? "Tap to clear cultural-sensitivity flag" : "Tap to flag this site as culturally sensitive"}
+                >
+                  <span className={m.sensitivePillDot} />
+                  <span>{culturallySensitive ? "SENSITIVE · cloud blocked" : "Site OK"}</span>
+                </button>
+              )}
               <span className={m.caseId}>
                 {session.current ? `CASE ${session.current.id.slice(0, 8).toUpperCase()}` : "NO CASE"}
               </span>
@@ -508,7 +552,7 @@ export function MissionControl() {
           posterior={posterior}
           recentIncrements={siteSession.recentIncrements}
           siteContext={session.current?.location_name ? `Location: ${session.current.location_name}.` : ""}
-          culturallySensitive={false}
+          culturallySensitive={culturallySensitive}
         />
       </div>
 

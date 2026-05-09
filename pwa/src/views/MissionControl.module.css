@@ -87,6 +87,47 @@
   letter-spacing: 0.6px;
 }
 
+.sensitivePill {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--r-full);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  cursor: pointer;
+  background: var(--bg-inset);
+  color: var(--text-muted);
+  border: 1px solid var(--border-default);
+  min-height: 28px;
+  white-space: nowrap;
+}
+.sensitivePill:hover {
+  background: var(--bg-overlay);
+  color: var(--text-secondary);
+  border-color: var(--border-strong);
+}
+.sensitivePillActive {
+  background: var(--danger-wash);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.sensitivePillActive:hover {
+  background: rgba(239, 110, 110, 0.18);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.sensitivePillDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
 .heroTitle {
   font-size: 16px;
   color: var(--text-primary);

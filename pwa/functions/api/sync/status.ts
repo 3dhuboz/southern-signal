@@ -79,6 +79,7 @@ export const onRequestGet: PagesFn<Env> = async ({ env }) => {
       media: await tryCount(env.SYNC_DB, "media_assets"),
       audit: await tryCount(env.SYNC_DB, "audit_log"),
       transcripts: await tryCount(env.SYNC_DB, "transcripts"),
+      sensors: await tryCount(env.SYNC_DB, "sensor_samples"),
     };
   }
   return jsonResponse(status, 200);

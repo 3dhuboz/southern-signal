@@ -135,6 +135,15 @@ async function ensureSchema(db: D1Database): Promise<void> {
       confidence REAL, engine TEXT NOT NULL, metadata_json TEXT
     );
   `.replace(/\n\s+/g, " "));
+  // Mirrors local sensor_samples. Client throttles enqueues to ~1/min per
+  // (investigation_id, sensor_type), so volume here is bounded.
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS sensor_samples (
+      id TEXT PRIMARY KEY, investigation_id TEXT NOT NULL, timestamp TEXT NOT NULL,
+      sensor_type TEXT NOT NULL, value REAL, x REAL, y REAL, z REAL,
+      unit TEXT, metadata_json TEXT
+    );
+  `.replace(/\n\s+/g, " "));
 }
 
 async function persistRow(db: D1Database, item: UploadItem): Promise<{ ok: true } | { ok: false; reason: string }> {
@@ -170,6 +179,12 @@ async function persistRow(db: D1Database, item: UploadItem): Promise<{ ok: true 
           `INSERT OR IGNORE INTO transcripts (id, media_id, investigation_id, segment_start_s, segment_end_s, text, confidence, engine, metadata_json)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).bind(p.id, p.media_id, p.investigation_id, p.segment_start_s, p.segment_end_s, p.text, p.confidence ?? null, p.engine, p.metadata_json ?? null).run();
+        return { ok: true };
+      case "sensor":
+        await db.prepare(
+          `INSERT OR IGNORE INTO sensor_samples (id, investigation_id, timestamp, sensor_type, value, x, y, z, unit, metadata_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).bind(p.id, p.investigation_id, p.timestamp, p.sensor_type, p.value ?? null, p.x ?? null, p.y ?? null, p.z ?? null, p.unit ?? null, p.metadata_json ?? null).run();
         return { ok: true };
       default:
         return { ok: false, reason: `unknown kind: ${item.kind}` };

@@ -126,6 +126,113 @@ On Windows:
   apply that gate before sharing the bundle externally.
 `;
 
+interface CoverData {
+  generatedAt: string;
+  scope: "all" | "single";
+  investigationCount: number;
+  caseTitle: string | null;
+  caseLocation: string | null;
+  caseId: string | null;
+  caseStatus: string | null;
+  caseDisposition: string | null;
+  leafCount: number;
+  merkleRoot: string | null;
+  verificationOk: boolean;
+  verificationDetail: string;
+  counts: { investigations: number; events: number; media: number; transcripts: number };
+  aocAccepted: boolean;
+  aocStatement: string | null;
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) =>
+    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
+  );
+}
+
+function truncateMiddle(s: string | null, head = 10, tail = 10): string {
+  if (!s) return "(empty chain)";
+  if (s.length <= head + tail + 1) return s;
+  return `${s.slice(0, head)}…${s.slice(-tail)}`;
+}
+
+const COVER_HTML_TEMPLATE = (d: CoverData): string => {
+  const verifyMark = d.verificationOk ? "✓" : "✗";
+  const verifyClass = d.verificationOk ? "ok" : "bad";
+  const verifyText = d.verificationOk ? "Verified" : `Broken (${escapeHtml(d.verificationDetail)})`;
+  const scopeBlock = d.scope === "single"
+    ? `<dl class="case">
+      <dt>Case</dt><dd>${escapeHtml(d.caseTitle ?? "(untitled)")}</dd>
+      <dt>Location</dt><dd>${escapeHtml(d.caseLocation ?? "(none recorded)")}</dd>
+      <dt>ID</dt><dd><code>${escapeHtml(d.caseId ?? "")}</code></dd>
+      <dt>Status</dt><dd>${escapeHtml(d.caseStatus ?? "")}</dd>
+      <dt>Disposition</dt><dd>${escapeHtml(d.caseDisposition ?? "(none)")}</dd>
+    </dl>`
+    : `<p class="agg">${d.investigationCount} investigation${d.investigationCount === 1 ? "" : "s"} on this device.</p>`;
+  const aocBlock = d.aocAccepted && d.aocStatement
+    ? `<blockquote>${escapeHtml(d.aocStatement)}</blockquote>`
+    : `<p class="muted">No acknowledgement recorded.</p>`;
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Southern Signal · Case Bundle Cover</title>
+<style>
+  @page { size: A4; margin: 18mm; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font: 12pt/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color: #111; max-width: 720px; margin: 32px auto; padding: 0 24px; }
+  header { border-bottom: 2px solid #111; padding-bottom: 12px; margin-bottom: 24px; }
+  h1 { font-size: 28pt; font-weight: 800; letter-spacing: -0.02em; margin: 0; }
+  .sub { font-size: 13pt; color: #555; margin-top: 4px; }
+  .meta { font-size: 10pt; color: #666; margin-top: 8px; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  section { margin: 22px 0; page-break-inside: avoid; }
+  h2 { font-size: 11pt; text-transform: uppercase; letter-spacing: 0.08em; color: #333; margin: 0 0 8px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+  dl.case { display: grid; grid-template-columns: 120px 1fr; gap: 6px 16px; margin: 0; }
+  dl.case dt { font-weight: 600; color: #555; }
+  dl.case dd { margin: 0; }
+  .agg { font-size: 14pt; margin: 8px 0; }
+  table.counts { width: 100%; border-collapse: collapse; }
+  table.counts td { padding: 6px 8px; border-bottom: 1px solid #eee; }
+  table.counts td:last-child { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .chain { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 10pt; }
+  .chain .row { display: flex; justify-content: space-between; padding: 4px 0; }
+  .chain .row .k { color: #555; }
+  .ok { color: #0a7e3f; font-weight: 700; }
+  .bad { color: #b00020; font-weight: 700; }
+  blockquote { margin: 0; padding: 12px 16px; border-left: 4px solid #888; background: #f7f7f7; font-style: italic; }
+  .muted { color: #777; font-style: italic; margin: 0; }
+  footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid #ccc; font-size: 9pt; color: #666; }
+  footer code { background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  @media print { body { margin: 0; max-width: none; padding: 0; } }
+</style></head><body>
+<header>
+  <h1>Southern Signal</h1>
+  <div class="sub">Case Bundle</div>
+  <div class="meta">Generated ${escapeHtml(d.generatedAt)} · v${escapeHtml(APP_VERSION)}</div>
+</header>
+<section><h2>Scope</h2>${scopeBlock}</section>
+<section><h2>Audit chain</h2>
+  <div class="chain">
+    <div class="row"><span class="k">Leaves</span><span>${d.leafCount}</span></div>
+    <div class="row"><span class="k">Merkle root</span><span>${escapeHtml(truncateMiddle(d.merkleRoot))}</span></div>
+    <div class="row"><span class="k">Verification</span><span class="${verifyClass}">${verifyMark} ${verifyText}</span></div>
+  </div>
+</section>
+<section><h2>Counts</h2>
+  <table class="counts">
+    <tr><td>Investigations</td><td>${d.counts.investigations}</td></tr>
+    <tr><td>Evidence events</td><td>${d.counts.events}</td></tr>
+    <tr><td>Media assets</td><td>${d.counts.media}</td></tr>
+    <tr><td>Transcripts</td><td>${d.counts.transcripts}</td></tr>
+  </table>
+</section>
+<section><h2>Acknowledgement of Country</h2>${aocBlock}</section>
+<footer>
+  To re-verify the chain: open <code>verify.html</code> in this folder, or run <code>node verify.js audit_log.jsonl</code>.
+</footer>
+</body></html>
+`;
+};
+
 const VERIFY_HTML = `<!doctype html>
 <meta charset="utf-8">
 <title>Southern Signal · Audit chain verifier</title>
@@ -315,6 +422,35 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
   // 6. Acknowledgement of Country — always included so reviewers can see
   // whether the user recorded an acknowledgement. Placeholder if not.
   const aoc = getPreferences().acknowledgementOfCountry;
+
+  // Cover page — single-page printable summary for binders/case files.
+  const singleCase = scope === "single" ? investigations[0] ?? null : null;
+  const coverHtml = COVER_HTML_TEMPLATE({
+    generatedAt: new Date().toISOString(),
+    scope,
+    investigationCount: investigations.length,
+    caseTitle: singleCase?.title ?? null,
+    caseLocation: singleCase?.location_name ?? null,
+    caseId: singleCase?.id ?? null,
+    caseStatus: singleCase?.status ?? null,
+    caseDisposition: singleCase?.disposition ?? null,
+    leafCount: manifest.global_audit_chain.leaf_count,
+    merkleRoot: manifest.global_audit_chain.merkle_root,
+    verificationOk: manifest.global_audit_chain.verification.ok,
+    verificationDetail: manifest.global_audit_chain.verification.ok
+      ? ""
+      : `seq ${manifest.global_audit_chain.verification.brokenAtSeq}: ${manifest.global_audit_chain.verification.reason}`,
+    counts: {
+      investigations: investigations.length,
+      events: events.length,
+      media: media.length,
+      transcripts: transcripts.length,
+    },
+    aocAccepted: aoc.accepted,
+    aocStatement: aoc.statement,
+  });
+  entries.push(textEntry("cover.html", coverHtml));
+
   const aocText = aoc.accepted && aoc.statement
     ? `Acknowledgement of Country\n` +
       `==========================\n\n` +
