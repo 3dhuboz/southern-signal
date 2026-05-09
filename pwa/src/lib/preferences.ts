@@ -38,6 +38,14 @@ export interface AppPreferences {
   };
   /** Investigators tag the current site as culturally sensitive — disables ALL cloud AI for this device's cases until untoggled. */
   globalCulturalSensitivityFlag: boolean;
+  /** Cloud sync (R2/D1) — opt-in. Disabled when the cultural-sensitivity flag is on. */
+  sync: {
+    enabled: boolean;
+    /** Full URL to the upload endpoint, e.g. https://southern-signal.pages.dev/api/sync/upload */
+    endpoint: string;
+    /** Bearer token (matches env.SYNC_TOKEN on the deployment). */
+    token: string | null;
+  };
 }
 
 const DEFAULTS: AppPreferences = {
@@ -48,6 +56,7 @@ const DEFAULTS: AppPreferences = {
   acknowledgementOfCountry: { accepted: false, acceptedAt: null, statement: null },
   ai: { provider: null, blockOnSensitive: true, anthropicModel: "claude-sonnet-4-6", openrouterModel: "anthropic/claude-sonnet-4.6" },
   globalCulturalSensitivityFlag: false,
+  sync: { enabled: false, endpoint: "", token: null },
 };
 
 const KEY = "ss-preferences-v1";
@@ -63,6 +72,7 @@ function read(): AppPreferences {
       ...parsed,
       acknowledgementOfCountry: { ...DEFAULTS.acknowledgementOfCountry, ...(parsed.acknowledgementOfCountry ?? {}) },
       ai: { ...DEFAULTS.ai, ...(parsed.ai ?? {}), blockOnSensitive: true },
+      sync: { ...DEFAULTS.sync, ...(parsed.sync ?? {}) },
     };
   } catch {
     return DEFAULTS;
@@ -85,6 +95,7 @@ export function setPreferences(patch: Partial<AppPreferences>): AppPreferences {
     ...patch,
     acknowledgementOfCountry: { ...current.acknowledgementOfCountry, ...(patch.acknowledgementOfCountry ?? {}) },
     ai: { ...current.ai, ...(patch.ai ?? {}), blockOnSensitive: true },
+    sync: { ...current.sync, ...(patch.sync ?? {}) },
   };
   write(next);
   return next;

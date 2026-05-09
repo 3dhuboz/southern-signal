@@ -1,5 +1,6 @@
 import { applyTheme, usePreferences } from "../lib/preferences";
 import { CaseManager } from "../components/CaseManager";
+import { SyncPanel } from "../components/SyncPanel";
 import s from "./View.module.css";
 import st from "./Setup.module.css";
 
@@ -49,6 +50,9 @@ export function Setup() {
         </div>
       </section>
 
+
+      {/* Cloud sync (R2 + D1) */}
+      <SyncPanel />
 
       {/* Privacy */}
       <section className={st.panel}>

@@ -6,13 +6,35 @@
  * via a `source` column so cross-device sync can union rows safely.
  */
 
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+-- Offline upload queue (v2). Every write to a synced table appends a row here;
+-- the sync worker drains pending rows when network is available. Idempotent
+-- by (kind, ref_id) on the server side via INSERT OR IGNORE.
+CREATE TABLE IF NOT EXISTS sync_queue (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind            TEXT NOT NULL,
+  -- 'audit' / 'investigation' / 'event' / 'media_row' / 'media_blob' / 'transcript' / 'sensor'
+  ref_id          TEXT NOT NULL,
+  payload_json    TEXT NOT NULL,
+  file_path       TEXT,
+  -- only set for media_blob: OPFS path of the bytes to upload
+  status          TEXT NOT NULL DEFAULT 'pending',
+  -- 'pending' / 'in_flight' / 'done' / 'failed'
+  attempts        INTEGER NOT NULL DEFAULT 0,
+  last_error      TEXT,
+  enqueued_at     TEXT NOT NULL,
+  next_attempt_at TEXT NOT NULL,
+  uploaded_at     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue (status, next_attempt_at);
+CREATE INDEX IF NOT EXISTS idx_sync_queue_kind   ON sync_queue (kind, ref_id);
 
 CREATE TABLE IF NOT EXISTS investigations (
   id              TEXT PRIMARY KEY,

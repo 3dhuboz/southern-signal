@@ -11,6 +11,7 @@
  */
 
 import { exec, query } from "./db";
+import { enqueue } from "../sync/queue";
 
 const GENESIS_HASH = "0".repeat(64);
 
@@ -69,6 +70,18 @@ export async function appendAuditEntry({ actor, kind, payload, ts }: AuditAppend
     "INSERT INTO audit_log (seq, ts_utc, actor, kind, payload_json, prev_hash, entry_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
     [seq, tsUtc, actor, kind, payloadCanon, prevHash, entryHash],
   );
+
+  // Enqueue for cloud sync. Best-effort — failures here must NOT break the
+  // chain itself (sync is downstream of the local source of truth).
+  try {
+    await enqueue({
+      kind: "audit",
+      ref_id: String(seq),
+      payload: { seq, ts_utc: tsUtc, actor, kind, payload_json: payloadCanon, prev_hash: prevHash, entry_hash: entryHash },
+    });
+  } catch (err) {
+    console.warn("[sync] failed to enqueue audit entry", err);
+  }
 
   return { seq, ts_utc: tsUtc, prev_hash: prevHash, entry_hash: entryHash };
 }

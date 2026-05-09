@@ -8,6 +8,11 @@
 import { appendAuditEntry } from "./auditLog";
 import { exec, query } from "./db";
 import type { EvidenceEvent, Investigation, MediaAsset, SensorSample } from "./schema";
+import { enqueue } from "../sync/queue";
+
+async function safeEnqueue(args: Parameters<typeof enqueue>[0]): Promise<void> {
+  try { await enqueue(args); } catch (err) { console.warn("[sync] enqueue failed", err); }
+}
 
 const ACTOR_DEFAULT = "user";
 
@@ -46,6 +51,7 @@ export async function createInvestigation(input: { title: string; location_name?
     kind: "investigation.create",
     payload: { id, title: investigation.title, location_name: investigation.location_name },
   });
+  await safeEnqueue({ kind: "investigation", ref_id: id, payload: investigation as unknown as Record<string, unknown> });
   return investigation;
 }
 
@@ -162,6 +168,7 @@ export async function recordEvent(input: EventInput): Promise<EvidenceEvent> {
     kind: `event.${input.event_type}`,
     payload: { id, investigation_id: input.investigation_id, source: input.source, event_type: input.event_type },
   });
+  await safeEnqueue({ kind: "event", ref_id: id, payload: event as unknown as Record<string, unknown> });
   return event;
 }
 
@@ -206,6 +213,14 @@ export async function registerMedia(input: MediaInput): Promise<MediaAsset> {
     actor: ACTOR_DEFAULT,
     kind: "media.register",
     payload: { id, investigation_id: input.investigation_id, media_type: input.media_type, file_path: input.file_path, sha256: input.checksum_sha256 ?? null },
+  });
+  await safeEnqueue({ kind: "media_row", ref_id: id, payload: asset as unknown as Record<string, unknown> });
+  // The bytes go up separately so a 2GB video doesn't block the row sync.
+  await safeEnqueue({
+    kind: "media_blob",
+    ref_id: id,
+    payload: { id, investigation_id: input.investigation_id, file_path: input.file_path, media_type: input.media_type, sha256: input.checksum_sha256 ?? null },
+    file_path: input.file_path,
   });
   return asset;
 }
