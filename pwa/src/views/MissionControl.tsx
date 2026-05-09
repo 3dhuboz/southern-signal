@@ -72,6 +72,7 @@ export function MissionControl() {
   const sectorReadingRef = useRef<SectorReading | null>(null);
   const lastAcousticEmitTsRef = useRef<number>(0);
   const aiAssistantRef = useRef<HTMLDivElement | null>(null);
+  const liveStreamRef = useRef<HTMLDivElement | null>(null);
   const [pendingDispositionFor, setPendingDispositionFor] = useState<string | null>(null);
   const [narrationSpeak, setNarrationSpeak] = useState<boolean>(false);
   const [culturallySensitive, setCulturallySensitiveState] = useState<boolean>(false);
@@ -110,6 +111,10 @@ export function MissionControl() {
 
   const handleAskQuestion = useCallback(() => {
     aiAssistantRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, []);
+
+  const handleBroadcastLive = useCallback(() => {
+    liveStreamRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
   // Live narrator — plain-English caption per posterior increment, optionally spoken.
@@ -384,6 +389,7 @@ export function MissionControl() {
           onStop={handleStop}
           onMarker={handleMarker}
           onAskQuestion={handleAskQuestion}
+          onBroadcastLive={handleBroadcastLive}
           emitEvidence={emitEvidence}
         />
       )}
@@ -500,6 +506,7 @@ export function MissionControl() {
       )}
 
       {/* LIVE BROADCAST — camera + mic + sensor overlays composited; record + go live */}
+      <div ref={liveStreamRef}>
       <LiveStreamView
         investigationId={session.current?.id ?? null}
         running={running}
@@ -514,6 +521,7 @@ export function MissionControl() {
         magnetometerUt={sensors.snapshot.magnetometer?.magnitude ?? sensors.emf?.value}
         motionMs2={sensors.snapshot.motion?.accelMagnitude ?? sensors.vibration?.value}
       />
+      </div>
 
       {/* AR VIEW — quick camera open without composited stream (Simple-mode discovery) */}
       {!isPro && (

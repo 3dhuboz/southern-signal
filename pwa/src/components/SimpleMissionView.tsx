@@ -68,6 +68,7 @@ interface SimpleMissionViewProps {
   onStop: () => void;
   onMarker: () => void;
   onAskQuestion: () => void;
+  onBroadcastLive: () => void;
   emitEvidence: (input: {
     channel: string;
     logLr: number;
@@ -170,7 +171,7 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
     running, busy, posterior, elapsedSeconds, caseId, caseTitle, statusMsg,
     recentIncrements, trustworthy, hasInvestigation, investigationId,
     audioRms, sectorReading, narratorCaption, narratorSpeak, onToggleNarratorSpeak,
-    onBegin, onStop, onMarker, onAskQuestion, emitEvidence,
+    onBegin, onStop, onMarker, onAskQuestion, onBroadcastLive, emitEvidence,
   } = props;
   const [markSheetOpen, setMarkSheetOpen] = useState(false);
   const [latched, setLatched] = useState<string | null>(null);
@@ -315,6 +316,13 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
           </button>
         )}
       </div>
+
+      {/* BROADCAST CTA — headline feature: camera + sensor overlays composited live */}
+      <button type="button" className={s.broadcast} onClick={onBroadcastLive}>
+        <span className={s.broadcastDot} aria-hidden="true" />
+        <span>Broadcast live with sensor overlays</span>
+        <span className={s.broadcastHint}>TV-grade timestamps</span>
+      </button>
 
       {/* QUICK ACTIONS */}
       <div className={s.quickActions}>
