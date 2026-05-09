@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { BaseRatePanel } from "../components/BaseRatePanel";
+import { CaseManager } from "../components/CaseManager";
 import { query } from "../lib/db/db";
 import { verifyAuditChain } from "../lib/db/auditLog";
 import { buildManifest } from "../lib/forensic/manifest";
@@ -93,11 +94,14 @@ export function Review() {
     <section className={s.view}>
       <div className={s.titleBlock}>
         <span className={s.eyebrow}>Review · Post-roll</span>
-        <h1 className={s.title}>Hypothesis log + chain</h1>
+        <h1 className={s.title}>All cases · all data</h1>
         <p className={s.lede}>
-          Non-live forensic record. Every posterior increment, prompt, response, sensor frame.
+          Every investigation, every session, every captured image / audio / video clip, every posterior increment, every audit-chain entry. Edit, export, or download from here. Setup mirrors the case manager so you can manage from either screen.
         </p>
       </div>
+
+      {/* CASE MANAGER — every investigation with media browser, edit, download, delete */}
+      <CaseManager />
 
       {/* Chain status banner */}
       <div className={`${r.chainStatus} ${r[chainStatus]}`.trim()}>
