@@ -466,6 +466,9 @@ export function MissionControl() {
         caseId={session.current?.id ?? null}
         caseTitle={session.current?.title ?? null}
         caption={narratorCaption}
+        lightLux={sensors.snapshot.light?.lux}
+        magnetometerUt={sensors.snapshot.magnetometer?.magnitude ?? sensors.emf?.value}
+        motionMs2={sensors.snapshot.motion?.accelMagnitude ?? sensors.vibration?.value}
       />
 
       {/* AR VIEW — quick camera open without composited stream (Simple-mode discovery) */}

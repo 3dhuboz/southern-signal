@@ -76,6 +76,7 @@ export function CaseManager() {
   const [openEvents, setOpenEvents] = useState<EvidenceEvent[]>([]);
   const [editing, setEditing] = useState<{ title: string; location_name: string; notes: string } | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [dismissedSuggestionFor, setDismissedSuggestionFor] = useState<Set<string>>(() => new Set());
 
   const refresh = useCallback(() => setReloadTick((t) => t + 1), []);
 
@@ -140,6 +141,52 @@ export function CaseManager() {
   }, [openCaseId, cases]);
 
   const sessions = useMemo(() => groupSessions(openEvents), [openEvents]);
+
+  // Derive a "null result" suggestion when the case has at least one ENDED
+  // session, no current disposition, and no logged posterior_after ever
+  // exceeded 0.4. We look at evidence_events whose metadata_json carries a
+  // `posterior_after` field (the same payload key the audit-log evidence.*
+  // entries use; see siteSession.applyAndAudit + Review.tsx parsing).
+  const openCase = openCaseId ? cases.find((c) => c.id === openCaseId) ?? null : null;
+  const suggestNullResult = useMemo(() => {
+    if (!openCase) return false;
+    if (openCase.disposition) return false;
+    const hasEndedSession = sessions.some((sg) => sg.endedAt !== null);
+    if (!hasEndedSession) return false;
+    let sawPosteriorEvent = false;
+    let anyAboveThreshold = false;
+    for (const ev of openEvents) {
+      if (!ev.metadata_json) continue;
+      let meta: Record<string, unknown>;
+      try { meta = JSON.parse(ev.metadata_json) as Record<string, unknown>; } catch { continue; }
+      if (typeof meta.posterior_after !== "number") continue;
+      sawPosteriorEvent = true;
+      if (meta.posterior_after > 0.4) {
+        anyAboveThreshold = true;
+        break;
+      }
+    }
+    if (!sawPosteriorEvent) return false; // no signal — can't advise
+    return !anyAboveThreshold;
+  }, [openCase, sessions, openEvents]);
+
+  const showSuggestion = suggestNullResult && openCaseId !== null && !dismissedSuggestionFor.has(openCaseId);
+
+  const handleDismissSuggestion = async () => {
+    if (!openCaseId) return;
+    setDismissedSuggestionFor((prev) => {
+      const next = new Set(prev);
+      next.add(openCaseId);
+      return next;
+    });
+    try {
+      await appendAuditEntry({
+        actor: "user",
+        kind: "disposition.suggestion_dismiss",
+        payload: { investigation_id: openCaseId, suggested: "null", reason: "no posterior_after > 0.4" },
+      });
+    } catch { /* audit failures must not break UX */ }
+  };
 
   const handleSaveEdits = async () => {
     if (!openCaseId || !editing) return;
@@ -366,6 +413,17 @@ export function CaseManager() {
                       onChange={(e) => handleToggleCulturallySensitive(e.target.checked)}
                     />
                   </label>
+
+                  {showSuggestion && (
+                    <div className={s.suggestion}>
+                      <span className={s.suggestionText}>
+                        <strong>Suggested disposition: NULL RESULT</strong> — no posterior increment exceeded 0.4 in any session.
+                      </span>
+                      <button type="button" className={s.dispo} onClick={() => handleSetDisposition("null")}>Confirm null result</button>
+                      <button type="button" className={s.dispo} onClick={() => handleSetDisposition("inconclusive")}>Set inconclusive</button>
+                      <button type="button" className={s.dispo} onClick={handleDismissSuggestion}>Dismiss</button>
+                    </div>
+                  )}
 
                   <div className={s.actions}>
                     <button type="button" className={s.primary} onClick={handleSaveEdits}>Save edits</button>

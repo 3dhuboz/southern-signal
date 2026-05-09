@@ -231,6 +231,28 @@
 }
 .input:disabled { opacity: 0.6; }
 
+.providerSelect {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  color: var(--text-primary);
+  width: 100%;
+  appearance: auto;
+  cursor: pointer;
+}
+.providerSelect:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.providerHint {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--text-muted);
+  margin: 2px 0 0;
+  line-height: 1.35;
+}
+
 .liveHint {
   font-size: 11px;
   color: var(--text-muted);

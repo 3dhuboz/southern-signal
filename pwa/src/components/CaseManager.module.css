@@ -116,6 +116,28 @@
   gap: 10px;
 }
 
+.suggestion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 12px;
+  background: var(--signal-wash);
+  border: 1px solid var(--signal-dim);
+  border-radius: var(--r-sm);
+}
+.suggestionText {
+  flex: 1;
+  min-width: 200px;
+  font-size: 12px;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+.suggestionText strong {
+  color: var(--signal);
+  font-weight: 700;
+}
+
 .field {
   display: flex;
   flex-direction: column;

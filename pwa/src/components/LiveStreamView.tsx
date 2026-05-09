@@ -22,6 +22,50 @@ import { createCanvasCompositor, type CanvasCompositor, type OverlayState } from
 import { startWhipSession, type WhipSession, type WhipState, type WhipOutboundStats } from "../lib/media/whip";
 import s from "./LiveStreamView.module.css";
 
+type WhipProviderKey = "cloudflare" | "mux" | "dolby" | "eyevinn" | "custom";
+
+interface WhipProviderTemplate {
+  key: WhipProviderKey;
+  label: string;
+  url: string;
+  note: string;
+}
+
+// URL templates with placeholders intentionally preserved — the user replaces
+// the <bracketed> bits with their stream-specific values.
+const WHIP_PROVIDERS: WhipProviderTemplate[] = [
+  {
+    key: "cloudflare",
+    label: "Cloudflare Stream Live",
+    url: "https://customer-XXXX.cloudflarestream.com/<input-id>/webrtc/publish",
+    note: "From Cloudflare dashboard → Stream → Live Inputs → WebRTC URL. Bearer token not required.",
+  },
+  {
+    key: "mux",
+    label: "Mux",
+    url: "https://global-live.mux.com/api/whip/<stream-key>",
+    note: "From Mux dashboard → Live Streams → Stream Key. Bearer token: paste your Mux access token.",
+  },
+  {
+    key: "dolby",
+    label: "Dolby.io",
+    url: "https://director.millicast.com/api/whip/<stream-name>",
+    note: "From Dolby.io dashboard → Live → WHIP. Token required.",
+  },
+  {
+    key: "eyevinn",
+    label: "Eyevinn open-source WHIP gateway",
+    url: "https://wht.eyevinn.technology/<channel-id>",
+    note: "Free public test endpoint. Treat as throwaway — anyone can publish.",
+  },
+  {
+    key: "custom",
+    label: "Custom",
+    url: "",
+    note: "",
+  },
+];
+
 interface LiveStreamViewProps {
   investigationId: string | null;
   running: boolean;
@@ -69,6 +113,15 @@ export function LiveStreamView(props: LiveStreamViewProps) {
   });
   const [whipBearer, setWhipBearer] = useState<string>(() => {
     try { return localStorage.getItem("ss-whip-bearer") ?? ""; } catch { return ""; }
+  });
+  const [whipProvider, setWhipProvider] = useState<WhipProviderKey>(() => {
+    try {
+      const stored = localStorage.getItem("ss-whip-provider");
+      if (stored && WHIP_PROVIDERS.some((p) => p.key === stored)) {
+        return stored as WhipProviderKey;
+      }
+    } catch { /* ignore */ }
+    return "custom";
   });
   const [error, setError] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
@@ -418,6 +471,22 @@ export function LiveStreamView(props: LiveStreamViewProps) {
     };
   }, [stop]);
 
+  const handleProviderChange = useCallback((nextKey: WhipProviderKey) => {
+    setWhipProvider(nextKey);
+    try { localStorage.setItem("ss-whip-provider", nextKey); } catch { /* ignore */ }
+    const provider = WHIP_PROVIDERS.find((p) => p.key === nextKey);
+    if (!provider) return;
+    // Custom leaves the URL untouched-blank; everything else pre-fills the
+    // template (placeholders included — the user replaces <bracketed> bits).
+    if (nextKey === "custom") {
+      setWhipUrl("");
+    } else {
+      setWhipUrl(provider.url);
+    }
+  }, []);
+
+  const activeProvider = WHIP_PROVIDERS.find((p) => p.key === whipProvider);
+
   return (
     <div className={s.wrap}>
       <header className={s.head}>
@@ -517,6 +586,19 @@ export function LiveStreamView(props: LiveStreamViewProps) {
 
           <div className={s.live}>
             <label className={s.field}>
+              <span className={s.fieldLabel}>Provider template</span>
+              <select
+                className={s.providerSelect}
+                value={whipProvider}
+                onChange={(e) => handleProviderChange(e.target.value as WhipProviderKey)}
+                disabled={liveOn}
+              >
+                {WHIP_PROVIDERS.map((p) => (
+                  <option key={p.key} value={p.key}>{p.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className={s.field}>
               <span className={s.fieldLabel}>WHIP ingest URL</span>
               <input
                 type="text"
@@ -528,6 +610,9 @@ export function LiveStreamView(props: LiveStreamViewProps) {
                 spellCheck={false}
                 disabled={liveOn}
               />
+              {activeProvider && activeProvider.note && (
+                <p className={s.providerHint}>{activeProvider.note}</p>
+              )}
             </label>
             <label className={s.field}>
               <span className={s.fieldLabel}>Bearer token (if required)</span>
@@ -543,7 +628,7 @@ export function LiveStreamView(props: LiveStreamViewProps) {
               />
             </label>
             <p className={s.liveHint}>
-              Works with any WHIP-compatible ingest: Cloudflare Stream Live, Mux, Dolby.io, Eyevinn. Output is composited camera + sensor overlays — what you record is what the audience sees, with ISO timestamps baked into every frame.
+              Provider templates above pre-fill the URL — replace placeholders with your stream-specific values.
             </p>
           </div>
 
