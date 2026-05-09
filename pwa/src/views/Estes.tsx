@@ -14,16 +14,18 @@
  * backed, 120s TTL). Once peered, audio + chat flow P2P.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "../lib/session";
 import { EstesPeer, generatePairingCode } from "../lib/estes/peer";
+import type { PeerState } from "../lib/estes/peer";
 import { nextPhoneme } from "../lib/itc/phonemes";
 import { recordEvent } from "../lib/db/repo";
 import { appendAuditEntry } from "../lib/db/auditLog";
+import { MicLevelMeter } from "../lib/audio/micLevel";
 import s from "./View.module.css";
 import e from "./Estes.module.css";
 
-type Phase = "pick-role" | "receiver" | "questioner" | "connected-receiver" | "connected-questioner";
+type Phase = "pick-role" | "receiver-prep" | "receiver" | "questioner" | "connected-receiver" | "connected-questioner";
 
 interface LogEntry {
   who: "questioner" | "receiver";
@@ -31,12 +33,29 @@ interface LogEntry {
   ts: string;
 }
 
+const CODE_TTL_SECONDS = 120;
+
+const STATE_LABELS: Record<PeerState, string> = {
+  idle: "Idle",
+  gathering: "Finding network paths…",
+  posting: "Sharing handshake…",
+  waiting: "Waiting for the other phone to enter the code…",
+  connecting: "Negotiating audio link…",
+  connected: "Live",
+  disconnected: "Disconnected",
+  failed: "Connection failed — try again with a fresh code",
+};
+
+function formatMmSs(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
+}
+
 export function Estes() {
   const session = useSession();
   const [phase, setPhase] = useState<Phase>("pick-role");
   const [code, setCode] = useState<string>("");
   const [enteredCode, setEnteredCode] = useState<string>("");
-  const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<LogEntry[]>([]);
@@ -45,9 +64,18 @@ export function Estes() {
   const [spiritBoxOn, setSpiritBoxOn] = useState(false);
   const [ganzfeldOn, setGanzfeldOn] = useState(true);
   const [blackoutOn, setBlackoutOn] = useState(true);
+  const [peerState, setPeerState] = useState<PeerState>("idle");
+  const [micLevel, setMicLevel] = useState(0);
+  const [remoteLevel, setRemoteLevel] = useState(0);
+  const [codeIssuedAt, setCodeIssuedAt] = useState<number | null>(null);
+  const [now, setNow] = useState(Date.now());
+  const [copyMsg, setCopyMsg] = useState<string | null>(null);
 
   const peerRef = useRef<EstesPeer | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const micMeterRef = useRef<MicLevelMeter | null>(null);
+  const remoteMeterRef = useRef<MicLevelMeter | null>(null);
   const seedRef = useRef<number>(Date.now() & 0x7fffffff);
   const phonemeTimerRef = useRef<number | null>(null);
 
@@ -66,9 +94,18 @@ export function Estes() {
     }
   }, [session.current]);
 
+  // Code TTL ticker (1Hz when waiting on a code).
+  useEffect(() => {
+    if (codeIssuedAt == null) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [codeIssuedAt]);
+
+  const codeRemaining = codeIssuedAt == null ? null : Math.max(0, CODE_TTL_SECONDS - Math.floor((now - codeIssuedAt) / 1000));
+
   // Spirit-box phoneme tick (Receiver only).
   useEffect(() => {
-    if (!spiritBoxOn || (phase !== "connected-receiver" && phase !== "receiver")) {
+    if (!spiritBoxOn || (phase !== "connected-receiver" && phase !== "receiver" && phase !== "receiver-prep")) {
       if (phonemeTimerRef.current != null) {
         window.clearInterval(phonemeTimerRef.current);
         phonemeTimerRef.current = null;
@@ -102,23 +139,49 @@ export function Estes() {
     return () => {
       try { peerRef.current?.close(); } catch { /* ignore */ }
       try { speechSynthesis.cancel(); } catch { /* ignore */ }
+      try { micMeterRef.current?.stop(); } catch { /* ignore */ }
+      try { remoteMeterRef.current?.stop(); } catch { /* ignore */ }
+      micStreamRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
+
+  const handleTestMic = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      const mic = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+        video: false,
+      });
+      micStreamRef.current = mic;
+      const meter = new MicLevelMeter(mic);
+      meter.start((lvl) => setMicLevel(lvl));
+      micMeterRef.current = meter;
+      setPhase("receiver-prep");
+    } catch (err) {
+      setError((err as Error).message || "Microphone permission denied. The Receiver phone needs mic access.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const handleStartReceiver = async () => {
     setError(null);
     setBusy(true);
     try {
+      const mic = micStreamRef.current;
+      if (!mic) throw new Error("No microphone — go back and tap Test mic again.");
+
       const c = generatePairingCode();
       setCode(c);
-      const mic = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-        video: false,
-      });
+      setCodeIssuedAt(Date.now());
+      setNow(Date.now());
+
       const peer = new EstesPeer({
+        onState: (s) => setPeerState(s),
         onConnected: () => {
-          setStatusMsg("Connected.");
           setPhase("connected-receiver");
+          setCodeIssuedAt(null);
           if (session.current) {
             void appendAuditEntry({
               actor: "user",
@@ -127,7 +190,10 @@ export function Estes() {
             }).catch(() => { /* ignore */ });
           }
         },
-        onClosed: () => setStatusMsg("Disconnected."),
+        onClosed: () => {
+          // Don't kick the user back to pick-role on transient disconnect —
+          // the peer state badge already shows "disconnected".
+        },
         onMessage: (text, ts) => {
           appendLog({ who: "questioner", text, ts });
           // Speak the question aloud on the Receiver phone.
@@ -142,14 +208,13 @@ export function Estes() {
       });
       peerRef.current = peer;
       setPhase("receiver");
-      setStatusMsg("Waiting for the Questioner to enter the code…");
       await peer.startReceiver(c, mic);
     } catch (err) {
       const errMsg = err as Error;
       setError(errMsg.message || "Couldn't start as Receiver.");
       try { peerRef.current?.close(); } catch { /* ignore */ }
       peerRef.current = null;
-      setPhase("pick-role");
+      setPhase("receiver-prep");
     } finally {
       setBusy(false);
     }
@@ -164,8 +229,8 @@ export function Estes() {
     setBusy(true);
     try {
       const peer = new EstesPeer({
+        onState: (s) => setPeerState(s),
         onConnected: () => {
-          setStatusMsg("Connected.");
           setPhase("connected-questioner");
           if (session.current) {
             void appendAuditEntry({
@@ -175,12 +240,18 @@ export function Estes() {
             }).catch(() => { /* ignore */ });
           }
         },
-        onClosed: () => setStatusMsg("Disconnected."),
+        onClosed: () => { /* see receiver branch */ },
         onRemoteStream: (stream) => {
           const audio = remoteAudioRef.current;
-          if (!audio) return;
-          audio.srcObject = stream;
-          audio.play().catch(() => { /* user gesture needed for first play, fine */ });
+          if (audio) {
+            audio.srcObject = stream;
+            audio.play().catch(() => { /* user gesture needed for first play, fine */ });
+          }
+          // Attach a level meter so the questioner sees the receiver's mic alive.
+          try { remoteMeterRef.current?.stop(); } catch { /* ignore */ }
+          const meter = new MicLevelMeter(stream);
+          meter.start((lvl) => setRemoteLevel(lvl));
+          remoteMeterRef.current = meter;
         },
         onMessage: (text, ts) => {
           // Receiver doesn't currently send back text — but if they did, log it.
@@ -188,7 +259,6 @@ export function Estes() {
         },
       });
       peerRef.current = peer;
-      setStatusMsg("Connecting…");
       setPhase("questioner");
       await peer.startQuestioner(enteredCode);
     } catch (err) {
@@ -210,20 +280,51 @@ export function Estes() {
     setQuestionDraft("");
   };
 
+  const handleReceiverMark = () => {
+    // Receiver taps to log "I just heard a word" — no text required.
+    appendLog({ who: "receiver", text: `(perception @ ${new Date().toLocaleTimeString()})`, ts: new Date().toISOString() });
+  };
+
   const handleEnd = () => {
     try { peerRef.current?.close(); } catch { /* ignore */ }
     peerRef.current = null;
+    try { micMeterRef.current?.stop(); } catch { /* ignore */ }
+    try { remoteMeterRef.current?.stop(); } catch { /* ignore */ }
+    micStreamRef.current?.getTracks().forEach((t) => t.stop());
+    micMeterRef.current = null;
+    remoteMeterRef.current = null;
+    micStreamRef.current = null;
     setSpiritBoxOn(false);
     setPhase("pick-role");
-    setStatusMsg("Session ended.");
     setLog([]);
     setCode("");
     setEnteredCode("");
+    setPeerState("idle");
+    setMicLevel(0);
+    setRemoteLevel(0);
+    setCodeIssuedAt(null);
+  };
+
+  const handleCopyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopyMsg("Copied.");
+      window.setTimeout(() => setCopyMsg(null), 1200);
+    } catch {
+      setCopyMsg("Copy unavailable — read it aloud.");
+      window.setTimeout(() => setCopyMsg(null), 1800);
+    }
   };
 
   const isReceiver = phase === "receiver" || phase === "connected-receiver";
   const isQuestioner = phase === "questioner" || phase === "connected-questioner";
-  const blackoutActive = isReceiver && phase === "connected-receiver" && blackoutOn;
+  const blackoutActive = phase === "connected-receiver" && blackoutOn;
+  const codeExpired = codeRemaining === 0;
+
+  const stateLabel = useMemo(() => {
+    if (phase === "connected-receiver" || phase === "connected-questioner") return STATE_LABELS.connected;
+    return STATE_LABELS[peerState];
+  }, [peerState, phase]);
 
   return (
     <section className={`${s.view} ${blackoutActive ? e.viewBlack : ""}`.trim()}>
@@ -231,18 +332,18 @@ export function Estes() {
         <span className={s.eyebrow}>Estes Method · Dual-phone</span>
         <h1 className={s.title}>Sensory-deprivation rig</h1>
         <p className={s.lede}>
-          Pair two phones over a 6-digit code. One blacks out + spirit-box-cycles + streams mic to the partner. Other phone types questions, hears the receiver's responses, and logs both with timestamps to the audit chain.
+          Pair two phones over a 6-digit code. One blacks out + spirit-box-cycles + streams mic to the partner. The other types questions, hears the receiver, and logs both sides with timestamps to the audit chain.
         </p>
       </div>
 
       {phase === "pick-role" && (
         <div className={e.roleRow}>
-          <button type="button" className={e.roleCard} onClick={handleStartReceiver} disabled={busy}>
+          <button type="button" className={e.roleCard} onClick={handleTestMic} disabled={busy}>
             <span className={e.roleEyebrow}>RECEIVER</span>
             <span className={e.roleTitle}>This phone goes dark</span>
-            <span className={e.roleHint}>Blindfold + headphones recommended. Phone needs mic + speaker permission. Generates a code for the partner phone.</span>
+            <span className={e.roleHint}>Blindfold + headphones recommended. Tap to test the mic and generate a pairing code.</span>
           </button>
-          <button type="button" className={e.roleCard} onClick={() => { setError(null); setStatusMsg(null); setPhase("questioner"); }} disabled={busy}>
+          <button type="button" className={e.roleCard} onClick={() => { setError(null); setPhase("questioner"); }} disabled={busy}>
             <span className={e.roleEyebrow}>QUESTIONER</span>
             <span className={e.roleTitle}>This phone runs the room</span>
             <span className={e.roleHint}>Type questions, hear the receiver, watch the timestamped log. Enter the code from the Receiver phone.</span>
@@ -250,37 +351,86 @@ export function Estes() {
         </div>
       )}
 
+      {phase === "receiver-prep" && (
+        <div className={e.codeEntry}>
+          <header className={e.prepHeader}>
+            <span className={e.prepEyebrow}>STEP 1 / 2 · MIC CHECK</span>
+            <h2 className={e.prepTitle}>Talk into the mic — bar should move</h2>
+            <p className={e.prepHint}>Speak normally. If the bar stays flat, your mic isn't reaching the page — close the tab, re-open, and grant mic permission.</p>
+          </header>
+          <div className={e.levelMeter} aria-label="Microphone level">
+            <div className={e.levelFill} style={{ width: `${Math.min(100, micLevel * 100).toFixed(0)}%` }} />
+          </div>
+          <div className={e.codeActions}>
+            <button type="button" className={e.primaryBtn} onClick={handleStartReceiver} disabled={busy || micLevel < 0.005}>
+              {busy ? "Generating code…" : "Mic is good — generate pairing code"}
+            </button>
+            <button type="button" className={e.ghostBtn} onClick={handleEnd}>Cancel</button>
+          </div>
+          <p className={e.disclaimer}>The pairing code is single-use, valid for 120 seconds, and only carries the WebRTC handshake. Audio streams P2P after that.</p>
+        </div>
+      )}
+
+      {phase === "receiver" && (
+        <div className={e.codeEntry}>
+          <header className={e.prepHeader}>
+            <span className={e.prepEyebrow}>STEP 2 / 2 · WAITING FOR PARTNER</span>
+            <h2 className={e.prepTitle}>Tell the Questioner this code</h2>
+          </header>
+          <div className={e.codeBigRow}>
+            <span className={e.codeBigText}>{code}</span>
+            <button type="button" className={e.ghostBtn} onClick={handleCopyCode}>Copy</button>
+          </div>
+          {copyMsg && <p className={e.copyMsg}>{copyMsg}</p>}
+          <div className={e.ttlRow}>
+            <span className={e.ttlLabel}>Code expires in</span>
+            <span className={`${e.ttlValue} ${codeExpired ? e.ttlExpired : ""}`.trim()}>{formatMmSs(codeRemaining ?? 0)}</span>
+          </div>
+          <p className={e.statusRow}>{stateLabel}</p>
+          {codeExpired && (
+            <button type="button" className={e.primaryBtn} onClick={handleStartReceiver} disabled={busy}>
+              {busy ? "Re-issuing…" : "Generate new code"}
+            </button>
+          )}
+          <button type="button" className={e.ghostBtn} onClick={handleEnd}>Cancel</button>
+        </div>
+      )}
+
       {phase === "questioner" && (
         <div className={e.codeEntry}>
-          <label className={e.codeLabel}>
-            <span>Enter the Receiver's 6-digit code</span>
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              maxLength={6}
-              value={enteredCode}
-              onChange={(ev) => setEnteredCode(ev.target.value.replace(/\D/g, ""))}
-              className={e.codeInput}
-              autoFocus
-            />
-          </label>
+          <header className={e.prepHeader}>
+            <span className={e.prepEyebrow}>QUESTIONER · ENTER CODE</span>
+            <h2 className={e.prepTitle}>Type the 6-digit code from the Receiver</h2>
+          </header>
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={6}
+            value={enteredCode}
+            onChange={(ev) => setEnteredCode(ev.target.value.replace(/\D/g, ""))}
+            className={e.codeInput}
+            autoFocus
+            placeholder="000000"
+          />
+          <p className={e.statusRow}>{stateLabel}</p>
           <div className={e.codeActions}>
             <button type="button" className={e.primaryBtn} onClick={handleStartQuestioner} disabled={busy || enteredCode.length !== 6}>
               {busy ? "Connecting…" : "Connect"}
             </button>
             <button type="button" className={e.ghostBtn} onClick={handleEnd}>Cancel</button>
           </div>
-          <p className={e.disclaimer}>The 6-digit code is one-shot, expires in 120 seconds, and only carries the WebRTC handshake. Audio streams P2P after that.</p>
+          <p className={e.disclaimer}>The 6-digit code is single-use and expires in 120 seconds. Audio streams P2P after the handshake.</p>
         </div>
       )}
 
-      {(isReceiver || isQuestioner) && (
+      {(isReceiver && phase !== "receiver" || isQuestioner) && (
         <>
           <div className={e.statusBar}>
-            <span className={e.statusBadge}>{phase.toUpperCase()}</span>
-            {code && <span className={e.codeBig}>{code}</span>}
-            {statusMsg && <span className={e.statusMsg}>{statusMsg}</span>}
+            <span className={`${e.statusBadge} ${peerState === "connected" ? e.badgeOk : peerState === "failed" ? e.badgeBad : e.badgeWait}`.trim()}>
+              {phase.replace("-", " ").toUpperCase()}
+            </span>
+            <span className={e.statusMsg}>{stateLabel}</span>
             <button type="button" className={e.endBtn} onClick={handleEnd}>End</button>
           </div>
 
@@ -289,6 +439,9 @@ export function Estes() {
               <div className={e.receiverDisplay}>
                 <span className={e.receiverPhoneme}>{phoneme}</span>
               </div>
+              <button type="button" className={e.markBtn} onClick={handleReceiverMark}>
+                I heard something — log it
+              </button>
               <div className={e.toggleRow}>
                 <label className={e.toggle}>
                   <input type="checkbox" checked={spiritBoxOn} onChange={(ev) => setSpiritBoxOn(ev.target.checked)} />
@@ -305,7 +458,7 @@ export function Estes() {
               </div>
               {phase === "connected-receiver" && ganzfeldOn && <div className={e.ganzfeld} aria-hidden="true" />}
               <p className={e.disclaimer}>
-                Hold the phone face-out (away from you) so the Ganzfeld pulse hits the blindfold or eyelids evenly. Speak whatever you hear out loud — your voice goes to the Questioner phone in real time.
+                Hold the phone face-out (away from you) so the Ganzfeld pulse hits the blindfold or eyelids evenly. Speak whatever you hear out loud — your voice goes to the Questioner phone in real time. Tap the button above to log a perception without typing.
               </p>
             </div>
           )}
@@ -313,9 +466,16 @@ export function Estes() {
           {isQuestioner && (
             <div className={e.questionerPanel}>
               <audio ref={remoteAudioRef} className={e.hiddenAudio} autoPlay playsInline />
+              <div className={e.remoteLevelRow}>
+                <span className={e.remoteLevelLabel}>Receiver mic</span>
+                <div className={e.levelMeter} aria-label="Receiver microphone level">
+                  <div className={e.levelFill} style={{ width: `${Math.min(100, remoteLevel * 100).toFixed(0)}%` }} />
+                </div>
+                <span className={e.remoteLevelHint}>{remoteLevel < 0.005 ? "silent" : "live"}</span>
+              </div>
               <div className={e.transcript}>
                 {log.length === 0 ? (
-                  <p className={e.transcriptEmpty}>The receiver's mic is live above. Type a question — it will be spoken on the receiver phone and logged here with a timestamp.</p>
+                  <p className={e.transcriptEmpty}>Receiver mic is live (bar above). Type a question — it will be spoken aloud on the receiver phone and logged here with a timestamp.</p>
                 ) : (
                   <ol className={e.transcriptList}>
                     {log.map((entry, i) => (
@@ -348,6 +508,8 @@ export function Estes() {
           {error && <p className={e.error}>{error}</p>}
         </>
       )}
+
+      {error && phase === "pick-role" && <p className={e.error}>{error}</p>}
     </section>
   );
 }

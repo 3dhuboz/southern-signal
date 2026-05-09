@@ -22,12 +22,23 @@ const POLL_TIMEOUT_MS = 90_000;
 
 export type EstesRole = "receiver" | "questioner";
 
+export type PeerState =
+  | "idle"
+  | "gathering"
+  | "posting"
+  | "waiting"
+  | "connecting"
+  | "connected"
+  | "disconnected"
+  | "failed";
+
 export interface EstesPeerEvents {
   onConnected?: () => void;
   onClosed?: () => void;
   onMessage?: (text: string, fromIso: string) => void;
   onRemoteStream?: (stream: MediaStream) => void;
   onError?: (msg: string) => void;
+  onState?: (state: PeerState) => void;
 }
 
 export class EstesPeer {
@@ -38,10 +49,19 @@ export class EstesPeer {
   private events: EstesPeerEvents;
   private pollHandle: number | null = null;
   private opened = false;
+  private state: PeerState = "idle";
 
   constructor(events: EstesPeerEvents = {}) {
     this.events = events;
   }
+
+  private setState(next: PeerState): void {
+    if (next === this.state) return;
+    this.state = next;
+    this.events.onState?.(next);
+  }
+
+  getState(): PeerState { return this.state; }
 
   isConnected(): boolean { return this.opened; }
 
@@ -60,10 +80,14 @@ export class EstesPeer {
 
     const offer = await pc.createOffer({ offerToReceiveAudio: false });
     await pc.setLocalDescription(offer);
+    this.setState("gathering");
     await this.waitForIceGathering(pc);
 
+    this.setState("posting");
     await this.postSignal("offer", pc.localDescription!);
+    this.setState("waiting");
     await this.pollForRemote("answer");
+    this.setState("connecting");
   }
 
   async startQuestioner(code: string): Promise<void> {
@@ -74,15 +98,22 @@ export class EstesPeer {
 
     pc.ondatachannel = (ev) => this.attachDataChannel(ev.channel);
 
+    this.setState("posting");
     const offerPayload = await this.fetchSignal("offer");
-    if (!offerPayload) throw new Error("No offer found for that code (or it expired). Ask the Receiver to start again.");
+    if (!offerPayload) {
+      this.setState("failed");
+      throw new Error("No offer found for that code (or it expired). Ask the Receiver to start again.");
+    }
 
     await pc.setRemoteDescription(new RTCSessionDescription(offerPayload.sdp));
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
+    this.setState("gathering");
     await this.waitForIceGathering(pc);
 
+    this.setState("posting");
     await this.postSignal("answer", pc.localDescription!);
+    this.setState("connecting");
   }
 
   send(text: string): void {
@@ -113,12 +144,14 @@ export class EstesPeer {
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === "connected" && !this.opened) {
         this.opened = true;
+        this.setState("connected");
         this.events.onConnected?.();
-      } else if (pc.connectionState === "failed" || pc.connectionState === "disconnected" || pc.connectionState === "closed") {
-        if (this.opened) {
-          this.opened = false;
-          this.events.onClosed?.();
-        }
+      } else if (pc.connectionState === "failed") {
+        this.setState("failed");
+        if (this.opened) { this.opened = false; this.events.onClosed?.(); }
+      } else if (pc.connectionState === "disconnected" || pc.connectionState === "closed") {
+        this.setState("disconnected");
+        if (this.opened) { this.opened = false; this.events.onClosed?.(); }
       }
     };
   }
