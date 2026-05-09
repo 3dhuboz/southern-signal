@@ -27,6 +27,7 @@ import {
 import { LiveAnalyzer } from "../lib/audio/liveAnalyzer";
 import { type SectorReading } from "../lib/audio/sectorIndicator";
 import { ensureTodayInvestigation } from "../lib/bootstrap";
+import { requestPersistentStorage } from "../lib/opfs";
 import { getInvestigation, recordEvent, setCulturallySensitive, startInvestigation, stopInvestigation } from "../lib/db/repo";
 import {
   emitAcousticTransient,
@@ -40,6 +41,7 @@ import { getCurrentPoint } from "../lib/sensors/geolocation";
 import { requestSensorPermissionsForUserGesture } from "../lib/sensors/permissions";
 import { useSensors } from "../lib/sensors/useSensors";
 import { setCurrent, setPermissionsGranted, useSession } from "../lib/session";
+import { useWakeLock } from "../lib/system/wakeLock";
 import s from "./View.module.css";
 import m from "./MissionControl.module.css";
 
@@ -301,6 +303,10 @@ export function MissionControl() {
         return;
       }
       setPermissionsGranted(true);
+      // iOS Safari caps OPFS near 1 GiB without persistent-storage. We need
+      // the user gesture, so this is the right hook — it's idempotent on
+      // re-entry and silent on browsers that don't support the API.
+      void requestPersistentStorage();
       const inv = await ensureTodayInvestigation();
       setCurrent(inv);
       await startInvestigation(inv.id);
@@ -360,6 +366,11 @@ export function MissionControl() {
   useEffect(() => {
     return () => { void stopLiveAnalyzer(); };
   }, [stopLiveAnalyzer]);
+
+  // Keep the screen awake while the session is live. iOS Safari otherwise
+  // suspends AudioContext when the lock screen kicks in, silently killing
+  // EVP and broadcast recording mid-take.
+  useWakeLock(running);
 
   const trustworthy = isInstrumentTrustworthy(calibration);
   // Prefer real audio RMS for the breath-line; fall back to vibration sensor when audio not running.
