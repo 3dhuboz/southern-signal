@@ -8,6 +8,7 @@
  */
 
 import { exec, query } from "../db/db";
+import { getPreferences } from "../preferences";
 import type { SyncItem, SyncKind, SyncStats } from "./types";
 
 const MAX_ATTEMPTS = 8;
@@ -74,7 +75,11 @@ function extractInvestigationId(input: EnqueueInput): string | null {
   return typeof ref === "string" ? ref : null;
 }
 
-async function logSkip(input: EnqueueInput, investigationId: string): Promise<void> {
+async function logSkip(
+  input: EnqueueInput,
+  investigationId: string,
+  auditKind: "sync.skip_sensitive" | "sync.skip_global_sensitive" = "sync.skip_sensitive",
+): Promise<void> {
   // Append a hash-chained audit entry recording the sync skip. The audit
   // module re-enters enqueue() for its own kind="audit" row, but those are
   // never gated (no investigation_id in payload) so there is no recursion.
@@ -83,7 +88,7 @@ async function logSkip(input: EnqueueInput, investigationId: string): Promise<vo
     const { appendAuditEntry } = await import("../db/auditLog");
     await appendAuditEntry({
       actor: "system",
-      kind: "sync.skip_sensitive",
+      kind: auditKind,
       payload: {
         kind: input.kind,
         ref_id: input.ref_id,
@@ -91,13 +96,24 @@ async function logSkip(input: EnqueueInput, investigationId: string): Promise<vo
       },
     });
   } catch (err) {
-    console.warn("[sync] failed to audit skip_sensitive", err);
+    console.warn(`[sync] failed to audit ${auditKind}`, err);
   }
 }
 
 export async function enqueue(input: EnqueueInput): Promise<void> {
   // Audit-log entries always sync — chain integrity is non-negotiable.
   if (input.kind !== "audit") {
+    // Global cultural-sensitivity flag: hard-block ALL non-audit enqueues so
+    // rows captured while the flag is on don't sneak out when it's later
+    // toggled off. SyncWorker also refuses to drain in this state, but
+    // stopping at enqueue keeps queue depth honest and matches the per-case
+    // contract below (rows never even land in the queue).
+    if (getPreferences().globalCulturalSensitivityFlag) {
+      const investigationId = extractInvestigationId(input) ?? "global_flag";
+      await logSkip(input, investigationId, "sync.skip_global_sensitive");
+      return;
+    }
+
     const investigationId = extractInvestigationId(input);
     if (investigationId) {
       const sensitive = await isSensitive(investigationId);
