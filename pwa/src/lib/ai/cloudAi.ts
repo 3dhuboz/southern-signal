@@ -92,8 +92,13 @@ async function callProxy(opts: { system: string; user: string; maxTokens?: numbe
       }),
     });
     if (resp.status === 503) {
-      // Proxy is reachable but not configured — fall through to BYOK.
-      return null;
+      // Proxy reachable but the operator hasn't set OPENROUTER_API_KEY in their
+      // Cloudflare Pages env. Surface this directly — don't silently fall
+      // through to BYOK, since BYOK has no UI in V1 and the user would just
+      // see "add your API key" pointing at a nonexistent section.
+      throw new CloudGuardError(
+        "AI proxy isn't configured on this deployment. The operator needs to set OPENROUTER_API_KEY in Cloudflare dashboard → Pages → southern-signal → Settings → Environment variables.",
+      );
     }
     if (resp.status === 402) {
       throw new Error("Out of OpenRouter credits. Top up at openrouter.ai/settings/credits, or switch to a cheaper model in your Cloudflare env (try anthropic/claude-haiku-4.5).");
@@ -112,7 +117,9 @@ async function callProxy(opts: { system: string; user: string; maxTokens?: numbe
     if (!data.text) throw new Error("Proxy returned no text.");
     return data.text;
   } catch (err) {
-    // Network error → fall through to BYOK if configured. Re-throw real errors.
+    // True network failure (user offline, no functions running locally) →
+    // fall through to BYOK if a developer has set an Anthropic key. Real
+    // proxy errors (CloudGuardError, server status errors) re-throw.
     if (err instanceof TypeError) return null;
     throw err;
   }

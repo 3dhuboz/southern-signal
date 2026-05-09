@@ -22,7 +22,7 @@ import { createCanvasCompositor, type CanvasCompositor, type OverlayState } from
 import { startWhipSession, type WhipSession, type WhipState, type WhipOutboundStats } from "../lib/media/whip";
 import s from "./LiveStreamView.module.css";
 
-type WhipProviderKey = "cloudflare" | "mux" | "dolby" | "eyevinn" | "custom";
+type WhipProviderKey = "cloudflare" | "fb_live_via_cloudflare" | "fb_live_via_restream" | "mux" | "dolby" | "eyevinn" | "custom";
 
 interface WhipProviderTemplate {
   key: WhipProviderKey;
@@ -33,6 +33,11 @@ interface WhipProviderTemplate {
 
 // URL templates with placeholders intentionally preserved — the user replaces
 // the <bracketed> bits with their stream-specific values.
+//
+// Honest constraint on Facebook Live: FB only accepts RTMP/RTMPS, and
+// browsers cannot speak RTMP. So "FB Live" entries below are RELAY paths —
+// the browser pushes WHIP to a relay, and the relay re-broadcasts to FB
+// over RTMP. The note for each entry explains the one-time setup.
 const WHIP_PROVIDERS: WhipProviderTemplate[] = [
   {
     key: "cloudflare",
@@ -41,10 +46,22 @@ const WHIP_PROVIDERS: WhipProviderTemplate[] = [
     note: "From Cloudflare dashboard → Stream → Live Inputs → WebRTC URL. Bearer token not required.",
   },
   {
+    key: "fb_live_via_cloudflare",
+    label: "Facebook Live (via Cloudflare relay)",
+    url: "https://customer-XXXX.cloudflarestream.com/<input-id>/webrtc/publish",
+    note: "FB Live needs RTMP, which browsers can't speak. ONE-TIME SETUP: in Cloudflare → Stream → Live Inputs, create a new input, then under 'Outputs' add Facebook Live with URL rtmps://live-api-s.facebook.com:443/rtmp/ and the stream key from facebook.com/live/producer. Paste this input's WebRTC URL above; we'll push to Cloudflare and Cloudflare relays to FB.",
+  },
+  {
+    key: "fb_live_via_restream",
+    label: "Facebook Live (via Restream.io)",
+    url: "https://live.restream.io/whip/<stream-key>",
+    note: "Restream gives you a single ingest URL that fans out to FB Live + others. ONE-TIME SETUP: restream.io → connect Facebook page → copy the WHIP URL from Settings → Encoding. Free tier supports one destination.",
+  },
+  {
     key: "mux",
     label: "Mux",
     url: "https://global-live.mux.com/api/whip/<stream-key>",
-    note: "From Mux dashboard → Live Streams → Stream Key. Bearer token: paste your Mux access token.",
+    note: "From Mux dashboard → Live Streams → Stream Key. Bearer token: paste your Mux access token. Mux can also re-broadcast to FB via Simulcast Targets.",
   },
   {
     key: "dolby",
@@ -283,7 +300,10 @@ export function LiveStreamView(props: LiveStreamViewProps) {
 
     const compositor = createCanvasCompositor({
       video: sourceV,
-      getOverlay: () => overlayStateRef.current,
+      // Always stamp the timestamp at draw time, not when overlay state was
+      // last assembled in the props effect — otherwise the time freezes
+      // whenever the watched props are stable (e.g. quiet scene).
+      getOverlay: () => ({ ...overlayStateRef.current, isoTimestamp: new Date().toISOString() }),
       fps: 30,
     });
     compositorRef.current = compositor;

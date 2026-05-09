@@ -193,9 +193,15 @@ export function AiAssistant({ investigationId, posterior, recentIncrements, site
 
 function handleAiError(err: unknown, setError: (m: string) => void) {
   if (err instanceof CloudGuardError) {
+    // Includes the new clear "AI proxy isn't configured on this deployment …
+    // set OPENROUTER_API_KEY in Cloudflare Pages env" message.
     setError(err.message);
   } else if (err instanceof CloudKeyMissingError) {
-    setError("Add your Anthropic API key in Setup → AI assistance.");
+    // Developer-only fallthrough — only fires when BOTH the proxy is
+    // unreachable (offline / no Pages Functions) AND no Anthropic BYOK key
+    // is in IndexedDB. In production the proxy is the path; surface the
+    // operator action.
+    setError("AI is offline. The proxy at /api/ai/chat is unreachable and no fallback Anthropic key is configured. Check your network or operator OPENROUTER_API_KEY.");
   } else {
     setError(`AI request failed: ${(err as Error).message}`);
   }

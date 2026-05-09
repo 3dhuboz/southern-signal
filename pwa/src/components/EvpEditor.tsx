@@ -113,7 +113,10 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
     };
   }, [audioUrl]);
 
-  // Audio element time tracker.
+  // Audio element time tracker. Depend on audioUrl so the effect re-runs
+  // once the <audio> mounts (it renders conditionally after decode finishes;
+  // without this, audioRef.current is null on first run and the listeners
+  // never attach — which is why the playhead never moved).
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -136,7 +139,23 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
       audio.removeEventListener("pause", onPause);
       audio.removeEventListener("ended", onEnded);
     };
-  }, [loopSelection, selection]);
+  }, [loopSelection, selection, audioUrl]);
+
+  // Smooth the playhead between coarse `timeupdate` events (which fire
+  // ~3-4Hz on most browsers) — drive currentTime off requestAnimationFrame
+  // while playing so the cursor glides instead of stepping.
+  useEffect(() => {
+    if (!playing) return;
+    const audio = audioRef.current;
+    if (!audio) return;
+    let raf = 0;
+    const tick = () => {
+      setCurrentTime(audio.currentTime);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playing]);
 
   const drawWaveform = useCallback(() => {
     const canvas = canvasRef.current;
