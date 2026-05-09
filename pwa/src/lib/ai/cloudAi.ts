@@ -71,6 +71,15 @@ async function callProxy(opts: { system: string; user: string; maxTokens?: numbe
       // Proxy is reachable but not configured — fall through to BYOK.
       return null;
     }
+    if (resp.status === 402) {
+      throw new Error("Out of OpenRouter credits. Top up at openrouter.ai/settings/credits, or switch to a cheaper model in your Cloudflare env (try anthropic/claude-haiku-4.5).");
+    }
+    if (resp.status === 401 || resp.status === 403) {
+      throw new Error("OpenRouter rejected the key — check the OPENROUTER_API_KEY value in your Cloudflare Pages env.");
+    }
+    if (resp.status === 429) {
+      throw new Error("OpenRouter rate-limited the request. Wait a moment and try again.");
+    }
     if (!resp.ok) {
       const detail = await resp.text().catch(() => "");
       throw new Error(`AI proxy ${resp.status}: ${detail.slice(0, 240)}`);
@@ -152,7 +161,7 @@ export async function generateQuestions(
   const text = await runChat({
     system: QUESTION_SYSTEM_PROMPT,
     user: userPrompt,
-    maxTokens: 512,
+    maxTokens: 280,
     temperature: 0.85,
   });
   return parseJsonArray(text);
@@ -183,7 +192,7 @@ export async function autoDebunk(
   const text = await runChat({
     system: DEBUNKER_SYSTEM_PROMPT,
     user: userPrompt,
-    maxTokens: 1024,
+    maxTokens: 600,
     temperature: 0.6,
   });
   return parseJsonArray<DebunkResult>(text);
