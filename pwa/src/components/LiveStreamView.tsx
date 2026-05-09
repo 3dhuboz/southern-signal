@@ -19,7 +19,7 @@ import { registerMedia, recordEvent } from "../lib/db/repo";
 import { appendAuditEntry } from "../lib/db/auditLog";
 import { describeActivity } from "../lib/posterior/plainEnglish";
 import { createCanvasCompositor, type CanvasCompositor, type OverlayState } from "../lib/media/canvasCompositor";
-import { startWhipSession, type WhipSession } from "../lib/media/whip";
+import { startWhipSession, type WhipSession, type WhipState, type WhipOutboundStats } from "../lib/media/whip";
 import s from "./LiveStreamView.module.css";
 
 interface LiveStreamViewProps {
@@ -58,10 +58,17 @@ export function LiveStreamView(props: LiveStreamViewProps) {
   const [whipUrl, setWhipUrl] = useState<string>(() => {
     try { return localStorage.getItem("ss-whip-url") ?? ""; } catch { return ""; }
   });
-  const [whipBearer, setWhipBearer] = useState<string>("");
+  const [whipBearer, setWhipBearer] = useState<string>(() => {
+    try { return localStorage.getItem("ss-whip-bearer") ?? ""; } catch { return ""; }
+  });
   const [error, setError] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [recordingsCount, setRecordingsCount] = useState(0);
+  const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
+  const [torchOn, setTorchOn] = useState(false);
+  const [torchSupported, setTorchSupported] = useState(false);
+  const [whipState, setWhipState] = useState<WhipState>("idle");
+  const [whipStats, setWhipStats] = useState<WhipOutboundStats | null>(null);
 
   // Keep the latest props in a ref so the compositor's getOverlay() always
   // returns fresh state without re-creating the compositor each render.
@@ -98,6 +105,27 @@ export function LiveStreamView(props: LiveStreamViewProps) {
     };
   }, [posterior, audioRms, sector, coherence, caseId, caseTitle, caption, recording, liveOn]);
 
+  const openCamera = useCallback(async (mode: "environment" | "user"): Promise<MediaStream> => {
+    try {
+      return await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: mode }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      });
+    } catch {
+      // Fallback: any camera, any mic.
+      return await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    }
+  }, []);
+
+  const detectTorchSupport = useCallback((stream: MediaStream) => {
+    const track = stream.getVideoTracks()[0];
+    if (!track) { setTorchSupported(false); return; }
+    // The torch capability isn't in the standard typings — feature-detect at runtime.
+    const caps = (track.getCapabilities?.() ?? {}) as MediaTrackCapabilities & { torch?: boolean };
+    setTorchSupported(caps.torch === true);
+    setTorchOn(false);
+  }, []);
+
   const start = useCallback(async () => {
     if (streamOn || busy) return;
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -107,17 +135,9 @@ export function LiveStreamView(props: LiveStreamViewProps) {
     setBusy(true);
     setError(null);
     try {
-      let stream: MediaStream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-        });
-      } catch {
-        // Fallback: any camera, any mic.
-        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      }
+      const stream = await openCamera(facingMode);
       sourceStreamRef.current = stream;
+      detectTorchSupport(stream);
       setStreamOn(true);
     } catch (err) {
       const e = err as Error & { name?: string };
@@ -130,7 +150,54 @@ export function LiveStreamView(props: LiveStreamViewProps) {
     } finally {
       setBusy(false);
     }
-  }, [streamOn, busy]);
+  }, [streamOn, busy, facingMode, openCamera, detectTorchSupport]);
+
+  const flipCamera = useCallback(async () => {
+    if (!streamOn || busy) return;
+    const next = facingMode === "environment" ? "user" : "environment";
+    setBusy(true);
+    setError(null);
+    try {
+      // Open the new camera before stopping the old one — minimizes preview gap.
+      const newStream = await openCamera(next);
+      const newVideo = newStream.getVideoTracks()[0];
+      const newAudio = newStream.getAudioTracks()[0];
+      const oldStream = sourceStreamRef.current;
+      // Replace tracks in the source MediaStream so the compositor's <video>
+      // element keeps its srcObject (no flicker).
+      if (oldStream) {
+        oldStream.getVideoTracks().forEach((t) => { oldStream.removeTrack(t); t.stop(); });
+        if (newVideo) oldStream.addTrack(newVideo);
+        // Audio track stays put — no need to re-grab.
+        newStream.getAudioTracks().forEach((t) => { if (t !== newAudio) t.stop(); });
+        newAudio?.stop();
+      } else {
+        sourceStreamRef.current = newStream;
+      }
+      setFacingMode(next);
+      detectTorchSupport(sourceStreamRef.current!);
+      const sourceV = sourceVideoRef.current;
+      if (sourceV) sourceV.play().catch(() => { /* user gesture if needed */ });
+    } catch (err) {
+      setError(`Couldn't flip camera: ${(err as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  }, [streamOn, busy, facingMode, openCamera, detectTorchSupport]);
+
+  const toggleTorch = useCallback(async () => {
+    const track = sourceStreamRef.current?.getVideoTracks()[0];
+    if (!track || !torchSupported) return;
+    const next = !torchOn;
+    try {
+      // Torch is a non-standard MediaTrackConstraint — typed as any here.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await track.applyConstraints({ advanced: [{ torch: next }] as any });
+      setTorchOn(next);
+    } catch (err) {
+      setError(`Torch unavailable: ${(err as Error).message}`);
+    }
+  }, [torchOn, torchSupported]);
 
   // Once the stream is on and the source <video> element is mounted,
   // attach the camera track to it, build the compositor, and wire the
@@ -286,23 +353,32 @@ export function LiveStreamView(props: LiveStreamViewProps) {
       setError("Paste your WHIP ingest URL first.");
       return;
     }
-    try { localStorage.setItem("ss-whip-url", whipUrl.trim()); } catch { /* ignore */ }
+    try {
+      localStorage.setItem("ss-whip-url", whipUrl.trim());
+      if (whipBearer.trim()) localStorage.setItem("ss-whip-bearer", whipBearer.trim());
+      else localStorage.removeItem("ss-whip-bearer");
+    } catch { /* ignore */ }
     try {
       setStatusMsg("Connecting WHIP…");
+      setWhipState("idle");
+      setWhipStats(null);
       const session = await startWhipSession({
         url: whipUrl.trim(),
         bearerToken: whipBearer.trim() || undefined,
         stream: compositorStreamRef.current,
-        onConnectionState: (state) => {
-          if (state === "failed" || state === "disconnected" || state === "closed") {
+        onState: (state) => {
+          setWhipState(state);
+          if (state === "failed" || state === "disconnected") {
             setStatusMsg(`Live ${state}.`);
             setLiveOn(false);
+          } else if (state === "live") {
+            setStatusMsg("Live.");
           }
         },
+        onStats: (stats) => setWhipStats(stats),
       });
       whipSessionRef.current = session;
       setLiveOn(true);
-      setStatusMsg("Live.");
       if (investigationId) {
         await appendAuditEntry({
           actor: "user",
@@ -365,6 +441,25 @@ export function LiveStreamView(props: LiveStreamViewProps) {
             )}
           </div>
 
+          <div className={s.cameraControls}>
+            <button type="button" className={s.cameraBtn} onClick={flipCamera} disabled={busy} title="Flip camera">
+              <span aria-hidden="true">↺</span>
+              <span>{facingMode === "environment" ? "Rear" : "Front"}</span>
+            </button>
+            {torchSupported && (
+              <button
+                type="button"
+                className={`${s.cameraBtn} ${torchOn ? s.cameraBtnActive : ""}`.trim()}
+                onClick={toggleTorch}
+                aria-pressed={torchOn}
+                title="Toggle torch / flashlight"
+              >
+                <span aria-hidden="true">⚡</span>
+                <span>Torch {torchOn ? "on" : "off"}</span>
+              </button>
+            )}
+          </div>
+
           <div className={s.controls}>
             <button
               type="button"
@@ -386,6 +481,20 @@ export function LiveStreamView(props: LiveStreamViewProps) {
             </button>
             <button type="button" className={s.actionGhost} onClick={stop}>Close camera</button>
           </div>
+
+          {(liveOn || whipState !== "idle") && (
+            <div className={s.liveStatus}>
+              <span className={`${s.liveStatusDot} ${s[`liveStatusDot_${whipState}`] ?? ""}`.trim()} />
+              <span className={s.liveStatusLabel}>{whipState.toUpperCase()}</span>
+              {whipStats && (
+                <span className={s.liveStatusMetric}>
+                  {whipStats.kbps.toLocaleString()} kbps
+                  {whipStats.rttMs != null ? ` · RTT ${whipStats.rttMs}ms` : ""}
+                  {whipStats.packetsLost > 0 ? ` · lost ${whipStats.packetsLost}` : ""}
+                </span>
+              )}
+            </div>
+          )}
 
           <div className={s.live}>
             <label className={s.field}>

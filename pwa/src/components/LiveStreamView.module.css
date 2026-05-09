@@ -245,3 +245,77 @@
   margin: 0;
   padding: 0 4px;
 }
+
+.cameraControls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cameraBtn {
+  appearance: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-full);
+  padding: 6px 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+}
+.cameraBtn:hover { background: var(--bg-overlay); border-color: var(--border-strong); }
+.cameraBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+.cameraBtnActive {
+  background: var(--signal-wash);
+  color: var(--signal);
+  border-color: var(--signal-dim);
+}
+
+.liveStatus {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.liveStatusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+.liveStatusDot_gathering, .liveStatusDot_posting, .liveStatusDot_connecting {
+  background: #F2B95D;
+  box-shadow: 0 0 6px #F2B95D;
+  animation: live-pulse 1.4s infinite ease-in-out;
+}
+.liveStatusDot_live {
+  background: var(--signal);
+  box-shadow: 0 0 8px var(--signal);
+}
+.liveStatusDot_disconnected, .liveStatusDot_failed {
+  background: var(--danger);
+  box-shadow: 0 0 6px var(--danger);
+}
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.liveStatusLabel {
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  color: var(--text-secondary);
+}
+.liveStatusMetric {
+  margin-left: auto;
+  color: var(--text-muted);
+}
