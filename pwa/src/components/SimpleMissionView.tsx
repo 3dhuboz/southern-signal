@@ -308,6 +308,26 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
         </p>
       </div>
 
+      {/* READINESS BANNER — set the operator's expectations before they tap Begin */}
+      {!running && (
+        <div className={`${s.readiness} ${trustworthy ? s.readinessOk : s.readinessWarn}`.trim()}>
+          <span className={s.readinessIcon} aria-hidden="true">{trustworthy ? "✓" : "⚠"}</span>
+          <div className={s.readinessBody}>
+            {trustworthy ? (
+              <>
+                <strong>Ready to record</strong>
+                <span> — calibration locked, sector readings trusted within ±60°.</span>
+              </>
+            ) : (
+              <>
+                <strong>Sector readings will be approximate.</strong>
+                <span> Switch to Pro mode (top-right) and run a quick 3-of-3 calibration to lock direction within ±60°. You can still record without it — anomalies will be tagged with no direction instead.</span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* PRIMARY CALL TO ACTION */}
       <div className={s.controls}>
         {!running ? (
