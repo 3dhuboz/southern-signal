@@ -147,6 +147,14 @@ export function LiveStreamView(props: LiveStreamViewProps) {
   const [torchOn, setTorchOn] = useState(false);
   const [torchSupported, setTorchSupported] = useState(false);
   const [whipState, setWhipState] = useState<WhipState>("idle");
+  const [fbStreamKey, setFbStreamKey] = useState<string>(() => {
+    try { return localStorage.getItem("ss-fb-stream-key") ?? ""; } catch { return ""; }
+  });
+  const [fbConnectToken, setFbConnectToken] = useState<string>(() => {
+    try { return localStorage.getItem("ss-fb-connect-token") ?? ""; } catch { return ""; }
+  });
+  const [fbConnecting, setFbConnecting] = useState(false);
+  const [fbConnectMsg, setFbConnectMsg] = useState<string | null>(null);
   const [whipStats, setWhipStats] = useState<WhipOutboundStats | null>(null);
 
   // Keep the latest props in a ref so the compositor's getOverlay() always
@@ -506,6 +514,47 @@ export function LiveStreamView(props: LiveStreamViewProps) {
   }, []);
 
   const activeProvider = WHIP_PROVIDERS.find((p) => p.key === whipProvider);
+  const showFbConnector = whipProvider === "fb_live_via_cloudflare";
+
+  const handleFbConnect = useCallback(async () => {
+    if (!fbStreamKey.trim()) {
+      setFbConnectMsg("Paste the Facebook stream key first (from facebook.com/live/producer → Use Stream Key).");
+      return;
+    }
+    if (!fbConnectToken.trim()) {
+      setFbConnectMsg("Bearer token required — matches FB_CONNECT_TOKEN in your Cloudflare Pages env.");
+      return;
+    }
+    setFbConnecting(true);
+    setFbConnectMsg("Provisioning Cloudflare Live Input + FB output…");
+    try {
+      try {
+        localStorage.setItem("ss-fb-stream-key", fbStreamKey.trim());
+        localStorage.setItem("ss-fb-connect-token", fbConnectToken.trim());
+      } catch { /* ignore */ }
+      const resp = await fetch("/api/live/fb/connect", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${fbConnectToken.trim()}`,
+        },
+        body: JSON.stringify({ fb_stream_key: fbStreamKey.trim() }),
+      });
+      const data = await resp.json() as { whip_url?: string; error?: string; cf_detail?: string };
+      if (!resp.ok || !data.whip_url) {
+        const detail = data.cf_detail ? ` · ${data.cf_detail}` : "";
+        setFbConnectMsg(`Failed: ${data.error ?? `HTTP ${resp.status}`}${detail}`);
+        return;
+      }
+      setWhipUrl(data.whip_url);
+      try { localStorage.setItem("ss-whip-url", data.whip_url); } catch { /* ignore */ }
+      setFbConnectMsg("Connected — WHIP URL above is ready. Click Go live to start broadcasting to Facebook.");
+    } catch (err) {
+      setFbConnectMsg(`Failed: ${(err as Error).message}`);
+    } finally {
+      setFbConnecting(false);
+    }
+  }, [fbStreamKey, fbConnectToken]);
 
   return (
     <div className={s.wrap}>
@@ -618,6 +667,49 @@ export function LiveStreamView(props: LiveStreamViewProps) {
                 ))}
               </select>
             </label>
+
+            {showFbConnector && (
+              <div className={s.fbConnector}>
+                <p className={s.fbConnectorIntro}>
+                  <strong>Quick setup.</strong> Paste your Facebook stream key and we'll create a Cloudflare Live Input + Facebook output for you, then fill the WHIP URL above. Needs <code>CF_ACCOUNT_ID</code>, <code>CF_STREAM_API_TOKEN</code> and <code>FB_CONNECT_TOKEN</code> in your Pages env.
+                </p>
+                <label className={s.field}>
+                  <span className={s.fieldLabel}>Facebook stream key</span>
+                  <input
+                    type="password"
+                    className={s.input}
+                    value={fbStreamKey}
+                    onChange={(e) => setFbStreamKey(e.target.value)}
+                    placeholder="from facebook.com/live/producer → Use Stream Key"
+                    autoComplete="off"
+                    spellCheck={false}
+                    disabled={liveOn || fbConnecting}
+                  />
+                </label>
+                <label className={s.field}>
+                  <span className={s.fieldLabel}>Connector bearer token</span>
+                  <input
+                    type="password"
+                    className={s.input}
+                    value={fbConnectToken}
+                    onChange={(e) => setFbConnectToken(e.target.value)}
+                    placeholder="matches FB_CONNECT_TOKEN in Pages env"
+                    autoComplete="off"
+                    spellCheck={false}
+                    disabled={liveOn || fbConnecting}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className={s.action}
+                  onClick={handleFbConnect}
+                  disabled={liveOn || fbConnecting || !fbStreamKey.trim() || !fbConnectToken.trim()}
+                >
+                  {fbConnecting ? "Connecting…" : "Connect to Facebook Live"}
+                </button>
+                {fbConnectMsg && <p className={s.providerHint}>{fbConnectMsg}</p>}
+              </div>
+            )}
             <label className={s.field}>
               <span className={s.fieldLabel}>WHIP ingest URL</span>
               <input

@@ -253,6 +253,29 @@
   line-height: 1.35;
 }
 
+.fbConnector {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(24, 119, 242, 0.06);
+  border: 1px solid rgba(24, 119, 242, 0.35);
+  border-radius: var(--r-sm);
+}
+.fbConnectorIntro {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+.fbConnectorIntro code {
+  font-size: 10px;
+  padding: 1px 4px;
+  background: var(--bg-inset);
+  border-radius: 3px;
+  color: var(--text-primary);
+}
+
 .liveHint {
   font-size: 11px;
   color: var(--text-muted);
