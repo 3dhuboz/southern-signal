@@ -12,6 +12,7 @@ import { EvidenceLedger, type LedgerStream } from "../components/EvidenceLedger"
 import { OvilusTool } from "../components/OvilusTool";
 import { PosteriorBar } from "../components/PosteriorBar";
 import { ScreenRecordButton } from "../components/ScreenRecordButton";
+import { SessionSummaryCard } from "../components/SessionSummaryCard";
 import { SimpleMissionView } from "../components/SimpleMissionView";
 import { SpiritBoxTool } from "../components/SpiritBoxTool";
 import { BaitToneTool } from "../components/BaitToneTool";
@@ -76,6 +77,8 @@ export function MissionControl() {
   const aiAssistantRef = useRef<HTMLDivElement | null>(null);
   const liveStreamRef = useRef<HTMLDivElement | null>(null);
   const [pendingDispositionFor, setPendingDispositionFor] = useState<string | null>(null);
+  const [pendingSummary, setPendingSummary] = useState<{ id: string; startIso: string; endIso: string; peak: number; final: number } | null>(null);
+  const [posteriorPeak, setPosteriorPeak] = useState<number>(0);
   const [narrationSpeak, setNarrationSpeak] = useState<boolean>(false);
   const [culturallySensitive, setCulturallySensitiveState] = useState<boolean>(false);
   const [liveStreamState, setLiveStreamState] = useState<{ recording: boolean; broadcasting: boolean }>({ recording: false, broadcasting: false });
@@ -155,8 +158,10 @@ export function MissionControl() {
 
   // Posterior re-read on tick (decay) and on explicit updates.
   useEffect(() => {
-    setPosterior(getPosterior(siteSession.state, Date.now()));
-  }, [siteSession.state, tick]);
+    const next = getPosterior(siteSession.state, Date.now());
+    setPosterior(next);
+    if (running) setPosteriorPeak((peak) => (next > peak ? next : peak));
+  }, [siteSession.state, tick, running]);
 
   // ----- Sensor anomaly → likelihood emission → posterior update -----
 
@@ -315,6 +320,7 @@ export function MissionControl() {
       setSiteSession(createSiteSession());
       setRunning(true);
       setStartedAt(Date.now());
+      setPosteriorPeak(0); // reset peak tracker for the new session
       // Kick off real-time stereo audio analyzer (FFT → cross-spectrum → ASI).
       void startLiveAnalyzer();
       setStatusMsg("Recording. Calibrate the rig before trusting any sector reading.");
@@ -329,17 +335,30 @@ export function MissionControl() {
     if (!session.current) return;
     setBusy(true);
     try {
+      const sessionStartIso = startedAt ? new Date(startedAt).toISOString() : new Date().toISOString();
+      const sessionEndIso = new Date().toISOString();
+      const finalPosterior = posterior;
+      const peakSnapshot = Math.max(posteriorPeak, finalPosterior);
       await stopLiveAnalyzer();
       await stopInvestigation(session.current.id);
       await recordEvent({ investigation_id: session.current.id, source: "system", event_type: "session_stop", title: "Session ended" });
       setRunning(false);
       setStartedAt(null);
       setPendingDispositionFor(session.current.id);
+      // Stash the snapshot so SessionSummaryCard can render with stable data
+      // even after the React state for posterior keeps decaying post-stop.
+      setPendingSummary({
+        id: session.current.id,
+        startIso: sessionStartIso,
+        endIso: sessionEndIso,
+        peak: peakSnapshot,
+        final: finalPosterior,
+      });
       setStatusMsg("Session stopped. Classify the disposition before reviewing.");
     } finally {
       setBusy(false);
     }
-  }, [session.current, stopLiveAnalyzer]);
+  }, [session.current, stopLiveAnalyzer, startedAt, posterior, posteriorPeak]);
 
   const handleMarker = useCallback(async () => {
     if (!session.current) return;
@@ -508,7 +527,7 @@ export function MissionControl() {
       </div>
       )}
 
-      {/* DISPOSITION PICKER — shown after a session stops, before review */}
+      {/* DISPOSITION PICKER — shown after a session stops, before the summary */}
       {pendingDispositionFor && (
         <DispositionPicker
           investigationId={pendingDispositionFor}
@@ -516,6 +535,18 @@ export function MissionControl() {
             setPendingDispositionFor(null);
             setStatusMsg("Disposition recorded. Review tab has the chain.");
           }}
+        />
+      )}
+
+      {/* SESSION DIGEST — closes every session with a one-glance summary */}
+      {!pendingDispositionFor && pendingSummary && (
+        <SessionSummaryCard
+          investigationId={pendingSummary.id}
+          sessionStartIso={pendingSummary.startIso}
+          sessionEndIso={pendingSummary.endIso}
+          peakPosterior={pendingSummary.peak}
+          finalPosterior={pendingSummary.final}
+          onClose={() => setPendingSummary(null)}
         />
       )}
 
