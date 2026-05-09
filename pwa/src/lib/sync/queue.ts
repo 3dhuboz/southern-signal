@@ -176,6 +176,23 @@ export async function getStats(): Promise<SyncStats> {
   };
 }
 
+/**
+ * Most-recent permanently-failed rows for the operator UI. Read-only display
+ * helper — does not mutate retry state. Newest-first by id.
+ */
+export async function listRecentFailures(
+  limit = 5,
+): Promise<Pick<SyncItem, "id" | "kind" | "ref_id" | "attempts" | "last_error" | "next_attempt_at">[]> {
+  return query<Pick<SyncItem, "id" | "kind" | "ref_id" | "attempts" | "last_error" | "next_attempt_at">>(
+    `SELECT id, kind, ref_id, attempts, last_error, next_attempt_at
+     FROM sync_queue
+     WHERE status = 'failed'
+     ORDER BY id DESC
+     LIMIT ?`,
+    [limit],
+  );
+}
+
 /** Reset rows stuck in_flight (e.g. tab closed mid-upload). Call on bootstrap. */
 export async function recoverInFlight(): Promise<void> {
   const ts = new Date().toISOString();

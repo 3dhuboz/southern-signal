@@ -46,6 +46,15 @@ export interface AppPreferences {
     /** Bearer token (matches env.SYNC_TOKEN on the deployment). */
     token: string | null;
   };
+  /** EVP capture preferences. */
+  evp: {
+    /**
+     * When true and the case isn't culturally sensitive, fire cloud Whisper
+     * transcription on the full clip immediately after a recording is saved.
+     * Default OFF — operators opt in to send audio off-device.
+     */
+    autoTranscribe: boolean;
+  };
 }
 
 const DEFAULTS: AppPreferences = {
@@ -57,6 +66,7 @@ const DEFAULTS: AppPreferences = {
   ai: { provider: null, blockOnSensitive: true, anthropicModel: "claude-sonnet-4-6", openrouterModel: "anthropic/claude-sonnet-4.6" },
   globalCulturalSensitivityFlag: false,
   sync: { enabled: false, endpoint: "", token: null },
+  evp: { autoTranscribe: false },
 };
 
 const KEY = "ss-preferences-v1";
@@ -73,6 +83,7 @@ function read(): AppPreferences {
       acknowledgementOfCountry: { ...DEFAULTS.acknowledgementOfCountry, ...(parsed.acknowledgementOfCountry ?? {}) },
       ai: { ...DEFAULTS.ai, ...(parsed.ai ?? {}), blockOnSensitive: true },
       sync: { ...DEFAULTS.sync, ...(parsed.sync ?? {}) },
+      evp: { ...DEFAULTS.evp, ...(parsed.evp ?? {}) },
     };
   } catch {
     return DEFAULTS;
@@ -96,6 +107,7 @@ export function setPreferences(patch: Partial<AppPreferences>): AppPreferences {
     acknowledgementOfCountry: { ...current.acknowledgementOfCountry, ...(patch.acknowledgementOfCountry ?? {}) },
     ai: { ...current.ai, ...(patch.ai ?? {}), blockOnSensitive: true },
     sync: { ...current.sync, ...(patch.sync ?? {}) },
+    evp: { ...current.evp, ...(patch.evp ?? {}) },
   };
   write(next);
   return next;

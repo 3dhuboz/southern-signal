@@ -45,6 +45,43 @@
   gap: 6px;
 }
 
+.statusGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.statusPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.statusPillDanger {
+  border-color: #7C0F1F;
+  background: rgba(196, 30, 58, 0.12);
+  color: #E33645;
+}
+
+.statusGlyph {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  opacity: 0.75;
+}
+
 .mark {
   width: 22px;
   height: 22px;

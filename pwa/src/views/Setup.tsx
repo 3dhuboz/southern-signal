@@ -54,6 +54,26 @@ export function Setup() {
       {/* Cloud sync (R2 + D1) */}
       <SyncPanel />
 
+      {/* EVP capture */}
+      <section className={st.panel}>
+        <header className={st.panelHeader}>
+          <h2 className={st.panelTitle}>EVP capture</h2>
+        </header>
+        <label className={st.toggleRow}>
+          <span>
+            <strong>Auto-transcribe EVP recordings</strong>
+            <span className={st.toggleHint}>
+              When you save a recording, send the full clip to cloud Whisper and store the transcript on the case. Skipped automatically when offline, on culturally-sensitive cases, or for clips under one second. Off by default — opt in only if you trust cloud transcription for this device.
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            checked={prefs.evp.autoTranscribe}
+            onChange={(e) => setPrefs({ evp: { ...prefs.evp, autoTranscribe: e.target.checked } })}
+          />
+        </label>
+      </section>
+
       {/* Privacy */}
       <section className={st.panel}>
         <header className={st.panelHeader}>

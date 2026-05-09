@@ -14,6 +14,9 @@ import { EvpRecorder, type EvpRecorderState } from "../lib/audio/evpRecorder";
 import { readFile, writeBytes, deletePath } from "../lib/opfs";
 import { registerMedia, recordEvent } from "../lib/db/repo";
 import { appendAuditEntry } from "../lib/db/auditLog";
+import { exec } from "../lib/db/db";
+import { transcribeAudio, isInvestigationSensitive } from "../lib/ai/cloudTranscribe";
+import { getPreferences } from "../lib/preferences";
 import s from "./EvpRecorderControl.module.css";
 
 interface Props {
@@ -41,10 +44,96 @@ export function EvpRecorderControl({ investigationId, onSaved, variant = "defaul
   const [state, setState] = useState<EvpRecorderState>({ status: "idle", startedAt: null, durationSeconds: 0, error: null });
   const [savingMessage, setSavingMessage] = useState<string | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
+  const [transcribeStatus, setTranscribeStatus] = useState<string | null>(null);
 
   useEffect(() => {
     return recorderRef.current!.subscribe(setState);
   }, []);
+
+  // Preference-gated cloud Whisper transcribe. Fire-and-forget — must not
+  // block the recording-save path. Skips silently when:
+  //   • prefs.evp.autoTranscribe is off (default).
+  //   • clip < 1 s (probably an accidental tap).
+  //   • the device is offline.
+  //   • the case (or device) is flagged culturally sensitive.
+  // Mirrors the manual handleTranscribe flow in EvpEditor — same INSERT
+  // into transcripts, same audit-entry shape.
+  const maybeAutoTranscribe = async (args: {
+    investigationId: string;
+    asset: { id: string; file_path: string };
+    wavBuffer: ArrayBuffer;
+    durationSeconds: number;
+  }): Promise<void> => {
+    const prefs = getPreferences();
+    if (!prefs.evp.autoTranscribe) return;
+    if (args.durationSeconds < 1) return;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    if (prefs.globalCulturalSensitivityFlag) return;
+    if (await isInvestigationSensitive(args.investigationId)) return;
+
+    setTranscribeStatus("Transcribing…");
+    try {
+      const blob = new Blob([args.wavBuffer], { type: "audio/wav" });
+      const result = await transcribeAudio(
+        blob,
+        { investigationId: args.investigationId, culturallySensitive: false },
+        { language: "en", filename: "evp-clip.wav" },
+      );
+
+      const transcriptId = crypto.randomUUID();
+      await exec(
+        `INSERT INTO transcripts (id, media_id, investigation_id, segment_start_s, segment_end_s, text, confidence, engine, metadata_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          transcriptId,
+          args.asset.id,
+          args.investigationId,
+          0,
+          args.durationSeconds,
+          result.text,
+          null,
+          `cloud-${result.model}`,
+          JSON.stringify({ segments: result.segments, language: result.language, duration: result.duration, auto: true }),
+        ],
+      );
+      await recordEvent({
+        investigation_id: args.investigationId,
+        source: "ai",
+        event_type: "audio.evp_transcribe",
+        title: "EVP auto-transcribed",
+        description: result.text.slice(0, 200),
+        linked_file: args.asset.file_path,
+        metadata: {
+          source_media_id: args.asset.id,
+          transcript_id: transcriptId,
+          start_offset_s: 0,
+          end_offset_s: args.durationSeconds,
+          model: result.model,
+          language: result.language,
+          auto: true,
+        },
+      });
+      await appendAuditEntry({
+        actor: "ai",
+        kind: "audio.evp.transcribe",
+        payload: {
+          investigation_id: args.investigationId,
+          media_id: args.asset.id,
+          transcript_id: transcriptId,
+          model: result.model,
+          start_offset_s: 0,
+          end_offset_s: args.durationSeconds,
+          auto: true,
+        },
+      });
+
+      const preview = result.text.trim().slice(0, 60);
+      const ellipsis = result.text.trim().length > 60 ? "…" : "";
+      setTranscribeStatus(preview ? `Transcribed: ${preview}${ellipsis}` : "Transcribed (no speech detected)");
+    } catch (err) {
+      setTranscribeStatus(`Transcribe failed: ${(err as Error).message}`);
+    }
+  };
 
   const handleStart = async () => {
     if (!investigationId) {
@@ -53,6 +142,7 @@ export function EvpRecorderControl({ investigationId, onSaved, variant = "defaul
     }
     setLastError(null);
     setSavingMessage(null);
+    setTranscribeStatus(null);
     const ts = Date.now();
     const tmpPath = `media/${investigationId}/_evp-pending-${ts}.wav`;
     try {
@@ -82,7 +172,7 @@ export function EvpRecorderControl({ investigationId, onSaved, variant = "defaul
       await writeBytes(finalPath, buf);
       await deletePath(result.path).catch(() => { /* best-effort */ });
 
-      await registerMedia({
+      const asset = await registerMedia({
         investigation_id: investigationId,
         media_type: "audio",
         file_path: finalPath,
@@ -114,6 +204,14 @@ export function EvpRecorderControl({ investigationId, onSaved, variant = "defaul
       });
       setSavingMessage(`Saved · ${formatDuration(result.durationSeconds)} · ${(result.sizeBytes / 1024).toFixed(0)} KB`);
       onSaved?.();
+
+      // Fire-and-forget auto-transcribe — preference-gated, never blocks save.
+      void maybeAutoTranscribe({
+        investigationId,
+        asset,
+        wavBuffer: buf,
+        durationSeconds: result.durationSeconds,
+      });
     } catch (err) {
       setLastError(`Save failed: ${(err as Error).message}`);
       setSavingMessage(null);
@@ -171,6 +269,11 @@ export function EvpRecorderControl({ investigationId, onSaved, variant = "defaul
 
       {lastError && <p className={s.error}>{lastError}</p>}
       {savingMessage && <p className={s.success}>{savingMessage}</p>}
+      {transcribeStatus && (
+        <p className={transcribeStatus.startsWith("Transcribe failed") ? s.error : s.success}>
+          {transcribeStatus}
+        </p>
+      )}
       {state.error && <p className={s.error}>{state.error}</p>}
     </div>
   );

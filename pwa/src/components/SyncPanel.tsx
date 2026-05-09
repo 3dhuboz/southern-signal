@@ -10,8 +10,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePreferences } from "../lib/preferences";
 import { flushSync } from "../lib/sync/syncWorker";
-import { getStats, retryAllFailed, purgeDoneOlderThan } from "../lib/sync/queue";
-import type { SyncStats } from "../lib/sync/types";
+import { getStats, retryAllFailed, purgeDoneOlderThan, listRecentFailures } from "../lib/sync/queue";
+import type { SyncStats, SyncItem, SyncKind } from "../lib/sync/types";
 import st from "../views/Setup.module.css";
 
 interface RemoteStatus {
@@ -36,9 +36,23 @@ function formatRelative(iso: string | null): string {
   return `${d}d ago`;
 }
 
+type FailureRow = Pick<SyncItem, "id" | "kind" | "ref_id" | "attempts" | "last_error" | "next_attempt_at">;
+
+function kindColor(kind: SyncKind): string {
+  if (kind === "audit") return "var(--signal)";
+  if (kind === "media_blob") return "var(--danger)";
+  return "var(--text-muted)";
+}
+
+function truncate(s: string | null | undefined, n: number): string {
+  if (!s) return "—";
+  return s.length > n ? `${s.slice(0, n)}…` : s;
+}
+
 export function SyncPanel() {
   const [prefs, setPrefs] = usePreferences();
   const [stats, setStats] = useState<SyncStats | null>(null);
+  const [failures, setFailures] = useState<FailureRow[]>([]);
   const [remote, setRemote] = useState<RemoteStatus | null>(null);
   const [endpointDraft, setEndpointDraft] = useState(prefs.sync.endpoint);
   const [tokenDraft, setTokenDraft] = useState(prefs.sync.token ?? "");
@@ -46,7 +60,11 @@ export function SyncPanel() {
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
   const refreshStats = useCallback(async () => {
-    try { setStats(await getStats()); } catch { /* ignore */ }
+    try {
+      const [s, f] = await Promise.all([getStats(), listRecentFailures(5)]);
+      setStats(s);
+      setFailures(f);
+    } catch { /* ignore */ }
   }, []);
 
   const refreshRemote = useCallback(async () => {
@@ -178,6 +196,37 @@ export function SyncPanel() {
         <dt>Oldest pending</dt><dd>{formatRelative(stats?.oldest_pending_at ?? null)}</dd>
         <dt>Last upload</dt><dd>{formatRelative(stats?.last_uploaded_at ?? null)}</dd>
       </dl>
+
+      {failures.length > 0 && (
+        <details className={st.statusLine} style={{ margin: 0 }}>
+          <summary style={{ cursor: "pointer", fontSize: 12 }}>
+            Recent failures ({failures.length})
+          </summary>
+          <ul
+            style={{
+              listStyle: "none",
+              margin: "6px 0 0",
+              padding: 0,
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+              fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+              fontSize: 11,
+              lineHeight: 1.4,
+              wordBreak: "break-word",
+            }}
+          >
+            {failures.map((f) => (
+              <li key={f.id} style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                <span style={{ color: kindColor(f.kind), fontWeight: 600 }}>{f.kind.toUpperCase()}</span>
+                <span style={{ color: "var(--text-secondary)" }}>{f.ref_id.slice(0, 8)}…</span>
+                <span style={{ color: "var(--text-muted)" }}>{f.attempts}x</span>
+                <span style={{ color: "var(--text-secondary)", flex: "1 1 200px" }}>{truncate(f.last_error, 80)}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
 
       <div className={st.actionsRow}>
         <button type="button" className={st.primary} onClick={handleRetryFailed} disabled={!stats || stats.failed === 0}>
