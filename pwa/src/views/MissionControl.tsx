@@ -78,6 +78,7 @@ export function MissionControl() {
   const [pendingDispositionFor, setPendingDispositionFor] = useState<string | null>(null);
   const [narrationSpeak, setNarrationSpeak] = useState<boolean>(false);
   const [culturallySensitive, setCulturallySensitiveState] = useState<boolean>(false);
+  const [liveStreamState, setLiveStreamState] = useState<{ recording: boolean; broadcasting: boolean }>({ recording: false, broadcasting: false });
 
   // Reflect the active investigation's stored cultural-sensitivity flag.
   useEffect(() => {
@@ -401,6 +402,8 @@ export function MissionControl() {
           onMarker={handleMarker}
           onAskQuestion={handleAskQuestion}
           onBroadcastLive={handleBroadcastLive}
+          broadcasting={liveStreamState.broadcasting}
+          recordingClip={liveStreamState.recording}
           emitEvidence={emitEvidence}
         />
       )}
@@ -531,6 +534,7 @@ export function MissionControl() {
         lightLux={sensors.snapshot.light?.lux}
         magnetometerUt={sensors.snapshot.magnetometer?.magnitude ?? sensors.emf?.value}
         motionMs2={sensors.snapshot.motion?.accelMagnitude ?? sensors.vibration?.value}
+        onStateChange={setLiveStreamState}
       />
       </div>
 

@@ -499,6 +499,32 @@
   50%      { opacity: 0.55; transform: scale(0.85); }
 }
 
+/* Active states — promoted CTA reflects what LiveStreamView is doing */
+.broadcastRec {
+  background:
+    linear-gradient(180deg, var(--danger-wash), var(--danger-wash)),
+    var(--bg-elevated);
+  border-color: var(--danger);
+  color: var(--text);
+}
+.broadcastOnAir {
+  background:
+    linear-gradient(180deg, var(--danger), var(--danger-wash)),
+    var(--bg-elevated);
+  border-color: var(--danger);
+  color: var(--text-on-accent, #fff);
+  box-shadow: 0 8px 24px -8px var(--danger);
+  animation: ss-broadcast-onair 1.4s ease-in-out infinite;
+}
+.broadcastOnAir .broadcastHint {
+  color: var(--text-on-accent, #fff);
+  opacity: 0.85;
+}
+@keyframes ss-broadcast-onair {
+  0%, 100% { box-shadow: 0 0 0 1px var(--danger), 0 8px 24px -8px var(--danger); }
+  50%      { box-shadow: 0 0 0 1px var(--danger), 0 14px 36px -8px var(--danger); }
+}
+
 .danger {
   background: var(--danger-wash);
   color: var(--danger);

@@ -69,6 +69,10 @@ interface SimpleMissionViewProps {
   onMarker: () => void;
   onAskQuestion: () => void;
   onBroadcastLive: () => void;
+  /** True when the LiveStreamView is actively broadcasting via WHIP. */
+  broadcasting: boolean;
+  /** True when the LiveStreamView is recording a local clip. */
+  recordingClip: boolean;
   emitEvidence: (input: {
     channel: string;
     logLr: number;
@@ -171,7 +175,7 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
     running, busy, posterior, elapsedSeconds, caseId, caseTitle, statusMsg,
     recentIncrements, trustworthy, hasInvestigation, investigationId,
     audioRms, sectorReading, narratorCaption, narratorSpeak, onToggleNarratorSpeak,
-    onBegin, onStop, onMarker, onAskQuestion, onBroadcastLive, emitEvidence,
+    onBegin, onStop, onMarker, onAskQuestion, onBroadcastLive, broadcasting, recordingClip, emitEvidence,
   } = props;
   const [markSheetOpen, setMarkSheetOpen] = useState(false);
   const [latched, setLatched] = useState<string | null>(null);
@@ -318,10 +322,29 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
       </div>
 
       {/* BROADCAST CTA — headline feature: camera + sensor overlays composited live */}
-      <button type="button" className={s.broadcast} onClick={onBroadcastLive}>
+      <button
+        type="button"
+        className={`${s.broadcast} ${broadcasting ? s.broadcastOnAir : recordingClip ? s.broadcastRec : ""}`.trim()}
+        onClick={onBroadcastLive}
+        aria-label={
+          broadcasting
+            ? recordingClip ? "On air and recording — open broadcast controls" : "On air — open broadcast controls"
+            : recordingClip ? "Recording clip — open broadcast controls" : "Broadcast live with sensor overlays"
+        }
+      >
         <span className={s.broadcastDot} aria-hidden="true" />
-        <span>Broadcast live with sensor overlays</span>
-        <span className={s.broadcastHint}>TV-grade timestamps</span>
+        <span>
+          {broadcasting && recordingClip ? "On air · recording — tap for controls"
+            : broadcasting ? "On air — tap for controls"
+            : recordingClip ? "Recording clip — tap for controls"
+            : "Broadcast live with sensor overlays"}
+        </span>
+        <span className={s.broadcastHint}>
+          {broadcasting && recordingClip ? "REC · LIVE"
+            : broadcasting ? "LIVE"
+            : recordingClip ? "REC"
+            : "TV-grade timestamps"}
+        </span>
       </button>
 
       {/* QUICK ACTIONS */}

@@ -99,6 +99,9 @@ interface LiveStreamViewProps {
   magnetometerUt?: number;
   motionMs2?: number;
   temperatureC?: number;
+  /** Bubbles recording / live state up so the parent can reflect it in
+   *  out-of-band UI (e.g. the Simple-mode broadcast CTA). */
+  onStateChange?: (state: { recording: boolean; broadcasting: boolean }) => void;
 }
 
 async function sha256Hex(buf: ArrayBuffer): Promise<string> {
@@ -109,7 +112,7 @@ async function sha256Hex(buf: ArrayBuffer): Promise<string> {
 export function LiveStreamView(props: LiveStreamViewProps) {
   const {
     investigationId, running, posterior, audioRms, sector, coherence, caseId, caseTitle, caption,
-    lightLux, magnetometerUt, motionMs2, temperatureC,
+    lightLux, magnetometerUt, motionMs2, temperatureC, onStateChange,
   } = props;
 
   const sourceVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -498,6 +501,11 @@ export function LiveStreamView(props: LiveStreamViewProps) {
       void stop();
     };
   }, [stop]);
+
+  // Bubble state changes up so the parent can mirror REC / LIVE in its own UI.
+  useEffect(() => {
+    onStateChange?.({ recording, broadcasting: liveOn });
+  }, [recording, liveOn, onStateChange]);
 
   const handleProviderChange = useCallback((nextKey: WhipProviderKey) => {
     setWhipProvider(nextKey);
