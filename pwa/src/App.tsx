@@ -7,6 +7,7 @@ import { MissionControl } from "./views/MissionControl";
 import { Review } from "./views/Review";
 import { Setup } from "./views/Setup";
 import { Floorplan } from "./views/Floorplan";
+import { EvpReview } from "./views/EvpReview";
 import { isPastCivilTwilight } from "./lib/sensors/civilTwilight";
 import { applyTheme, setPreferences, usePreferences } from "./lib/preferences";
 import "./styles/global.css";
@@ -51,6 +52,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<MissionControl />} />
           <Route path="/review" element={<Review />} />
+          <Route path="/evp" element={<EvpReview />} />
           <Route path="/setup" element={<Setup />} />
           <Route path="/floorplan" element={<Floorplan />} />
         </Routes>

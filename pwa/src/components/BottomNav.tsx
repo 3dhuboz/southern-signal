@@ -21,6 +21,15 @@ const items: NavItem[] = [
     ),
   },
   {
+    to: "/evp",
+    label: "EVP",
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3 12 H5 L7 6 L11 18 L15 4 L17 14 L19 12 H21" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
     to: "/review",
     label: "Review",
     icon: (

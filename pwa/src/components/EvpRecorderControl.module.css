@@ -1,0 +1,109 @@
+.wrap {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.compact { padding: 10px 12px; gap: 6px; }
+
+.head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--signal);
+  font-weight: 700;
+}
+.note {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.startBtn, .stopBtn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 10px 14px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  border-radius: var(--r-md);
+  border: 1px solid;
+  cursor: pointer;
+}
+.startBtn {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+.startBtn:hover { background: var(--bg-overlay); border-color: var(--signal-dim); }
+.startBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.stopBtn {
+  background: var(--danger-wash);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.stopBtn:hover { filter: brightness(1.15); }
+
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 8px var(--danger);
+}
+.square {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.timer {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.5px;
+  min-width: 64px;
+  text-align: right;
+}
+.timerActive { color: var(--danger); }
+
+.error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+  background: var(--danger-wash);
+  border: 1px solid var(--danger);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+}
+.success {
+  margin: 0;
+  font-size: 12px;
+  color: var(--signal);
+  font-family: var(--font-mono);
+}
