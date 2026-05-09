@@ -12,22 +12,9 @@
 
 import { exec, query } from "./db";
 import { enqueue } from "../sync/queue";
+import { canonicalJson, sha256Hex } from "../forensic/canonicalJson";
 
 const GENESIS_HASH = "0".repeat(64);
-
-async function sha256Hex(text: string): Promise<string> {
-  const data = new TextEncoder().encode(text);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-function canonicalJson(value: unknown): string {
-  // Stable stringify with sorted keys.
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
-  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
-}
 
 interface PriorEntry {
   seq: number;
