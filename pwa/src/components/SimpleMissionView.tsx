@@ -282,14 +282,6 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
           </p>
         )}
 
-        <img
-          className={s.partnerWatermark}
-          src="/yep-boys-logo.svg"
-          alt=""
-          aria-hidden="true"
-          width={36}
-          height={36}
-        />
       </div>
 
       {/* AI CO-INVESTIGATOR — live narration + speech toggle */}

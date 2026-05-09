@@ -5,6 +5,8 @@ import { CameraCapture } from "../components/CameraCapture";
 import { ContaminationMarker } from "../components/ContaminationMarker";
 import { DispositionPicker } from "../components/DispositionPicker";
 import { LiveARView } from "../components/LiveARView";
+import { LiveStreamView } from "../components/LiveStreamView";
+import { SensorsPanel } from "../components/SensorsPanel";
 import { useLiveNarrator } from "../lib/posterior/liveNarrator";
 import { EvidenceLedger, type LedgerStream } from "../components/EvidenceLedger";
 import { OvilusTool } from "../components/OvilusTool";
@@ -371,14 +373,6 @@ export function MissionControl() {
             <p className={m.heroSub}>{statusMsg}</p>
             <div className={m.heroTimer}>{formatHMS(elapsedSeconds)}</div>
             <div className={m.heroTimerLabel}>ELAPSED</div>
-            <img
-              className={m.heroPartnerWatermark}
-              src="/yep-boys-logo.svg"
-              alt=""
-              aria-hidden="true"
-              width={40}
-              height={40}
-            />
           </div>
           <AcousticSectorIndicator reading={sectorReading} trustworthy={trustworthy} />
         </div>
@@ -460,17 +454,33 @@ export function MissionControl() {
         />
       )}
 
-      {/* LIVE AR VIEW — camera feed with sensor overlays (Simple mode centerpiece) */}
+      {/* LIVE BROADCAST — camera + mic + sensor overlays composited; record + go live */}
+      <LiveStreamView
+        investigationId={session.current?.id ?? null}
+        running={running}
+        posterior={posterior}
+        audioRms={audioRms}
+        sector={sectorReading?.sector ?? null}
+        coherence={sectorReading?.coherence ?? 0}
+        caseId={session.current?.id ?? null}
+        caseTitle={session.current?.title ?? null}
+        caption={narratorCaption}
+      />
+
+      {/* AR VIEW — quick camera open without composited stream (Simple-mode discovery) */}
       {!isPro && (
-        <LiveARView
-          investigationId={session.current?.id ?? null}
-          running={running}
-          posterior={posterior}
-          audioRms={audioRms}
-          sector={sectorReading?.sector ?? null}
-          coherence={sectorReading?.coherence ?? 0}
-          caption={narratorCaption}
-        />
+        <details className={m.optionalSection}>
+          <summary>Quick AR camera (no recording)</summary>
+          <LiveARView
+            investigationId={session.current?.id ?? null}
+            running={running}
+            posterior={posterior}
+            audioRms={audioRms}
+            sector={sectorReading?.sector ?? null}
+            coherence={sectorReading?.coherence ?? 0}
+            caption={narratorCaption}
+          />
+        </details>
       )}
 
       {/* CAMERA — scene snapshots (Pro plain tile) */}
@@ -501,6 +511,9 @@ export function MissionControl() {
       {/* ITC TOOLS */}
       <SpiritBoxTool entropy={sensors.snapshot.magnetometer?.magnitude ?? sensors.snapshot.motion?.accelMagnitude ?? 0} />
       <OvilusTool entropy={sensors.snapshot.magnetometer?.magnitude ?? sensors.snapshot.orientation?.heading ?? 0} investigationId={session.current?.id ?? null} />
+
+      {/* SENSOR INVENTORY — what this phone exposes */}
+      <SensorsPanel />
 
       {isPro && (
         <p className={m.disclaimer}>
