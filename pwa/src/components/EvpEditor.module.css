@@ -258,6 +258,31 @@
 .secondaryBtn:hover { background: var(--bg-overlay); border-color: var(--signal-dim); }
 .secondaryBtn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+.transcriptBox {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--bg-inset);
+  border-left: 3px solid var(--signal);
+  border-radius: var(--r-sm);
+}
+.transcriptLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--signal);
+  font-weight: 700;
+}
+.transcriptText {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+}
+
 .disclaimer {
   margin: 0;
   font-size: 11px;

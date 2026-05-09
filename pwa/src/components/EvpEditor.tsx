@@ -22,6 +22,8 @@ import { decodeWav, computeWaveformPeaks, computeRms } from "../lib/audio/wavDec
 import { encodeWavFromFloat32 } from "../lib/wav";
 import { registerMedia, recordEvent } from "../lib/db/repo";
 import { appendAuditEntry } from "../lib/db/auditLog";
+import { exec } from "../lib/db/db";
+import { transcribeAudio } from "../lib/ai/cloudTranscribe";
 import type { MediaAsset } from "../lib/db/schema";
 import s from "./EvpEditor.module.css";
 
@@ -71,6 +73,8 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
   const [reviewerNotes, setReviewerNotes] = useState("");
   const [savingTag, setSavingTag] = useState(false);
   const [savingTrim, setSavingTrim] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [transcript, setTranscript] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -404,6 +408,88 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
     }
   };
 
+  const handleTranscribe = async () => {
+    if (!decoded) return;
+    setTranscribing(true);
+    setStatusMsg(null);
+    setTranscript(null);
+    try {
+      let samples: Float32Array;
+      let startSec = 0;
+      let endSec = decoded.durationSec;
+      if (selection) {
+        const startIdx = Math.floor(selection.startSec * decoded.sampleRate);
+        const endIdx = Math.min(decoded.samples.length, Math.floor(selection.endSec * decoded.sampleRate));
+        samples = decoded.samples.slice(startIdx, endIdx);
+        startSec = selection.startSec;
+        endSec = selection.endSec;
+      } else {
+        samples = decoded.samples;
+      }
+      const wav = encodeWavFromFloat32(samples, decoded.sampleRate, 1);
+      const owned = new Uint8Array(wav.length);
+      owned.set(wav);
+      const blob = new Blob([owned], { type: "audio/wav" });
+      const result = await transcribeAudio(blob, { investigationId: asset.investigation_id, culturallySensitive: false }, {
+        language: "en",
+        filename: "evp-clip.wav",
+        prompt: reviewerText.trim() ? `Possible utterance: ${reviewerText.trim()}` : undefined,
+      });
+      setTranscript(result.text);
+
+      // Persist transcript segments to the transcripts table for downstream review.
+      const transcriptId = crypto.randomUUID();
+      await exec(
+        `INSERT INTO transcripts (id, media_id, investigation_id, segment_start_s, segment_end_s, text, confidence, engine, metadata_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          transcriptId,
+          asset.id,
+          asset.investigation_id,
+          startSec,
+          endSec,
+          result.text,
+          null,
+          `cloud-${result.model}`,
+          JSON.stringify({ segments: result.segments, language: result.language, duration: result.duration }),
+        ],
+      );
+      await recordEvent({
+        investigation_id: asset.investigation_id,
+        source: "ai",
+        event_type: "audio.evp_transcribe",
+        title: "EVP transcribed",
+        description: result.text.slice(0, 200),
+        linked_file: asset.file_path,
+        metadata: {
+          source_media_id: asset.id,
+          transcript_id: transcriptId,
+          start_offset_s: startSec,
+          end_offset_s: endSec,
+          model: result.model,
+          language: result.language,
+        },
+      });
+      await appendAuditEntry({
+        actor: "ai",
+        kind: "audio.evp.transcribe",
+        payload: {
+          investigation_id: asset.investigation_id,
+          media_id: asset.id,
+          transcript_id: transcriptId,
+          model: result.model,
+          start_offset_s: startSec,
+          end_offset_s: endSec,
+        },
+      });
+      setStatusMsg(`Transcribed (${result.model})`);
+    } catch (err) {
+      setError(`Transcribe failed: ${(err as Error).message}`);
+    } finally {
+      setTranscribing(false);
+    }
+  };
+
   const handleExportSelection = () => {
     if (!selection || !decoded) return;
     const startIdx = Math.floor(selection.startSec * decoded.sampleRate);
@@ -539,6 +625,9 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
               <button type="button" className={s.primaryBtn} onClick={handleSaveTrim} disabled={!selection || savingTrim}>
                 {savingTrim ? "Saving…" : "Save trim to case"}
               </button>
+              <button type="button" className={s.secondaryBtn} onClick={handleTranscribe} disabled={transcribing}>
+                {transcribing ? "Transcribing…" : selection ? "Transcribe selection" : "Transcribe full"}
+              </button>
               <button type="button" className={s.secondaryBtn} onClick={handleExportSelection} disabled={!selection}>
                 Export selection (.wav)
               </button>
@@ -548,6 +637,12 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
             </div>
 
             {statusMsg && <p className={s.success}>{statusMsg}</p>}
+            {transcript && (
+              <div className={s.transcriptBox}>
+                <span className={s.transcriptLabel}>Transcript</span>
+                <p className={s.transcriptText}>{transcript}</p>
+              </div>
+            )}
 
             <p className={s.disclaimer}>
               Drag on the waveform to select a region. All saves are appended to the audit chain — original recording is never altered.

@@ -260,6 +260,40 @@
   font-style: italic;
 }
 
+.estesTile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  text-decoration: none;
+  color: var(--text-primary);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.estesTile:hover {
+  border-color: var(--signal-dim);
+  background: var(--bg-overlay);
+}
+.estesEyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.6px;
+  color: var(--signal);
+  font-weight: 700;
+}
+.estesTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.estesHint {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
 .optionalSection {
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-md);

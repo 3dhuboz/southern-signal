@@ -14,6 +14,7 @@ import { PosteriorBar } from "../components/PosteriorBar";
 import { ScreenRecordButton } from "../components/ScreenRecordButton";
 import { SimpleMissionView } from "../components/SimpleMissionView";
 import { SpiritBoxTool } from "../components/SpiritBoxTool";
+import { BaitToneTool } from "../components/BaitToneTool";
 import { usePreferences } from "../lib/preferences";
 import {
   createCalibrationState,
@@ -509,8 +510,23 @@ export function MissionControl() {
       </div>
 
       {/* ITC TOOLS */}
-      <SpiritBoxTool entropy={sensors.snapshot.magnetometer?.magnitude ?? sensors.snapshot.motion?.accelMagnitude ?? 0} />
+      <SpiritBoxTool
+        entropy={sensors.snapshot.magnetometer?.magnitude ?? sensors.snapshot.motion?.accelMagnitude ?? 0}
+        investigationId={session.current?.id ?? null}
+      />
       <OvilusTool entropy={sensors.snapshot.magnetometer?.magnitude ?? sensors.snapshot.orientation?.heading ?? 0} investigationId={session.current?.id ?? null} />
+
+      {/* BAIT TOOLS — sub-audible carrier */}
+      {isPro && <BaitToneTool investigationId={session.current?.id ?? null} />}
+
+      {/* ESTES MODE — dual-phone sensory-deprivation rig */}
+      {isPro && (
+        <a href="/estes" className={m.estesTile}>
+          <span className={m.estesEyebrow}>ESTES METHOD · DUAL-PHONE</span>
+          <span className={m.estesTitle}>Pair two phones for a sensory-deprivation session</span>
+          <span className={m.estesHint}>Receiver blacks out + spirit-box-cycles + streams mic. Questioner types questions, hears responses, watches a timestamped log. Open →</span>
+        </a>
+      )}
 
       {/* SENSOR INVENTORY — what this phone exposes */}
       <SensorsPanel />

@@ -1,20 +1,23 @@
-import { useEffect } from "react";
 import { applyTheme, usePreferences } from "../lib/preferences";
+import { CaseManager } from "../components/CaseManager";
 import s from "./View.module.css";
 import st from "./Setup.module.css";
 
 export function Setup() {
   const [prefs, setPrefs] = usePreferences();
 
-  useEffect(() => { /* no key listing needed — AI is server-side */ }, []);
-
   return (
     <section className={s.view}>
       <div className={s.titleBlock}>
-        <span className={s.eyebrow}>Setup</span>
-        <h1 className={s.title}>Settings</h1>
-        <p className={s.lede}>Theme, AI assistance, privacy. Keys stay on this device.</p>
+        <span className={s.eyebrow}>Setup · Case manager</span>
+        <h1 className={s.title}>Cases, theme, privacy</h1>
+        <p className={s.lede}>Manage all investigations on this device. Edit metadata, browse media, set disposition, export, or delete. AI keys are server-side — nothing to configure here.</p>
       </div>
+
+      {/* CASE MANAGER */}
+      <section className={st.panel}>
+        <CaseManager />
+      </section>
 
       {/* Theme */}
       <section className={st.panel}>
