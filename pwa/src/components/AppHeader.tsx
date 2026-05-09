@@ -1,6 +1,7 @@
 import { ExperienceToggle } from "./ExperienceToggle";
 import { ScotopicToggle } from "./ScotopicToggle";
 import { useSystemStatus } from "../lib/system/systemStatus";
+import { useLiveBroadcastState } from "../lib/system/liveBroadcast";
 import styles from "./AppHeader.module.css";
 
 const BATTERY_DANGER_PCT = 20;
@@ -13,6 +14,7 @@ function formatStorageFree(mb: number): string {
 
 export function AppHeader() {
   const { batteryPct, charging, storageFreeMB, storageUsedPct } = useSystemStatus();
+  const live = useLiveBroadcastState();
 
   const showBattery = batteryPct !== null;
   const batteryDanger = showBattery && batteryPct !== null && batteryPct < BATTERY_DANGER_PCT && !charging;
@@ -28,6 +30,27 @@ export function AppHeader() {
           <span className={styles.wordmark}>SOUTHERN SIGNAL</span>
         </div>
         <div className={styles.toolbar}>
+          {(live.recording || live.broadcasting) && (
+            <span
+              className={`${styles.liveBadge} ${live.broadcasting ? styles.liveBadgeOnAir : styles.liveBadgeRec}`.trim()}
+              role="status"
+              aria-label={
+                live.broadcasting && live.recording ? "Recording and broadcasting"
+                : live.broadcasting ? "Broadcasting"
+                : "Recording"
+              }
+              title={
+                live.broadcasting && live.recording ? "On air · recording — overlays visible to viewers"
+                : live.broadcasting ? "On air — overlays visible to viewers"
+                : "Recording locally — overlays baked into the clip"
+              }
+            >
+              <span className={styles.liveBadgeDot} aria-hidden="true" />
+              {live.broadcasting && live.recording ? "REC · LIVE"
+                : live.broadcasting ? "LIVE"
+                : "REC"}
+            </span>
+          )}
           {(showBattery || showStorage) && (
             <div className={styles.statusGroup}>
               {showBattery && (

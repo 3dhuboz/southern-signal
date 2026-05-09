@@ -20,6 +20,7 @@ import { appendAuditEntry } from "../lib/db/auditLog";
 import { describeActivity } from "../lib/posterior/plainEnglish";
 import { createCanvasCompositor, type CanvasCompositor, type OverlayState } from "../lib/media/canvasCompositor";
 import { startWhipSession, type WhipSession, type WhipState, type WhipOutboundStats } from "../lib/media/whip";
+import { setLiveBroadcastState } from "../lib/system/liveBroadcast";
 import s from "./LiveStreamView.module.css";
 
 type WhipProviderKey = "cloudflare" | "fb_live_via_cloudflare" | "fb_live_via_restream" | "mux" | "dolby" | "eyevinn" | "custom";
@@ -502,10 +503,20 @@ export function LiveStreamView(props: LiveStreamViewProps) {
     };
   }, [stop]);
 
-  // Bubble state changes up so the parent can mirror REC / LIVE in its own UI.
+  // Bubble state changes up so the parent can mirror REC / LIVE in its own UI,
+  // AND publish to the app-wide module store so the AppHeader pins the state
+  // across every route.
   useEffect(() => {
-    onStateChange?.({ recording, broadcasting: liveOn });
+    const next = { recording, broadcasting: liveOn };
+    onStateChange?.(next);
+    setLiveBroadcastState(next);
   }, [recording, liveOn, onStateChange]);
+
+  // On unmount (route change, session end), clear the global flag so a
+  // ghost "LIVE" pin can't linger after the camera closes.
+  useEffect(() => {
+    return () => setLiveBroadcastState({ recording: false, broadcasting: false });
+  }, []);
 
   const handleProviderChange = useCallback((nextKey: WhipProviderKey) => {
     setWhipProvider(nextKey);
