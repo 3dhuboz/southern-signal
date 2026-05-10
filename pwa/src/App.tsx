@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AcknowledgementGate } from "./components/AcknowledgementGate";
+import { OnboardingTour } from "./components/OnboardingTour";
 import { AppHeader } from "./components/AppHeader";
 import { BottomNav } from "./components/BottomNav";
 import { MissionControl } from "./views/MissionControl";
@@ -79,6 +80,7 @@ export default function App() {
       </main>
       <BottomNav />
       <AcknowledgementGate />
+      <OnboardingTour />
     </BrowserRouter>
   );
 }
