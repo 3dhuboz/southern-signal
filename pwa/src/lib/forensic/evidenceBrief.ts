@@ -19,6 +19,7 @@ import { getPreferences } from "../preferences";
 import { buildManifest } from "./manifest";
 import type { Investigation } from "../db/schema";
 import { classifyPosterior, type PosteriorBand } from "../posterior/posterior";
+import { computeAhtVerdict, computeH0Confidence, type AhtVerdictResult } from "../posterior/ahtVerdict";
 
 export interface BriefMoment {
   ts: string;
@@ -49,6 +50,14 @@ export interface EvidenceBrief {
   acknowledgementStatement: string | null;
   acknowledgementAcceptedAt: string | null;
   culturallySensitive: boolean;
+  /** H₀ "AI insufficiency" confidence (device-wide, from recent debunk requests). */
+  h0Confidence: number;
+  /** True when h0Confidence came from real debunk data; false = the 0.18 fallback. */
+  h0FromData: boolean;
+  /** Number of debunk requests that contributed to h0Confidence. */
+  h0SampleCount: number;
+  /** The AHT post-roll verdict, derived from h0Confidence + peakPosterior. */
+  ahtVerdict: AhtVerdictResult;
 }
 
 export async function buildEvidenceBrief(investigationId: string): Promise<EvidenceBrief | null> {
@@ -125,6 +134,25 @@ export async function buildEvidenceBrief(investigationId: string): Promise<Evide
     video: mediaMap["video"] ?? 0,
   };
 
+  // H₀ — device-wide, from the most-recent 30 debunk requests that carry
+  // a max_plausibility. Drives the AHT post-roll verdict below.
+  const debunkRows = await query<{ payload_json: string }>(
+    `SELECT payload_json FROM audit_log
+     WHERE kind = 'ai.debunk.proposed'
+     ORDER BY seq DESC
+     LIMIT 30`,
+  );
+  const maxPlausibilities = debunkRows
+    .map((r) => {
+      try {
+        const p = JSON.parse(r.payload_json) as Record<string, unknown>;
+        return typeof p.max_plausibility === "number" ? p.max_plausibility : null;
+      } catch { return null; }
+    })
+    .filter((p): p is number => p !== null);
+  const h0 = computeH0Confidence(maxPlausibilities);
+  const ahtVerdict = computeAhtVerdict({ h0Confidence: h0.value, peakPosterior });
+
   // Chain + manifest are best-effort.
   const chainStatus = await verifyAuditChain();
   let merkleRoot: string | null = null;
@@ -153,6 +181,10 @@ export async function buildEvidenceBrief(investigationId: string): Promise<Evide
     acknowledgementStatement: prefs.acknowledgementOfCountry.statement,
     acknowledgementAcceptedAt: prefs.acknowledgementOfCountry.acceptedAt,
     culturallySensitive: investigation.culturally_sensitive === 1,
+    h0Confidence: h0.value,
+    h0FromData: h0.fromData,
+    h0SampleCount: h0.n,
+    ahtVerdict,
   };
 }
 

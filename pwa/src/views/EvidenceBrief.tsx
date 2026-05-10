@@ -25,6 +25,21 @@ const DISPOSITION_LABEL: Record<string, string> = {
   confirmed_mundane: "Mundane — explained at the time",
 };
 
+/**
+ * Loose agreement check between the computed AHT verdict and the operator's
+ * chosen disposition. "unexplained" and "flagged" agree; "null" and "null"
+ * agree; "confirmed_mundane" agrees with "null"/"inconclusive"; everything
+ * else is treated as a divergence worth flagging.
+ */
+function verdictDisagreesWithDisposition(verdict: string, disposition: string): boolean {
+  const agree: Record<string, string[]> = {
+    null: ["null", "confirmed_mundane"],
+    inconclusive: ["inconclusive", "confirmed_mundane"],
+    unexplained: ["flagged"],
+  };
+  return !(agree[verdict] ?? []).includes(disposition);
+}
+
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -109,6 +124,30 @@ export function EvidenceBrief() {
           <div><dt>Duration</dt><dd>{formatDuration(brief.durationSeconds)}</dd></div>
           <div><dt>Disposition</dt><dd>{dispositionText}</dd></div>
         </dl>
+      </section>
+
+      {/* AHT POST-ROLL VERDICT — the headline conclusion */}
+      <section className={`${s.verdict} ${s[`verdict_${brief.ahtVerdict.verdict}`]}`.trim()}>
+        <div className={s.verdictHead}>
+          <span className={s.verdictEyebrow}>AHT POST-ROLL VERDICT</span>
+          <span className={s.verdictLabel}>{brief.ahtVerdict.label}</span>
+        </div>
+        <p className={s.verdictDetail}>{brief.ahtVerdict.detail}</p>
+        <p className={s.verdictMeta}>
+          H₀ insufficiency {brief.h0Confidence.toFixed(2)}
+          {brief.h0FromData ? ` (n=${brief.h0SampleCount} debunk requests)` : " (no debunk history — default applied)"}
+          {" · "}peak posterior {(brief.peakPosterior * 100).toFixed(0)}%
+          {brief.ahtVerdict.verdict !== "suspended" && brief.investigation.disposition
+            ? ` · operator marked: ${dispositionText}`
+            : ""}
+        </p>
+        {brief.ahtVerdict.verdict !== "suspended"
+          && brief.investigation.disposition
+          && verdictDisagreesWithDisposition(brief.ahtVerdict.verdict, brief.investigation.disposition) && (
+          <p className={s.verdictDivergence}>
+            Note: the computed post-roll verdict and the operator's disposition diverge. Both are recorded; a reviewer should weigh them together.
+          </p>
+        )}
       </section>
 
       {/* KEY FINDINGS */}
