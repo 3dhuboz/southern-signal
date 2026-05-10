@@ -21,6 +21,7 @@ import type { PeerState } from "../lib/estes/peer";
 import { nextPhoneme } from "../lib/itc/phonemes";
 import { PhonemeSynth } from "../lib/itc/phonemeSynth";
 import { RadioSweep, type RadioSweepState, type Station } from "../lib/itc/radioSweep";
+import { unlockAudio, peekAudioContext } from "../lib/audio/audioUnlock";
 import { recordEvent } from "../lib/db/repo";
 import { appendAuditEntry } from "../lib/db/auditLog";
 import { MicLevelMeter } from "../lib/audio/micLevel";
@@ -165,8 +166,10 @@ export function Estes() {
     }, 33);
 
     if (audioSource === "synth") {
-      // Gesture-satisfied because the user just tapped the toggle.
-      synthRef.current = new PhonemeSynth();
+      // Pass the shared (gesture-unlocked) AudioContext if the toggle
+      // tap registered it; falls back to internal creation on the off
+      // chance unlockAudio() returned null (no Web Audio support).
+      synthRef.current = new PhonemeSynth(peekAudioContext());
       phonemeTimerRef.current = window.setInterval(() => {
         const { phoneme: p, nextSeed } = nextPhoneme(seedRef.current, Date.now() % 1000);
         seedRef.current = nextSeed;
@@ -184,7 +187,9 @@ export function Estes() {
       // scanning. A close-marker is fired on the cleanup branch (toggle
       // off, switch back to synth, unmount) so the audit chain has a
       // bracketed window an external reviewer can read directly.
-      const radio = new RadioSweep();
+      // Pass the shared gesture-unlocked AudioContext so the dwell
+      // slice player isn't silent on iOS Safari / Messenger in-app.
+      const radio = new RadioSweep(undefined, undefined, peekAudioContext());
       radioRef.current = radio;
       const unsub = radio.subscribe(setRadioState);
       const investigationIdAtStart = session.current?.id ?? null;
@@ -706,7 +711,7 @@ export function Estes() {
                     role="radio"
                     aria-checked={audioSource === "synth"}
                     className={`${e.sourceOpt} ${audioSource === "synth" ? e.sourceOptActive : ""}`.trim()}
-                    onClick={() => setAudioSource("synth")}
+                    onClick={() => { unlockAudio(); setAudioSource("synth"); }}
                   >
                     Stochastic synth
                   </button>
@@ -715,7 +720,7 @@ export function Estes() {
                     role="radio"
                     aria-checked={audioSource === "radio"}
                     className={`${e.sourceOpt} ${audioSource === "radio" ? e.sourceOptActive : ""}`.trim()}
-                    onClick={() => setAudioSource("radio")}
+                    onClick={() => { unlockAudio(); setAudioSource("radio"); }}
                   >
                     Radio sweep
                   </button>
@@ -726,7 +731,19 @@ export function Estes() {
               </button>
               <div className={e.toggleRow}>
                 <label className={e.toggle}>
-                  <input type="checkbox" checked={spiritBoxOn} onChange={(ev) => setSpiritBoxOn(ev.target.checked)} />
+                  <input
+                    type="checkbox"
+                    checked={spiritBoxOn}
+                    onChange={(ev) => {
+                      // Gesture-time AudioContext unlock — required on iOS
+                      // Safari + Facebook Messenger / Instagram in-app
+                      // browsers, where deferred context creation in a
+                      // useEffect or setInterval starts and stays
+                      // suspended. Calling here keeps the synth audible.
+                      if (ev.target.checked) unlockAudio();
+                      setSpiritBoxOn(ev.target.checked);
+                    }}
+                  />
                   <span>Spirit-box phonemes</span>
                 </label>
                 <label className={e.toggle}>

@@ -89,10 +89,25 @@ export class RadioSweep {
   };
   private listeners = new Set<(state: RadioSweepState) => void>();
 
-  constructor(stations: readonly Station[] = DEFAULT_STATIONS, rng: () => number = Math.random) {
+  /**
+   * sharedCtx — optional AudioContext from `unlockAudio()` called inside
+   * a user gesture. Strongly recommended on iOS Safari + Facebook
+   * Messenger / Instagram in-app browsers, where a context created
+   * outside a gesture starts and stays suspended (audio never plays).
+   */
+  constructor(
+    stations: readonly Station[] = DEFAULT_STATIONS,
+    rng: () => number = Math.random,
+    sharedCtx?: AudioContext | null,
+  ) {
     this.stations = [...stations];
     this.rng = rng;
+    if (sharedCtx && sharedCtx.state !== "closed") {
+      this.ctx = sharedCtx;
+      this.ownsContext = false;
+    }
   }
+  private ownsContext = true;
 
   subscribe(fn: (state: RadioSweepState) => void): () => void {
     this.listeners.add(fn);
@@ -108,18 +123,33 @@ export class RadioSweep {
    *  is in. Continues loading the rest in the background. */
   async start(): Promise<void> {
     if (this.ctx && this.ctx.state !== "closed") {
-      if (this.ctx.state === "suspended") await this.ctx.resume();
-      return;
-    }
-    try {
-      const AC = (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext);
-      this.ctx = new AC();
-      this.master = this.ctx.createGain();
-      this.master.gain.value = 0.35;
-      this.master.connect(this.ctx.destination);
-    } catch (err) {
-      this.update({ status: "error", error: `AudioContext init failed: ${(err as Error).message}` });
-      throw err;
+      // Shared context path: resume if necessary, then build the master
+      // gain node lazily on first start. Re-starts (e.g. toggling
+      // sweep off and on without unmounting) reuse the same gain.
+      if (this.ctx.state === "suspended") {
+        try { await this.ctx.resume(); } catch { /* see header — autoplay caveat */ }
+      }
+      if (!this.master) {
+        this.master = this.ctx.createGain();
+        this.master.gain.value = 0.35;
+        this.master.connect(this.ctx.destination);
+      }
+    } else {
+      try {
+        const AC = (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext);
+        this.ctx = new AC();
+        this.ownsContext = true;
+        // Best-effort resume. If we're not in a gesture this rejects
+        // silently — use the shared context from audioUnlock to avoid
+        // this fallback path entirely.
+        try { await this.ctx.resume(); } catch { /* ignore */ }
+        this.master = this.ctx.createGain();
+        this.master.gain.value = 0.35;
+        this.master.connect(this.ctx.destination);
+      } catch (err) {
+        this.update({ status: "error", error: `AudioContext init failed: ${(err as Error).message}` });
+        throw err;
+      }
     }
 
     this.update({ status: "loading", total: this.stations.length, loaded: 0, error: null });
@@ -311,7 +341,10 @@ export class RadioSweep {
   close(): void {
     try { this.active?.stop(); } catch { /* ignore */ }
     this.active = null;
-    try { this.ctx?.close(); } catch { /* ignore */ }
+    try { this.master?.disconnect(); } catch { /* ignore */ }
+    if (this.ownsContext) {
+      try { this.ctx?.close(); } catch { /* ignore */ }
+    }
     this.ctx = null;
     this.master = null;
     this.buffers.clear();
