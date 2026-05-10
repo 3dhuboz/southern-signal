@@ -86,9 +86,17 @@ presentation changes.
   preserved as a developer escape hatch.
 - **Cloud transcription:** A Cloudflare Pages Function at `/api/ai/transcribe`
   proxies to Whisper (server-side). Gated by the cultural-sensitivity flag.
-  On-device Whisper.cpp WASM is the next milestone — `downsampleFloat32` is
-  in place; see header comment in `src/lib/audio/evpRecorder.ts` for the
-  full bring-up checklist.
+- **On-device transcription:** Whisper-tiny.en (~40 MB) runs in a Web Worker
+  via `@huggingface/transformers`. Opt-in from Setup → "On-device
+  transcription" → "Download model"; the model caches on the browser side
+  and subsequent loads are instant. EvpEditor surfaces a parallel
+  "Transcribe (on-device)" button alongside the cloud one. Audio never
+  leaves the device on this path — the cultural-sensitivity flag is moot
+  because there's nothing to gate. A "Test pipeline" button in Setup
+  round-trips a synthetic clip through the worker so operators can
+  validate the wiring before recording. Worker entry:
+  `src/workers/whisperTranscribe.worker.ts`. API:
+  `src/lib/audio/localTranscribe.ts`.
 - **Sync:** Append-only `sync_queue` table; a worker drains it to a Pages
   Function backed by R2 (media blobs) + D1 (rows). Idempotent at the server
   via `INSERT OR IGNORE`. Failed rows back off exponentially.
@@ -169,13 +177,13 @@ they're unset (e.g. AI assist shows a "proxy not configured" error).
 - AHT post-roll verdict: surfaced on SessionSummaryCard, Review (latest case
   + engine status), and the printable Evidence Brief.
 - Cloud transcription: working (gated by cultural-sensitivity flag).
-- On-device Whisper.cpp WASM transcription: scaffold + downsample utility
-  in place; model fetch + worker + Silero VAD are the next milestone.
-- 17 test files / 223+ tests covering forensic substrate, posterior math,
+- **On-device transcription: working** (Whisper-tiny.en via
+  `@huggingface/transformers`, opt-in from Setup, self-test included).
+- 18+ test files / 237+ tests covering forensic substrate, posterior math,
   baseline-aware likelihoods, AHT verdict logic, Evidence Brief assembly,
   WAV resample, sync-queue cultural-sensitivity gating, audit-chain
   verification, sessionBaseline persistence, plain-English translators,
-  liveNarrator templates.
+  liveNarrator templates, localTranscribe worker plumbing.
 
 ## License
 
