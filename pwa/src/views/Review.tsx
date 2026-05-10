@@ -188,10 +188,23 @@ export function Review() {
       {/* CASE MANAGER — every investigation with media browser, edit, download, delete */}
       <CaseManager />
 
-      {/* Chain status banner */}
+      {/* Chain status banner. Fresh device (0 entries) gets honest copy
+          rather than "✓ verified" — there's nothing to verify yet, and
+          claiming verification on an empty chain is a small lie. */}
       <div className={`${r.chainStatus} ${r[chainStatus]}`.trim()}>
         {chainStatus === "checking" && (isPro ? "Verifying audit chain…" : "Checking the record…")}
-        {chainStatus === "ok" && (
+        {chainStatus === "ok" && entries.length === 0 && (
+          <>
+            <strong>{isPro ? "CHAIN EMPTY" : "Nothing recorded yet"}</strong>
+            <span>
+              {isPro
+                ? " · No audit entries on this device. Begin a session in Mission Control to start the chain."
+                : " — no investigations have been recorded on this device. "}
+            </span>
+            {!isPro && <Link to="/">Open Mission Control →</Link>}
+          </>
+        )}
+        {chainStatus === "ok" && entries.length > 0 && (
           <>
             {isPro ? (
               <>

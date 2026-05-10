@@ -459,7 +459,9 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
         </header>
         {feedItems.length === 0 ? (
           <p className={s.feedEmpty}>
-            {running
+            {running && elapsedSeconds > 90
+              ? <><strong>Heard or saw something interesting?</strong> Tap <em>Mark this moment</em> above — markers are yours; the dial only catches what the sensors flag. Anything you tag becomes part of the audit chain.</>
+              : running
               ? "Listening. The newest readings will appear here in plain English."
               : "Nothing yet. Begin a session to start recording."}
           </p>

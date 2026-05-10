@@ -9,6 +9,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { query } from "../lib/db/db";
 import type { Investigation, MediaAsset } from "../lib/db/schema";
 import { useSession } from "../lib/session";
@@ -82,7 +83,10 @@ export function EvpReview() {
 
       {visibleRows.length === 0 ? (
         <p className={r.empty}>
-          No audio clips yet. {session.current ? "Tap Start recording above to capture an EVP attempt." : "Begin a session in Mission Control, then record."}
+          No audio clips yet.{" "}
+          {session.current
+            ? "Tap Start recording above to capture an EVP attempt."
+            : <>Begin a session in <Link to="/">Mission Control</Link>, then come back here to record.</>}
         </p>
       ) : (
         <ol className={r.list}>

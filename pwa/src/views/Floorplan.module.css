@@ -60,6 +60,41 @@
   }
 }
 
+.canvasWrap {
+  position: relative;
+}
+.canvasHint {
+  position: absolute;
+  inset: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  border-radius: var(--r-md);
+  border: 1px dashed var(--border-default);
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.55;
+  pointer-events: none;
+}
+.canvasHint strong {
+  font-size: 14px;
+  letter-spacing: 0.2px;
+  color: var(--accent-strong);
+}
+.canvasHint span {
+  max-width: 56ch;
+  color: var(--text-secondary);
+}
+.canvasHint em {
+  font-style: normal;
+  color: var(--text);
+  font-weight: 700;
+}
 .canvas {
   width: 100%;
   height: 60vh;

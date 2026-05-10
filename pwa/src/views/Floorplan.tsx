@@ -369,14 +369,24 @@ export function Floorplan() {
       </div>
 
       <div className={f.layout}>
-        <canvas
-          ref={canvasRef}
-          className={f.canvas}
-          onPointerDown={handleDown}
-          onPointerMove={handleMove}
-          onPointerUp={handleUp}
-          onPointerCancel={handleUp}
-        />
+        <div className={f.canvasWrap}>
+          <canvas
+            ref={canvasRef}
+            className={f.canvas}
+            onPointerDown={handleDown}
+            onPointerMove={handleMove}
+            onPointerUp={handleUp}
+            onPointerCancel={handleUp}
+          />
+          {strokes.length === 0 && (
+            <div className={f.canvasHint} aria-hidden="true">
+              <strong>Sketch the site you're investigating.</strong>
+              <span>
+                Tap <em>Wall</em> and drag to outline rooms. Tap <em>Marker</em> and tap the canvas to drop an anomaly point — cold spot, where the dog bristled, the corner that felt off. Then ask the AI co-pilot for a sweep order, site-specific questions, or mundane explanations for any one marker.
+              </span>
+            </div>
+          )}
+        </div>
 
         <aside className={f.aiPanel}>
           <header className={f.aiPanelHead}>
