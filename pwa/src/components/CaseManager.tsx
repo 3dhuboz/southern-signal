@@ -10,6 +10,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { exec, query } from "../lib/db/db";
 import { readFile, deletePath } from "../lib/opfs";
 import { appendAuditEntry } from "../lib/db/auditLog";
@@ -469,6 +470,13 @@ export function CaseManager() {
                       >
                         Download media only
                       </button>
+                      <Link
+                        to={`/brief/${c.id}`}
+                        className={s.secondary}
+                        title="Print a one-page case brief"
+                      >
+                        Print case brief
+                      </Link>
                     </div>
                     {openMedia.length === 0 ? (
                       <p className={s.emptySmall}>No media captured yet.</p>
