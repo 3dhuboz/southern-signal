@@ -159,6 +159,10 @@ export function Setup() {
           the phone. Required for culturally-sensitive cases (cloud
           transcription is hard-blocked there). Default model is
           Whisper-tiny.en, English-only, downloaded once and cached.
+          {" "}<strong>Performance:</strong> roughly real-time on a current-
+          generation phone (a 30-second clip transcribes in ~30s); the very
+          first call after launch warms the model and may take a few seconds
+          longer. Slower without WebGPU.
         </p>
         {localStatus.state === "unloaded" && (
           <>

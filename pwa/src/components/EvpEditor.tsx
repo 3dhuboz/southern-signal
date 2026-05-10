@@ -772,7 +772,7 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
                   disabled={transcribing || transcribingLocal}
                   title="Runs Whisper entirely on this device — no audio leaves the phone."
                 >
-                  {transcribingLocal ? "Transcribing on-device…" : selection ? "Transcribe selection (on-device)" : "Transcribe full (on-device)"}
+                  {transcribingLocal ? "Transcribing on-device… (~1× clip length)" : selection ? "Transcribe selection (on-device)" : "Transcribe full (on-device)"}
                 </button>
               )}
               {cloudBlocked && localStatus.state !== "ready" && (
