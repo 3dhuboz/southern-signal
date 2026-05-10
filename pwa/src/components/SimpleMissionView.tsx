@@ -396,11 +396,11 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
       {/* PRIMARY CALL TO ACTION */}
       <div className={s.controls}>
         {!running ? (
-          <button type="button" className={s.primary} onClick={onBegin} disabled={busy}>
+          <button type="button" className={`btn btn-primary ${s.heroSize}`} onClick={onBegin} disabled={busy}>
             {busy ? "Starting…" : hasInvestigation ? "Begin session" : "Begin a new session"}
           </button>
         ) : (
-          <button type="button" className={s.danger} onClick={onStop} disabled={busy}>
+          <button type="button" className={`btn btn-danger ${s.heroSize}`} onClick={onStop} disabled={busy}>
             End session
           </button>
         )}

@@ -562,27 +562,18 @@
   display: flex;
 }
 
-.primary, .danger {
+/* Simple-mode hero CTA — the giant "Begin session" / "End session"
+   button. Consumes .btn + .btn-primary or .btn-danger for colour and
+   behaviour. .heroSize carries the hero-only geometry: 64px touch
+   target, --r-xl pill radius, 17px text — these are the "this is THE
+   button on this screen, you cannot miss it" decisions. */
+.heroSize {
   flex: 1;
   min-height: 64px;
   border-radius: var(--r-xl);
-  font-family: inherit;
   font-size: 17px;
-  font-weight: 700;
   letter-spacing: 0.5px;
-  cursor: pointer;
-  border: 1px solid;
-  transition: background 120ms, transform 80ms;
 }
-.primary:active, .danger:active { transform: scale(0.99); }
-.primary:disabled, .danger:disabled { opacity: 0.4; cursor: not-allowed; }
-
-.primary {
-  background: var(--signal);
-  color: var(--text-on-accent);
-  border-color: var(--signal);
-}
-.primary:hover { background: var(--signal-glow); }
 
 .broadcast {
   display: flex;
@@ -648,12 +639,6 @@
 @keyframes ss-broadcast-onair {
   0%, 100% { box-shadow: 0 0 0 1px var(--danger), 0 8px 24px -8px var(--danger); }
   50%      { box-shadow: 0 0 0 1px var(--danger), 0 14px 36px -8px var(--danger); }
-}
-
-.danger {
-  background: var(--danger-wash);
-  color: var(--danger);
-  border-color: var(--danger);
 }
 
 /* ------------------------------ Quick actions ------------------------------ */

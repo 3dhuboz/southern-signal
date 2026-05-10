@@ -36,33 +36,22 @@
   flex-wrap: wrap;
 }
 
-.actionPrimary, .action {
+/* "Suggest a question" / "Test mundane explanations" buttons consume
+   .btn .btn-primary / .btn .btn-ghost for colour + behaviour.
+   .actionSize carries the AI-panel-specific geometry: flex:1 to share
+   the row evenly, 160px minimum to avoid wrapping mid-label on narrow
+   screens, 44px touch target, --r-md radius, font-weight 600
+   (slightly lighter than the canonical .btn weight of 700 — these
+   are utility actions, not hero CTAs). */
+.actionSize {
   flex: 1;
   min-width: 160px;
   padding: 10px 14px;
   border-radius: var(--r-md);
   font-weight: 600;
   font-size: 13px;
-  cursor: pointer;
-  border: 1px solid;
-  font-family: inherit;
   min-height: 44px;
 }
-.actionPrimary {
-  background: var(--signal);
-  color: var(--text-on-accent);
-  border-color: var(--signal);
-}
-.actionPrimary:hover { background: var(--signal-glow); }
-.actionPrimary:disabled { opacity: 0.4; cursor: not-allowed; }
-
-.action {
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  border-color: var(--border-default);
-}
-.action:hover { background: var(--bg-overlay); border-color: var(--border-strong); }
-.action:disabled { opacity: 0.35; cursor: not-allowed; }
 
 .error {
   font-size: 12px;

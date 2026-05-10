@@ -147,7 +147,7 @@ export function AiAssistant({ investigationId, posterior, recentIncrements, site
       <div className={s.actions}>
         <button
           type="button"
-          className={s.actionPrimary}
+          className={`btn btn-primary ${s.actionSize}`}
           onClick={handleSuggestQuestions}
           disabled={busy || !investigationId}
         >
@@ -155,7 +155,7 @@ export function AiAssistant({ investigationId, posterior, recentIncrements, site
         </button>
         <button
           type="button"
-          className={s.action}
+          className={`btn btn-ghost ${s.actionSize}`}
           onClick={handleDebunk}
           disabled={busy || !investigationId || !debunkAvailable}
           title={!debunkAvailable ? "Available when posterior ≥ 0.40" : undefined}
