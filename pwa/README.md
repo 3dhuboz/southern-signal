@@ -1,73 +1,183 @@
-# React + TypeScript + Vite
+# Southern Signal
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A phone-first paranormal investigation tool that fuses sensor data, transparent
+statistics, and on-device storage into a record a hostile reviewer can verify.
 
-Currently, two official plugins are available:
+Deployed as a PWA at [southern-signal.pages.dev](https://southern-signal.pages.dev).
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+The premise: most "ghost hunting" apps surface a vibe meter and call it a day.
+Southern Signal accumulates evidence in a Bayesian posterior with bounded
+likelihood ratios per channel, runs an Adversarial Hypothesis Tournament (AHT)
+against the AI's best mundane explanations, hash-chains every state change,
+and ships a Merkle-rooted export that anyone can re-verify offline. The
+strongest possible verdict is **UNEXPLAINED** — never "confirmed paranormal."
+That's a hard-coded floor in `lib/posterior/ahtVerdict.ts`, not a tuning knob.
 
-## React Compiler
+## What it actually does
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **Live posterior, not a vibe meter.** Each channel (acoustic, infrasound,
+  magnetometer, cross-channel coupling) emits a bounded log likelihood ratio
+  (`|log LR| ≤ 4` per increment, so a chatty channel can't pile-on). The
+  posterior is the prior compounded by every LR, decayed back toward the prior
+  between events on a 20-minute time constant.
+- **Site-baseline-aware likelihoods.** A 90 s / 5 min / 10 min "empty room"
+  capture runs before each session. The acoustic and magnetometer LR functions
+  refuse readings within the captured site noise floor — they only fire on
+  real anomalies above the operator's measured baseline. A "novelty bonus"
+  fires when a reading exceeds anything observed during baseline.
+- **Sector-accurate acoustic direction (±60°).** A 3-of-3 calibration ritual
+  locks an SRP-PHAT-ish stereo cross-correlation to six sectors. Anything
+  more precise would be theatre on phone-grade mics.
+- **Hash-chained audit log.** Every posterior update, marker, contamination
+  tag, AI debunk, disposition, and acknowledgement is appended with
+  `entry_hash = sha256(seq | ts | actor | kind | canonical-json(payload) | prev_hash)`.
+  Edits are new entries that reference the prior `seq`; the original is never
+  updated. `verifyAuditChain()` walks the chain on demand.
+- **AHT post-roll verdict.** When the AI debunker keeps failing to find
+  plausible mundane explanations, that's a *model* limitation, never evidence
+  of the paranormal. H₀ confidence = mean(1 − max-plausibility) over the 30
+  most-recent debunk requests; when H₀ ≥ 0.4, every case renders
+  INCONCLUSIVE rather than any positive verdict.
+- **TV-grade live broadcast.** Camera + mic + sensor overlays composited at
+  30 fps to a single canvas, then either (a) recorded to OPFS with a
+  per-frame ISO timestamp baked in, or (b) pushed live via WHIP to
+  Cloudflare Stream / Mux / Restream / Dolby / Eyevinn / a custom endpoint.
+  Includes a one-click Cloudflare → Facebook Live relay setup.
+- **Forensic export bundle.** A single `.zip` containing the audit chain as
+  JSONL, all media binaries, a printable cover sheet, and a drop-in
+  `verify.html` any reviewer can open offline.
 
-## Expanding the ESLint configuration
+## Two modes, one set of data
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+| Mode    | Audience                | Surface                                                                                          |
+|---------|-------------------------|--------------------------------------------------------------------------------------------------|
+| Simple  | Amateurs, first-timers  | Plain-English event feed; one big Begin / End button; activity dial without exposed math.        |
+| Pro     | Serious operators       | Posterior bar, log-LR per channel, Merkle root, calibration ritual, Estes dual-phone, bait tone. |
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+Toggle in the header. Identical data captured either way; only the
+presentation changes.
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## Privacy posture
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+- **On-device first.** SQLite-WASM in OPFS. Sensors, audio, video, and the
+  audit chain all stay on the phone unless the operator opts into cloud sync.
+- **Cloud AI is opt-in and gated.** A cultural-sensitivity flag (per-case OR
+  device-wide) hard-blocks all cloud AI calls and all sync uploads at
+  enqueue time. No exceptions. Audit chain still records locally — chain
+  integrity matters even when nothing leaves the device.
+- **Acknowledgement of Country gate.** First-launch ethical floor. The
+  acknowledgement appears on every exported case report and is logged to the
+  audit chain.
+- **No analytics, no telemetry, no third-party JS.** First-party only.
+
+## Architecture
+
+- **Vite + React 19 + TypeScript.**
+- **Storage:** SQLite via `@sqlite.org/sqlite-wasm` in OPFS. One DB per device.
+  Schema lives in `src/lib/db/schema.ts`.
+- **Audio capture:** AudioWorklet (with ScriptProcessorNode fallback) →
+  Float32 chunks → WAV in OPFS. iOS Wake Lock held while a session is live so
+  AudioContext doesn't suspend on screen sleep.
+- **Live stream:** OffscreenCanvas-style compositor draws video frames +
+  overlay state at 30 fps, then either MediaRecorder→OPFS or WHIP via WebRTC.
+- **Cloud AI:** A Cloudflare Pages Function at `/api/ai/chat` proxies to
+  OpenRouter (Sonnet by default). The OPENROUTER_API_KEY lives as a Pages
+  environment secret — end users never see it. BYOK Anthropic SDK path is
+  preserved as a developer escape hatch.
+- **Cloud transcription:** A Cloudflare Pages Function at `/api/ai/transcribe`
+  proxies to Whisper (server-side). Gated by the cultural-sensitivity flag.
+  On-device Whisper.cpp WASM is the next milestone — `downsampleFloat32` is
+  in place; see header comment in `src/lib/audio/evpRecorder.ts` for the
+  full bring-up checklist.
+- **Sync:** Append-only `sync_queue` table; a worker drains it to a Pages
+  Function backed by R2 (media blobs) + D1 (rows). Idempotent at the server
+  via `INSERT OR IGNORE`. Failed rows back off exponentially.
+- **Forensic export:** `lib/forensic/manifest.ts` builds a Merkle tree over
+  audit-chain entries; `lib/forensic/zip.ts` packages everything plus
+  `verify.html`.
+
+## Standing disclaimers
+
+Eight ethical-floor disclaimers live in the UI and are part of every export.
+They are not editable from the operator surface; only Pull Requests change
+them.
+
+1. *"AI proposes; you decide. Activity readings come from the phone's mic
+   and sensors — they're not proof of anything supernatural."* (`SimpleMissionView`)
+2. *"Sector accuracy ±60°. Posterior is a model estimate, not a measurement
+   of presence. Every increment is hash-chained."* (`MissionControl` Pro)
+3. *"Posterior is a model estimate. It does not measure presence."*
+   (`PosteriorBar`)
+4. *"AI proposes; the investigator decides. AI never claims to hear voices
+   or see ghosts. Every call hash-chained."* (`AiAssistant`)
+5. Phone speakers cannot reproduce the SPL-coupled physiological effects
+   from the Tandy / NASA infrasound literature. Treat as a *timed marker*
+   in the audit chain — not a causal stimulator. (`BaitToneTool`)
+6. *"All saves are appended to the audit chain — original recording is
+   never altered."* (`EvpEditor`)
+7. H₀ "AI insufficiency" — when the AI can't generate plausible mundane
+   explanations, that's a model limitation, not evidence of the paranormal.
+   At H₀ ≥ 0.4 the post-roll renders INCONCLUSIVE. (`Review`)
+8. AHT eliminates explanations; it does not confirm causes. The strongest
+   positive verdict is UNEXPLAINED. (`Review`, `EvidenceBrief`)
+
+## External review
+
+V1 ships with a public commitment: before any TV-grade premiere using this
+tool, an external Bayesian and an external acoustician will sign off on the
+methodology. Reviewer shortlist is private until contact is made; the
+sign-off itself is published with the release.
+
+## Development
+
+```bash
+npm install
+npm run dev        # Vite dev server
+npm test           # vitest run (one-shot)
+npm run test:watch # vitest watch
+npm run build      # tsc -b && vite build
+npm run lint
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Tests run fully on Node — no browser. Vitest 4 with `vi.hoisted` for module
+mocks. The audio / video / WHIP layers are not unit-tested (they need a real
+browser); everything pure (likelihoods, posterior, baseline math, audit
+chain, forensic helpers, AHT verdict) is covered.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Deployment
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+Cloudflare Pages. `master` is the production branch. CI build = `npm run
+build`; output is `dist/`. Pages Functions live in `functions/` (proxy to
+OpenRouter for AI, R2 for media bytes, D1 for rows).
+
+Required Pages environment variables:
+
+| Name                  | Where it's used                              | Required if…                              |
+|-----------------------|----------------------------------------------|-------------------------------------------|
+| `OPENROUTER_API_KEY`  | `/api/ai/chat`, `/api/ai/transcribe`         | AI assist or cloud transcription enabled. |
+| `SYNC_TOKEN`          | `/api/sync/upload`                           | Cloud sync enabled.                       |
+| `CF_ACCOUNT_ID`       | `/api/live/fb/connect`                       | Facebook Live one-click setup is used.    |
+| `CF_STREAM_API_TOKEN` | `/api/live/fb/connect`                       | Same.                                     |
+| `FB_CONNECT_TOKEN`    | `/api/live/fb/connect`                       | Same.                                     |
+
+Local dev needs none of those — the operator surface degrades cleanly when
+they're unset (e.g. AI assist shows a "proxy not configured" error).
+
+## Status
+
+- V1 capture pipeline: working.
+- AHT post-roll verdict: surfaced on SessionSummaryCard, Review (latest case
+  + engine status), and the printable Evidence Brief.
+- Cloud transcription: working (gated by cultural-sensitivity flag).
+- On-device Whisper.cpp WASM transcription: scaffold + downsample utility
+  in place; model fetch + worker + Silero VAD are the next milestone.
+- 17 test files / 223+ tests covering forensic substrate, posterior math,
+  baseline-aware likelihoods, AHT verdict logic, Evidence Brief assembly,
+  WAV resample, sync-queue cultural-sensitivity gating, audit-chain
+  verification, sessionBaseline persistence, plain-English translators,
+  liveNarrator templates.
+
+## License
+
+Source-available; license terms TBD. Don't redistribute without permission
+until the LICENSE file lands.
