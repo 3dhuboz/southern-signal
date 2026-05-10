@@ -20,7 +20,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useSession } from "../lib/session";
 import { usePreferences } from "../lib/preferences";
 import {
@@ -31,7 +31,7 @@ import {
   type ResearchFinding,
   type ResearchTier,
 } from "../lib/research/api";
-import { recordEvent, saveDossier, listDossiers, getDossier } from "../lib/db/repo";
+import { recordEvent, saveDossier, listDossiers, getDossier, deleteDossier } from "../lib/db/repo";
 import type { ResearchDossierRow } from "../lib/db/schema";
 import { appendAuditEntry } from "../lib/db/auditLog";
 import s from "./View.module.css";
@@ -95,6 +95,7 @@ function formatResetIn(ms: number | null): string {
 export function Research() {
   const session = useSession();
   const [prefs] = usePreferences();
+  const [searchParams] = useSearchParams();
   const [venueName, setVenueName] = useState<string>("");
   const [locationHint, setLocationHint] = useState<string>("");
   const [region, setRegion] = useState<"AU" | "GLOBAL">("AU");
@@ -124,7 +125,23 @@ export function Research() {
   }
   const [followups, setFollowups] = useState<Record<string, FollowupState>>({});
 
-  // Prefill venue from the active investigation if it has a location_name.
+  // Prefill priority: URL params (deep link from CaseManager) → active
+  // investigation. URL takes precedence so a "Research this case"
+  // shortcut from a non-active case still prefills correctly.
+  useEffect(() => {
+    const urlVenue = searchParams.get("venue");
+    const urlLocation = searchParams.get("location");
+    const urlRegion = searchParams.get("region");
+    if (urlVenue && !venueName) setVenueName(urlVenue);
+    if (urlLocation && !locationHint) setLocationHint(urlLocation);
+    if (urlRegion === "AU" || urlRegion === "GLOBAL") setRegion(urlRegion);
+    // intentionally not depending on local state so the URL-driven
+    // prefill only happens once per mount / query change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  // Prefill venue from the active investigation when no URL prefill
+  // has taken hold. Same one-shot-per-id pattern as before.
   useEffect(() => {
     const inv = session.current;
     if (!inv) return;
@@ -150,8 +167,9 @@ export function Research() {
   }, [session.current?.id, savedDossierId]);
 
   const culturallyBlocked = prefs.globalCulturalSensitivityFlag || (session.current?.culturally_sensitive === 1);
+  const researchDisabled = !prefs.research.enabled;
   const rateBlocked = rate.used >= rate.cap;
-  const canRun = venueName.trim().length >= 2 && !busy && !culturallyBlocked && !rateBlocked;
+  const canRun = venueName.trim().length >= 2 && !busy && !culturallyBlocked && !researchDisabled && !rateBlocked;
 
   const handleRun = useCallback(async () => {
     if (!canRun) return;
@@ -364,6 +382,36 @@ export function Research() {
     }));
   }, []);
 
+  // Delete a saved dossier. Hard-confirm because dossiers carry the
+  // citation chain — deleting one removes it from the Evidence Brief
+  // and breaks the forensic record of "we looked, here's what we
+  // found". The repo helper fires a research.dossier.delete audit
+  // entry so the chain still records the deletion even after the row
+  // is gone.
+  const handleDeleteDossier = useCallback(async (row: ResearchDossierRow) => {
+    const ts = new Date(row.created_at).toLocaleString();
+    if (!window.confirm(
+      `Delete the dossier "${row.venue_name}" (${ts})?\n\n`
+        + `It will no longer appear in the Evidence Brief for this case. `
+        + `An audit entry will record the deletion.`,
+    )) return;
+    try {
+      await deleteDossier(row.id);
+      // If the currently-displayed result came from this dossier, clear it.
+      if (loadedFromDossierId === row.id) {
+        setResult(null);
+        setLoadedFromDossierId(null);
+      }
+      // Bump savedDossierId to trigger the list-reload effect even when
+      // the operator hadn't just saved one.
+      setSavedDossierId((cur) => cur === row.id ? null : cur);
+      setPastDossiers((rows) => rows.filter((r) => r.id !== row.id));
+    } catch (err) {
+      console.warn("[research] handleDeleteDossier failed", err);
+      window.alert(`Couldn't delete dossier: ${(err as Error).message}`);
+    }
+  }, [loadedFromDossierId]);
+
   // Open a past dossier without burning a cloud-AI call. Hydrates
   // result/venueName/locationHint/region so the UI looks identical to a
   // live run — but tagged as "loaded from saved dossier" so the operator
@@ -412,6 +460,17 @@ export function Research() {
         </div>
       )}
 
+      {researchDisabled && !culturallyBlocked && (
+        <div className={r.blockedCard}>
+          <strong className={r.blockedTitle}>Disabled in Setup</strong>
+          <p className={r.blockedBody}>
+            The AI Investigator is turned off on this device. You can still view past dossiers
+            below (read-only), but new runs are blocked. Re-enable in Setup → AI Investigator.{" "}
+            <Link to="/setup" className={r.blockedLink}>Open Setup →</Link>
+          </p>
+        </div>
+      )}
+
       {pastDossiers.length > 0 && (
         <details className={r.pastDossiers} open={result == null}>
           <summary className={r.pastDossiersSummary}>
@@ -428,7 +487,7 @@ export function Research() {
                 } catch { return 0; }
               })();
               return (
-                <li key={d.id}>
+                <li key={d.id} className={r.pastDossierRow}>
                   <button
                     type="button"
                     className={`${r.pastDossierItem} ${loadedFromDossierId === d.id ? r.pastDossierItemActive : ""}`.trim()}
@@ -439,6 +498,15 @@ export function Research() {
                       {ts.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
                       {" · "}{findingCount} findings{" · "}{d.region}
                     </span>
+                  </button>
+                  <button
+                    type="button"
+                    className={r.pastDossierDelete}
+                    onClick={() => handleDeleteDossier(d)}
+                    aria-label={`Delete dossier for ${d.venue_name}`}
+                    title="Delete this dossier (audit entry will record the deletion)"
+                  >
+                    ✕
                   </button>
                 </li>
               );
@@ -456,7 +524,7 @@ export function Research() {
             value={venueName}
             onChange={(e) => setVenueName(e.target.value)}
             placeholder="e.g. Old Marrickville Court House"
-            disabled={busy || culturallyBlocked}
+            disabled={busy || culturallyBlocked || researchDisabled}
             maxLength={200}
           />
         </label>
@@ -468,7 +536,7 @@ export function Research() {
             value={locationHint}
             onChange={(e) => setLocationHint(e.target.value)}
             placeholder="e.g. Sydney, NSW · or full address"
-            disabled={busy || culturallyBlocked}
+            disabled={busy || culturallyBlocked || researchDisabled}
             maxLength={200}
           />
         </label>
@@ -481,7 +549,7 @@ export function Research() {
               aria-checked={region === "AU"}
               className={`${r.segmentedOpt} ${region === "AU" ? r.segmentedOptActive : ""}`.trim()}
               onClick={() => setRegion("AU")}
-              disabled={busy || culturallyBlocked}
+              disabled={busy || culturallyBlocked || researchDisabled}
             >
               Australia
             </button>
@@ -491,7 +559,7 @@ export function Research() {
               aria-checked={region === "GLOBAL"}
               className={`${r.segmentedOpt} ${region === "GLOBAL" ? r.segmentedOptActive : ""}`.trim()}
               onClick={() => setRegion("GLOBAL")}
-              disabled={busy || culturallyBlocked}
+              disabled={busy || culturallyBlocked || researchDisabled}
             >
               Global
             </button>
@@ -562,7 +630,7 @@ export function Research() {
                       const fuOpen = fu?.open === true;
                       const fuBusy = fu?.busy === true;
                       const fuFindings = fu?.findings ?? null;
-                      const drillDisabled = rateBlocked || busy || fuBusy || culturallyBlocked || loadedFromDossierId != null;
+                      const drillDisabled = rateBlocked || busy || fuBusy || culturallyBlocked || researchDisabled || loadedFromDossierId != null;
                       return (
                         <article key={key} className={r.finding}>
                           <h3 className={r.findingTitle}>{f.title}</h3>

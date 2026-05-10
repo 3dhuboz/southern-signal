@@ -15,6 +15,7 @@ import { exec, query } from "../lib/db/db";
 import { readFile, deletePath } from "../lib/opfs";
 import { appendAuditEntry } from "../lib/db/auditLog";
 import { createInvestigation, setCulturallySensitive } from "../lib/db/repo";
+import { usePreferences } from "../lib/preferences";
 import { clearBaseline } from "../lib/posterior/sessionBaseline";
 import { buildExportBundle, downloadBlob } from "../lib/forensic/exportBundle";
 import { autoName } from "../lib/cases/autoName";
@@ -72,6 +73,8 @@ function formatDuration(start: string, end: string | null): string {
 }
 
 export function CaseManager() {
+  const [prefs] = usePreferences();
+  const researchEnabled = prefs.research.enabled;
   const [cases, setCases] = useState<CaseSummary[]>([]);
   const [openCaseId, setOpenCaseId] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
@@ -585,6 +588,20 @@ export function CaseManager() {
                       >
                         Print case brief
                       </Link>
+                      {/* AI Investigator deep-link. We URL-encode the
+                          venue + location so the Research view prefills
+                          even when this case isn't the active session.
+                          Hidden when the operator has turned off the
+                          AI Investigator in Setup. */}
+                      {researchEnabled && (
+                        <Link
+                          to={`/research?venue=${encodeURIComponent(c.location_name?.trim() || c.title)}${c.location_name && c.title && c.location_name !== c.title ? `&location=${encodeURIComponent(c.title)}` : ""}`}
+                          className={`btn btn-ghost ${s.btnSize}`}
+                          title="Run the AI Investigator on this venue — opens prefilled"
+                        >
+                          Research venue
+                        </Link>
+                      )}
                     </div>
                     {openMedia.length === 0 ? (
                       <p className={s.emptySmall}>No media captured yet.</p>

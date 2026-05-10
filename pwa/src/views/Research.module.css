@@ -95,6 +95,33 @@
   flex-direction: column;
   gap: 4px;
 }
+.pastDossierRow {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+.pastDossierRow .pastDossierItem { flex: 1; }
+.pastDossierDelete {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0 12px;
+  min-width: 36px;
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+.pastDossierDelete:hover {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--border-subtle));
+}
+.pastDossierDelete:focus-visible {
+  outline: 2px solid var(--danger);
+  outline-offset: 1px;
+}
 .pastDossierItem {
   width: 100%;
   text-align: left;
