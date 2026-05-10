@@ -120,6 +120,41 @@
   50%      { box-shadow: 0 0 0 1px rgba(227, 54, 69, 0.7), 0 8px 20px -4px rgba(227, 54, 69, 0.95); }
 }
 
+/* Cultural-sensitivity global pin — visible across every route while the
+   device-wide "treat all sites as culturally sensitive" pref is on.
+   Amber, distinct from REC red, and tappable straight to /setup so the
+   operator can review or clear it. */
+.sensitiveBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--r-full);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  white-space: nowrap;
+  text-transform: uppercase;
+  text-decoration: none;
+  background: rgba(217, 158, 32, 0.18);
+  color: #E2A53C;
+  border: 1px solid #8E5E11;
+  cursor: pointer;
+}
+.sensitiveBadge:hover {
+  background: rgba(217, 158, 32, 0.28);
+  border-color: #B07719;
+}
+.sensitiveBadgeDot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-full);
+  background: currentColor;
+  flex-shrink: 0;
+}
+
 .statusGlyph {
   font-size: 10px;
   font-weight: 700;

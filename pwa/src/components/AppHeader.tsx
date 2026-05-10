@@ -3,6 +3,7 @@ import { ExperienceToggle } from "./ExperienceToggle";
 import { ScotopicToggle } from "./ScotopicToggle";
 import { useSystemStatus } from "../lib/system/systemStatus";
 import { useLiveBroadcastState } from "../lib/system/liveBroadcast";
+import { usePreferences } from "../lib/preferences";
 import styles from "./AppHeader.module.css";
 
 const BATTERY_DANGER_PCT = 20;
@@ -16,6 +17,8 @@ function formatStorageFree(mb: number): string {
 export function AppHeader() {
   const { batteryPct, charging, storageFreeMB, storageUsedPct } = useSystemStatus();
   const live = useLiveBroadcastState();
+  const [prefs] = usePreferences();
+  const sensitiveGlobal = prefs.globalCulturalSensitivityFlag;
 
   const showBattery = batteryPct !== null;
   const batteryDanger = showBattery && batteryPct !== null && batteryPct < BATTERY_DANGER_PCT && !charging;
@@ -31,6 +34,18 @@ export function AppHeader() {
           <span className={styles.wordmark}>SOUTHERN SIGNAL</span>
         </Link>
         <div className={styles.toolbar}>
+          {sensitiveGlobal && (
+            <Link
+              to="/setup"
+              className={styles.sensitiveBadge}
+              role="status"
+              aria-label="Cultural-sensitivity protection on, device-wide. Cloud AI and sync are blocked."
+              title="Cultural-sensitivity protection ON, device-wide. Cloud AI + sync are hard-blocked. Tap to manage."
+            >
+              <span className={styles.sensitiveBadgeDot} aria-hidden="true" />
+              SENSITIVE
+            </Link>
+          )}
           {(live.recording || live.broadcasting) && (
             <span
               className={`${styles.liveBadge} ${live.broadcasting ? styles.liveBadgeOnAir : styles.liveBadgeRec}`.trim()}
