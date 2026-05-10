@@ -147,17 +147,134 @@
   background: #04080c;
   border: 1px solid var(--border-default);
   border-radius: var(--r-md);
-  min-height: 140px;
+  padding: var(--s-12) var(--s-12) 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+  position: relative;
+  /* Faint scanlines to push the "instrument readout, not flashcard" feel. */
+  background-image:
+    repeating-linear-gradient(
+      to bottom,
+      rgba(127, 252, 215, 0.025) 0px,
+      rgba(127, 252, 215, 0.025) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+}
+
+/* Top chrome row — turns the engineering on display. The user sees a
+   seed, an emissions count, a rate, and a named entropy source. The
+   whole point: this is a forensic instrument, not a black-box toy. */
+.synthChrome {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-12);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding-bottom: var(--s-8);
+  border-bottom: 1px dashed var(--border-subtle);
+}
+.synthChromeLabel {
+  color: var(--signal);
+  font-weight: 700;
+  letter-spacing: 1.4px;
+}
+.synthChromeStat {
+  color: var(--text-secondary);
+}
+.synthChromeStat code {
+  color: var(--text-primary);
+  font-family: inherit;
+  background: rgba(127, 252, 215, 0.06);
+  padding: 1px 5px;
+  border-radius: 3px;
+  letter-spacing: 0.4px;
+  text-transform: none;
+}
+
+/* Trail — recent emissions fade left, current at the right bright. This
+   visualises the *rhythm* of the engine (real spirit boxes are felt as
+   much as heard) and shows the receiver that any heard word is one of
+   many fragments per second, not a deliberate prompt. */
+.synthTrail {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 10px;
+  min-height: 64px;
+  padding: 6px 0;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  font-family: var(--font-mono);
+}
+.synthTrailIdle {
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.synthTrailItem {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--signal);
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+}
+.synthTrailCurrent {
+  font-size: 40px;
+  font-weight: 700;
+  color: var(--signal);
+  letter-spacing: -0.5px;
+  text-shadow: 0 0 18px rgba(127, 252, 215, 0.45);
+  white-space: nowrap;
+}
+
+/* Amplitude readout — synced to each phoneme burst. Pure decay-from-1
+   on each emission, ~30 Hz refresh. Gives the operator something
+   real-time to look at, makes the synth feel mechanical (which it is). */
+.synthAmpRow {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: var(--s-8);
 }
-.receiverPhoneme {
+.synthAmpLabel {
   font-family: var(--font-mono);
-  font-size: 48px;
-  font-weight: 600;
-  color: var(--signal);
-  letter-spacing: -1px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+}
+.synthAmpBar {
+  flex: 1;
+  height: 4px;
+  background: rgba(127, 252, 215, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.synthAmpFill {
+  height: 100%;
+  background: var(--signal);
+  box-shadow: 0 0 6px var(--signal);
+  transition: width 60ms linear;
+}
+
+.synthHonesty {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  font-style: italic;
+}
+.synthHonesty strong {
+  color: var(--warning);
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.4px;
 }
 .toggleRow {
   display: flex;

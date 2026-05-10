@@ -19,6 +19,7 @@ import { useSession } from "../lib/session";
 import { EstesPeer, generatePairingCode } from "../lib/estes/peer";
 import type { PeerState } from "../lib/estes/peer";
 import { nextPhoneme } from "../lib/itc/phonemes";
+import { PhonemeSynth } from "../lib/itc/phonemeSynth";
 import { recordEvent } from "../lib/db/repo";
 import { appendAuditEntry } from "../lib/db/auditLog";
 import { MicLevelMeter } from "../lib/audio/micLevel";
@@ -60,7 +61,9 @@ export function Estes() {
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<LogEntry[]>([]);
   const [questionDraft, setQuestionDraft] = useState("");
-  const [phoneme, setPhoneme] = useState<string>("—");
+  const [phonemeHistory, setPhonemeHistory] = useState<{ phoneme: string; ts: number }[]>([]);
+  const [emissionCount, setEmissionCount] = useState(0);
+  const [synthAmp, setSynthAmp] = useState(0);
   const [spiritBoxOn, setSpiritBoxOn] = useState(false);
   const [ganzfeldOn, setGanzfeldOn] = useState(true);
   const [blackoutOn, setBlackoutOn] = useState(true);
@@ -78,6 +81,8 @@ export function Estes() {
   const remoteMeterRef = useRef<MicLevelMeter | null>(null);
   const seedRef = useRef<number>(Date.now() & 0x7fffffff);
   const phonemeTimerRef = useRef<number | null>(null);
+  const synthRef = useRef<PhonemeSynth | null>(null);
+  const ampDecayTimerRef = useRef<number | null>(null);
 
   const appendLog = useCallback((entry: LogEntry) => {
     setLog((arr) => [...arr.slice(-499), entry]);
@@ -103,35 +108,60 @@ export function Estes() {
 
   const codeRemaining = codeIssuedAt == null ? null : Math.max(0, CODE_TTL_SECONDS - Math.floor((now - codeIssuedAt) / 1000));
 
-  // Spirit-box phoneme tick (Receiver only).
+  // Spirit-box phoneme tick (Receiver only). Each tick advances the seed,
+  // pushes one phoneme into history, and fires the formant-noise synth so
+  // the receiver hears voice-band texture (not a TTS read-out, which makes
+  // the experience feel like a vocab trainer and biases the receiver toward
+  // parroting the cue word).
   useEffect(() => {
-    if (!spiritBoxOn || (phase !== "connected-receiver" && phase !== "receiver" && phase !== "receiver-prep")) {
+    const stop = () => {
       if (phonemeTimerRef.current != null) {
         window.clearInterval(phonemeTimerRef.current);
         phonemeTimerRef.current = null;
       }
-      try { speechSynthesis.cancel(); } catch { /* ignore */ }
+      if (ampDecayTimerRef.current != null) {
+        window.clearInterval(ampDecayTimerRef.current);
+        ampDecayTimerRef.current = null;
+      }
+      setSynthAmp(0);
+      synthRef.current?.close();
+      synthRef.current = null;
+    };
+
+    if (!spiritBoxOn || (phase !== "connected-receiver" && phase !== "receiver" && phase !== "receiver-prep")) {
+      stop();
+      // Reset the visible trail so the readout doesn't look "alive"
+      // after the toggle goes off.
+      setPhonemeHistory([]);
+      setEmissionCount(0);
       return;
     }
+
+    // Synth lives for the duration of the spirit-box session; gesture-
+    // satisfied because the user just tapped the toggle.
+    synthRef.current = new PhonemeSynth();
+
+    // Amplitude decay tick (~30 Hz) for the live readout. Independent of
+    // the phoneme rate so the meter has a smooth tail between bursts.
+    ampDecayTimerRef.current = window.setInterval(() => {
+      setSynthAmp((a) => Math.max(0, a * 0.78));
+    }, 33);
+
     phonemeTimerRef.current = window.setInterval(() => {
       const { phoneme: p, nextSeed } = nextPhoneme(seedRef.current, Date.now() % 1000);
       seedRef.current = nextSeed;
-      setPhoneme(p);
-      try {
-        speechSynthesis.cancel();
-        const utt = new SpeechSynthesisUtterance(p);
-        utt.rate = 1.5;
-        utt.volume = 0.9;
-        speechSynthesis.speak(utt);
-      } catch { /* ignore */ }
+      setPhonemeHistory((arr) => {
+        const next = [...arr, { phoneme: p, ts: Date.now() }];
+        // Keep the trail bounded; recent ~12 emissions is the visual buffer.
+        return next.length > 12 ? next.slice(next.length - 12) : next;
+      });
+      setEmissionCount((n) => n + 1);
+      const ms = synthRef.current?.emit(p) ?? 0;
+      // Snap the meter to peak; the decay timer above releases it.
+      if (ms > 0) setSynthAmp(1);
     }, 280);
-    return () => {
-      if (phonemeTimerRef.current != null) {
-        window.clearInterval(phonemeTimerRef.current);
-        phonemeTimerRef.current = null;
-      }
-      try { speechSynthesis.cancel(); } catch { /* ignore */ }
-    };
+
+    return stop;
   }, [spiritBoxOn, phase]);
 
   // Cleanup on unmount.
@@ -141,6 +171,8 @@ export function Estes() {
       try { speechSynthesis.cancel(); } catch { /* ignore */ }
       try { micMeterRef.current?.stop(); } catch { /* ignore */ }
       try { remoteMeterRef.current?.stop(); } catch { /* ignore */ }
+      try { synthRef.current?.close(); } catch { /* ignore */ }
+      if (ampDecayTimerRef.current != null) window.clearInterval(ampDecayTimerRef.current);
       micStreamRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
@@ -436,8 +468,58 @@ export function Estes() {
 
           {isReceiver && (
             <div className={e.receiverPanel}>
+              {/* Instrument-panel readout. The forensic story lives in the
+                  chrome (seed, count, rate, source) — exposing the machinery
+                  is the whole point: anything reported by the receiver came
+                  from a deterministic, seeded, inspectable engine, not a
+                  black-box mystery generator. */}
               <div className={e.receiverDisplay}>
-                <span className={e.receiverPhoneme}>{phoneme}</span>
+                <div className={e.synthChrome}>
+                  <span className={e.synthChromeLabel}>STOCHASTIC PHONEME ENGINE</span>
+                  <span className={e.synthChromeStat}>
+                    seed <code>0x{(seedRef.current >>> 0).toString(16).padStart(8, "0").slice(-6)}</code>
+                  </span>
+                  <span className={e.synthChromeStat}>
+                    n=<code>{emissionCount.toString().padStart(4, "0")}</code>
+                  </span>
+                  <span className={e.synthChromeStat}>
+                    rate <code>3.6 Hz</code>
+                  </span>
+                  <span className={e.synthChromeStat}>
+                    src <code>time(ms)</code>
+                  </span>
+                </div>
+                <div className={e.synthTrail} aria-live="polite">
+                  {phonemeHistory.length === 0 ? (
+                    <span className={e.synthTrailIdle}>idle — waiting for spirit-box toggle</span>
+                  ) : (
+                    phonemeHistory.map((h, i) => {
+                      const isCurrent = i === phonemeHistory.length - 1;
+                      return (
+                        <span
+                          key={`${h.ts}-${i}`}
+                          className={isCurrent ? e.synthTrailCurrent : e.synthTrailItem}
+                          style={{ opacity: isCurrent ? 1 : 0.15 + (0.7 * i) / phonemeHistory.length }}
+                        >
+                          {h.phoneme}
+                        </span>
+                      );
+                    })
+                  )}
+                </div>
+                <div className={e.synthAmpRow}>
+                  <span className={e.synthAmpLabel}>AMP</span>
+                  <div className={e.synthAmpBar}>
+                    <div
+                      className={e.synthAmpFill}
+                      style={{ width: `${(synthAmp * 100).toFixed(0)}%` }}
+                    />
+                  </div>
+                </div>
+                <p className={e.synthHonesty}>
+                  Formant-shaped noise burst per emission · seed advances deterministically · corpus inspectable in source ·{" "}
+                  <strong>NOT a radio sweep</strong>
+                </p>
               </div>
               <button type="button" className={e.markBtn} onClick={handleReceiverMark}>
                 I heard something — log it
