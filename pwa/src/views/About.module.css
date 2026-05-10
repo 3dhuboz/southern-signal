@@ -52,30 +52,16 @@
   flex-wrap: wrap;
   gap: var(--s-8);
 }
-.primary,
-.secondary {
-  display: inline-flex;
-  align-items: center;
+/* Hero CTAs — colour/hover come from .btn + .btn-primary / .btn-ghost.
+   .heroSize is the call-site layout: hero padding, font weight cap-look,
+   uppercase chrome. */
+.heroSize {
   padding: 10px var(--s-16);
   border-radius: var(--r-md);
   font-size: 12px;
-  font-weight: 700;
   letter-spacing: 0.4px;
   text-transform: uppercase;
-  text-decoration: none;
 }
-.primary {
-  background: var(--signal);
-  color: var(--text-on-accent);
-  border: 1px solid var(--signal);
-}
-.primary:hover { background: var(--signal-glow); }
-.secondary {
-  background: var(--bg-surface);
-  color: var(--text);
-  border: 1px solid var(--border-default);
-}
-.secondary:hover { background: var(--bg-overlay); }
 
 /* ----- SECTIONS ----- */
 

@@ -181,8 +181,8 @@ export function SyncPanel() {
         />
       </div>
       <div className={st.actionsRow}>
-        <button type="button" className={st.primary} onClick={handleSave} disabled={blocked}>Save endpoint</button>
-        <button type="button" className={st.primary} onClick={handleSyncNow} disabled={blocked || !prefs.sync.enabled || busy}>
+        <button type="button" className={`btn btn-primary ${st.primarySize}`} onClick={handleSave} disabled={blocked}>Save endpoint</button>
+        <button type="button" className={`btn btn-primary ${st.primarySize}`} onClick={handleSyncNow} disabled={blocked || !prefs.sync.enabled || busy}>
           {busy ? "Syncing…" : "Sync now"}
         </button>
       </div>
@@ -229,10 +229,10 @@ export function SyncPanel() {
       )}
 
       <div className={st.actionsRow}>
-        <button type="button" className={st.primary} onClick={handleRetryFailed} disabled={!stats || stats.failed === 0}>
+        <button type="button" className={`btn btn-primary ${st.primarySize}`} onClick={handleRetryFailed} disabled={!stats || stats.failed === 0}>
           Retry failed ({stats?.failed ?? 0})
         </button>
-        <button type="button" className={st.primary} onClick={handleTrim} disabled={!stats || stats.done === 0}>
+        <button type="button" className={`btn btn-primary ${st.primarySize}`} onClick={handleTrim} disabled={!stats || stats.done === 0}>
           Trim done &gt; 7 days
         </button>
       </div>

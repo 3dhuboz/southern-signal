@@ -173,8 +173,8 @@ export function About() {
           recording starts.
         </p>
         <div className={s.heroActions}>
-          <Link to="/" className={s.primary}>Open Mission Control →</Link>
-          <Link to="/review" className={s.secondary}>See your cases</Link>
+          <Link to="/" className={`btn btn-primary ${s.heroSize}`}>Open Mission Control →</Link>
+          <Link to="/review" className={`btn btn-ghost ${s.heroSize}`}>See your cases</Link>
         </div>
       </header>
 

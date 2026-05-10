@@ -189,30 +189,17 @@
   gap: var(--s-8);
 }
 
-.primary, .danger {
+/* SyncPanel "Save endpoint" / "Sync now" / "Retry failed" / "Trim done"
+   buttons consume the global .btn .btn-primary utilities for colour +
+   behaviour. .primarySize is the call-site layout: 44px touch target,
+   13px text, --r-md radius. The old `.danger` rule was dead CSS —
+   removed.  */
+.primarySize {
   padding: 10px 14px;
   border-radius: var(--r-md);
-  font-weight: 700;
   font-size: 13px;
-  cursor: pointer;
-  border: 1px solid;
-  font-family: inherit;
   min-height: 44px;
 }
-.primary {
-  background: var(--signal);
-  color: var(--text-on-accent);
-  border-color: var(--signal);
-}
-.primary:hover { background: var(--signal-glow); }
-.primary:disabled { opacity: 0.45; cursor: not-allowed; }
-
-.danger {
-  background: var(--danger-wash);
-  color: var(--danger);
-  border-color: var(--danger);
-}
-.danger:hover { background: rgba(239, 110, 110, 0.18); }
 
 .statusLine {
   font-size: 12px;
