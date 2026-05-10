@@ -7,18 +7,33 @@
  *     language?:   ISO-639-1 (e.g. "en")
  *     prompt?:     short biasing prompt
  *
- * Server-side OPENROUTER_API_KEY (or OPENAI_API_KEY) handles upstream
- * Whisper-1. End users never see a key.
+ * Provider order (first match wins):
+ *
+ *   GROQ_API_KEY        → Groq's whisper-large-v3-turbo (fast, generous free tier)
+ *                          POST https://api.groq.com/openai/v1/audio/transcriptions
+ *   OPENAI_API_KEY      → OpenAI's whisper-1 directly
+ *                          POST https://api.openai.com/v1/audio/transcriptions
+ *   OPENROUTER_API_KEY  → ONLY when ALLOW_OPENROUTER_AUDIO is set, because
+ *                          OpenRouter's audio path is currently broken: their
+ *                          gateway JSON-parses the body instead of accepting
+ *                          multipart, returning 400 "No number after minus
+ *                          sign in JSON at position 1" for every request.
+ *
+ * If none of GROQ_API_KEY / OPENAI_API_KEY / (allowed) OPENROUTER_API_KEY
+ * are set, the operator sees a 503 with a pointer to either set one or
+ * enable on-device transcription in Setup.
  *
  * Optional env:
- *   TRANSCRIBE_MODEL  — defaults to "openai/whisper-1"
- *   OPENAI_API_KEY    — direct OpenAI key (bypasses OpenRouter when set)
+ *   TRANSCRIBE_MODEL          — explicit upstream model id (overrides defaults)
+ *   ALLOW_OPENROUTER_AUDIO    — "1" / "true" to opt into the broken OR path
  */
 
 interface Env {
-  OPENROUTER_API_KEY?: string;
+  GROQ_API_KEY?: string;
   OPENAI_API_KEY?: string;
+  OPENROUTER_API_KEY?: string;
   TRANSCRIBE_MODEL?: string;
+  ALLOW_OPENROUTER_AUDIO?: string;
 }
 
 interface PagesContext<E = unknown> {
@@ -60,11 +75,66 @@ export const onRequestOptions: PagesFn<Env> = async () => {
   });
 };
 
+type ProviderKey = "groq" | "openai" | "openrouter";
+
+interface Provider {
+  key: ProviderKey;
+  url: string;
+  authKey: string;
+  defaultModel: string;
+  extraHeaders: Record<string, string>;
+}
+
+function pickProvider(env: Env, origin: string): Provider | null {
+  if (env.GROQ_API_KEY) {
+    return {
+      key: "groq",
+      url: "https://api.groq.com/openai/v1/audio/transcriptions",
+      authKey: env.GROQ_API_KEY,
+      defaultModel: "whisper-large-v3-turbo",
+      extraHeaders: {},
+    };
+  }
+  if (env.OPENAI_API_KEY) {
+    return {
+      key: "openai",
+      url: "https://api.openai.com/v1/audio/transcriptions",
+      authKey: env.OPENAI_API_KEY,
+      defaultModel: "whisper-1",
+      extraHeaders: {},
+    };
+  }
+  if (env.OPENROUTER_API_KEY && /^(1|true|yes)$/i.test(env.ALLOW_OPENROUTER_AUDIO ?? "")) {
+    return {
+      key: "openrouter",
+      url: "https://openrouter.ai/api/v1/audio/transcriptions",
+      authKey: env.OPENROUTER_API_KEY,
+      defaultModel: FALLBACK_MODEL,
+      extraHeaders: { "HTTP-Referer": origin, "X-Title": "Southern Signal" },
+    };
+  }
+  return null;
+}
+
 export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
-  const useOpenAI = !!env.OPENAI_API_KEY;
-  const useOpenRouter = !!env.OPENROUTER_API_KEY;
-  if (!useOpenAI && !useOpenRouter) {
-    return jsonResponse({ error: "Transcription is not configured on this deployment." }, 503);
+  const origin = (() => { try { return new URL(request.url).origin; } catch { return "https://southern-signal.pages.dev"; } })();
+  const provider = pickProvider(env, origin);
+
+  if (!provider) {
+    // Distinguish "OpenRouter is set but blocked" from "nothing is set" — the
+    // first is the most common deployment of southern-signal.pages.dev so we
+    // give it a tailored hint about the on-device path.
+    if (env.OPENROUTER_API_KEY) {
+      return jsonResponse({
+        error: "Cloud transcription is not available on this deployment.",
+        detail:
+          "OPENROUTER_API_KEY is set but OpenRouter's audio endpoint is currently broken (it returns 400 because the gateway JSON-parses the multipart body). Set GROQ_API_KEY (free, fast) or OPENAI_API_KEY in Cloudflare Pages → Settings → Environment variables — or enable on-device transcription in the app's Setup screen for a fully local path.",
+      }, 503);
+    }
+    return jsonResponse({
+      error: "Cloud transcription is not configured on this deployment.",
+      detail: "Set GROQ_API_KEY or OPENAI_API_KEY in Cloudflare Pages env, or enable on-device transcription in Setup.",
+    }, 503);
   }
 
   const contentLength = parseInt(request.headers.get("content-length") ?? "0", 10);
@@ -89,36 +159,31 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
 
   const language = (form.get("language") as string | null) ?? "en";
   const prompt = (form.get("prompt") as string | null) ?? undefined;
-  const model = env.TRANSCRIBE_MODEL || FALLBACK_MODEL;
-
-  // OpenAI direct path is preferred when configured because OpenRouter routes
-  // /v1/audio/transcriptions through the same provider but with its own quirks.
-  const upstreamUrl = useOpenAI
-    ? "https://api.openai.com/v1/audio/transcriptions"
-    : "https://openrouter.ai/api/v1/audio/transcriptions";
-  const upstreamKey = useOpenAI ? env.OPENAI_API_KEY! : env.OPENROUTER_API_KEY!;
+  const model = env.TRANSCRIBE_MODEL || provider.defaultModel;
 
   const upstreamForm = new FormData();
   upstreamForm.append("file", file, (file as File).name || "audio.wav");
-  upstreamForm.append("model", useOpenAI ? "whisper-1" : model);
+  upstreamForm.append("model", model);
   upstreamForm.append("language", language);
   upstreamForm.append("response_format", "verbose_json");
   if (prompt) upstreamForm.append("prompt", prompt);
 
-  const origin = (() => { try { return new URL(request.url).origin; } catch { return "https://southern-signal.pages.dev"; } })();
-
-  const upstream = await fetch(upstreamUrl, {
+  const upstream = await fetch(provider.url, {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${upstreamKey}`,
-      ...(useOpenRouter ? { "HTTP-Referer": origin, "X-Title": "Southern Signal" } : {}),
+      "Authorization": `Bearer ${provider.authKey}`,
+      ...provider.extraHeaders,
     },
     body: upstreamForm,
   });
 
   const upstreamText = await upstream.text();
   if (!upstream.ok) {
-    return jsonResponse({ error: `Upstream ${upstream.status}`, detail: upstreamText.slice(0, 800) }, upstream.status);
+    return jsonResponse({
+      error: `Upstream ${upstream.status}`,
+      provider: provider.key,
+      detail: upstreamText.slice(0, 800),
+    }, upstream.status);
   }
 
   let parsed: { text?: string; segments?: { start: number; end: number; text: string; avg_logprob?: number }[]; language?: string; duration?: number };
@@ -136,6 +201,7 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
     segments: parsed.segments ?? [],
     language: parsed.language ?? language,
     duration: parsed.duration ?? null,
-    model: useOpenAI ? "whisper-1" : model,
+    model,
+    provider: provider.key,
   }, 200);
 };

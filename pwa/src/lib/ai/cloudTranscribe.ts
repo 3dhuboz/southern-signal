@@ -26,10 +26,23 @@ export interface TranscriptionResult {
 }
 
 export class TranscribeUnavailableError extends Error {
-  constructor() {
-    super("Cloud transcription is not configured on this deployment.");
+  constructor(detail?: string) {
+    super(detail || "Cloud transcription is not configured on this deployment. Enable on-device transcription in Setup.");
     this.name = "TranscribeUnavailableError";
   }
+}
+
+interface TranscribeErrorBody {
+  error?: string;
+  detail?: string;
+  provider?: string;
+}
+
+async function readErrorBody(resp: Response): Promise<TranscribeErrorBody> {
+  try {
+    const text = await resp.text();
+    try { return JSON.parse(text) as TranscribeErrorBody; } catch { return { detail: text }; }
+  } catch { return {}; }
 }
 
 export async function transcribeAudio(
@@ -46,23 +59,33 @@ export async function transcribeAudio(
 
   const resp = await fetch(TRANSCRIBE_PATH, { method: "POST", body: form });
   if (resp.status === 503) {
-    throw new TranscribeUnavailableError();
+    const body = await readErrorBody(resp);
+    throw new TranscribeUnavailableError(body.detail ?? body.error);
   }
   if (resp.status === 402) {
-    throw new Error("Out of cloud-transcription credits. Top up at openrouter.ai/settings/credits.");
+    throw new Error("Out of cloud-transcription credits. Top up with the upstream provider (OpenAI / Groq / OpenRouter), or use on-device transcription.");
   }
   if (resp.status === 401 || resp.status === 403) {
-    throw new Error("Upstream rejected the key — check OPENROUTER_API_KEY / OPENAI_API_KEY in Cloudflare Pages env.");
+    throw new Error("Upstream rejected the key — check the API key in Cloudflare Pages env (GROQ_API_KEY / OPENAI_API_KEY).");
   }
   if (resp.status === 413) {
-    throw new Error("Audio is too large for the transcription endpoint (25 MB cap).");
+    throw new Error("Audio is too large for the transcription endpoint (25 MB cap). Trim the selection and try again.");
   }
   if (resp.status === 429) {
-    throw new Error("Rate-limited. Wait a moment and try again.");
+    throw new Error("Upstream rate-limited the request. Wait a moment and try again, or use on-device transcription.");
   }
   if (!resp.ok) {
-    const detail = await resp.text().catch(() => "");
-    throw new Error(`Transcribe ${resp.status}: ${detail.slice(0, 240)}`);
+    const body = await readErrorBody(resp);
+    // Detect the OpenRouter-audio-broken signature so the operator gets
+    // actionable guidance instead of a raw upstream JSON dump.
+    const detail = body.detail ?? "";
+    if (body.provider === "openrouter" && /No number after minus sign in JSON/i.test(detail)) {
+      throw new Error(
+        "OpenRouter's audio endpoint is currently broken (it JSON-parses the multipart body). Set GROQ_API_KEY (free, fast) or OPENAI_API_KEY in Cloudflare Pages env, or enable on-device transcription in Setup.",
+      );
+    }
+    const summary = body.error || `Transcribe ${resp.status}`;
+    throw new Error(`${summary}${detail ? ` — ${detail.slice(0, 200)}` : ""}`);
   }
   const data = await resp.json() as Partial<TranscriptionResult>;
   if (typeof data.text !== "string") throw new Error("Upstream returned no text.");

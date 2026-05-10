@@ -160,10 +160,13 @@ OpenRouter for AI, R2 for media bytes, D1 for rows).
 
 Required Pages environment variables:
 
-| Name                  | Where it's used                              | Required if…                              |
-|-----------------------|----------------------------------------------|-------------------------------------------|
-| `OPENROUTER_API_KEY`  | `/api/ai/chat`, `/api/ai/transcribe`         | AI assist or cloud transcription enabled. |
-| `SYNC_TOKEN`          | `/api/sync/upload`                           | Cloud sync enabled.                       |
+| Name                       | Where it's used                              | Required if…                                                          |
+|----------------------------|----------------------------------------------|------------------------------------------------------------------------|
+| `OPENROUTER_API_KEY`       | `/api/ai/chat`                               | AI assist (questions, debunker) is enabled. **Not used for audio.**    |
+| `GROQ_API_KEY`             | `/api/ai/transcribe`                         | Cloud transcription via Groq's Whisper-large-v3-turbo (fast, generous free tier). Preferred. |
+| `OPENAI_API_KEY`           | `/api/ai/transcribe`                         | Cloud transcription via OpenAI Whisper-1 directly. Used if `GROQ_API_KEY` is unset. |
+| `SYNC_TOKEN`               | `/api/sync/upload`                           | Cloud sync enabled.                                                    |
+| `ALLOW_OPENROUTER_AUDIO`   | `/api/ai/transcribe`                         | `1` to opt back into the OpenRouter audio path. **Currently broken** — OpenRouter's gateway JSON-parses the multipart body and returns 400. Use Groq or OpenAI instead. |
 | `CF_ACCOUNT_ID`       | `/api/live/fb/connect`                       | Facebook Live one-click setup is used.    |
 | `CF_STREAM_API_TOKEN` | `/api/live/fb/connect`                       | Same.                                     |
 | `FB_CONNECT_TOKEN`    | `/api/live/fb/connect`                       | Same.                                     |
