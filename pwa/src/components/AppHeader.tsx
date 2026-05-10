@@ -4,6 +4,7 @@ import { ScotopicToggle } from "./ScotopicToggle";
 import { useSystemStatus } from "../lib/system/systemStatus";
 import { useLiveBroadcastState } from "../lib/system/liveBroadcast";
 import { usePreferences } from "../lib/preferences";
+import { usePersistenceMode } from "../lib/db/db";
 import styles from "./AppHeader.module.css";
 
 const BATTERY_DANGER_PCT = 20;
@@ -19,6 +20,8 @@ export function AppHeader() {
   const live = useLiveBroadcastState();
   const [prefs] = usePreferences();
   const sensitiveGlobal = prefs.globalCulturalSensitivityFlag;
+  const persistenceMode = usePersistenceMode();
+  const memoryOnly = persistenceMode === "memory";
 
   const showBattery = batteryPct !== null;
   const batteryDanger = showBattery && batteryPct !== null && batteryPct < BATTERY_DANGER_PCT && !charging;
@@ -34,6 +37,17 @@ export function AppHeader() {
           <span className={styles.wordmark}>SOUTHERN SIGNAL</span>
         </Link>
         <div className={styles.toolbar}>
+          {memoryOnly && (
+            <span
+              className={styles.memoryBadge}
+              role="status"
+              aria-label="Storage is in-memory only — data will not survive a page refresh"
+              title="OPFS persistent storage is not available in this browser. Sessions, recordings, and case briefs will be lost on page refresh. Try a different browser (Chrome / Edge / Safari 17+) or check that you're not in private browsing."
+            >
+              <span className={styles.memoryBadgeDot} aria-hidden="true" />
+              NO SAVE
+            </span>
+          )}
           {sensitiveGlobal && (
             <Link
               to="/setup"
