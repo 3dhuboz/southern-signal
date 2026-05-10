@@ -358,6 +358,33 @@ export function MissionControl() {
       // re-entry and silent on browsers that don't support the API.
       void requestPersistentStorage();
       const inv = await ensureTodayInvestigation();
+
+      // Soft baseline gate. Now that V2 likelihood awareness uses the
+      // captured baseline to refuse readings within the site noise floor,
+      // beginning without a fresh baseline measurably degrades evidence
+      // weighting. Surface that cost — but don't hard-block; operators
+      // sometimes have time pressure (cooperating spirit, fading light,
+      // quickly-departing witness).
+      const existingBaseline = loadBaseline(inv.id);
+      const STALE_AFTER_MS = 12 * 60 * 60 * 1000;
+      const baselineAgeMs = existingBaseline
+        ? Date.now() - new Date(existingBaseline.capturedAt).getTime()
+        : null;
+      const baselineStale = baselineAgeMs != null && baselineAgeMs > STALE_AFTER_MS;
+      if (!existingBaseline || baselineStale) {
+        const reason = !existingBaseline
+          ? "No room baseline captured yet."
+          : "Baseline is older than 12 hours — different conditions likely.";
+        const ok = window.confirm(
+          `${reason}\n\nWithout a fresh baseline, the magnetometer and acoustic likelihoods can't refuse readings within the site noise floor — evidence weighting will be less accurate.\n\nBegin anyway?`,
+        );
+        if (!ok) {
+          setBusy(false);
+          setStatusMsg("Capture a baseline first, then tap Begin again.");
+          return;
+        }
+      }
+
       setCurrent(inv);
       await startInvestigation(inv.id);
       await recordEvent({ investigation_id: inv.id, source: "system", event_type: "session_start", title: "Session started" });
