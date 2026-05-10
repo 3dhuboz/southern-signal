@@ -85,6 +85,10 @@ export function MissionControl() {
   const [culturallySensitive, setCulturallySensitiveState] = useState<boolean>(false);
   const [liveStreamState, setLiveStreamState] = useState<{ recording: boolean; broadcasting: boolean }>({ recording: false, broadcasting: false });
   const [baseline, setBaseline] = useState<BaselineSummary | null>(null);
+  // Live ref so analyzer callbacks (created once when the session starts)
+  // always see the latest baseline — capturing after Begin still applies.
+  const baselineRef = useRef<BaselineSummary | null>(null);
+  useEffect(() => { baselineRef.current = baseline; }, [baseline]);
 
   // Load any previously-captured baseline for the active investigation.
   useEffect(() => {
@@ -250,7 +254,7 @@ export function MissionControl() {
         setSectorReading(reading);
       },
       onLevel: (rms) => setAudioRms(rms),
-      onAcousticTransient: (reading, _rms, _frameTs) => {
+      onAcousticTransient: (reading, rms, _frameTs) => {
         const now = Date.now();
         // 2s debounce
         if (now - lastAcousticEmitTsRef.current < 2000) return;
@@ -263,6 +267,11 @@ export function MissionControl() {
           sector,
           sectorPersistedFromPrior: false,
           isFirstInWindow: true,
+          // V2 baseline awareness — read via ref so the analyzer closure
+          // (created once at startLiveAnalyzer time) always sees the
+          // latest captured baseline.
+          audioRms: rms,
+          siteBaseline: baselineRef.current,
         });
         if (!evidence) return;
         lastEmissionTsRef.current.acoustic = now;

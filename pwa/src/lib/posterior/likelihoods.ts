@@ -47,14 +47,45 @@ export function emitAcousticTransient(opts: {
   sector: string;
   sectorPersistedFromPrior: boolean;
   isFirstInWindow: boolean;
+  /** Current rolling RMS of the audio frame the transient was detected
+   *  on. Required for the baseline-aware path; pass null when unavailable
+   *  (e.g. synthesized fallback signals like the sensor-vibration path). */
+  audioRms?: number | null;
+  /** Optional captured site baseline (the same struct the magnetometer
+   *  channel uses). When supplied with a non-zero audioRmsP95, transients
+   *  whose rolling RMS is at or below the site's measured noise floor are
+   *  REFUSED — site noise, not anomalies. Bonus when above audioRmsMax. */
+  siteBaseline?: BaselineSummary | null;
 }): EvidenceEmission | null {
   if (opts.coherence < 0.7 || opts.subBandsAgreed < 3) return null;
+
+  const site = opts.siteBaseline;
+  let aboveSiteP95 = false;
+  let aboveSiteMax = false;
+  let baselineNote = "";
+  let bonusFromBaseline = 0;
+  if (site && site.audioRmsP95 > 0 && typeof opts.audioRms === "number" && Number.isFinite(opts.audioRms)) {
+    if (opts.audioRms <= site.audioRmsP95) {
+      // Within the site's measured noise floor — refuse, even if the
+      // detector's coherence + sub-band gates passed. The site baseline
+      // is a longer, calmer reference than any single-frame coherence
+      // peak and trumps it.
+      return null;
+    }
+    aboveSiteP95 = true;
+    if (opts.audioRms > site.audioRmsMax) {
+      aboveSiteMax = true;
+      bonusFromBaseline = 0.5;
+    }
+    baselineNote = `, RMS ${opts.audioRms.toFixed(3)} > site p95 ${site.audioRmsP95.toFixed(3)}${aboveSiteMax ? ` (above site max ${site.audioRmsMax.toFixed(3)})` : ""}`;
+  }
+
   const baseLogLr = opts.isFirstInWindow ? 3.0 : 1.0;
   const persistenceBonus = opts.sectorPersistedFromPrior ? 1.4 : 0;
-  const logLr = baseLogLr + persistenceBonus;
+  const logLr = baseLogLr + persistenceBonus + bonusFromBaseline;
   const reason = opts.sectorPersistedFromPrior
-    ? `Acoustic transient ${opts.sector}, sector persistence from prior event`
-    : `Acoustic transient ${opts.sector}, coh ${opts.coherence.toFixed(2)}, ${opts.subBandsAgreed} bands`;
+    ? `Acoustic transient ${opts.sector}, sector persistence from prior event${baselineNote}`
+    : `Acoustic transient ${opts.sector}, coh ${opts.coherence.toFixed(2)}, ${opts.subBandsAgreed} bands${baselineNote}`;
   return {
     channel: "acoustic",
     logLr,
@@ -64,6 +95,11 @@ export function emitAcousticTransient(opts: {
       coherence: opts.coherence,
       sub_bands: opts.subBandsAgreed,
       persisted: opts.sectorPersistedFromPrior,
+      audio_rms: typeof opts.audioRms === "number" ? opts.audioRms : null,
+      site_audio_rms_p95: site?.audioRmsP95 ?? null,
+      site_audio_rms_max: site?.audioRmsMax ?? null,
+      above_site_p95: aboveSiteP95,
+      above_site_max: aboveSiteMax,
     },
   };
 }

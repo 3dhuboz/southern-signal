@@ -26,6 +26,106 @@ describe("acoustic transient", () => {
     const e = emitAcousticTransient({ coherence: 0.9, subBandsAgreed: 4, sector: "REAR-L", sectorPersistedFromPrior: true, isFirstInWindow: true });
     expect(e?.logLr).toBeCloseTo(4.4, 6);
   });
+
+  describe("with site baseline (V2)", () => {
+    const baseline = {
+      audioRmsMean: 0.04,
+      audioRmsP95: 0.08,
+      audioRmsMax: 0.12,
+      emfMean: 0,
+      emfP95: 0,
+      emfMax: 0,
+      durationSeconds: 90,
+      sampleCount: 360,
+      capturedAt: "2026-05-10T00:00:00.000Z",
+    };
+
+    it("refuses when audioRms is at or below site audioRmsP95 even on a first-fire transient", () => {
+      const result = emitAcousticTransient({
+        coherence: 0.9,
+        subBandsAgreed: 4,
+        sector: "REAR-L",
+        sectorPersistedFromPrior: false,
+        isFirstInWindow: true,
+        audioRms: 0.07, // below site p95 = 0.08
+        siteBaseline: baseline,
+      });
+      expect(result).toBeNull();
+    });
+
+    it("emits standard 3.0 log LR when audioRms exceeds p95 but is at or below max", () => {
+      const e = emitAcousticTransient({
+        coherence: 0.9,
+        subBandsAgreed: 4,
+        sector: "REAR-L",
+        sectorPersistedFromPrior: false,
+        isFirstInWindow: true,
+        audioRms: 0.10,
+        siteBaseline: baseline,
+      });
+      expect(e?.logLr).toBeCloseTo(3.0, 6);
+      expect(e?.metadata?.above_site_p95).toBe(true);
+      expect(e?.metadata?.above_site_max).toBe(false);
+    });
+
+    it("adds a +0.5 bonus when audioRms exceeds site max (novelty)", () => {
+      const e = emitAcousticTransient({
+        coherence: 0.9,
+        subBandsAgreed: 4,
+        sector: "REAR-L",
+        sectorPersistedFromPrior: false,
+        isFirstInWindow: true,
+        audioRms: 0.15,
+        siteBaseline: baseline,
+      });
+      expect(e?.logLr).toBeCloseTo(3.5, 6);
+      expect(e?.metadata?.above_site_max).toBe(true);
+    });
+
+    it("falls back to baseline-less behaviour when audioRms is missing", () => {
+      // No audioRms provided — baseline can't be applied; legacy LR fires.
+      const e = emitAcousticTransient({
+        coherence: 0.9,
+        subBandsAgreed: 4,
+        sector: "REAR-L",
+        sectorPersistedFromPrior: false,
+        isFirstInWindow: true,
+        siteBaseline: baseline,
+      });
+      expect(e?.logLr).toBeCloseTo(3.0, 6);
+      expect(e?.metadata?.above_site_p95).toBe(false);
+    });
+
+    it("ignores baseline with zero audioRmsP95 (no audio captured)", () => {
+      const noAudioBaseline = { ...baseline, audioRmsMean: 0, audioRmsP95: 0, audioRmsMax: 0 };
+      const e = emitAcousticTransient({
+        coherence: 0.9,
+        subBandsAgreed: 4,
+        sector: "REAR-L",
+        sectorPersistedFromPrior: false,
+        isFirstInWindow: true,
+        audioRms: 0.03,
+        siteBaseline: noAudioBaseline,
+      });
+      expect(e?.logLr).toBeCloseTo(3.0, 6);
+      expect(e?.metadata?.above_site_p95).toBe(false);
+    });
+
+    it("stacks novelty bonus on top of persistence bonus", () => {
+      const e = emitAcousticTransient({
+        coherence: 0.9,
+        subBandsAgreed: 4,
+        sector: "REAR-L",
+        sectorPersistedFromPrior: true,
+        isFirstInWindow: true,
+        audioRms: 0.20,
+        siteBaseline: baseline,
+      });
+      // base 3.0 + persistence 1.4 + novelty 0.5 = 4.9
+      // (capped at 4.0 by posterior.ts but this fn returns the raw value)
+      expect(e?.logLr).toBeCloseTo(4.9, 6);
+    });
+  });
 });
 
 describe("infrasound pulse", () => {
