@@ -613,7 +613,8 @@
   height: 9px;
   border-radius: var(--r-full);
   background: var(--danger);
-  animation: ss-broadcast-pulse 1.6s ease-in-out infinite;
+  /* Canonical scale+opacity pulse — see global.css. */
+  animation: ss-pulse-scale 1.6s ease-in-out infinite;
 }
 .broadcastHint {
   font-size: 10px;
@@ -621,10 +622,6 @@
   letter-spacing: 1px;
   color: var(--text-muted);
   text-transform: uppercase;
-}
-@keyframes ss-broadcast-pulse {
-  0%, 100% { opacity: 1;   transform: scale(1); }
-  50%      { opacity: 0.55; transform: scale(0.85); }
 }
 
 /* Active states — promoted CTA reflects what LiveStreamView is doing */

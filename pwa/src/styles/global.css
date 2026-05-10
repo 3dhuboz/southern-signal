@@ -33,6 +33,21 @@ html, body { height: 100%; margin: 0; }
   50%      { transform: translate(-50%, -50%) translateY(-4px); }
 }
 
+/* Canonical pulses. Two flavours so callers don't redefine local copies
+   (which collide — @keyframes are global, ignoring CSS-module scoping):
+     ss-pulse-opacity — subtle status-dot blink
+     ss-pulse-scale   — punchier "active" indicator (record button, on-air)
+   Duration / easing is the caller's choice via animation-duration. */
+@keyframes ss-pulse-opacity {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+
+@keyframes ss-pulse-scale {
+  0%, 100% { opacity: 1;   transform: scale(1); }
+  50%      { opacity: 0.4; transform: scale(0.85); }
+}
+
 body {
   font-family: var(--font-sans);
   font-size: 15px;

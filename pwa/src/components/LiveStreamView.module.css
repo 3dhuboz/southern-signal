@@ -348,7 +348,8 @@
 .liveStatusDot_gathering, .liveStatusDot_posting, .liveStatusDot_connecting {
   background: var(--warning);
   box-shadow: 0 0 6px var(--warning);
-  animation: live-pulse 1.4s infinite ease-in-out;
+  /* Canonical opacity pulse — see global.css. */
+  animation: ss-pulse-opacity 1.4s infinite ease-in-out;
 }
 .liveStatusDot_live {
   background: var(--signal);
@@ -357,10 +358,6 @@
 .liveStatusDot_disconnected, .liveStatusDot_failed {
   background: var(--danger);
   box-shadow: 0 0 6px var(--danger);
-}
-@keyframes live-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
 }
 .liveStatusLabel {
   font-weight: 700;
