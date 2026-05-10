@@ -45,6 +45,105 @@
   gap: var(--s-12);
 }
 
+/* Past dossiers — collapsible at top, expanded by default when no
+   active result so the operator sees prior research immediately. */
+.pastDossiers {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  padding: 0;
+  overflow: hidden;
+}
+.pastDossiersSummary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-8);
+  padding: var(--s-10) var(--s-16);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 1.3px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+.pastDossiersSummary::-webkit-details-marker { display: none; }
+.pastDossiersSummary::before {
+  content: "▸";
+  display: inline-block;
+  font-size: 9px;
+  margin-right: 4px;
+  color: var(--text-muted);
+  transition: transform 120ms ease;
+}
+.pastDossiers[open] .pastDossiersSummary::before { transform: rotate(90deg); }
+.pastDossiersCount {
+  background: color-mix(in srgb, var(--signal) 14%, transparent);
+  color: var(--signal);
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  padding: 2px 8px;
+  border-radius: var(--r-full);
+}
+.pastDossiersList {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--s-8) var(--s-8);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pastDossierItem {
+  width: 100%;
+  text-align: left;
+  appearance: none;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  padding: var(--s-8) var(--s-12);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  transition: background 120ms, border-color 120ms;
+}
+.pastDossierItem:hover {
+  background: color-mix(in srgb, var(--signal) 6%, var(--bg-inset));
+  border-color: color-mix(in srgb, var(--signal) 35%, var(--border-subtle));
+}
+.pastDossierItemActive {
+  background: color-mix(in srgb, var(--signal) 10%, var(--bg-inset));
+  border-color: var(--signal);
+}
+.pastDossierVenue {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.pastDossierMeta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+}
+
+/* Status badge for "loaded from saved" / "saved to case" — sits between
+   the results header and the tier groups. Quiet, instrumental, not
+   celebratory. */
+.savedBadge {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.6px;
+  color: var(--signal);
+  background: color-mix(in srgb, var(--signal) 6%, transparent);
+  border-left: 2px solid var(--signal);
+  padding: 6px var(--s-12);
+  border-radius: 3px;
+}
+
 .field {
   display: flex;
   flex-direction: column;
@@ -281,6 +380,173 @@
   font-size: 10px;
   color: var(--text-muted);
   letter-spacing: 0.4px;
+}
+
+/* Drill-down (follow-up) — sits inside each finding so children are
+   visually anchored to their parent. The trigger is a quiet text-style
+   button until activated, then expands into a textarea + run/cancel
+   row. Children are rendered with a tier badge so a CULTURAL or
+   HERITAGE drill-down result is still scannable at a glance. */
+.drillRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+  margin-top: var(--s-4);
+}
+.drillBtn {
+  appearance: none;
+  background: transparent;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--r-sm);
+  padding: 4px 10px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.6px;
+  color: var(--signal);
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms;
+}
+.drillBtn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--signal) 8%, transparent);
+  border-color: var(--signal);
+}
+.drillBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+.drillNote {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.3px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+.drillPanel {
+  margin-top: var(--s-8);
+  padding: var(--s-8) var(--s-12);
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-8);
+}
+.drillInput {
+  width: 100%;
+  resize: vertical;
+  min-height: 48px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-sm);
+  padding: 8px var(--s-10);
+}
+.drillInput:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+  border-color: var(--signal);
+}
+.drillInput:disabled { opacity: 0.5; }
+.drillActions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+  flex-wrap: wrap;
+}
+.drillRun {
+  padding: 6px var(--s-12);
+  font-size: 12px;
+  min-height: 34px;
+}
+.drillCancel {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-sm);
+  padding: 6px var(--s-12);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.drillCancel:hover:not(:disabled) { background: var(--bg-surface); color: var(--text-primary); }
+.drillCancel:disabled { opacity: 0.5; }
+.drillRateNote {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+.drillError {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+  background: var(--danger-wash);
+  border: 1px solid var(--danger);
+  border-radius: var(--r-sm);
+  padding: 6px var(--s-12);
+}
+.drillResults {
+  margin-top: var(--s-8);
+  padding: var(--s-8) var(--s-12);
+  background: color-mix(in srgb, var(--signal) 4%, var(--bg-surface));
+  border-left: 3px solid var(--signal);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-8);
+}
+.drillResultsHead {
+  border-bottom: 1px dashed var(--border-subtle);
+  padding-bottom: 4px;
+}
+.drillResultsEyebrow {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 1.2px;
+  color: var(--signal);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.drillChild {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.drillChildTier {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 1px;
+  font-weight: 700;
+  align-self: flex-start;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid currentColor;
+}
+.drillChildTier.tone_signal { color: var(--signal); }
+.drillChildTier.tone_warning { color: var(--warning); }
+.drillChildTier.tone_neutral { color: var(--text-secondary); }
+.drillChildTier.tone_muted { color: var(--text-muted); }
+.drillChildTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.drillChildBody {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+.drillEmpty {
+  margin: var(--s-8) 0 0;
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border: 1px dashed var(--border-default);
+  border-radius: var(--r-sm);
+  padding: 6px var(--s-12);
 }
 
 .suggestionsBlock {

@@ -7,7 +7,7 @@
 
 import { appendAuditEntry } from "./auditLog";
 import { exec, query } from "./db";
-import type { EvidenceEvent, Investigation, MediaAsset, SensorSample } from "./schema";
+import type { EvidenceEvent, Investigation, MediaAsset, ResearchDossierRow, SensorSample } from "./schema";
 import { clearSensitivityCache, enqueue } from "../sync/queue";
 
 async function safeEnqueue(args: Parameters<typeof enqueue>[0]): Promise<void> {
@@ -271,4 +271,82 @@ export async function listMedia(investigationId: string): Promise<MediaAsset[]> 
     "SELECT * FROM media_assets WHERE investigation_id = ? ORDER BY timestamp_start ASC",
     [investigationId],
   );
+}
+
+// ---------------------- research dossiers (v4) ----------------------
+
+export interface DossierInput {
+  investigation_id: string | null;
+  venue_name: string;
+  location_hint?: string | null;
+  region: "AU" | "GLOBAL";
+  model: string;
+  /** Full ResearchResult — already server-validated for citation tier
+   *  downgrades. We stringify on the way in, parse on the way out. */
+  result: Record<string, unknown>;
+  timestamp?: string;
+}
+
+export async function saveDossier(input: DossierInput): Promise<ResearchDossierRow> {
+  const id = uuid();
+  const ts = input.timestamp ?? nowUtc();
+  const row: ResearchDossierRow = {
+    id,
+    investigation_id: input.investigation_id,
+    venue_name: input.venue_name.trim(),
+    location_hint: input.location_hint?.trim() || null,
+    region: input.region,
+    created_at: ts,
+    model: input.model,
+    result_json: JSON.stringify(input.result),
+  };
+  await exec(
+    `INSERT INTO research_dossiers
+       (id, investigation_id, venue_name, location_hint, region, created_at, model, result_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [row.id, row.investigation_id, row.venue_name, row.location_hint, row.region, row.created_at, row.model, row.result_json],
+  );
+  await appendAuditEntry({
+    actor: ACTOR_DEFAULT,
+    kind: "research.dossier.save",
+    payload: {
+      id,
+      investigation_id: row.investigation_id,
+      venue_name: row.venue_name,
+      region: row.region,
+      model: row.model,
+      // Lean payload — full result is in the row, the audit chain just
+      // needs an integrity anchor.
+      finding_count: Array.isArray((input.result as { findings?: unknown }).findings)
+        ? ((input.result as { findings: unknown[] }).findings.length)
+        : 0,
+    },
+  });
+  // Sync queue: standalone dossiers (no investigation_id) still mirror
+  // — they're useful pre-visit recon evidence for the cloud roll-up.
+  await safeEnqueue({ kind: "dossier", ref_id: id, payload: row as unknown as Record<string, unknown> });
+  return row;
+}
+
+export async function listDossiers(investigationId: string | null, limit = 20): Promise<ResearchDossierRow[]> {
+  if (investigationId == null) {
+    return query<ResearchDossierRow>(
+      "SELECT * FROM research_dossiers WHERE investigation_id IS NULL ORDER BY created_at DESC LIMIT ?",
+      [limit],
+    );
+  }
+  return query<ResearchDossierRow>(
+    "SELECT * FROM research_dossiers WHERE investigation_id = ? ORDER BY created_at DESC LIMIT ?",
+    [investigationId, limit],
+  );
+}
+
+export async function getDossier(id: string): Promise<ResearchDossierRow | null> {
+  const rows = await query<ResearchDossierRow>("SELECT * FROM research_dossiers WHERE id = ?", [id]);
+  return rows[0] ?? null;
+}
+
+export async function deleteDossier(id: string): Promise<void> {
+  await exec("DELETE FROM research_dossiers WHERE id = ?", [id]);
+  await appendAuditEntry({ actor: ACTOR_DEFAULT, kind: "research.dossier.delete", payload: { id } });
 }

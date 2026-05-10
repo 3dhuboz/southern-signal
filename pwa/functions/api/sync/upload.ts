@@ -144,6 +144,15 @@ async function ensureSchema(db: D1Database): Promise<void> {
       unit TEXT, metadata_json TEXT
     );
   `.replace(/\n\s+/g, " "));
+  // v4: mirror of research_dossiers. investigation_id is nullable so
+  // pre-visit recon dossiers (standalone) round-trip too.
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS research_dossiers (
+      id TEXT PRIMARY KEY, investigation_id TEXT, venue_name TEXT NOT NULL,
+      location_hint TEXT, region TEXT NOT NULL DEFAULT 'AU',
+      created_at TEXT NOT NULL, model TEXT NOT NULL, result_json TEXT NOT NULL
+    );
+  `.replace(/\n\s+/g, " "));
 }
 
 async function persistRow(db: D1Database, item: UploadItem): Promise<{ ok: true } | { ok: false; reason: string }> {
@@ -185,6 +194,12 @@ async function persistRow(db: D1Database, item: UploadItem): Promise<{ ok: true 
           `INSERT OR IGNORE INTO sensor_samples (id, investigation_id, timestamp, sensor_type, value, x, y, z, unit, metadata_json)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).bind(p.id, p.investigation_id, p.timestamp, p.sensor_type, p.value ?? null, p.x ?? null, p.y ?? null, p.z ?? null, p.unit ?? null, p.metadata_json ?? null).run();
+        return { ok: true };
+      case "dossier":
+        await db.prepare(
+          `INSERT OR IGNORE INTO research_dossiers (id, investigation_id, venue_name, location_hint, region, created_at, model, result_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).bind(p.id, p.investigation_id ?? null, p.venue_name, p.location_hint ?? null, p.region ?? "AU", p.created_at, p.model, p.result_json).run();
         return { ok: true };
       default:
         return { ok: false, reason: `unknown kind: ${item.kind}` };

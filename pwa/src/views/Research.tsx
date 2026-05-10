@@ -31,7 +31,8 @@ import {
   type ResearchFinding,
   type ResearchTier,
 } from "../lib/research/api";
-import { recordEvent } from "../lib/db/repo";
+import { recordEvent, saveDossier, listDossiers, getDossier } from "../lib/db/repo";
+import type { ResearchDossierRow } from "../lib/db/schema";
 import { appendAuditEntry } from "../lib/db/auditLog";
 import s from "./View.module.css";
 import r from "./Research.module.css";
@@ -101,6 +102,27 @@ export function Research() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ResearchResult | null>(null);
   const [rate, setRate] = useState(() => getResearchRateState());
+  /** v4: past dossiers persisted to research_dossiers. Scoped to the
+   *  current investigation (or to standalone runs when no case is open).
+   *  Lets the operator re-open prior research without burning a new
+   *  cloud-AI call. */
+  const [pastDossiers, setPastDossiers] = useState<ResearchDossierRow[]>([]);
+  const [loadedFromDossierId, setLoadedFromDossierId] = useState<string | null>(null);
+  const [savedDossierId, setSavedDossierId] = useState<string | null>(null);
+
+  /** v4: follow-up turn state. Keyed by `${tier}-${index}` of the parent
+   *  finding so each card runs independently. Map values hold the input
+   *  question, busy flag, error, and the appended findings to render
+   *  beneath the parent. */
+  interface FollowupState {
+    open: boolean;
+    question: string;
+    busy: boolean;
+    error: string | null;
+    findings: ResearchFinding[] | null;
+    sourcesCount: number;
+  }
+  const [followups, setFollowups] = useState<Record<string, FollowupState>>({});
 
   // Prefill venue from the active investigation if it has a location_name.
   useEffect(() => {
@@ -111,6 +133,21 @@ export function Research() {
     // intentionally not depending on venueName so first-load prefill wins.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.current?.id]);
+
+  // Load past dossiers for this investigation (or recent standalone runs
+  // when no case is open). Cheap query — at most 20 rows.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const rows = await listDossiers(session.current?.id ?? null, 20);
+        if (!cancelled) setPastDossiers(rows);
+      } catch (err) {
+        console.warn("[research] listDossiers failed", err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session.current?.id, savedDossierId]);
 
   const culturallyBlocked = prefs.globalCulturalSensitivityFlag || (session.current?.culturally_sensitive === 1);
   const rateBlocked = rate.used >= rate.cap;
@@ -160,7 +197,24 @@ export function Research() {
         culturallySensitive: culturallyBlocked,
       });
       setResult(res);
+      setLoadedFromDossierId(null);
+      setFollowups({});
       setRate(getResearchRateState());
+
+      // v4: persist the dossier so it survives the session and feeds
+      // the Evidence Brief. Fire-and-forget — UI doesn't gate on it,
+      // but we surface the saved id so the user sees a confirmation.
+      void saveDossier({
+        investigation_id: investigationId,
+        venue_name: venueName.trim(),
+        location_hint: locationHint.trim() || null,
+        region,
+        model: res.model,
+        result: res as unknown as Record<string, unknown>,
+      }).then((row) => setSavedDossierId(row.id)).catch((err) => {
+        console.warn("[research] saveDossier failed (run still succeeded)", err);
+      });
+
       const endedAtMs = Date.now();
       if (investigationId) {
         void appendAuditEntry({
@@ -200,7 +254,12 @@ export function Research() {
       }
     } catch (err) {
       if (err instanceof ResearchRateLimitError) {
-        setError(err.message);
+        // Server-enforced cap (429) is sticky — clearing localStorage
+        // won't help. Spell that out so the operator doesn't fight a
+        // wall they can't move.
+        setError(err.fromServer
+          ? `${err.message} This is the network-wide server cap — clearing app data won't reset it.`
+          : err.message);
       } else {
         setError((err as Error).message || "Research failed.");
       }
@@ -211,6 +270,121 @@ export function Research() {
   }, [canRun, venueName, locationHint, region, culturallyBlocked, session]);
 
   const grouped = useMemo(() => result ? groupByTier(result.findings) : new Map<ResearchTier, ResearchFinding[]>(), [result]);
+
+  // Drill deeper on a single finding. Same rate-limit budget; we
+  // anchor the user prompt to the parent so the model extends instead
+  // of re-researching the venue at the top level. Findings are
+  // appended to the parent in-place.
+  const handleFollowup = useCallback(async (key: string, parent: ResearchFinding) => {
+    const cur = followups[key];
+    setFollowups((m) => ({ ...m, [key]: { ...(cur ?? { open: true, question: "", busy: false, error: null, findings: null, sourcesCount: 0 }), busy: true, error: null } }));
+    const investigationId = session.current?.id ?? null;
+    const question = (cur?.question ?? "").trim();
+    const startedAtMs = Date.now();
+    try {
+      const res = await runResearch({
+        venueName: venueName.trim(),
+        locationHint: locationHint.trim() || undefined,
+        region,
+        culturallySensitive: culturallyBlocked,
+        followup: {
+          parentTitle: parent.title,
+          parentBody: parent.body,
+          parentSources: parent.sources,
+          question: question || `What more do you know about "${parent.title}"?`,
+        },
+      });
+      const sourcesCount = res.findings.reduce((n, f) => n + f.sources.length, 0);
+      setFollowups((m) => ({ ...m, [key]: { open: true, question, busy: false, error: null, findings: res.findings, sourcesCount } }));
+      setRate(getResearchRateState());
+
+      // Audit chain — record the drill-down as a discrete event so the
+      // reviewer can see the parent → child link.
+      if (investigationId) {
+        const endedAtMs = Date.now();
+        void appendAuditEntry({
+          actor: "ai",
+          kind: "research.ai_investigator.followup",
+          payload: {
+            investigation_id: investigationId,
+            venue: venueName.trim(),
+            region,
+            parent_title: parent.title,
+            parent_tier: parent.tier,
+            question: question || null,
+            started_at_ms: startedAtMs,
+            ended_at_ms: endedAtMs,
+            duration_ms: endedAtMs - startedAtMs,
+            findings_count: res.findings.length,
+            model: res.model,
+          },
+        }).catch(() => { /* */ });
+        for (const f of res.findings) {
+          void recordEvent({
+            investigation_id: investigationId,
+            source: "ai",
+            event_type: "research.finding.followup",
+            title: `${f.tier} — ${f.title}`,
+            description: f.body,
+            metadata: {
+              tier: f.tier,
+              sources: f.sources,
+              venue: venueName.trim(),
+              region,
+              model: res.model,
+              parent_title: parent.title,
+              parent_tier: parent.tier,
+              question: question || null,
+            },
+          }).catch(() => { /* */ });
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof ResearchRateLimitError
+        ? (err.fromServer
+            ? `${err.message} (network-wide cap)`
+            : err.message)
+        : ((err as Error).message || "Drill-down failed.");
+      setFollowups((m) => ({ ...m, [key]: { ...(m[key] ?? { open: true, question, busy: false, error: null, findings: null, sourcesCount: 0 }), busy: false, error: msg } }));
+      setRate(getResearchRateState());
+    }
+  }, [followups, session, venueName, locationHint, region, culturallyBlocked]);
+
+  const setFollowupField = useCallback((key: string, patch: Partial<{ open: boolean; question: string }>) => {
+    setFollowups((m) => ({
+      ...m,
+      [key]: {
+        open: patch.open ?? m[key]?.open ?? true,
+        question: patch.question ?? m[key]?.question ?? "",
+        busy: m[key]?.busy ?? false,
+        error: m[key]?.error ?? null,
+        findings: m[key]?.findings ?? null,
+        sourcesCount: m[key]?.sourcesCount ?? 0,
+      },
+    }));
+  }, []);
+
+  // Open a past dossier without burning a cloud-AI call. Hydrates
+  // result/venueName/locationHint/region so the UI looks identical to a
+  // live run — but tagged as "loaded from saved dossier" so the operator
+  // sees we didn't re-research.
+  const handleOpenDossier = useCallback(async (id: string) => {
+    try {
+      const row = await getDossier(id);
+      if (!row) return;
+      const parsed = JSON.parse(row.result_json) as ResearchResult;
+      setResult(parsed);
+      setVenueName(row.venue_name);
+      setLocationHint(row.location_hint ?? "");
+      setRegion(row.region === "GLOBAL" ? "GLOBAL" : "AU");
+      setLoadedFromDossierId(row.id);
+      setFollowups({});
+      setError(null);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (err) {
+      console.warn("[research] handleOpenDossier failed", err);
+    }
+  }, []);
 
   return (
     <section className={s.view}>
@@ -236,6 +410,41 @@ export function Research() {
             <Link to="/setup" className={r.blockedLink}>Manage sensitivity in Setup →</Link>
           </p>
         </div>
+      )}
+
+      {pastDossiers.length > 0 && (
+        <details className={r.pastDossiers} open={result == null}>
+          <summary className={r.pastDossiersSummary}>
+            <span>Saved dossiers for {session.current ? "this case" : "this device"}</span>
+            <span className={r.pastDossiersCount}>{pastDossiers.length}</span>
+          </summary>
+          <ul className={r.pastDossiersList}>
+            {pastDossiers.map((d) => {
+              const ts = new Date(d.created_at);
+              const findingCount = (() => {
+                try {
+                  const p = JSON.parse(d.result_json) as ResearchResult;
+                  return p.findings?.length ?? 0;
+                } catch { return 0; }
+              })();
+              return (
+                <li key={d.id}>
+                  <button
+                    type="button"
+                    className={`${r.pastDossierItem} ${loadedFromDossierId === d.id ? r.pastDossierItemActive : ""}`.trim()}
+                    onClick={() => handleOpenDossier(d.id)}
+                  >
+                    <span className={r.pastDossierVenue}>{d.venue_name}</span>
+                    <span className={r.pastDossierMeta}>
+                      {ts.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
+                      {" · "}{findingCount} findings{" · "}{d.region}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </details>
       )}
 
       <div className={r.formCard}>
@@ -320,6 +529,15 @@ export function Research() {
               <code>{result.model.replace(/^.*\//, "")}</code>
             </span>
           </header>
+          {loadedFromDossierId ? (
+            <p className={r.savedBadge} role="status">
+              <span aria-hidden="true">↺</span> Loaded from saved dossier — no cloud-AI call made.
+            </p>
+          ) : savedDossierId ? (
+            <p className={r.savedBadge} role="status">
+              <span aria-hidden="true">✓</span> Saved to {session.current ? "this case" : "your device"} — flows into the Evidence Brief.
+            </p>
+          ) : null}
 
           {result.findings.length === 0 ? (
             <p className={r.emptyFindings}>
@@ -338,24 +556,118 @@ export function Research() {
                       <span className={r.tierLabel}>{meta.label}</span>
                       <span className={r.tierDescription}>{meta.description}</span>
                     </header>
-                    {items.map((f, i) => (
-                      <article key={`${tier}-${i}`} className={r.finding}>
-                        <h3 className={r.findingTitle}>{f.title}</h3>
-                        <p className={r.findingBody}>{f.body}</p>
-                        {f.sources.length > 0 && (
-                          <ul className={r.findingSources}>
-                            {f.sources.map((src, j) => (
-                              <li key={j}>
-                                <a href={src.url} target="_blank" rel="noopener noreferrer" className={r.sourceLink}>
-                                  <code className={r.sourceLabel}>{src.label}</code>
-                                  <span className={r.sourceHost}>{(() => { try { return new URL(src.url).hostname; } catch { return src.url; } })()}</span>
-                                </a>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </article>
-                    ))}
+                    {items.map((f, i) => {
+                      const key = `${tier}-${i}`;
+                      const fu = followups[key];
+                      const fuOpen = fu?.open === true;
+                      const fuBusy = fu?.busy === true;
+                      const fuFindings = fu?.findings ?? null;
+                      const drillDisabled = rateBlocked || busy || fuBusy || culturallyBlocked || loadedFromDossierId != null;
+                      return (
+                        <article key={key} className={r.finding}>
+                          <h3 className={r.findingTitle}>{f.title}</h3>
+                          <p className={r.findingBody}>{f.body}</p>
+                          {f.sources.length > 0 && (
+                            <ul className={r.findingSources}>
+                              {f.sources.map((src, j) => (
+                                <li key={j}>
+                                  <a href={src.url} target="_blank" rel="noopener noreferrer" className={r.sourceLink}>
+                                    <code className={r.sourceLabel}>{src.label}</code>
+                                    <span className={r.sourceHost}>{(() => { try { return new URL(src.url).hostname; } catch { return src.url; } })()}</span>
+                                  </a>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                          {/* Drill-down trigger. Disabled when viewing a
+                              saved dossier — those are immutable; the
+                              user can re-run from a fresh form if they
+                              want a deeper pass. */}
+                          {!fuOpen && !fuFindings && (
+                            <div className={r.drillRow}>
+                              <button
+                                type="button"
+                                className={r.drillBtn}
+                                onClick={() => setFollowupField(key, { open: true })}
+                                disabled={drillDisabled}
+                                title={loadedFromDossierId
+                                  ? "Saved dossiers are immutable. Run a fresh search to drill deeper."
+                                  : "Pull more cited detail on this finding."}
+                              >
+                                ↳ Drill deeper
+                              </button>
+                              {loadedFromDossierId && (
+                                <span className={r.drillNote}>Saved dossiers are read-only.</span>
+                              )}
+                            </div>
+                          )}
+                          {fuOpen && (
+                            <div className={r.drillPanel}>
+                              <textarea
+                                className={r.drillInput}
+                                rows={2}
+                                placeholder={`Optional — e.g. "Find the date the courthouse was decommissioned" or "Was anyone killed on site?"`}
+                                value={fu?.question ?? ""}
+                                onChange={(e) => setFollowupField(key, { question: e.target.value })}
+                                disabled={fuBusy}
+                                maxLength={500}
+                              />
+                              <div className={r.drillActions}>
+                                <button
+                                  type="button"
+                                  className={`btn btn-primary ${r.drillRun}`}
+                                  onClick={() => handleFollowup(key, f)}
+                                  disabled={drillDisabled}
+                                >
+                                  {fuBusy ? "Drilling…" : "Run drill-down"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className={r.drillCancel}
+                                  onClick={() => setFollowupField(key, { open: false })}
+                                  disabled={fuBusy}
+                                >
+                                  Cancel
+                                </button>
+                                <span className={r.drillRateNote}>Uses 1 of your daily runs.</span>
+                              </div>
+                              {fu?.error && <p className={r.drillError}>{fu.error}</p>}
+                            </div>
+                          )}
+                          {fuFindings && fuFindings.length > 0 && (
+                            <div className={r.drillResults}>
+                              <header className={r.drillResultsHead}>
+                                <span className={r.drillResultsEyebrow}>DRILL-DOWN · {fuFindings.length} new {fuFindings.length === 1 ? "finding" : "findings"} · {fu?.sourcesCount ?? 0} sources</span>
+                              </header>
+                              {fuFindings.map((child, ci) => (
+                                <article key={ci} className={r.drillChild}>
+                                  <span className={`${r.drillChildTier} ${r[`tone_${TIER_META[child.tier].tone}`]}`.trim()}>{TIER_META[child.tier].label}</span>
+                                  <h4 className={r.drillChildTitle}>{child.title}</h4>
+                                  <p className={r.drillChildBody}>{child.body}</p>
+                                  {child.sources.length > 0 && (
+                                    <ul className={r.findingSources}>
+                                      {child.sources.map((src, j) => (
+                                        <li key={j}>
+                                          <a href={src.url} target="_blank" rel="noopener noreferrer" className={r.sourceLink}>
+                                            <code className={r.sourceLabel}>{src.label}</code>
+                                            <span className={r.sourceHost}>{(() => { try { return new URL(src.url).hostname; } catch { return src.url; } })()}</span>
+                                          </a>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                </article>
+                              ))}
+                            </div>
+                          )}
+                          {fuFindings && fuFindings.length === 0 && (
+                            <p className={r.drillEmpty}>
+                              No additional sources found on this drill-down. The parent finding stands as written.
+                            </p>
+                          )}
+                        </article>
+                      );
+                    })}
                   </section>
                 );
               })}

@@ -10,7 +10,8 @@ export type SyncKind =
   | "media_row"
   | "media_blob"
   | "transcript"
-  | "sensor";
+  | "sensor"
+  | "dossier";
 
 export interface SyncItem {
   id: number;

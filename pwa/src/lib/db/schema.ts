@@ -6,7 +6,7 @@
  * via a `source` column so cross-device sync can union rows safely.
  */
 
-export const CURRENT_SCHEMA_VERSION = 3;
+export const CURRENT_SCHEMA_VERSION = 4;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -118,6 +118,31 @@ CREATE TABLE IF NOT EXISTS transcripts (
 );
 CREATE INDEX IF NOT EXISTS idx_transcripts_media ON transcripts (media_id, segment_start_s);
 
+-- v4: AI Investigator dossiers. Saved research runs persist so the
+-- Evidence Brief can include archive findings, and so the operator can
+-- reread the citation chain after the case is over without burning a
+-- new cloud-AI call. Nullable investigation_id so dossiers can be
+-- generated before a case is open (e.g. pre-visit recon).
+CREATE TABLE IF NOT EXISTS research_dossiers (
+  id                TEXT PRIMARY KEY,
+  investigation_id  TEXT,
+  -- nullable — standalone recon dossiers are valid
+  venue_name        TEXT NOT NULL,
+  location_hint     TEXT,
+  region            TEXT NOT NULL DEFAULT 'AU',
+  -- 'AU' / 'GLOBAL'
+  created_at        TEXT NOT NULL,
+  model             TEXT NOT NULL,
+  -- e.g. 'perplexity/sonar' — for citation auditability
+  result_json       TEXT NOT NULL,
+  -- full ResearchResult: findings, suggestions, search_terms_used,
+  -- citations_raw, model, warnings. Findings and tier downgrades are
+  -- already server-validated before reaching here.
+  FOREIGN KEY (investigation_id) REFERENCES investigations (id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dossiers_inv ON research_dossiers (investigation_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_dossiers_ts  ON research_dossiers (created_at DESC);
+
 -- Hash-chained event log (Tier 1 #5 — every state change is appended).
 -- 'edits' become new entries; never UPDATE this table.
 CREATE TABLE IF NOT EXISTS audit_log (
@@ -191,4 +216,15 @@ export interface AuditLogEntry {
   payload_json: string;
   prev_hash: string;
   entry_hash: string;
+}
+
+export interface ResearchDossierRow {
+  id: string;
+  investigation_id: string | null;
+  venue_name: string;
+  location_hint: string | null;
+  region: string;
+  created_at: string;
+  model: string;
+  result_json: string;
 }
