@@ -180,33 +180,49 @@ export function Estes() {
       }, 280);
     } else {
       // Radio mode — load the proxy chunks, fire the contamination
-      // marker the moment the first chunk is in, then start scanning.
+      // open-marker the moment the first chunk is in, then start
+      // scanning. A close-marker is fired on the cleanup branch (toggle
+      // off, switch back to synth, unmount) so the audit chain has a
+      // bracketed window an external reviewer can read directly.
       const radio = new RadioSweep();
       radioRef.current = radio;
       const unsub = radio.subscribe(setRadioState);
+      const investigationIdAtStart = session.current?.id ?? null;
+      const startedAtMs = Date.now();
+      let openedWindow = false;
 
       let cancelled = false;
       void (async () => {
         try {
           await radio.start();
           if (cancelled) return;
-          // Forensic stamp: any clip captured during the sweep window has
-          // a known mundane source. The chain needs that record.
-          if (session.current) {
+          // Forensic stamp — OPEN. Any clip captured during the sweep
+          // window has a known mundane source. The chain needs that
+          // record. The matching CLOSE event fires in the cleanup
+          // below so the window is bracketed both sides.
+          openedWindow = true;
+          if (investigationIdAtStart) {
             void recordEvent({
-              investigation_id: session.current.id,
+              investigation_id: investigationIdAtStart,
               source: "user",
               event_type: "contamination",
-              title: "Spirit Box — Radio Sweep (broadcast contamination)",
-              metadata: { tag: "radio_broadcast", source: "spirit_box_radio_sweep" },
+              title: "Spirit Box — Radio Sweep started (broadcast contamination)",
+              metadata: {
+                tag: "radio_broadcast",
+                source: "spirit_box_radio_sweep",
+                phase: "open",
+                started_at_ms: startedAtMs,
+              },
             }).catch(() => { /* don't break the UI */ });
             void appendAuditEntry({
               actor: "user",
               kind: "contamination.tag",
               payload: {
-                investigation_id: session.current.id,
+                investigation_id: investigationIdAtStart,
                 tag: "radio_broadcast",
                 source: "spirit_box_radio_sweep",
+                phase: "open",
+                started_at_ms: startedAtMs,
                 stations_loaded: radio.loadedStationIds(),
               },
             }).catch(() => { /* don't break the UI */ });
@@ -247,6 +263,41 @@ export function Estes() {
       return () => {
         cancelled = true;
         unsub();
+        // Close the contamination window cleanly. Only if we actually
+        // opened it — if start() failed before the open-marker fired
+        // there's nothing to close. Both writes are fire-and-forget so
+        // a slow DB doesn't stall the cleanup path.
+        if (openedWindow && investigationIdAtStart) {
+          const endedAtMs = Date.now();
+          const durationMs = endedAtMs - startedAtMs;
+          void recordEvent({
+            investigation_id: investigationIdAtStart,
+            source: "user",
+            event_type: "contamination",
+            title: "Spirit Box — Radio Sweep ended",
+            metadata: {
+              tag: "radio_broadcast",
+              source: "spirit_box_radio_sweep",
+              phase: "close",
+              started_at_ms: startedAtMs,
+              ended_at_ms: endedAtMs,
+              duration_ms: durationMs,
+            },
+          }).catch(() => { /* don't break the UI */ });
+          void appendAuditEntry({
+            actor: "user",
+            kind: "contamination.tag",
+            payload: {
+              investigation_id: investigationIdAtStart,
+              tag: "radio_broadcast",
+              source: "spirit_box_radio_sweep",
+              phase: "close",
+              started_at_ms: startedAtMs,
+              ended_at_ms: endedAtMs,
+              duration_ms: durationMs,
+            },
+          }).catch(() => { /* don't break the UI */ });
+        }
         stop();
       };
     }
