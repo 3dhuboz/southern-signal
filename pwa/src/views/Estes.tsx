@@ -20,6 +20,7 @@ import { EstesPeer, generatePairingCode } from "../lib/estes/peer";
 import type { PeerState } from "../lib/estes/peer";
 import { nextPhoneme } from "../lib/itc/phonemes";
 import { PhonemeSynth } from "../lib/itc/phonemeSynth";
+import { RadioSweep, type RadioSweepState, type Station } from "../lib/itc/radioSweep";
 import { recordEvent } from "../lib/db/repo";
 import { appendAuditEntry } from "../lib/db/auditLog";
 import { MicLevelMeter } from "../lib/audio/micLevel";
@@ -61,10 +62,19 @@ export function Estes() {
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<LogEntry[]>([]);
   const [questionDraft, setQuestionDraft] = useState("");
-  const [phonemeHistory, setPhonemeHistory] = useState<{ phoneme: string; ts: number }[]>([]);
+  const [phonemeHistory, setPhonemeHistory] = useState<{ phoneme: string; ts: number; station?: Station | null }[]>([]);
   const [emissionCount, setEmissionCount] = useState(0);
   const [synthAmp, setSynthAmp] = useState(0);
   const [spiritBoxOn, setSpiritBoxOn] = useState(false);
+  // "synth" — formant-noise burst (deterministic, no broadcast contamination).
+  // "radio" — real internet-radio chunks proxied via /api/radio/proxy. Every
+  // slice is real broadcast audio, so the audit chain auto-fires a
+  // `contamination.tag` event on start. See radioSweep.ts header for the
+  // full forensic story.
+  const [audioSource, setAudioSource] = useState<"synth" | "radio">("synth");
+  const [radioState, setRadioState] = useState<RadioSweepState>({
+    status: "idle", loaded: 0, total: 0, lastStation: null, error: null,
+  });
   const [ganzfeldOn, setGanzfeldOn] = useState(true);
   const [blackoutOn, setBlackoutOn] = useState(true);
   const [peerState, setPeerState] = useState<PeerState>("idle");
@@ -82,6 +92,8 @@ export function Estes() {
   const seedRef = useRef<number>(Date.now() & 0x7fffffff);
   const phonemeTimerRef = useRef<number | null>(null);
   const synthRef = useRef<PhonemeSynth | null>(null);
+  const radioRef = useRef<RadioSweep | null>(null);
+  const radioRefreshTimerRef = useRef<number | null>(null);
   const ampDecayTimerRef = useRef<number | null>(null);
 
   const appendLog = useCallback((entry: LogEntry) => {
@@ -108,11 +120,13 @@ export function Estes() {
 
   const codeRemaining = codeIssuedAt == null ? null : Math.max(0, CODE_TTL_SECONDS - Math.floor((now - codeIssuedAt) / 1000));
 
-  // Spirit-box phoneme tick (Receiver only). Each tick advances the seed,
-  // pushes one phoneme into history, and fires the formant-noise synth so
-  // the receiver hears voice-band texture (not a TTS read-out, which makes
-  // the experience feel like a vocab trainer and biases the receiver toward
-  // parroting the cue word).
+  // Spirit-box tick (Receiver only). One scheduler, two audio backends:
+  //   - "synth" — formant-noise burst, deterministic, no broadcast risk
+  //   - "radio" — random slice from a pool of real internet radio
+  //              chunks. Every slice has a real broadcast source, so we
+  //              fire a `contamination.tag` audit entry on start.
+  // The trail / chrome / amplitude meter UI works the same way for both;
+  // only the audio source and the chrome's "src" label differ.
   useEffect(() => {
     const stop = () => {
       if (phonemeTimerRef.current != null) {
@@ -123,9 +137,15 @@ export function Estes() {
         window.clearInterval(ampDecayTimerRef.current);
         ampDecayTimerRef.current = null;
       }
+      if (radioRefreshTimerRef.current != null) {
+        window.clearInterval(radioRefreshTimerRef.current);
+        radioRefreshTimerRef.current = null;
+      }
       setSynthAmp(0);
-      synthRef.current?.close();
+      try { synthRef.current?.close(); } catch { /* ignore */ }
       synthRef.current = null;
+      try { radioRef.current?.close(); } catch { /* ignore */ }
+      radioRef.current = null;
     };
 
     if (!spiritBoxOn || (phase !== "connected-receiver" && phase !== "receiver" && phase !== "receiver-prep")) {
@@ -134,12 +154,9 @@ export function Estes() {
       // after the toggle goes off.
       setPhonemeHistory([]);
       setEmissionCount(0);
+      setRadioState({ status: "idle", loaded: 0, total: 0, lastStation: null, error: null });
       return;
     }
-
-    // Synth lives for the duration of the spirit-box session; gesture-
-    // satisfied because the user just tapped the toggle.
-    synthRef.current = new PhonemeSynth();
 
     // Amplitude decay tick (~30 Hz) for the live readout. Independent of
     // the phoneme rate so the meter has a smooth tail between bursts.
@@ -147,22 +164,89 @@ export function Estes() {
       setSynthAmp((a) => Math.max(0, a * 0.78));
     }, 33);
 
-    phonemeTimerRef.current = window.setInterval(() => {
-      const { phoneme: p, nextSeed } = nextPhoneme(seedRef.current, Date.now() % 1000);
-      seedRef.current = nextSeed;
-      setPhonemeHistory((arr) => {
-        const next = [...arr, { phoneme: p, ts: Date.now() }];
-        // Keep the trail bounded; recent ~12 emissions is the visual buffer.
-        return next.length > 12 ? next.slice(next.length - 12) : next;
-      });
-      setEmissionCount((n) => n + 1);
-      const ms = synthRef.current?.emit(p) ?? 0;
-      // Snap the meter to peak; the decay timer above releases it.
-      if (ms > 0) setSynthAmp(1);
-    }, 280);
+    if (audioSource === "synth") {
+      // Gesture-satisfied because the user just tapped the toggle.
+      synthRef.current = new PhonemeSynth();
+      phonemeTimerRef.current = window.setInterval(() => {
+        const { phoneme: p, nextSeed } = nextPhoneme(seedRef.current, Date.now() % 1000);
+        seedRef.current = nextSeed;
+        setPhonemeHistory((arr) => {
+          const next = [...arr, { phoneme: p, ts: Date.now() }];
+          return next.length > 12 ? next.slice(next.length - 12) : next;
+        });
+        setEmissionCount((n) => n + 1);
+        const ms = synthRef.current?.emit(p) ?? 0;
+        if (ms > 0) setSynthAmp(1);
+      }, 280);
+    } else {
+      // Radio mode — load the proxy chunks, fire the contamination
+      // marker the moment the first chunk is in, then start scanning.
+      const radio = new RadioSweep();
+      radioRef.current = radio;
+      const unsub = radio.subscribe(setRadioState);
+
+      let cancelled = false;
+      void (async () => {
+        try {
+          await radio.start();
+          if (cancelled) return;
+          // Forensic stamp: any clip captured during the sweep window has
+          // a known mundane source. The chain needs that record.
+          if (session.current) {
+            void recordEvent({
+              investigation_id: session.current.id,
+              source: "user",
+              event_type: "contamination",
+              title: "Spirit Box — Radio Sweep (broadcast contamination)",
+              metadata: { tag: "radio_broadcast", source: "spirit_box_radio_sweep" },
+            }).catch(() => { /* don't break the UI */ });
+            void appendAuditEntry({
+              actor: "user",
+              kind: "contamination.tag",
+              payload: {
+                investigation_id: session.current.id,
+                tag: "radio_broadcast",
+                source: "spirit_box_radio_sweep",
+                stations_loaded: radio.loadedStationIds(),
+              },
+            }).catch(() => { /* don't break the UI */ });
+          }
+
+          phonemeTimerRef.current = window.setInterval(() => {
+            const { durationMs, station } = radio.emit({ durationMs: 250 });
+            if (durationMs > 0) {
+              setSynthAmp(1);
+              setEmissionCount((n) => n + 1);
+              setPhonemeHistory((arr) => {
+                const next = [...arr, { phoneme: station?.name ?? "—", ts: Date.now(), station }];
+                return next.length > 12 ? next.slice(next.length - 12) : next;
+              });
+            }
+          }, 280);
+
+          // Periodic chunk refresh — pick the next loaded station every
+          // 10s, re-fetch its 5s buffer. Across 6 stations, each station
+          // refreshes ~once a minute.
+          let cursor = 0;
+          radioRefreshTimerRef.current = window.setInterval(() => {
+            const ids = radio.loadedStationIds();
+            if (ids.length === 0) return;
+            const id = ids[cursor % ids.length];
+            cursor += 1;
+            void radio.refresh(id);
+          }, 10_000);
+        } catch { /* state listener already surfaced the error */ }
+      })();
+
+      return () => {
+        cancelled = true;
+        unsub();
+        stop();
+      };
+    }
 
     return stop;
-  }, [spiritBoxOn, phase]);
+  }, [spiritBoxOn, phase, audioSource, session]);
 
   // Cleanup on unmount.
   useEffect(() => {
@@ -172,7 +256,9 @@ export function Estes() {
       try { micMeterRef.current?.stop(); } catch { /* ignore */ }
       try { remoteMeterRef.current?.stop(); } catch { /* ignore */ }
       try { synthRef.current?.close(); } catch { /* ignore */ }
+      try { radioRef.current?.close(); } catch { /* ignore */ }
       if (ampDecayTimerRef.current != null) window.clearInterval(ampDecayTimerRef.current);
+      if (radioRefreshTimerRef.current != null) window.clearInterval(radioRefreshTimerRef.current);
       micStreamRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
@@ -473,25 +559,46 @@ export function Estes() {
                   is the whole point: anything reported by the receiver came
                   from a deterministic, seeded, inspectable engine, not a
                   black-box mystery generator. */}
-              <div className={e.receiverDisplay}>
+              <div className={`${e.receiverDisplay} ${audioSource === "radio" ? e.receiverDisplayRadio : ""}`.trim()}>
                 <div className={e.synthChrome}>
-                  <span className={e.synthChromeLabel}>STOCHASTIC PHONEME ENGINE</span>
-                  <span className={e.synthChromeStat}>
-                    seed <code>0x{(seedRef.current >>> 0).toString(16).padStart(8, "0").slice(-6)}</code>
+                  <span className={e.synthChromeLabel}>
+                    {audioSource === "radio" ? "RADIO SWEEP · BROADCAST CONTAMINATION" : "STOCHASTIC PHONEME ENGINE"}
                   </span>
-                  <span className={e.synthChromeStat}>
-                    n=<code>{emissionCount.toString().padStart(4, "0")}</code>
-                  </span>
-                  <span className={e.synthChromeStat}>
-                    rate <code>3.6 Hz</code>
-                  </span>
-                  <span className={e.synthChromeStat}>
-                    src <code>time(ms)</code>
-                  </span>
+                  {audioSource === "synth" ? (
+                    <>
+                      <span className={e.synthChromeStat}>
+                        seed <code>0x{(seedRef.current >>> 0).toString(16).padStart(8, "0").slice(-6)}</code>
+                      </span>
+                      <span className={e.synthChromeStat}>
+                        n=<code>{emissionCount.toString().padStart(4, "0")}</code>
+                      </span>
+                      <span className={e.synthChromeStat}>rate <code>3.6 Hz</code></span>
+                      <span className={e.synthChromeStat}>src <code>time(ms)</code></span>
+                    </>
+                  ) : (
+                    <>
+                      <span className={e.synthChromeStat}>
+                        pool <code>{radioState.loaded}/{radioState.total}</code>
+                      </span>
+                      <span className={e.synthChromeStat}>
+                        n=<code>{emissionCount.toString().padStart(4, "0")}</code>
+                      </span>
+                      <span className={e.synthChromeStat}>rate <code>3.6 Hz</code></span>
+                      <span className={e.synthChromeStat}>
+                        src <code>{radioState.status}</code>
+                      </span>
+                    </>
+                  )}
                 </div>
                 <div className={e.synthTrail} aria-live="polite">
                   {phonemeHistory.length === 0 ? (
-                    <span className={e.synthTrailIdle}>idle — waiting for spirit-box toggle</span>
+                    <span className={e.synthTrailIdle}>
+                      {audioSource === "radio" && radioState.status === "loading"
+                        ? `loading stations — ${radioState.loaded}/${radioState.total}`
+                        : audioSource === "radio" && radioState.status === "error"
+                        ? `error — ${radioState.error ?? "unknown"}`
+                        : "idle — waiting for spirit-box toggle"}
+                    </span>
                   ) : (
                     phonemeHistory.map((h, i) => {
                       const isCurrent = i === phonemeHistory.length - 1;
@@ -516,10 +623,46 @@ export function Estes() {
                     />
                   </div>
                 </div>
-                <p className={e.synthHonesty}>
-                  Formant-shaped noise burst per emission · seed advances deterministically · corpus inspectable in source ·{" "}
-                  <strong>NOT a radio sweep</strong>
-                </p>
+                {audioSource === "synth" ? (
+                  <p className={e.synthHonesty}>
+                    Formant-shaped noise burst per emission · seed advances deterministically · corpus inspectable in source ·{" "}
+                    <strong>NOT a radio sweep</strong>
+                  </p>
+                ) : (
+                  <p className={e.synthHonesty}>
+                    Every slice is a real broadcast (DJ, song lyric, news, ad) · auto-fires a{" "}
+                    <code>contamination.tag · radio_broadcast</code> audit marker on start ·{" "}
+                    <strong>this channel cannot produce paranormal evidence — experiential only</strong>
+                  </p>
+                )}
+              </div>
+
+              {/* Audio-source selector — sits below the readout so the
+                  receiver can flip between the deterministic synth and
+                  the broadcast-contamination sweep without leaving the
+                  panel. Defaults to synth (the evidence-safe path). */}
+              <div className={e.sourceRow}>
+                <span className={e.sourceLabel}>AUDIO</span>
+                <div className={e.sourceSegmented} role="radiogroup" aria-label="Audio source">
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={audioSource === "synth"}
+                    className={`${e.sourceOpt} ${audioSource === "synth" ? e.sourceOptActive : ""}`.trim()}
+                    onClick={() => setAudioSource("synth")}
+                  >
+                    Stochastic synth
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={audioSource === "radio"}
+                    className={`${e.sourceOpt} ${audioSource === "radio" ? e.sourceOptActive : ""}`.trim()}
+                    onClick={() => setAudioSource("radio")}
+                  >
+                    Radio sweep
+                  </button>
+                </div>
               </div>
               <button type="button" className={e.markBtn} onClick={handleReceiverMark}>
                 I heard something — log it

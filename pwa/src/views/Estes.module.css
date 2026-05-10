@@ -276,6 +276,82 @@
   font-weight: 700;
   letter-spacing: 0.4px;
 }
+.synthHonesty code {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--warning);
+  background: var(--warning-wash);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-style: normal;
+}
+
+/* Visual cue that we're playing broadcast audio — amber outline + tint
+   on the readout chrome so the operator (and anyone on camera with
+   them) can tell at a glance which mode is live. */
+.receiverDisplayRadio {
+  border-color: var(--warning);
+  box-shadow: 0 0 0 1px var(--warning-wash) inset;
+}
+.receiverDisplayRadio .synthChromeLabel {
+  color: var(--warning);
+}
+.receiverDisplayRadio .synthTrailCurrent {
+  color: var(--warning);
+  text-shadow: 0 0 18px rgba(217, 158, 32, 0.45);
+}
+.receiverDisplayRadio .synthTrailItem {
+  color: var(--warning);
+}
+.receiverDisplayRadio .synthAmpFill {
+  background: var(--warning);
+  box-shadow: 0 0 6px var(--warning);
+}
+
+/* Audio-source segmented control. Sits below the readout. Two pill
+   buttons, one selected at a time — radio-group semantics so a screen
+   reader announces "radio button". */
+.sourceRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s-12);
+}
+.sourceLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.sourceSegmented {
+  display: inline-flex;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-full);
+  padding: 3px;
+  gap: 2px;
+}
+.sourceOpt {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 6px var(--s-12);
+  border-radius: var(--r-full);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+.sourceOpt:hover:not(.sourceOptActive) {
+  color: var(--text-primary);
+}
+.sourceOptActive {
+  background: var(--signal-wash);
+  color: var(--signal);
+}
 .toggleRow {
   display: flex;
   flex-wrap: wrap;
