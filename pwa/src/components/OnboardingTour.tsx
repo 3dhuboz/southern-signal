@@ -10,6 +10,7 @@
  */
 
 import { useEffect, useState, type ReactElement } from "react";
+import { usePreferences } from "../lib/preferences";
 import s from "./OnboardingTour.module.css";
 
 const COMPLETION_KEY = "ss-onboarding-completed-v1";
@@ -108,10 +109,18 @@ function markCompleted(): void {
 export function OnboardingTour() {
   const [open, setOpen] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
+  const [prefs] = usePreferences();
+  const aocAccepted = prefs.acknowledgementOfCountry.accepted;
 
+  // The AcknowledgementGate is the ethical floor and must clear FIRST on
+  // a fresh device. Without this gate, the tour rendered over the AoC
+  // (higher z-index) and visually buried it. Sequence: AoC accepted →
+  // tour can open. The same `isCompleted()` guard still applies; once
+  // the operator finishes (or skips) the tour, it never re-opens.
   useEffect(() => {
+    if (!aocAccepted) return;
     if (!isCompleted()) setOpen(true);
-  }, []);
+  }, [aocAccepted]);
 
   useEffect(() => {
     if (!open) return;
