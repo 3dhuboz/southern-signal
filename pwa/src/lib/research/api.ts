@@ -40,6 +40,15 @@ export interface ResearchRequest {
   locationHint?: string;
   region?: "AU" | "GLOBAL";
   culturallySensitive?: boolean;
+  /** Optional drill-down on a prior finding. When set, the server biases
+   *  the prompt to extend the parent finding rather than reopening the
+   *  venue at the top level. Still counts against rate limits. */
+  followup?: {
+    parentTitle: string;
+    parentBody: string;
+    parentSources: ResearchSource[];
+    question: string;
+  };
 }
 
 export class ResearchRateLimitError extends Error {
@@ -49,12 +58,19 @@ export class ResearchRateLimitError extends Error {
   runsToday: number;
   capPerDay: number;
   oldestRunMsAgo: number;
-  constructor(runsToday: number, capPerDay: number, oldestRunMsAgo: number) {
+  /** True when the cap was enforced by the server (429), false when it
+   *  came from the client-side localStorage soft cap. Lets the UI tell
+   *  the operator "the network is over its budget — clearing storage
+   *  won't help" vs "your device has burned its share — clear storage
+   *  if you have to". */
+  fromServer: boolean;
+  constructor(runsToday: number, capPerDay: number, oldestRunMsAgo: number, fromServer = false) {
     super(`Daily research cap reached (${runsToday}/${capPerDay}). Resets ${Math.round((24 - oldestRunMsAgo / 3_600_000) * 10) / 10}h from now.`);
     this.name = "ResearchRateLimitError";
     this.runsToday = runsToday;
     this.capPerDay = capPerDay;
     this.oldestRunMsAgo = oldestRunMsAgo;
+    this.fromServer = fromServer;
   }
 }
 
@@ -118,13 +134,30 @@ export async function runResearch(req: ResearchRequest): Promise<ResearchResult>
       locationHint: req.locationHint,
       region: req.region ?? "AU",
       culturallySensitive: req.culturallySensitive ?? false,
+      followup: req.followup,
     }),
   });
 
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    let parsed: { error?: string; detail?: string } | null = null;
+    let parsed: { error?: string; detail?: string; retry_after_seconds?: number } | null = null;
     try { parsed = JSON.parse(detail); } catch { /* fall through */ }
+
+    // 429 from the server-side rate limit: lift it into the same
+    // ResearchRateLimitError type the client uses, but tagged
+    // fromServer=true so the UI can show "network is over its budget"
+    // copy rather than "your device is".
+    if (res.status === 429) {
+      const limitHeader = parseInt(res.headers.get("X-RateLimit-Limit") ?? "0", 10);
+      const resetSec = parsed?.retry_after_seconds ?? parseInt(res.headers.get("X-RateLimit-Reset-Seconds") ?? "0", 10);
+      throw new ResearchRateLimitError(
+        limitHeader || RATE_LIMIT_CAP,
+        limitHeader || RATE_LIMIT_CAP,
+        Math.max(0, 24 * 3600 * 1000 - resetSec * 1000),
+        true,
+      );
+    }
+
     const msg = parsed?.error ? `${parsed.error}${parsed.detail ? `: ${parsed.detail}` : ""}` : `Research ${res.status}: ${detail.slice(0, 200)}`;
     throw new Error(msg);
   }

@@ -42,6 +42,18 @@
 interface Env {
   OPENROUTER_API_KEY?: string;
   OPENROUTER_RESEARCH_MODEL?: string;
+  /** Optional KV binding for server-side rate limiting. Without it, only
+   *  the client soft-cap (localStorage, 3/device/24h) applies. */
+  AI_RATE_LIMIT?: KVNamespace;
+  /** Optional salt for hashing IPs before storing them in KV. Falls back
+   *  to a fixed string if absent. */
+  AI_RATE_LIMIT_SALT?: string;
+}
+
+/** Minimal Cloudflare KV type — Workers types not bundled here. */
+interface KVNamespace {
+  get(key: string): Promise<string | null>;
+  put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
 }
 
 interface PagesContext<E = unknown> {
@@ -51,11 +63,28 @@ interface PagesContext<E = unknown> {
 
 type PagesFn<E = unknown> = (ctx: PagesContext<E>) => Response | Promise<Response>;
 
+/** Server-side rate limit. Slightly more generous than the client soft-cap
+ *  (3/device/24h) so a household with multiple devices on the same IP
+ *  doesn't accidentally hit the wall, but tight enough that someone
+ *  scripting against the endpoint can't burn the cloud-AI budget. */
+const RATE_LIMIT_CAP = 5;
+const RATE_LIMIT_WINDOW_HOURS = 24;
+
 interface ResearchRequestBody {
   venueName?: string;
   locationHint?: string;
   region?: "AU" | "GLOBAL";
   culturallySensitive?: boolean;
+  /** Optional drill-down context. When present, the prompt focuses on
+   *  expanding the parent finding with additional cited details rather
+   *  than re-opening the venue from scratch. Same tier rules and
+   *  source-validation downgrade apply. */
+  followup?: {
+    parentTitle?: string;
+    parentBody?: string;
+    parentSources?: Array<{ label?: string; url?: string }>;
+    question?: string;
+  };
 }
 
 type Tier =
@@ -91,6 +120,69 @@ function corsHeaders(): Record<string, string> {
     "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
+  };
+}
+
+/** Hash the caller IP with a per-deployment salt so KV doesn't store raw
+ *  IPs. SHA-256 truncated to 24 hex chars is plenty for keyspace hygiene
+ *  given the modest QPS we expect on the research endpoint. */
+async function hashIp(ip: string, salt: string): Promise<string> {
+  const data = new TextEncoder().encode(`${salt}:${ip}`);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 24);
+}
+
+interface RateState {
+  used: number;
+  cap: number;
+  /** ms until the current 24h window rolls over. */
+  resetMs: number;
+  /** The KV key for this caller this window — only set when KV is bound,
+   *  so the increment-on-success branch can find it again. */
+  key: string | null;
+}
+
+/**
+ * Read-only check. Returns the current rate state without incrementing.
+ * The actual increment happens in `recordRateLimitRun()` AFTER the
+ * upstream call succeeds, so 5xx failures don't burn the user's budget.
+ *
+ * Race window: between read here and write later, two concurrent
+ * requests from the same IP could each see `used < cap` and both go
+ * through. That worst-case overshoot is bounded by request concurrency
+ * (typically 1 — the client UI disables the button while busy), and
+ * we'd rather under-count than block a legitimate run.
+ */
+async function readRateLimit(kv: KVNamespace | undefined, ipHash: string): Promise<RateState> {
+  const now = Date.now();
+  const bucket = Math.floor(now / (RATE_LIMIT_WINDOW_HOURS * 3_600_000));
+  const nextBucketMs = (bucket + 1) * RATE_LIMIT_WINDOW_HOURS * 3_600_000;
+  const resetMs = Math.max(0, nextBucketMs - now);
+  if (!kv) {
+    // No KV bound — only the client cap applies. Tell the client the
+    // server's view is "wide open" so it doesn't double-count.
+    return { used: 0, cap: RATE_LIMIT_CAP, resetMs, key: null };
+  }
+  const key = `research:${ipHash}:${bucket}`;
+  const raw = await kv.get(key);
+  const used = raw == null ? 0 : parseInt(raw, 10) || 0;
+  return { used, cap: RATE_LIMIT_CAP, resetMs, key };
+}
+
+async function recordRateLimitRun(kv: KVNamespace | undefined, state: RateState): Promise<void> {
+  if (!kv || !state.key) return;
+  const next = state.used + 1;
+  // TTL: a full window + 1h so the key naturally expires after the
+  // bucket rolls over.
+  const ttl = RATE_LIMIT_WINDOW_HOURS * 3600 + 3600;
+  await kv.put(state.key, String(next), { expirationTtl: ttl });
+}
+
+function rateLimitHeaders(state: RateState): Record<string, string> {
+  return {
+    "X-RateLimit-Limit": String(state.cap),
+    "X-RateLimit-Remaining": String(Math.max(0, state.cap - state.used)),
+    "X-RateLimit-Reset-Seconds": String(Math.round(state.resetMs / 1000)),
   };
 }
 
@@ -189,6 +281,33 @@ function buildUserPrompt(req: Required<Pick<ResearchRequestBody, "venueName">> &
   }
   parts.push(`Region: ${req.region ?? "AU"}`);
   parts.push("");
+
+  const fu = req.followup;
+  if (fu && (fu.question || fu.parentTitle)) {
+    // Followup turn: anchor to the parent finding so the model expands
+    // it rather than re-researching the venue at the top level.
+    parts.push("DRILL-DOWN REQUEST — expand the following finding with more cited detail:");
+    if (fu.parentTitle) parts.push(`Parent finding title: ${String(fu.parentTitle).slice(0, 200)}`);
+    if (fu.parentBody) parts.push(`Parent finding body: ${String(fu.parentBody).slice(0, 1200)}`);
+    if (Array.isArray(fu.parentSources) && fu.parentSources.length > 0) {
+      parts.push("Parent sources already cited (avoid duplicating these unless adding new context):");
+      for (const s of fu.parentSources.slice(0, 6)) {
+        const label = typeof s.label === "string" ? s.label.slice(0, 100) : "";
+        const url = typeof s.url === "string" ? s.url.slice(0, 300) : "";
+        if (url) parts.push(`  - ${label ? `${label} — ` : ""}${url}`);
+      }
+    }
+    parts.push("");
+    if (fu.question && String(fu.question).trim()) {
+      parts.push(`Operator's specific question: ${String(fu.question).slice(0, 500)}`);
+    } else {
+      parts.push("Operator's specific question: what additional documented facts can you find about this?");
+    }
+    parts.push("");
+    parts.push("Return JSON per the system prompt's format. Findings here should EXTEND the parent — new dates, names, court files, news clippings, heritage citations — not restate it. If you find nothing new with sources, return findings: [] with a brief explanatory suggestion.");
+    return parts.join("\n");
+  }
+
   parts.push("Research this venue. Return JSON per the system prompt's format.");
   return parts.join("\n");
 }
@@ -302,6 +421,32 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
     }, 403);
   }
 
+  // Server-side rate limit. The client also self-throttles via
+  // localStorage (3/device/24h), but that's bypassable by clearing
+  // storage — this gate sits at the budget choke point. Skipped
+  // gracefully when AI_RATE_LIMIT KV binding is absent (dev / preview).
+  const callerIp = request.headers.get("CF-Connecting-IP")
+    ?? request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim()
+    ?? "unknown";
+  const salt = env.AI_RATE_LIMIT_SALT || "ss-research-v1";
+  const ipHash = await hashIp(callerIp, salt);
+  const rate = await readRateLimit(env.AI_RATE_LIMIT, ipHash);
+  if (rate.used >= rate.cap) {
+    return new Response(JSON.stringify({
+      error: "Daily research cap reached on this network.",
+      detail: `Server cap is ${rate.cap} runs per 24h per network. Resets in ~${Math.round(rate.resetMs / 3_600_000)}h.`,
+      retry_after_seconds: Math.round(rate.resetMs / 1000),
+    }), {
+      status: 429,
+      headers: {
+        "Content-Type": "application/json",
+        "Retry-After": String(Math.round(rate.resetMs / 1000)),
+        ...corsHeaders(),
+        ...rateLimitHeaders(rate),
+      },
+    });
+  }
+
   const region: "AU" | "GLOBAL" = body.region === "GLOBAL" ? "GLOBAL" : "AU";
   const model = env.OPENROUTER_RESEARCH_MODEL || DEFAULT_MODEL;
   const systemPrompt = buildSystemPrompt(region);
@@ -379,6 +524,17 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
   const { findings, suggestions, search_terms_used, warnings } = validateAndCleanFindings(parsed);
   const citations_raw = Array.isArray(upstreamJson.citations) ? upstreamJson.citations.filter((s): s is string => typeof s === "string") : [];
 
+  // Only burn a rate-limit slot on a 2xx. 5xx fails (above) bypass this,
+  // matching the client behavior (recordRun() only on 200 OK).
+  try { await recordRateLimitRun(env.AI_RATE_LIMIT, rate); } catch (err) {
+    // KV write failure shouldn't block the response — it just means the
+    // user gets one bonus run. Log for ops visibility.
+    console.warn("[research] rate-limit KV write failed", err);
+  }
+  // Reflect the new state (used+1) back in headers so the client UI can
+  // display the server's view alongside its localStorage cap.
+  const newRate: RateState = { ...rate, used: rate.used + 1 };
+
   const response: ResearchResponse = {
     findings,
     suggestions,
@@ -387,5 +543,12 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
     model,
     warnings,
   };
-  return jsonResponse(response, 200);
+  return new Response(JSON.stringify(response), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json",
+      ...corsHeaders(),
+      ...rateLimitHeaders(newRate),
+    },
+  });
 };
