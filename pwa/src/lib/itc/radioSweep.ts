@@ -67,6 +67,19 @@ export class RadioSweep {
   private buffers: Map<string, AudioBuffer> = new Map();
   private stations: Station[];
   private active: AudioBufferSourceNode | null = null;
+  /** Current dwell station. Sequential playback dwells here for a few
+   *  ticks (mimicking a real spirit box on one frequency band) before
+   *  jumping to a different station. */
+  private dwellStationId: string | null = null;
+  /** Where in the dwell station's buffer we play next. Advances each
+   *  emit() so consecutive ticks hear *forward* through the same
+   *  station's content — not random fragments from random places. */
+  private dwellOffsetSec = 0;
+  /** Ticks left on the current dwell. When this hits 0 we jump to a
+   *  different station and pick a new offset + dwell length. */
+  private dwellTicksRemaining = 0;
+  /** RNG hook for tests; production is Math.random. */
+  private rng: () => number;
   private state: RadioSweepState = {
     status: "idle",
     loaded: 0,
@@ -76,8 +89,9 @@ export class RadioSweep {
   };
   private listeners = new Set<(state: RadioSweepState) => void>();
 
-  constructor(stations: readonly Station[] = DEFAULT_STATIONS) {
+  constructor(stations: readonly Station[] = DEFAULT_STATIONS, rng: () => number = Math.random) {
     this.stations = [...stations];
+    this.rng = rng;
   }
 
   subscribe(fn: (state: RadioSweepState) => void): () => void {
@@ -151,23 +165,41 @@ export class RadioSweep {
     if (this.buffers.size > 0) this.update({ status: "ready" });
   }
 
-  /** Play a short slice of a random loaded station. Mirrors
-   *  PhonemeSynth.emit() — returns the duration in ms so the UI can
-   *  drive the amplitude meter the same way. */
-  emit(opts: { durationMs?: number } = {}): { durationMs: number; station: Station | null } {
+  /** Play one slice of the current dwell station, advancing forward
+   *  through its buffer. When the dwell budget runs out, jump to a
+   *  different station and emit a brief tuner click (the audible "klik"
+   *  a real spirit-box demodulator makes catching up to a new band).
+   *
+   *  Behaviour shape (per tick at 280ms cadence):
+   *    - 3–6 consecutive ticks dwell on one station (~840-1680ms),
+   *      consecutive offsets so the listener hears forward audio.
+   *    - On the dwell-end tick: ramp the old slice out, klik, then the
+   *      next emit() picks a different station.
+   *
+   *  Returns the slice duration in ms so the UI amplitude meter can sync. */
+  emit(opts: { durationMs?: number } = {}): { durationMs: number; station: Station | null; didJump: boolean } {
     if (!this.ctx || !this.master || this.buffers.size === 0) {
-      return { durationMs: 0, station: null };
+      return { durationMs: 0, station: null, didJump: false };
     }
     const dur = (opts.durationMs ?? 250) / 1000;
-    const stationIds = Array.from(this.buffers.keys());
-    const stationId = stationIds[Math.floor(Math.random() * stationIds.length)];
-    const buf = this.buffers.get(stationId);
-    const station = this.stations.find((s) => s.id === stationId) ?? null;
-    if (!buf || !station) return { durationMs: 0, station: null };
 
-    // Random offset inside the buffer, leaving room for the slice.
-    const maxStart = Math.max(0, buf.duration - dur - 0.05);
-    const offset = maxStart * Math.random();
+    let didJump = false;
+    if (this.dwellTicksRemaining <= 0 || this.dwellStationId == null || !this.buffers.has(this.dwellStationId)) {
+      didJump = true;
+      this.pickNextDwell();
+    }
+    const station = this.stations.find((s) => s.id === this.dwellStationId) ?? null;
+    const buf = this.dwellStationId ? this.buffers.get(this.dwellStationId) ?? null : null;
+    if (!buf || !station) {
+      return { durationMs: 0, station: null, didJump: false };
+    }
+
+    // Wrap the offset back to a fresh randomised start if we'd overrun
+    // the buffer's tail — keeps dwell-forward playback running smoothly
+    // even when a station's chunk is shorter than expected.
+    if (this.dwellOffsetSec + dur + 0.05 >= buf.duration) {
+      this.dwellOffsetSec = 0.1 + (buf.duration * 0.5 * this.rng());
+    }
 
     try {
       const src = this.ctx.createBufferSource();
@@ -175,24 +207,86 @@ export class RadioSweep {
 
       const env = this.ctx.createGain();
       const t0 = this.ctx.currentTime;
+      // Slightly longer attack on dwell-continuation ticks to crossfade
+      // smoothly off the previous slice; near-instant attack on a jump
+      // (the tuner-click below fills the seam).
+      const attackSec = didJump ? 0.005 : 0.03;
       env.gain.setValueAtTime(0, t0);
-      env.gain.linearRampToValueAtTime(0.9, t0 + 0.015);
+      env.gain.linearRampToValueAtTime(0.9, t0 + attackSec);
       env.gain.linearRampToValueAtTime(0.7, t0 + dur * 0.7);
       env.gain.linearRampToValueAtTime(0, t0 + dur);
 
       src.connect(env).connect(this.master);
-      src.start(t0, offset, dur + 0.02);
-      src.stop(t0 + dur + 0.05);
+      src.start(t0, this.dwellOffsetSec, dur + 0.05);
+      src.stop(t0 + dur + 0.08);
 
-      // Keep one handle so we can interrupt cleanly on stop().
       this.active = src;
 
+      if (didJump) this.tunerClick(t0);
+
+      this.dwellOffsetSec += dur;
+      this.dwellTicksRemaining -= 1;
+
       this.update({ lastStation: station });
-      return { durationMs: dur * 1000, station };
+      return { durationMs: dur * 1000, station, didJump };
     } catch (err) {
       this.update({ error: `emit() failed: ${(err as Error).message}` });
-      return { durationMs: 0, station };
+      return { durationMs: 0, station, didJump };
     }
+  }
+
+  /** Pick a fresh dwell station + offset + tick count. Avoids picking the
+   *  same station twice in a row when the pool has more than one option. */
+  private pickNextDwell(): void {
+    const ids = Array.from(this.buffers.keys());
+    if (ids.length === 0) {
+      this.dwellStationId = null;
+      this.dwellTicksRemaining = 0;
+      this.dwellOffsetSec = 0;
+      return;
+    }
+    let candidates = ids;
+    if (ids.length > 1 && this.dwellStationId) {
+      candidates = ids.filter((id) => id !== this.dwellStationId);
+    }
+    const pick = candidates[Math.floor(this.rng() * candidates.length)];
+    this.dwellStationId = pick;
+    const buf = this.buffers.get(pick)!;
+    // Start at a random offset, leaving at least ~1.5s of runway.
+    const maxStart = Math.max(0, buf.duration - 1.5);
+    this.dwellOffsetSec = maxStart * this.rng();
+    // 3–6 consecutive ticks ≈ 840-1680ms of dwell — about right for the
+    // spirit-box "you can almost catch a word" feel without lingering
+    // long enough to coherently identify a song or sentence.
+    this.dwellTicksRemaining = 3 + Math.floor(this.rng() * 4);
+  }
+
+  /** Brief filtered-noise click to bridge two stations — sounds like an
+   *  analog tuner snapping onto a new band. Pure currentTime scheduling
+   *  so it sits cleanly inside the slice envelope. */
+  private tunerClick(t0: number): void {
+    if (!this.ctx || !this.master) return;
+    try {
+      const sr = this.ctx.sampleRate;
+      const len = Math.max(1, Math.floor(sr * 0.04)); // 40ms
+      const noise = this.ctx.createBuffer(1, len, sr);
+      const data = noise.getChannelData(0);
+      for (let i = 0; i < len; i++) {
+        const env = 1 - i / len; // linear decay
+        data[i] = (Math.random() * 2 - 1) * env * env;
+      }
+      const src = this.ctx.createBufferSource();
+      src.buffer = noise;
+      const filt = this.ctx.createBiquadFilter();
+      filt.type = "highpass";
+      filt.frequency.value = 2200;
+      filt.Q.value = 0.7;
+      const gain = this.ctx.createGain();
+      gain.gain.value = 0.18;
+      src.connect(filt).connect(gain).connect(this.master);
+      src.start(t0);
+      src.stop(t0 + 0.05);
+    } catch { /* ignore — best-effort cosmetic */ }
   }
 
   /** Replace the chunk for one station — call periodically while sweeping
@@ -221,6 +315,9 @@ export class RadioSweep {
     this.ctx = null;
     this.master = null;
     this.buffers.clear();
+    this.dwellStationId = null;
+    this.dwellTicksRemaining = 0;
+    this.dwellOffsetSec = 0;
     this.update({ status: "idle", loaded: 0, lastStation: null });
   }
 

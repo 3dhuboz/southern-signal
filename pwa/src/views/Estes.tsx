@@ -213,14 +213,20 @@ export function Estes() {
           }
 
           phonemeTimerRef.current = window.setInterval(() => {
-            const { durationMs, station } = radio.emit({ durationMs: 250 });
+            const { durationMs, station, didJump } = radio.emit({ durationMs: 250 });
             if (durationMs > 0) {
               setSynthAmp(1);
               setEmissionCount((n) => n + 1);
-              setPhonemeHistory((arr) => {
-                const next = [...arr, { phoneme: station?.name ?? "—", ts: Date.now(), station }];
-                return next.length > 12 ? next.slice(next.length - 12) : next;
-              });
+              // Only push to history on a station JUMP — otherwise the
+              // trail would repeat "BBC, BBC, BBC" across every dwell
+              // tick, drowning out the sense of scanning. Dwell ticks
+              // still drive the amplitude meter and count.
+              if (didJump) {
+                setPhonemeHistory((arr) => {
+                  const next = [...arr, { phoneme: station?.name ?? "—", ts: Date.now(), station }];
+                  return next.length > 12 ? next.slice(next.length - 12) : next;
+                });
+              }
             }
           }, 280);
 
