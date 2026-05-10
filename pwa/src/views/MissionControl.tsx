@@ -468,6 +468,7 @@ export function MissionControl() {
           elapsedSeconds={elapsedSeconds}
           caseId={session.current?.id ?? null}
           caseTitle={session.current?.title ?? null}
+          caseLocationName={session.current?.location_name ?? null}
           statusMsg={statusMsg}
           recentIncrements={siteSession.recentIncrements}
           trustworthy={trustworthy}

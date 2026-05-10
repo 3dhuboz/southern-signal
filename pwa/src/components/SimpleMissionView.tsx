@@ -16,7 +16,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { ResearchSnapshot } from "./ResearchSnapshot";
 import { ScreenRecordButton } from "./ScreenRecordButton";
+import { usePreferences } from "../lib/preferences";
 import type { LogIncrement } from "../lib/posterior/posterior";
 import type { BaselineSummary } from "../lib/posterior/sessionBaseline";
 import {
@@ -56,6 +58,10 @@ interface SimpleMissionViewProps {
   elapsedSeconds: number;
   caseId: string | null;
   caseTitle: string | null;
+  /** Location name from the investigations row — used to match
+   *  standalone (pre-visit recon) dossiers whose venue_name lines up
+   *  with this case's location. Null when not yet set. */
+  caseLocationName: string | null;
   statusMsg: string;
   recentIncrements: LogIncrement[];
   trustworthy: boolean;
@@ -180,13 +186,15 @@ function relativeTime(now: number, ts: number): string {
 
 export function SimpleMissionView(props: SimpleMissionViewProps) {
   const {
-    running, busy, posterior, elapsedSeconds, caseId, caseTitle, statusMsg,
+    running, busy, posterior, elapsedSeconds, caseId, caseTitle, caseLocationName, statusMsg,
     recentIncrements, trustworthy, baseline, hasInvestigation, investigationId,
     audioRms, sectorReading, narratorCaption, narratorSpeak, onToggleNarratorSpeak,
     onBegin, onStop, onMarker, onAskQuestion, onBroadcastLive, broadcasting, recordingClip,
     culturallySensitive, onToggleSensitive,
     emitEvidence,
   } = props;
+  const [prefs] = usePreferences();
+  const researchEnabled = prefs.research.enabled;
   const [markSheetOpen, setMarkSheetOpen] = useState(false);
   const [latched, setLatched] = useState<string | null>(null);
   const [spectrum, setSpectrum] = useState<number[]>(() => Array(24).fill(0.04));
@@ -312,6 +320,18 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
         )}
 
       </div>
+
+      {/* SAVED RESEARCH SNAPSHOT — shown only when at least one dossier
+          exists for the case (or a standalone recon dossier matches the
+          venue) AND the operator has the AI Investigator enabled.
+          Renders null otherwise; safe to drop in unconditionally. */}
+      {researchEnabled && (
+        <ResearchSnapshot
+          investigationId={investigationId}
+          caseTitle={caseTitle}
+          caseLocationName={caseLocationName}
+        />
+      )}
 
       {/* AI CO-INVESTIGATOR — live narration + speech toggle */}
       <div className={`${s.narrator} ${narratorCaption ? s.narratorActive : ""}`.trim()}>
@@ -450,11 +470,13 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
           <span className={s.quickLabel}>Ask a question</span>
           <span className={s.quickHint}>Respectful prompt by AI</span>
         </button>
-        <Link to="/research" className={s.quick}>
-          <span className={s.quickIcon} aria-hidden="true">🗂️</span>
-          <span className={s.quickLabel}>Research venue</span>
-          <span className={s.quickHint}>AI archive deep-dive · cited</span>
-        </Link>
+        {researchEnabled && (
+          <Link to="/research" className={s.quick}>
+            <span className={s.quickIcon} aria-hidden="true">🗂️</span>
+            <span className={s.quickLabel}>Research venue</span>
+            <span className={s.quickHint}>AI archive deep-dive · cited</span>
+          </Link>
+        )}
       </div>
 
       {/* EVENT FEED */}
