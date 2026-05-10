@@ -5,7 +5,7 @@ import { OnboardingTour } from "./components/OnboardingTour";
 import { AppHeader } from "./components/AppHeader";
 import { BottomNav } from "./components/BottomNav";
 import { MissionControl } from "./views/MissionControl";
-import { isPastCivilTwilight } from "./lib/sensors/civilTwilight";
+import { sunAltitudeDeg } from "./lib/sensors/civilTwilight";
 import { applyTheme, setPreferences, usePreferences } from "./lib/preferences";
 import "./styles/global.css";
 
@@ -35,14 +35,18 @@ export default function App() {
     applyTheme(prefs.theme, prefs.scotopicLevel);
   }, [prefs.theme, prefs.scotopicLevel]);
 
-  // Civil-twilight auto-engage. Runs once on mount only — manual toggling
-  // wins for the session.
+  // Time-of-day theme auto-engage. Runs once on mount only — manual
+  // toggling wins for the session. Symmetric:
+  //   sun altitude ≤ -6°  (past civil dusk)        → scotopic mid
+  //   sun altitude ≥ +6°  (definitively daylight)  → daylight
+  //   in between (civil twilight): leave the current theme alone
+  // Only fires when the geolocation permission was previously granted —
+  // never prompts, never nags.
   useEffect(() => {
     if (civilTwilightChecked.current) return;
     civilTwilightChecked.current = true;
-    if (!prefs.scotopicAutoEngage || prefs.theme === "scotopic") return;
+    if (!prefs.scotopicAutoEngage) return;
     if (typeof navigator === "undefined" || !navigator.geolocation) return;
-    // Don't prompt — only proceed if the permission has already been granted.
     void (async () => {
       try {
         const status = await (navigator.permissions?.query?.({ name: "geolocation" as PermissionName }) ?? Promise.resolve({ state: "prompt" } as PermissionStatus));
@@ -50,9 +54,16 @@ export default function App() {
       } catch { return; }
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          if (!isPastCivilTwilight(new Date(), pos.coords.latitude, pos.coords.longitude)) return;
-          setPreferences({ theme: "scotopic", scotopicLevel: "mid" });
-          applyTheme("scotopic", "mid");
+          const altDeg = sunAltitudeDeg(new Date(), pos.coords.latitude, pos.coords.longitude);
+          if (altDeg <= -6 && prefs.theme !== "scotopic") {
+            setPreferences({ theme: "scotopic", scotopicLevel: "mid" });
+            applyTheme("scotopic", "mid");
+          } else if (altDeg >= 6 && prefs.theme !== "daylight") {
+            setPreferences({ theme: "daylight" });
+            applyTheme("daylight");
+          }
+          // Civil twilight band (-6° < altitude < +6°): leave the existing
+          // theme — operator's manual choice or the persisted default wins.
         },
         () => { /* silent — no nag */ },
         { maximumAge: 600_000, timeout: 5000 },
