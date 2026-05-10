@@ -48,6 +48,10 @@ export class EvpRecorder {
   private sampleRate = 48000;
   private timerHandle: number | null = null;
   private outputPath: string | null = null;
+  private sourceNode: MediaStreamAudioSourceNode | null = null;
+  private workletNode: AudioWorkletNode | null = null;
+  private scriptProcessor: ScriptProcessorNode | null = null;
+  private processingPath: "worklet" | "script-processor" | null = null;
 
   subscribe(listener: EvpRecorderListener): () => void {
     this.listeners.add(listener);
@@ -77,16 +81,53 @@ export class EvpRecorder {
       this.audioCtx = new AudioContext({ sampleRate: 48000 });
       this.sampleRate = this.audioCtx.sampleRate;
       const source = this.audioCtx.createMediaStreamSource(this.mediaStream);
-      const processor = this.audioCtx.createScriptProcessor(4096, 1, 1);
-      processor.onaudioprocess = (event) => {
-        const channel = event.inputBuffer.getChannelData(0);
-        // Copy because the underlying buffer is reused.
-        this.chunks.push(new Float32Array(channel));
-      };
-      source.connect(processor);
-      processor.connect(this.audioCtx.destination);
+      this.sourceNode = source;
+
+      // Feature-detect AudioWorklet (Safari 14.5+, Chrome 66+, Firefox 76+)
+      // and fall back to the deprecated ScriptProcessorNode on older browsers
+      // or if module loading fails (e.g. PWA offline cache miss).
+      let useWorklet = false;
+      if (this.audioCtx.audioWorklet && typeof this.audioCtx.audioWorklet.addModule === "function") {
+        try {
+          await this.audioCtx.audioWorklet.addModule("/audio-worklet-recorder.js");
+          useWorklet = true;
+        } catch {
+          useWorklet = false;
+        }
+      }
+
+      if (useWorklet) {
+        const node = new AudioWorkletNode(this.audioCtx, "audio-worklet-recorder");
+        node.port.onmessage = (event: MessageEvent<Float32Array>) => {
+          // Buffer was transferred from the worklet — already a fresh copy.
+          if (event.data instanceof Float32Array) {
+            this.chunks.push(event.data);
+          }
+        };
+        source.connect(node);
+        // Connecting to destination keeps the graph alive in some browsers;
+        // the processor never writes to outputs[0], so output is silent.
+        node.connect(this.audioCtx.destination);
+        this.workletNode = node;
+        this.processingPath = "worklet";
+      } else {
+        const processor = this.audioCtx.createScriptProcessor(4096, 1, 1);
+        processor.onaudioprocess = (event) => {
+          const channel = event.inputBuffer.getChannelData(0);
+          // Copy because the underlying buffer is reused.
+          this.chunks.push(new Float32Array(channel));
+        };
+        source.connect(processor);
+        processor.connect(this.audioCtx.destination);
+        this.scriptProcessor = processor;
+        this.processingPath = "script-processor";
+      }
 
       this.outputPath = opfsPath;
+      // Reference processingPath here so TS doesn't warn about an unused
+      // private field — the value is genuinely useful when debugging which
+      // pipeline ran (worklet vs script-processor) but we keep it internal.
+      void this.processingPath;
       this.update({ status: "recording", startedAt: Date.now(), durationSeconds: 0 });
       this.timerHandle = window.setInterval(() => {
         if (this.state.startedAt) {
@@ -105,6 +146,19 @@ export class EvpRecorder {
     if (this.timerHandle != null) { window.clearInterval(this.timerHandle); this.timerHandle = null; }
 
     try {
+      // Disconnect whichever processing path was active, then tear down
+      // the source and stop mic tracks before closing the AudioContext.
+      if (this.workletNode) {
+        try { this.workletNode.port.onmessage = null; } catch { /* swallow */ }
+        try { this.workletNode.disconnect(); } catch { /* swallow */ }
+      }
+      if (this.scriptProcessor) {
+        try { this.scriptProcessor.onaudioprocess = null; } catch { /* swallow */ }
+        try { this.scriptProcessor.disconnect(); } catch { /* swallow */ }
+      }
+      if (this.sourceNode) {
+        try { this.sourceNode.disconnect(); } catch { /* swallow */ }
+      }
       this.mediaStream?.getTracks().forEach((t) => t.stop());
       await this.audioCtx?.close();
     } catch { /* swallow */ }
@@ -130,6 +184,10 @@ export class EvpRecorder {
     this.mediaStream = null;
     this.audioCtx = null;
     this.outputPath = null;
+    this.sourceNode = null;
+    this.workletNode = null;
+    this.scriptProcessor = null;
+    this.processingPath = null;
     this.update({ status: "idle", startedAt: null });
 
     return result;
