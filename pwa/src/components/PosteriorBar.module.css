@@ -1,4 +1,7 @@
 .wrap {
+  /* Local custom property so SVG fills/strokes can pick it up via inherit
+     and the daylight override below stays in one place. */
+  --posterior-elevated: #F29A5D;
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-lg);
@@ -6,6 +9,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--s-8);
+}
+:global([data-theme="daylight"]) .wrap {
+  --posterior-elevated: #C2410C;
 }
 
 .label {
@@ -31,7 +37,7 @@
   letter-spacing: -0.3px;
 }
 .value[data-band="flag"] { color: var(--danger); }
-.value[data-band="elevated"] { color: #F29A5D; }
+.value[data-band="elevated"] { color: var(--posterior-elevated); }
 .value[data-band="inconclusive"] { color: var(--warning); }
 
 .bandLabel {
@@ -43,7 +49,7 @@
   color: var(--text-muted);
 }
 .bandLabel[data-band="flag"] { color: var(--danger); }
-.bandLabel[data-band="elevated"] { color: #F29A5D; }
+.bandLabel[data-band="elevated"] { color: var(--posterior-elevated); }
 .bandLabel[data-band="inconclusive"] { color: var(--warning); }
 
 .svg {

@@ -11,8 +11,70 @@
  * (HCI panel insight).
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import s from "./EvidenceLedger.module.css";
+
+/**
+ * Theme-derived colours read from CSS custom properties on <html>.
+ * Canvas can't dereference `var(...)` directly, so we resolve them once
+ * at mount and on every theme change (MutationObserver on data-theme).
+ */
+interface CanvasTheme {
+  bg: string;
+  grid: string;
+  rowSep: string;
+  label: string;
+  breath: string;
+  cursor: string;
+}
+
+function readCanvasTheme(): CanvasTheme {
+  const cs = getComputedStyle(document.documentElement);
+  const get = (name: string, fallback: string) => {
+    const v = cs.getPropertyValue(name).trim();
+    return v || fallback;
+  };
+  // Canvas bg matches --bg-inset (the wrapper's bg) so the seam is invisible.
+  const bg = get("--bg-inset", "#0A0E14");
+  const border = get("--border-default", "#262E3A");
+  const muted = get("--text-muted", "#5C6677");
+  const signal = get("--signal", "#5DF2C7");
+  return {
+    bg,
+    grid: withAlpha(border, 0.5),
+    rowSep: withAlpha(border, 0.4),
+    label: withAlpha(muted, 0.85),
+    breath: withAlpha(signal, 0.18),
+    cursor: withAlpha(signal, 0.5),
+  };
+}
+
+/**
+ * Apply alpha to a colour string. Handles `#RGB`, `#RRGGBB`, and `rgb(...)`.
+ * Falls back to the original colour on parse failure.
+ */
+function withAlpha(color: string, alpha: number): string {
+  const c = color.trim();
+  if (c.startsWith("#")) {
+    let r = 0, g = 0, b = 0;
+    if (c.length === 4) {
+      r = parseInt(c[1] + c[1], 16);
+      g = parseInt(c[2] + c[2], 16);
+      b = parseInt(c[3] + c[3], 16);
+    } else if (c.length === 7) {
+      r = parseInt(c.slice(1, 3), 16);
+      g = parseInt(c.slice(3, 5), 16);
+      b = parseInt(c.slice(5, 7), 16);
+    } else {
+      return c;
+    }
+    if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return c;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  const m = c.match(/^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/);
+  if (m) return `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${alpha})`;
+  return c;
+}
 
 export interface LedgerStreamSample {
   /** Wall-clock ms (used to align columns). */
@@ -44,10 +106,22 @@ const TOP_PAD = 4;
 export function EvidenceLedger({ streams, pixelsPerSecond = 24, columnMs = 80, noiseFloor = 0.05 }: EvidenceLedgerProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const breathPhase = useRef(0);
+  const [theme, setTheme] = useState<CanvasTheme | null>(null);
+
+  // Resolve CSS variables on mount, then refresh whenever the theme attribute
+  // on <html> flips (phosphor / scotopic / daylight).
+  useEffect(() => {
+    setTheme(readCanvasTheme());
+    const target = document.documentElement;
+    const obs = new MutationObserver(() => setTheme(readCanvasTheme()));
+    obs.observe(target, { attributes: true, attributeFilter: ["data-theme", "data-scotopic-level"] });
+    return () => obs.disconnect();
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    if (!theme) return;
     let raf = 0;
     let mounted = true;
 
@@ -64,12 +138,13 @@ export function EvidenceLedger({ streams, pixelsPerSecond = 24, columnMs = 80, n
       if (!ctx) { raf = requestAnimationFrame(draw); return; }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      // Background
-      ctx.fillStyle = "#0A0E14";
+      // Background — pulled from --bg-inset so the canvas matches its
+      // wrapper across phosphor / scotopic / daylight themes.
+      ctx.fillStyle = theme.bg;
       ctx.fillRect(0, 0, w, h);
 
       // Subtle grid: vertical 1s lines.
-      ctx.strokeStyle = "rgba(38, 46, 58, 0.5)";
+      ctx.strokeStyle = theme.grid;
       ctx.lineWidth = 1;
       for (let x = w; x >= 0; x -= pixelsPerSecond) {
         ctx.beginPath();
@@ -84,19 +159,19 @@ export function EvidenceLedger({ streams, pixelsPerSecond = 24, columnMs = 80, n
       streams.forEach((stream, idx) => {
         const yMid = TOP_PAD + idx * (ROW_HEIGHT + 6) + ROW_HEIGHT / 2;
         // Row separator
-        ctx.strokeStyle = "rgba(38, 46, 58, 0.4)";
+        ctx.strokeStyle = theme.rowSep;
         ctx.beginPath();
         ctx.moveTo(0, yMid + ROW_HEIGHT / 2 + 2);
         ctx.lineTo(w, yMid + ROW_HEIGHT / 2 + 2);
         ctx.stroke();
-        // Label on the left
-        ctx.fillStyle = "var(--text-muted) rgb(108, 119, 138)";
+        // Label on the left (canvas can't use var(...), so the colour is
+        // resolved from --text-muted via theme).
         ctx.font = "9px ui-monospace, SFMono-Regular, monospace";
-        ctx.fillStyle = "rgba(155, 166, 184, 0.6)";
+        ctx.fillStyle = theme.label;
         ctx.fillText(stream.label, 4, yMid - 4);
 
         // Breath-line: gentle sinusoid at 0.5 Hz, amplitude scaled by noiseFloor
-        ctx.strokeStyle = "rgba(93, 242, 199, 0.10)";
+        ctx.strokeStyle = theme.breath;
         ctx.lineWidth = 1;
         ctx.beginPath();
         for (let x = 0; x < w; x += 2) {
@@ -121,7 +196,7 @@ export function EvidenceLedger({ streams, pixelsPerSecond = 24, columnMs = 80, n
       });
 
       // "Now" cursor on the right edge
-      ctx.strokeStyle = "rgba(93, 242, 199, 0.4)";
+      ctx.strokeStyle = theme.cursor;
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(w - 1, 0);
@@ -137,7 +212,7 @@ export function EvidenceLedger({ streams, pixelsPerSecond = 24, columnMs = 80, n
       mounted = false;
       cancelAnimationFrame(raf);
     };
-  }, [streams, pixelsPerSecond, columnMs, noiseFloor]);
+  }, [streams, pixelsPerSecond, columnMs, noiseFloor, theme]);
 
   const height = TOP_PAD * 2 + streams.length * (ROW_HEIGHT + 6);
 

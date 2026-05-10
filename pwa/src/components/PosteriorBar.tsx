@@ -23,7 +23,9 @@ interface PosteriorBarProps {
 const COLOR_BY_BAND: Record<ReturnType<typeof classifyPosterior>, string> = {
   below: "var(--text-muted)",
   inconclusive: "var(--warning)",
-  elevated: "#F29A5D",
+  // --posterior-elevated is defined on .wrap (orange) with a darker
+  // shade under [data-theme="daylight"] so it stays readable on white.
+  elevated: "var(--posterior-elevated)",
   flag: "var(--danger)",
 };
 
@@ -76,7 +78,7 @@ export function PosteriorBar({ posterior, recentIncrements, prior }: PosteriorBa
         <line x1={priorX} x2={priorX} y1="6" y2="18" stroke="var(--text-dim)" strokeWidth="0.6" />
         {/* Threshold ticks burned in */}
         <line x1={inconclusiveX} x2={inconclusiveX} y1="4" y2="20" stroke="var(--warning)" strokeWidth="0.8" />
-        <line x1={elevatedX} x2={elevatedX} y1="4" y2="20" stroke="#F29A5D" strokeWidth="0.8" />
+        <line x1={elevatedX} x2={elevatedX} y1="4" y2="20" stroke="var(--posterior-elevated)" strokeWidth="0.8" />
         <line x1={flagX} x2={flagX} y1="4" y2="20" stroke="var(--danger)" strokeWidth="0.8" />
       </svg>
 
