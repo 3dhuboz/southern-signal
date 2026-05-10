@@ -18,7 +18,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  BASELINE_DEFAULT_DURATION_SECONDS,
+  BASELINE_DURATIONS_SECONDS,
+  type BaselineDurationKey,
   type BaselineState,
   type BaselineSummary,
   createBaselineCapture,
@@ -42,9 +43,24 @@ interface SessionBaselineCardProps {
 
 const SAMPLE_INTERVAL_MS = 200; // 5 Hz — comfortably inside the 4–8 Hz target
 
+const DURATION_OPTIONS: { key: BaselineDurationKey; label: string; sub: string }[] = [
+  { key: "quick",    label: "Quick · 90s",     sub: "Public sites, noisy rooms" },
+  { key: "standard", label: "Standard · 5 min", sub: "Field practice default" },
+  { key: "patient",  label: "Patient · 10 min", sub: "Forensic-grade silence" },
+];
+
 function formatNumber(value: number, digits = 2): string {
   if (!Number.isFinite(value)) return "—";
   return value.toFixed(digits);
+}
+
+/** Format remaining seconds: ≤90s as "Ns", longer as "M:SS" so a 10-min countdown reads naturally. */
+function formatRemaining(seconds: number): string {
+  const t = Math.max(0, Math.floor(seconds));
+  if (t < 100) return `${t}s`;
+  const mm = Math.floor(t / 60);
+  const ss = (t % 60).toString().padStart(2, "0");
+  return `${mm}:${ss}`;
 }
 
 function formatTimestamp(iso: string): string {
@@ -61,7 +77,8 @@ export function SessionBaselineCard(props: SessionBaselineCardProps) {
   const { investigationId, baseline, audioRms, emfMagnitude, sessionRunning, onComplete } = props;
 
   const [captureState, setCaptureState] = useState<BaselineState>("idle");
-  const [secondsRemaining, setSecondsRemaining] = useState<number>(BASELINE_DEFAULT_DURATION_SECONDS);
+  const [selectedDuration, setSelectedDuration] = useState<BaselineDurationKey>("quick");
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(BASELINE_DURATIONS_SECONDS.quick);
   const [sampleCount, setSampleCount] = useState<number>(0);
   const [liveRms, setLiveRms] = useState<number>(0);
 
@@ -92,7 +109,7 @@ export function SessionBaselineCard(props: SessionBaselineCardProps) {
     controllerRef.current = controller;
     setSampleCount(0);
     setLiveRms(0);
-    setSecondsRemaining(BASELINE_DEFAULT_DURATION_SECONDS);
+    setSecondsRemaining(BASELINE_DURATIONS_SECONDS[selectedDuration]);
     controller.start({
       onSample: (_sample, count) => {
         setSampleCount(count);
@@ -158,7 +175,7 @@ export function SessionBaselineCard(props: SessionBaselineCardProps) {
     controllerRef.current?.stop();
     controllerRef.current = null;
     setCaptureState("idle");
-    setSecondsRemaining(BASELINE_DEFAULT_DURATION_SECONDS);
+    setSecondsRemaining(BASELINE_DURATIONS_SECONDS[selectedDuration]);
   };
 
   // Live RMS bar — clamp + slight amplification for visual range.
@@ -188,13 +205,28 @@ export function SessionBaselineCard(props: SessionBaselineCardProps) {
           <p className={s.framing}>
             Establishes a noise floor for this site so deviations have a reference point. Don't talk during the capture.
           </p>
+          <div className={s.durationRow} role="radiogroup" aria-label="Baseline capture duration">
+            {DURATION_OPTIONS.map((opt) => (
+              <button
+                key={opt.key}
+                type="button"
+                role="radio"
+                aria-checked={selectedDuration === opt.key}
+                className={`${s.durationChip} ${selectedDuration === opt.key ? s.durationChipActive : ""}`.trim()}
+                onClick={() => setSelectedDuration(opt.key)}
+              >
+                <span className={s.durationLabel}>{opt.label}</span>
+                <span className={s.durationSub}>{opt.sub}</span>
+              </button>
+            ))}
+          </div>
           <button
             type="button"
             className={s.captureBtn}
             onClick={beginCapture}
             disabled={!investigationId}
           >
-            Capture room baseline ({BASELINE_DEFAULT_DURATION_SECONDS}s)
+            Capture room baseline ({DURATION_OPTIONS.find((o) => o.key === selectedDuration)?.label})
           </button>
           <p className={s.skipNote}>Optional. You can begin a session without it.</p>
         </>
@@ -203,7 +235,7 @@ export function SessionBaselineCard(props: SessionBaselineCardProps) {
       {showCapturing && (
         <div className={s.capturingBlock}>
           <div className={s.countdownRow}>
-            <span className={s.countdown}>{secondsRemaining}s</span>
+            <span className={s.countdown}>{formatRemaining(secondsRemaining)}</span>
             <span className={s.countdownLabel}>REMAINING</span>
           </div>
           <div className={s.rmsBarOuter} aria-hidden="true">

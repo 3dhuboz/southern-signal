@@ -253,3 +253,17 @@ export function clearBaseline(investigationId: string): void {
 
 /** Default duration the UI captures for. 90 seconds is the V1 target. */
 export const BASELINE_DEFAULT_DURATION_SECONDS = 90;
+
+/**
+ * Patient-mode duration presets. Real paranormal field practice runs a
+ * 5–10 minute "empty room" recording; the 90s quick mode is a condensed
+ * version for impatient operators or noisy public sites where a longer
+ * passive capture isn't feasible.
+ */
+export const BASELINE_DURATIONS_SECONDS = {
+  quick: 90,
+  standard: 300,
+  patient: 600,
+} as const;
+
+export type BaselineDurationKey = keyof typeof BASELINE_DURATIONS_SECONDS;

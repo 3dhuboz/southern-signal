@@ -37,6 +37,51 @@
   line-height: 1.45;
 }
 
+/* Duration chips — radiogroup so an operator can pick quick / standard / patient
+   before tapping the capture button. Mobile-first: chips stack on narrow widths. */
+.durationRow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.durationChip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms;
+}
+.durationChip:hover { background: var(--bg-overlay); }
+.durationChipActive {
+  border-color: var(--signal);
+  background: var(--signal-wash);
+  color: var(--signal);
+}
+.durationLabel {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+.durationSub {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: 0.2px;
+}
+.durationChipActive .durationSub { color: var(--signal); opacity: 0.8; }
+@media (max-width: 380px) {
+  .durationRow { grid-template-columns: 1fr; }
+}
+
 .captureBtn {
   display: inline-flex;
   align-items: center;
