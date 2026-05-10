@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { AHT_H0_SUSPEND_THRESHOLD, computeH0Confidence } from "../lib/posterior/ahtVerdict";
 import { BaseRatePanel } from "../components/BaseRatePanel";
 import { CaseManager } from "../components/CaseManager";
 import { query } from "../lib/db/db";
@@ -97,12 +98,10 @@ export function Review() {
       };
     });
 
-  // H₀ — AI insufficiency. Computed from `ai.debunk.proposed` audit entries
-  // that carry max_plausibility. Per request, insufficiency = 1 - max_plausibility
-  // (high when the AI couldn't propose any plausible mundane explanation).
-  // The displayed confidence is the mean across the operator's last 30
-  // debunk requests, fallback 0.18 when there's no usable history yet
-  // (matches the historical placeholder value so existing copy still applies).
+  // H₀ — AI insufficiency. Computed from the 30 most-recent
+  // `ai.debunk.proposed` audit entries carrying max_plausibility, via the
+  // shared helper. When H₀ ≥ the suspend threshold the AHT post-roll engine
+  // SUSPENDS — every case renders INCONCLUSIVE instead of a positive verdict.
   const debunkAttempts = entries
     .filter((e) => e.kind === "ai.debunk.proposed")
     .map((e) => {
@@ -113,12 +112,12 @@ export function Review() {
     })
     .filter((p): p is number => p !== null && Number.isFinite(p))
     .slice(0, 30); // entries are ordered DESC so this is the 30 most recent
-  const h0Confidence = debunkAttempts.length > 0
-    ? debunkAttempts.reduce((sum, p) => sum + (1 - p), 0) / debunkAttempts.length
-    : 0.18;
+  const h0 = computeH0Confidence(debunkAttempts);
+  const h0Confidence = h0.value;
   const h0Pct = Math.round(h0Confidence * 100);
-  const h0Computed = debunkAttempts.length > 0;
-  const h0Useful = h0Confidence < 0.4;
+  const h0Computed = h0.fromData;
+  const h0Useful = h0Confidence < AHT_H0_SUSPEND_THRESHOLD;
+  const postRollSuspended = h0Confidence >= AHT_H0_SUSPEND_THRESHOLD;
 
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -252,7 +251,7 @@ export function Review() {
       <BaseRatePanel />
 
       {/* AI sanity meta-card */}
-      <div className={r.h0Card}>
+      <div className={`${r.h0Card} ${postRollSuspended ? r.h0CardSuspended : ""}`.trim()}>
         <div className={r.h0Header}>
           <strong>{isPro ? "H₀ — AI insufficiency" : "AI sanity check"}</strong>
           <span className={r.h0Confidence}>
@@ -263,11 +262,23 @@ export function Review() {
                 : "no data yet"}
           </span>
         </div>
+        <div className={`${r.h0EngineRow} ${postRollSuspended ? r.h0EngineSuspended : r.h0EngineActive}`.trim()}>
+          <span className={r.h0EngineDot} aria-hidden="true" />
+          {postRollSuspended ? (
+            isPro
+              ? <>POST-ROLL <strong>SUSPENDED</strong> — every case renders INCONCLUSIVE while H₀ ≥ {AHT_H0_SUSPEND_THRESHOLD.toFixed(2)}. Run more debunk requests with reliable mundane explanations to bring it back.</>
+              : <>Verdicts <strong>paused</strong> — the AI hasn't been reliable enough lately, so every case shows "inconclusive" until that improves.</>
+          ) : (
+            isPro
+              ? <>POST-ROLL <strong>ACTIVE</strong> — verdicts computed normally. Suspend threshold is H₀ ≥ {AHT_H0_SUSPEND_THRESHOLD.toFixed(2)}.</>
+              : <>Verdicts <strong>active</strong> — the AI is doing its job, so cases get a real verdict.</>
+          )}
+        </div>
         <p className={r.h0Body}>
           {isPro ? (
-            <>When AI fails to generate plausible mundane explanations, that's a model limitation, not evidence of the paranormal. If H₀ confidence exceeds 0.4 the post-roll renders <em>INCONCLUSIVE — model limitations exceed evidence threshold</em> instead of any verdict. Computed as mean(1 − max-plausibility) across recent debunk requests.</>
+            <>When AI fails to generate plausible mundane explanations, that's a model limitation, not evidence of the paranormal. If H₀ confidence exceeds {AHT_H0_SUSPEND_THRESHOLD.toFixed(1)} the post-roll renders <em>INCONCLUSIVE — model limitations exceed evidence threshold</em> instead of any verdict. Computed as mean(1 − max-plausibility) across recent debunk requests; the per-case verdict appears on the Evidence Brief.</>
           ) : (
-            <>If the AI can't think of normal explanations for what you saw, that's a limit of the AI, NOT proof of a ghost. When this number climbs above 40% we mark the case <em>inconclusive</em> instead of giving any verdict.</>
+            <>If the AI can't think of normal explanations for what you saw, that's a limit of the AI, NOT proof of a ghost. When this number climbs above 40% we mark the case <em>inconclusive</em> instead of giving any verdict. Print a case brief for the full verdict.</>
           )}
         </p>
       </div>
