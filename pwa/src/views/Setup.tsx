@@ -252,6 +252,26 @@ export function Setup() {
         </label>
       </section>
 
+      {/* AI Investigator */}
+      <section className={st.panel}>
+        <header className={st.panelHeader}>
+          <h2 className={st.panelTitle}>AI Investigator</h2>
+        </header>
+        <label className={st.toggleRow}>
+          <span>
+            <strong>Enable venue archive deep-dive</strong>
+            <span className={st.toggleHint}>
+              Routes venue research through Perplexity Sonar via the OpenRouter proxy, returns tier-classified findings with primary-source citations. Counts against a 3/device/24h soft cap. Always refused on culturally-sensitive cases regardless of this toggle. Turn off to hide every entry point and the /research route entirely.
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            checked={prefs.research.enabled}
+            onChange={(e) => setPrefs({ research: { ...prefs.research, enabled: e.target.checked } })}
+          />
+        </label>
+      </section>
+
       {/* Privacy */}
       <section className={st.panel}>
         <header className={st.panelHeader}>

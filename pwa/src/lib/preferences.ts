@@ -55,6 +55,20 @@ export interface AppPreferences {
      */
     autoTranscribe: boolean;
   };
+  /** AI Investigator (venue archive deep-dive) preferences. */
+  research: {
+    /**
+     * Master switch. When false the /research route + every entry point
+     * (SimpleMissionView quick-action tile, CaseManager link, snapshot
+     * card, MissionControl details) is hidden. Default ON.
+     *
+     * Cultural-sensitivity flags (global + per-case) sit *above* this —
+     * even with research.enabled = true, a sensitive case is still
+     * hard-blocked. This switch is for operators who don't want cloud
+     * AI in their workflow at all, period.
+     */
+    enabled: boolean;
+  };
 }
 
 const DEFAULTS: AppPreferences = {
@@ -67,6 +81,7 @@ const DEFAULTS: AppPreferences = {
   globalCulturalSensitivityFlag: false,
   sync: { enabled: false, endpoint: "", token: null },
   evp: { autoTranscribe: false },
+  research: { enabled: true },
 };
 
 const KEY = "ss-preferences-v1";
@@ -84,6 +99,7 @@ function read(): AppPreferences {
       ai: { ...DEFAULTS.ai, ...(parsed.ai ?? {}), blockOnSensitive: true },
       sync: { ...DEFAULTS.sync, ...(parsed.sync ?? {}) },
       evp: { ...DEFAULTS.evp, ...(parsed.evp ?? {}) },
+      research: { ...DEFAULTS.research, ...(parsed.research ?? {}) },
     };
   } catch {
     return DEFAULTS;
@@ -108,6 +124,7 @@ export function setPreferences(patch: Partial<AppPreferences>): AppPreferences {
     ai: { ...current.ai, ...(patch.ai ?? {}), blockOnSensitive: true },
     sync: { ...current.sync, ...(patch.sync ?? {}) },
     evp: { ...current.evp, ...(patch.evp ?? {}) },
+    research: { ...current.research, ...(patch.research ?? {}) },
   };
   write(next);
   return next;
