@@ -75,7 +75,13 @@ export function MissionControl() {
   const [audioRms, setAudioRms] = useState<number>(0.05);
   const analyzerRef = useRef<LiveAnalyzer | null>(null);
   const sectorReadingRef = useRef<SectorReading | null>(null);
+  // Debounce refs — set on every emit ATTEMPT, including refused ones.
+  // Prevents a flood of LR computations when the upstream sensor alarm
+  // fires repeatedly. Distinct from lastEmissionTsRef.current.* below,
+  // which only updates on SUCCESSFUL fires (so coupling checks never see
+  // a refused emit as a "recent fire").
   const lastAcousticEmitTsRef = useRef<number>(0);
+  const lastMagnetometerEmitTsRef = useRef<number>(0);
   const aiAssistantRef = useRef<HTMLDivElement | null>(null);
   const liveStreamRef = useRef<HTMLDivElement | null>(null);
   const [pendingDispositionFor, setPendingDispositionFor] = useState<string | null>(null);
@@ -202,9 +208,10 @@ export function MissionControl() {
     if (!running || analyzerRef.current) return; // skip if real audio analyzer is running
     if (!sensors.vibration?.alert) return;
     const now = Date.now();
-    const last = lastEmissionTsRef.current.acoustic;
-    if (last && now - last < 2000) return;
-    lastEmissionTsRef.current.acoustic = now;
+    // Debounce ALL attempts (including refused) — prevents flooding when
+    // the vibration sensor alarm fires repeatedly.
+    if (lastAcousticEmitTsRef.current && now - lastAcousticEmitTsRef.current < 2000) return;
+    lastAcousticEmitTsRef.current = now;
     const evidence = emitAcousticTransient({
       coherence: 0.7,
       subBandsAgreed: 3,
@@ -213,6 +220,9 @@ export function MissionControl() {
       isFirstInWindow: true,
     });
     if (!evidence) return;
+    // Only update the fires ref on successful emit so coupling checks
+    // never see a refused attempt as a "recent acoustic fire."
+    lastEmissionTsRef.current.acoustic = now;
     void emitEvidence({ channel: evidence.channel, logLr: evidence.logLr, reason: `${evidence.reason} (vibration fallback)`, metadata: evidence.metadata, nowMs: now });
   }, [running, sensors.vibration?.alert, sectorReading, emitEvidence]);
 
@@ -220,9 +230,11 @@ export function MissionControl() {
   useEffect(() => {
     if (!running || !sensors.emf?.alert) return;
     const now = Date.now();
-    const last = lastEmissionTsRef.current.magnetometer;
-    if (last && now - last < 2000) return;
-    lastEmissionTsRef.current.magnetometer = now;
+    // Debounce ALL attempts (including refused). Distinct from the fires
+    // ref below, which only updates on successful emit so coupling checks
+    // never see a baseline-refused attempt as a "recent magnetometer fire."
+    if (lastMagnetometerEmitTsRef.current && now - lastMagnetometerEmitTsRef.current < 2000) return;
+    lastMagnetometerEmitTsRef.current = now;
     const evidence = emitMagnetometerAnomaly({
       zScore: sensors.emf.z,
       magnitudeMicrotesla: sensors.emf.value,
@@ -232,6 +244,7 @@ export function MissionControl() {
       siteBaseline: baseline,
     });
     if (!evidence) return;
+    lastEmissionTsRef.current.magnetometer = now;
     void emitEvidence({ channel: evidence.channel, logLr: evidence.logLr, reason: evidence.reason, metadata: evidence.metadata, nowMs: now });
 
     // Coupling check: if acoustic fired within 200 ms of this magnetometer event, emit a coupling.
