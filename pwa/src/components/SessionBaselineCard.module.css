@@ -1,0 +1,214 @@
+.wrap {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-lg);
+  padding: var(--s-14) var(--s-16);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-10);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-8);
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--signal);
+  font-weight: 700;
+}
+
+.headNote {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.framing {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.captureBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 16px;
+  border-radius: var(--r-lg);
+  background: var(--signal-wash);
+  color: var(--signal);
+  border: 1px solid var(--signal-dim);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  cursor: pointer;
+  transition: background 120ms, transform 80ms, border-color 120ms;
+}
+
+.captureBtn:hover:not(:disabled) {
+  background: rgba(93, 242, 199, 0.12);
+  border-color: var(--signal);
+}
+
+.captureBtn:active:not(:disabled) { transform: scale(0.99); }
+.captureBtn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.skipNote {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+}
+
+/* ------------------------------ Capturing ------------------------------ */
+
+.capturingBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-10);
+}
+
+.countdownRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 10px;
+}
+
+.countdown {
+  font-family: var(--font-mono);
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--signal);
+  letter-spacing: 1.5px;
+  text-shadow: 0 0 12px rgba(93, 242, 199, 0.35);
+}
+
+.countdownLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.rmsBarOuter {
+  position: relative;
+  width: 100%;
+  height: 8px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-full);
+  overflow: hidden;
+}
+
+.rmsBarFill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--signal-dim), var(--signal-glow));
+  border-radius: var(--r-full);
+  transition: width 120ms ease-out;
+}
+
+.metaRow {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-12);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.metaItem strong {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.cancelBtn {
+  align-self: center;
+  padding: 6px 14px;
+  border-radius: var(--r-full);
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.cancelBtn:hover { color: var(--text-primary); border-color: var(--border-strong); }
+
+/* ------------------------------ Summary ------------------------------ */
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-12);
+  align-items: stretch;
+}
+
+.summaryCol {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--s-10) var(--s-12);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+}
+
+.colHead {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.statRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.statLabel {
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.4px;
+}
+
+.statValue {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.summaryFoot {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}

@@ -12,6 +12,7 @@ import { EvidenceLedger, type LedgerStream } from "../components/EvidenceLedger"
 import { OvilusTool } from "../components/OvilusTool";
 import { PosteriorBar } from "../components/PosteriorBar";
 import { ScreenRecordButton } from "../components/ScreenRecordButton";
+import { SessionBaselineCard } from "../components/SessionBaselineCard";
 import { SessionSummaryCard } from "../components/SessionSummaryCard";
 import { SimpleMissionView } from "../components/SimpleMissionView";
 import { SpiritBoxTool } from "../components/SpiritBoxTool";
@@ -38,6 +39,7 @@ import {
 } from "../lib/posterior/likelihoods";
 import { getPosterior } from "../lib/posterior/posterior";
 import { applyAndAudit, createSiteSession, type SiteSession } from "../lib/posterior/siteSession";
+import { type BaselineSummary, loadBaseline, saveBaseline } from "../lib/posterior/sessionBaseline";
 import { getCurrentPoint } from "../lib/sensors/geolocation";
 import { requestSensorPermissionsForUserGesture } from "../lib/sensors/permissions";
 import { useSensors } from "../lib/sensors/useSensors";
@@ -82,6 +84,23 @@ export function MissionControl() {
   const [narrationSpeak, setNarrationSpeak] = useState<boolean>(false);
   const [culturallySensitive, setCulturallySensitiveState] = useState<boolean>(false);
   const [liveStreamState, setLiveStreamState] = useState<{ recording: boolean; broadcasting: boolean }>({ recording: false, broadcasting: false });
+  const [baseline, setBaseline] = useState<BaselineSummary | null>(null);
+
+  // Load any previously-captured baseline for the active investigation.
+  useEffect(() => {
+    const id = session.current?.id;
+    if (!id) {
+      setBaseline(null);
+      return;
+    }
+    setBaseline(loadBaseline(id));
+  }, [session.current?.id]);
+
+  const handleBaselineComplete = useCallback((summary: BaselineSummary) => {
+    setBaseline(summary);
+    const id = session.current?.id;
+    if (id) saveBaseline(id, summary);
+  }, [session.current?.id]);
 
   // Reflect the active investigation's stored cultural-sensitivity flag.
   useEffect(() => {
@@ -398,6 +417,17 @@ export function MissionControl() {
 
   return (
     <section className={s.view}>
+      {/* ROOM BASELINE — capture noise floor before the session, render above
+          the activity dial in both Simple and Pro modes. */}
+      <SessionBaselineCard
+        investigationId={session.current?.id ?? null}
+        baseline={baseline}
+        audioRms={audioRms}
+        emfMagnitude={sensors.snapshot.magnetometer?.magnitude ?? sensors.emf?.value ?? null}
+        sessionRunning={running}
+        onComplete={handleBaselineComplete}
+      />
+
       {!isPro && (
         <SimpleMissionView
           running={running}
