@@ -367,17 +367,24 @@
 }
 .toggle input { margin: 0; }
 
+/* Ganzfeld-style pulse — soft red wash that fades in / out across 4s on
+   the Receiver's blacked-out phone. Classic blindfold-driver protocol:
+   the steady-state luminance modulation gives the visual cortex something
+   to settle into and dampens internally-generated patterns. Colour is
+   sourced from --danger so it tints correctly across phosphor / scotopic
+   / daylight themes (was previously a hardcoded #FF4646, missed by the
+   token sweep because it sat inside the @keyframes block). */
 .ganzfeld {
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 1;
-  background: rgba(255, 255, 255, 0);
+  background: transparent;
   animation: ganzfeld-pulse 4s infinite ease-in-out;
 }
 @keyframes ganzfeld-pulse {
-  0%, 100% { background: rgba(255, 255, 255, 0); }
-  50% { background: rgba(255, 70, 70, 0.55); }
+  0%, 100% { background: transparent; }
+  50%      { background: color-mix(in srgb, var(--danger) 55%, transparent); }
 }
 
 .questionerPanel {
