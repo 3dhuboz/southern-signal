@@ -83,6 +83,55 @@
 .band_elevated { color: rgb(242, 130, 93); }
 .band_flag { color: rgb(220, 60, 80); }
 
+/* ----- AHT post-roll verdict ----- */
+
+.verdict {
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-default);
+  border-left-width: 4px;
+  background: var(--bg-surface);
+}
+.verdict_suspended { border-left-color: var(--text-muted); }
+.verdict_null { border-left-color: var(--text-secondary); }
+.verdict_inconclusive { border-left-color: rgb(242, 185, 93); }
+.verdict_unexplained { border-left-color: rgb(220, 60, 80); }
+.verdictHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.verdictEyebrow {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.verdictLabel {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: var(--text);
+}
+.verdict_inconclusive .verdictLabel { color: rgb(242, 185, 93); }
+.verdict_unexplained .verdictLabel { color: rgb(220, 60, 80); }
+.verdictDetail {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.verdictMeta {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
 /* ----- top-moments list ----- */
 
 .section {

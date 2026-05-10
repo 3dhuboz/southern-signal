@@ -21,6 +21,11 @@ import { query } from "../lib/db/db";
 import { buildManifest } from "../lib/forensic/manifest";
 import { describeChannel, describeSector, plainEnglishReason } from "../lib/posterior/plainEnglish";
 import { classifyPosterior } from "../lib/posterior/posterior";
+import {
+  computeAhtVerdict,
+  computeH0Confidence,
+  type AhtVerdictResult,
+} from "../lib/posterior/ahtVerdict";
 import s from "./SessionSummaryCard.module.css";
 
 interface SessionSummaryCardProps {
@@ -47,6 +52,10 @@ interface SessionStats {
   contaminations: number;
   dispositionLabel: string | null;
   merkleRoot: string | null;
+  ahtVerdict: AhtVerdictResult;
+  h0Confidence: number;
+  h0FromData: boolean;
+  h0SampleCount: number;
 }
 
 const DISPOSITION_LABEL: Record<string, string> = {
@@ -123,15 +132,40 @@ export function SessionSummaryCard(props: SessionSummaryCardProps) {
         merkleRoot = manifest.global_audit_chain.merkle_root;
       } catch { /* ignore */ }
 
+      // H₀ — device-wide, from the most-recent 30 ai.debunk.proposed
+      // entries that carry max_plausibility. Drives the AHT post-roll
+      // verdict for THIS session (peak posterior is local; H₀ is the
+      // operator's recent debunker reliability).
+      const debunkRows = await query<{ payload_json: string }>(
+        `SELECT payload_json FROM audit_log
+         WHERE kind = 'ai.debunk.proposed'
+         ORDER BY seq DESC
+         LIMIT 30`,
+      );
+      const maxPlausibilities = debunkRows
+        .map((r) => {
+          try {
+            const p = JSON.parse(r.payload_json) as Record<string, unknown>;
+            return typeof p.max_plausibility === "number" ? p.max_plausibility : null;
+          } catch { return null; }
+        })
+        .filter((p): p is number => p !== null);
+      const h0 = computeH0Confidence(maxPlausibilities);
+      const ahtVerdict = computeAhtVerdict({ h0Confidence: h0.value, peakPosterior });
+
       setStats({
         topMoments,
         totalIncrements: increments.length,
         contaminations: contam[0]?.n ?? 0,
         dispositionLabel: disposition ? (DISPOSITION_LABEL[disposition] ?? disposition) : null,
         merkleRoot,
+        ahtVerdict,
+        h0Confidence: h0.value,
+        h0FromData: h0.fromData,
+        h0SampleCount: h0.n,
       });
     })();
-  }, [investigationId, sessionStartIso, sessionEndIso]);
+  }, [investigationId, sessionStartIso, sessionEndIso, peakPosterior]);
 
   const durationSec = (new Date(sessionEndIso).getTime() - new Date(sessionStartIso).getTime()) / 1000;
   const peakBand = classifyPosterior(peakPosterior);
@@ -165,6 +199,22 @@ export function SessionSummaryCard(props: SessionSummaryCardProps) {
           </span>
         </div>
       </div>
+
+      {/* AHT POST-ROLL VERDICT — the conclusion, computed from H₀ + peak. */}
+      {stats && (
+        <div className={`${s.verdict} ${s[`verdict_${stats.ahtVerdict.verdict}`]}`.trim()}>
+          <div className={s.verdictHead}>
+            <span className={s.verdictEyebrow}>POST-ROLL VERDICT</span>
+            <span className={s.verdictLabel}>{stats.ahtVerdict.label}</span>
+          </div>
+          <p className={s.verdictDetail}>{stats.ahtVerdict.detail}</p>
+          <p className={s.verdictMeta}>
+            H₀ {stats.h0Confidence.toFixed(2)}
+            {stats.h0FromData ? ` (n=${stats.h0SampleCount})` : " (default)"}
+            {" · "}peak {(peakPosterior * 100).toFixed(0)}%
+          </p>
+        </div>
+      )}
 
       <div className={s.section}>
         <header className={s.sectionHead}>
