@@ -137,6 +137,71 @@
 .h0EngineActive .h0EngineDot { background: var(--signal); }
 .h0EngineSuspended .h0EngineDot { background: var(--warning); }
 
+/* Latest-case AHT verdict card */
+.verdictCard {
+  margin: 12px 0 0;
+  padding: 14px 16px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-default);
+  border-left-width: 4px;
+  background: var(--bg-surface);
+}
+.verdict_suspended { border-left-color: var(--text-muted); }
+.verdict_null { border-left-color: var(--text-secondary); }
+.verdict_inconclusive { border-left-color: var(--warning); }
+.verdict_unexplained { border-left-color: rgb(220, 60, 80); }
+.verdictCardHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.verdictCardEyebrow {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.verdictCardLabel {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: var(--text-primary);
+}
+.verdict_inconclusive .verdictCardLabel { color: var(--warning); }
+.verdict_unexplained .verdictCardLabel { color: rgb(220, 60, 80); }
+.verdictCardTitle {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.verdictCardDetail {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.verdictCardFoot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.verdictCardLink {
+  margin-left: auto;
+  color: var(--signal);
+  text-decoration: none;
+  font-family: inherit;
+}
+.verdictCardLink:hover { text-decoration: underline; }
+
 .section {
   display: flex;
   flex-direction: column;

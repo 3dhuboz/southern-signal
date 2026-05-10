@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { AHT_H0_SUSPEND_THRESHOLD, computeH0Confidence } from "../lib/posterior/ahtVerdict";
+import { buildEvidenceBrief, findMostRecentInvestigationId, type EvidenceBrief } from "../lib/forensic/evidenceBrief";
 import { BaseRatePanel } from "../components/BaseRatePanel";
 import { CaseManager } from "../components/CaseManager";
 import { query } from "../lib/db/db";
@@ -63,6 +64,7 @@ export function Review() {
   const [chainStatus, setChainStatus] = useState<"checking" | "ok" | "broken">("checking");
   const [chainBrokenSeq, setChainBrokenSeq] = useState<number | null>(null);
   const [merkleRoot, setMerkleRoot] = useState<string | null>(null);
+  const [latestBrief, setLatestBrief] = useState<EvidenceBrief | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -79,6 +81,12 @@ export function Review() {
         const manifest = await buildManifest();
         setMerkleRoot(manifest.global_audit_chain.merkle_root);
       } catch { /* manifest is best-effort in the banner */ }
+      // Build the brief for the most-recent investigation so we can show its
+      // AHT verdict inline — saves the operator a trip to the print view.
+      try {
+        const recentId = await findMostRecentInvestigationId();
+        if (recentId) setLatestBrief(await buildEvidenceBrief(recentId));
+      } catch { /* verdict card just won't render */ }
     })();
   }, []);
 
@@ -282,6 +290,35 @@ export function Review() {
           )}
         </p>
       </div>
+
+      {/* Latest-case AHT verdict — surfaces the per-case verdict without
+          requiring the operator to open the print view. */}
+      {latestBrief && (
+        <div className={`${r.verdictCard} ${r[`verdict_${latestBrief.ahtVerdict.verdict}`]}`.trim()}>
+          <div className={r.verdictCardHead}>
+            <span className={r.verdictCardEyebrow}>
+              {isPro ? "AHT VERDICT · LATEST CASE" : "Latest case · verdict"}
+            </span>
+            <span className={r.verdictCardLabel}>{latestBrief.ahtVerdict.label}</span>
+          </div>
+          <p className={r.verdictCardTitle}>{latestBrief.investigation.title}</p>
+          <p className={r.verdictCardDetail}>{latestBrief.ahtVerdict.detail}</p>
+          <div className={r.verdictCardFoot}>
+            <span>peak {(latestBrief.peakPosterior * 100).toFixed(0)}%</span>
+            <span>·</span>
+            <span>H₀ {latestBrief.h0Confidence.toFixed(2)}</span>
+            {latestBrief.investigation.disposition && (
+              <>
+                <span>·</span>
+                <span>operator: {latestBrief.investigation.disposition.replace(/_/g, " ")}</span>
+              </>
+            )}
+            <Link to={`/brief/${latestBrief.investigation.id}`} className={r.verdictCardLink}>
+              Full brief →
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* Evidence updates / posterior log */}
       <div className={r.section}>
