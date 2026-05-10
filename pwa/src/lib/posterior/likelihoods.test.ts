@@ -53,6 +53,80 @@ describe("magnetometer anomaly", () => {
     const e = emitMagnetometerAnomaly({ zScore: 3.5, magnitudeMicrotesla: 60, baselineMicrotesla: 45 });
     expect(e?.logLr).toBeCloseTo(2.6, 6);
   });
+
+  describe("with site baseline (V2)", () => {
+    const baseline = {
+      audioRmsMean: 0,
+      audioRmsP95: 0,
+      audioRmsMax: 0,
+      emfMean: 45,
+      emfP95: 52,
+      emfMax: 58,
+      durationSeconds: 90,
+      sampleCount: 360,
+      capturedAt: "2026-05-10T00:00:00.000Z",
+    };
+
+    it("refuses when reading is at or below site emfP95 even if z-score crosses 3", () => {
+      // z=3.5 would normally fire, but |B|=50 μT is below site p95=52 — site noise.
+      const result = emitMagnetometerAnomaly({
+        zScore: 3.5,
+        magnitudeMicrotesla: 50,
+        baselineMicrotesla: 45,
+        siteBaseline: baseline,
+      });
+      expect(result).toBeNull();
+    });
+
+    it("emits the standard 2.6 log LR when above site p95 but at or below site max", () => {
+      const e = emitMagnetometerAnomaly({
+        zScore: 3.5,
+        magnitudeMicrotesla: 55,
+        baselineMicrotesla: 45,
+        siteBaseline: baseline,
+      });
+      expect(e?.logLr).toBeCloseTo(2.6, 6);
+      expect(e?.metadata?.above_site_p95).toBe(true);
+      expect(e?.metadata?.above_site_max).toBe(false);
+    });
+
+    it("adds a +0.5 bonus when reading exceeds site emfMax (novelty)", () => {
+      const e = emitMagnetometerAnomaly({
+        zScore: 3.5,
+        magnitudeMicrotesla: 70,
+        baselineMicrotesla: 45,
+        siteBaseline: baseline,
+      });
+      expect(e?.logLr).toBeCloseTo(3.1, 6);
+      expect(e?.metadata?.above_site_max).toBe(true);
+      expect(e?.metadata?.site_emf_p95_uT).toBe(52);
+      expect(e?.metadata?.site_emf_max_uT).toBe(58);
+    });
+
+    it("ignores baseline with emfP95 of 0 (e.g. magnetometer-less device)", () => {
+      const noEmfBaseline = { ...baseline, emfP95: 0, emfMax: 0, emfMean: 0 };
+      const e = emitMagnetometerAnomaly({
+        zScore: 3.5,
+        magnitudeMicrotesla: 60,
+        baselineMicrotesla: 45,
+        siteBaseline: noEmfBaseline,
+      });
+      // Falls back to baseline-less behaviour; standard 2.6 fires.
+      expect(e?.logLr).toBeCloseTo(2.6, 6);
+      expect(e?.metadata?.above_site_p95).toBe(false);
+    });
+
+    it("treats undefined and null siteBaseline identically to the legacy path", () => {
+      const a = emitMagnetometerAnomaly({ zScore: 3.5, magnitudeMicrotesla: 60, baselineMicrotesla: 45 });
+      const b = emitMagnetometerAnomaly({ zScore: 3.5, magnitudeMicrotesla: 60, baselineMicrotesla: 45, siteBaseline: null });
+      expect(a?.logLr).toBeCloseTo(b?.logLr ?? -1, 6);
+      // Both paths uniformly populate baseline-related metadata as falsy/null
+      // so audit-log readers don't need to special-case the shape.
+      expect(a?.metadata?.above_site_p95).toBe(false);
+      expect(b?.metadata?.above_site_p95).toBe(false);
+      expect(a?.metadata?.site_emf_p95_uT).toBe(null);
+    });
+  });
 });
 
 describe("temporal coupling", () => {

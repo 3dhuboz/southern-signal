@@ -11,6 +11,8 @@
  * runaway value here.
  */
 
+import type { BaselineSummary } from "./sessionBaseline";
+
 export interface EvidenceEmission {
   channel: string;
   logLr: number;
@@ -115,21 +117,59 @@ export function emitInfrasoundPulse(opts: {
 //      microwave kicks, motors — not paranormal but also not "natural baseline".)
 //   P(z > 3 transient | localised EM-type anomaly): ~0.65.
 //   LR = 13  → log LR ≈ 2.6
+//
+// Optional `siteBaseline` — when the operator has captured an empty-room
+// baseline for this site, a stricter floor applies:
+//   - Readings at or below the site's emfP95 are treated as site noise,
+//     not anomalies, and the channel REFUSES to fire (returns null) even
+//     if the rolling z-score crossed 3. The rolling z-score is sensitive
+//     to short-window noise; the site p95 is a longer, calmer reference
+//     and trumps it.
+//   - Readings exceeding the site's emfMax — i.e. higher than anything
+//     observed during a deliberate quiet calibration — get a small +0.5
+//     bonus for "novelty above all observed baseline." Capped by the
+//     posterior |log LR| ceiling.
+// When no baseline is supplied, behaviour is identical to the original
+// detector — no regression for operators who skip baseline capture.
 
 export function emitMagnetometerAnomaly(opts: {
   zScore: number;
   magnitudeMicrotesla: number;
   baselineMicrotesla: number;
+  siteBaseline?: BaselineSummary | null;
 }): EvidenceEmission | null {
   if (Math.abs(opts.zScore) < 3) return null;
+
+  const site = opts.siteBaseline;
+  let logLr = 2.6;
+  let baselineNote = "";
+  let aboveSiteP95 = false;
+  let aboveSiteMax = false;
+  if (site && site.emfP95 > 0) {
+    if (opts.magnitudeMicrotesla <= site.emfP95) {
+      // Within the site's measured noise floor — refuse, don't pile-on.
+      return null;
+    }
+    aboveSiteP95 = true;
+    if (opts.magnitudeMicrotesla > site.emfMax) {
+      aboveSiteMax = true;
+      logLr += 0.5;
+    }
+    baselineNote = `, site p95=${site.emfP95.toFixed(1)} μT${aboveSiteMax ? ` (above site max ${site.emfMax.toFixed(1)})` : ""}`;
+  }
+
   return {
     channel: "magnetometer",
-    logLr: 2.6,
-    reason: `EMF z=${opts.zScore.toFixed(1)}, |B|=${opts.magnitudeMicrotesla.toFixed(1)} μT (baseline ${opts.baselineMicrotesla.toFixed(1)} μT)`,
+    logLr,
+    reason: `EMF z=${opts.zScore.toFixed(1)}, |B|=${opts.magnitudeMicrotesla.toFixed(1)} μT (baseline ${opts.baselineMicrotesla.toFixed(1)} μT)${baselineNote}`,
     metadata: {
       z_score: opts.zScore,
       magnitude_uT: opts.magnitudeMicrotesla,
       baseline_uT: opts.baselineMicrotesla,
+      site_emf_p95_uT: site?.emfP95 ?? null,
+      site_emf_max_uT: site?.emfMax ?? null,
+      above_site_p95: aboveSiteP95,
+      above_site_max: aboveSiteMax,
     },
   };
 }

@@ -223,6 +223,9 @@ export function MissionControl() {
       zScore: sensors.emf.z,
       magnitudeMicrotesla: sensors.emf.value,
       baselineMicrotesla: sensors.emf.mean,
+      // V2: pass the captured site baseline so readings within the
+      // measured noise floor are refused, not piled into the posterior.
+      siteBaseline: baseline,
     });
     if (!evidence) return;
     void emitEvidence({ channel: evidence.channel, logLr: evidence.logLr, reason: evidence.reason, metadata: evidence.metadata, nowMs: now });
