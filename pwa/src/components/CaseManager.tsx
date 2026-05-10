@@ -29,6 +29,11 @@ interface CaseSummary extends Investigation {
   videoCount: number;
   eventCount: number;
   sessionCount: number;
+  /** v4: count of saved AI Investigator dossiers attached to this case
+   *  PLUS standalone (recon) dossiers whose venue_name matches title or
+   *  location_name — same matching rule the brief uses. Lets the row
+   *  show a "🗂 2" badge so the operator sees prior research at a glance. */
+  dossierCount: number;
 }
 
 interface SessionGroup {
@@ -110,6 +115,20 @@ export function CaseManager() {
           "SELECT COUNT(*) AS total FROM evidence_events WHERE investigation_id = ? AND event_type = 'session_start'",
           [i.id],
         );
+        // Dossier count — same id-or-venue-match rule the brief uses.
+        // Wrapped in try/catch so pre-v4 installs (no table) skip
+        // gracefully instead of erroring out the whole load.
+        let dossierCount = 0;
+        try {
+          const dossierRows = await query<{ total: number }>(
+            `SELECT COUNT(*) AS total FROM research_dossiers
+             WHERE investigation_id = ?
+                OR (investigation_id IS NULL
+                    AND (LOWER(venue_name) = LOWER(?) OR LOWER(venue_name) = LOWER(?)))`,
+            [i.id, i.title ?? "", i.location_name ?? ""],
+          );
+          dossierCount = dossierRows[0]?.total ?? 0;
+        } catch { /* pre-v4 schema — no dossiers */ }
         const audioCount = mediaRows.find((r) => r.media_type === "audio")?.total ?? 0;
         const imageCount = mediaRows.find((r) => r.media_type === "image")?.total ?? 0;
         const videoCount = mediaRows.find((r) => r.media_type === "video")?.total ?? 0;
@@ -121,6 +140,7 @@ export function CaseManager() {
           videoCount,
           eventCount: events[0]?.total ?? 0,
           sessionCount: sessions[0]?.total ?? 0,
+          dossierCount,
         });
       }
       setCases(summaries);
@@ -476,6 +496,14 @@ export function CaseManager() {
                     <span>{c.videoCount} video</span>
                     <span>·</span>
                     <span>{c.eventCount} events</span>
+                    {c.dossierCount > 0 && (
+                      <>
+                        <span>·</span>
+                        <span className={s.dossierBadge} title="Saved AI Investigator dossiers for this venue">
+                          🗂 {c.dossierCount} dossier{c.dossierCount === 1 ? "" : "s"}
+                        </span>
+                      </>
+                    )}
                     {c.disposition && <><span>·</span><span className={s.disposition}>{c.disposition}</span></>}
                   </span>
                 </div>

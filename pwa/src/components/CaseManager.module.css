@@ -132,6 +132,14 @@
   font-weight: 700;
   color: var(--signal);
 }
+.dossierBadge {
+  font-weight: 700;
+  color: var(--signal);
+  background: color-mix(in srgb, var(--signal) 10%, transparent);
+  padding: 1px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.2px;
+}
 .rowChevron {
   color: var(--text-muted);
   flex-shrink: 0;
