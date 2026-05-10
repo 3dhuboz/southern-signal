@@ -4,6 +4,7 @@ import { AcknowledgementGate } from "./components/AcknowledgementGate";
 import { OnboardingTour } from "./components/OnboardingTour";
 import { AppHeader } from "./components/AppHeader";
 import { BottomNav } from "./components/BottomNav";
+import { InterruptedSessionBanner } from "./components/InterruptedSessionBanner";
 import { MissionControl } from "./views/MissionControl";
 import { sunAltitudeDeg } from "./lib/sensors/civilTwilight";
 import { applyTheme, setPreferences, usePreferences } from "./lib/preferences";
@@ -74,6 +75,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AppHeader />
+      <InterruptedSessionBanner />
       <main>
         <Suspense fallback={<RouteFallback />}>
           <Routes>
