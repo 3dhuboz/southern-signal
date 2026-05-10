@@ -13,13 +13,19 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--s-12);
+  min-width: 0;
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 10px;
+  /* Allow the brand to shrink — the wordmark inside has its own
+     overflow:hidden + text-overflow:ellipsis fallback so it clips
+     cleanly instead of overflowing behind the toolbar pills on
+     narrow screens. */
   min-width: 0;
+  flex-shrink: 1;
   text-decoration: none;
   color: inherit;
 }
@@ -46,6 +52,12 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  /* State pills (NO SAVE / SENSITIVE / REC / LIVE / BAT / DSK / SIMPLE /
+     RED OFF) carry critical at-a-glance state — they must never get
+     squeezed below their natural size. The brand wordmark shrinks /
+     clips first; below ~440px the wordmark hides entirely (media
+     query at the bottom of this file). */
+  flex-shrink: 0;
 }
 
 .statusGroup {
@@ -208,6 +220,22 @@
   font-weight: 600;
   letter-spacing: 1.5px;
   color: var(--text-primary);
+  /* When the toolbar pills squeeze the brand container, clip cleanly
+     with an ellipsis rather than overflowing behind the pills. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* Narrow-screen layout: with NO SAVE + SENSITIVE + REC/LIVE + BAT + DSK
+   + SIMPLE + RED OFF all in play, the toolbar can be ~360-400px wide
+   on its own. On a typical phone viewport (≤440px), the wordmark has
+   no room left to clip — just hide it and let the logo mark carry the
+   brand recognition. The Link still works; tapping the mark still goes
+   to /about. */
+@media (max-width: 440px) {
+  .wordmark { display: none; }
 }
 
 .modePill {
