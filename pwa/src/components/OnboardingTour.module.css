@@ -138,21 +138,18 @@
   cursor: not-allowed;
 }
 
-.primary {
+/* Onboarding "Next / Done" CTA — colour/hover come from .btn .btn-primary.
+   .primarySize carries the slightly-wider hero padding (s-20 horizontal)
+   and the 44px touch target. .secondary above keeps its own rules because
+   the tour's "Back" button uses a deliberately muted text-secondary
+   palette with a hover that swaps text colour instead of background —
+   different visual register from the canonical ghost button. */
+.primarySize {
   padding: 10px var(--s-20);
   border-radius: var(--r-md);
-  background: var(--signal);
-  color: var(--text-on-accent);
-  border: 1px solid var(--signal);
-  font-weight: 700;
   font-size: 13px;
-  cursor: pointer;
-  font-family: inherit;
   min-height: 44px;
   letter-spacing: 0.3px;
-}
-.primary:hover {
-  background: var(--signal-glow);
 }
 
 @media (max-width: 380px) {

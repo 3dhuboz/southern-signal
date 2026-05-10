@@ -186,7 +186,7 @@ export function OnboardingTour() {
             >
               Back
             </button>
-            <button type="button" className={s.primary} onClick={next}>
+            <button type="button" className={`btn btn-primary ${s.primarySize}`} onClick={next}>
               {isLast ? "Done" : "Next"}
             </button>
           </div>

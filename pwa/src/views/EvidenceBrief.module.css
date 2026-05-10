@@ -26,19 +26,16 @@
   letter-spacing: 0.4px;
 }
 .toolbarLink:hover { color: var(--text); }
-.button {
+/* Toolbar buttons consume .btn .btn-ghost for colour + behaviour;
+   .buttonSize carries the toolbar-specific padding, size, and the
+   uppercase-eyebrow chrome. */
+.buttonSize {
   padding: var(--s-8) 14px;
   border-radius: var(--r-md);
-  border: 1px solid var(--border-strong);
-  background: var(--bg-surface);
-  color: var(--text);
   font-size: 12px;
-  font-weight: 700;
   letter-spacing: 0.4px;
   text-transform: uppercase;
-  cursor: pointer;
 }
-.button:hover { background: var(--bg-overlay); }
 
 .error,
 .loading {

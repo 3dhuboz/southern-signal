@@ -87,7 +87,7 @@ export function EvidenceBrief() {
     return (
       <article className={s.page}>
         <p className={s.error}>{error}</p>
-        <button type="button" className={s.button} onClick={() => navigate("/review")}>← Back to Review</button>
+        <button type="button" className={`btn btn-ghost ${s.buttonSize}`} onClick={() => navigate("/review")}>← Back to Review</button>
       </article>
     );
   }
@@ -108,7 +108,7 @@ export function EvidenceBrief() {
       {/* Toolbar — hidden when printing */}
       <header className={s.toolbar}>
         <Link to="/review" className={s.toolbarLink}>← Review</Link>
-        <button type="button" className={s.button} onClick={() => window.print()}>
+        <button type="button" className={`btn btn-ghost ${s.buttonSize}`} onClick={() => window.print()}>
           Print / Save PDF
         </button>
       </header>
