@@ -208,22 +208,56 @@
 }
 .classChip input { display: none; }
 .classChip:hover { border-color: var(--signal-dim); }
-.classChipActive {
-  border-color: var(--signal);
-  background: rgba(127, 252, 215, 0.07);
-}
 .classLabel {
   font-weight: 700;
   font-size: 12px;
   color: var(--text-primary);
   letter-spacing: 0.3px;
 }
-.classChipActive .classLabel { color: var(--signal); }
 .classHint {
   font-size: 10px;
   color: var(--text-muted);
   font-style: italic;
 }
+
+/* Semantic evidence-tier colours on the active state. The four
+   reviewer classes carry different prior likelihoods — make that
+   readable at a glance. All token-sourced so they retint cleanly
+   across phosphor / scotopic / daylight.
+     A   "Clear"      — signal teal       (highest LR shoulder)
+     B   "Partial"    — signal-dim        (modest, uncertain)
+     C   "Suggested"  — warning amber     (low LR, suggestion-bias risk)
+     n   "Mundane"    — text-muted gray   (contamination, LR-negative) */
+.classChipActive[data-class="A"] {
+  border-color: var(--signal);
+  background: var(--signal-wash);
+}
+.classChipActive[data-class="A"] .classLabel { color: var(--signal); }
+
+.classChipActive[data-class="B"] {
+  border-color: var(--signal-dim);
+  background: color-mix(in srgb, var(--signal) 5%, transparent);
+}
+.classChipActive[data-class="B"] .classLabel { color: var(--signal-dim); }
+
+.classChipActive[data-class="C"] {
+  border-color: var(--warning);
+  background: var(--warning-wash);
+}
+.classChipActive[data-class="C"] .classLabel { color: var(--warning); }
+
+.classChipActive[data-class="noise"] {
+  border-color: var(--border-strong);
+  background: var(--bg-overlay);
+}
+.classChipActive[data-class="noise"] .classLabel { color: var(--text-muted); }
+
+/* Fallback for any future class value not covered above. */
+.classChipActive {
+  border-color: var(--signal);
+  background: var(--signal-wash);
+}
+.classChipActive .classLabel { color: var(--signal); }
 
 .field {
   display: flex;

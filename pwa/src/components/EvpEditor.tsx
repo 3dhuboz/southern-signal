@@ -748,7 +748,11 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
             <div className={s.tagPanel}>
               <div className={s.classGroup}>
                 {REVIEWER_CLASSES.map((cls) => (
-                  <label key={cls.value} className={`${s.classChip} ${reviewerClass === cls.value ? s.classChipActive : ""}`.trim()}>
+                  <label
+                    key={cls.value}
+                    className={`${s.classChip} ${reviewerClass === cls.value ? s.classChipActive : ""}`.trim()}
+                    data-class={cls.value}
+                  >
                     <input
                       type="radio"
                       name="reviewer-class"
