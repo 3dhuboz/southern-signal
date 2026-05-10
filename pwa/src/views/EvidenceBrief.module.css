@@ -169,6 +169,15 @@
   padding-bottom: 6px;
   border-bottom: 1px solid var(--border-default);
 }
+.sectionSub {
+  display: inline-block;
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  text-transform: none;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin-left: 6px;
+}
 
 /* ----- KEY FINDINGS ----- */
 
@@ -358,6 +367,121 @@
   letter-spacing: 0.4px;
 }
 
+/* ----- ARCHIVE RESEARCH (dossiers) ----- */
+
+.dossier {
+  margin: 0 0 var(--s-16);
+  padding: var(--s-12) 14px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+  page-break-inside: avoid;
+}
+.dossier + .dossier { margin-top: var(--s-12); }
+.dossierHead {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: var(--s-8);
+  border-bottom: 1px dashed var(--border-subtle);
+  margin-bottom: var(--s-8);
+}
+.dossierVenue {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.dossierMeta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+}
+.dossierMeta code {
+  background: color-mix(in srgb, var(--accent-strong) 8%, transparent);
+  color: var(--text);
+  padding: 0 5px;
+  border-radius: 3px;
+}
+.dossierTier {
+  margin-top: var(--s-8);
+  padding-left: var(--s-12);
+  border-left: 3px solid var(--border-default);
+}
+.tier_HERITAGE,
+.tier_DOCUMENTED_INCIDENT { border-left-color: var(--accent-strong); }
+.tier_CULTURAL_SIGNIFICANCE { border-left-color: var(--warning); }
+.tier_FOLKLORE { border-left-color: var(--text-secondary); }
+.tier_SYNTHESIS { border-left-color: var(--text-muted); opacity: 0.85; }
+.dossierTierLabel {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+.tier_HERITAGE .dossierTierLabel,
+.tier_DOCUMENTED_INCIDENT .dossierTierLabel { color: var(--accent-strong); }
+.tier_CULTURAL_SIGNIFICANCE .dossierTierLabel { color: var(--warning); }
+.dossierFindings {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dossierFinding {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.dossierFindingTitle {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+.dossierFindingBody {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+.dossierSources {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.dossierSource {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text);
+}
+.dossierSource a {
+  color: var(--accent-strong);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+}
+.dossierSourceHost {
+  color: var(--text-muted);
+}
+.dossierWarnings {
+  margin: var(--s-8) 0 0;
+  padding: 6px var(--s-12);
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+  border-left: 2px solid var(--warning);
+  color: var(--warning);
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.3px;
+  border-radius: 3px;
+}
+
 /* ----- PRINT ----- */
 
 @media print {
@@ -412,4 +536,30 @@
   }
   .acknowledgement { border-left-color: #000 !important; }
   .integrityList code { background: #eee !important; color: #000 !important; }
+  .dossier {
+    background: transparent !important;
+    border-color: #999 !important;
+    color: #000 !important;
+  }
+  .dossierHead { border-bottom-color: #aaa !important; }
+  .dossierVenue { color: #000 !important; }
+  .dossierMeta,
+  .dossierMeta code,
+  .dossierSourceHost,
+  .sectionSub { color: #555 !important; }
+  .dossierMeta code { background: #eee !important; }
+  .dossierTier { border-left-color: #555 !important; }
+  .tier_HERITAGE,
+  .tier_DOCUMENTED_INCIDENT { border-left-color: #000 !important; }
+  .tier_CULTURAL_SIGNIFICANCE { border-left-color: #444 !important; }
+  .tier_FOLKLORE { border-left-color: #777 !important; }
+  .tier_SYNTHESIS { border-left-color: #bbb !important; opacity: 1 !important; }
+  .dossierTierLabel,
+  .tier_HERITAGE .dossierTierLabel,
+  .tier_DOCUMENTED_INCIDENT .dossierTierLabel,
+  .tier_CULTURAL_SIGNIFICANCE .dossierTierLabel { color: #000 !important; }
+  .dossierFindingTitle { color: #000 !important; }
+  .dossierFindingBody { color: #333 !important; }
+  .dossierSource a { color: #000 !important; }
+  .dossierWarnings { background: #f5f5f5 !important; color: #444 !important; border-left-color: #777 !important; }
 }

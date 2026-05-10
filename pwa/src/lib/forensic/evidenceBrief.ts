@@ -17,9 +17,10 @@ import { query } from "../db/db";
 import { verifyAuditChain } from "../db/auditLog";
 import { getPreferences } from "../preferences";
 import { buildManifest } from "./manifest";
-import type { Investigation } from "../db/schema";
+import type { Investigation, ResearchDossierRow } from "../db/schema";
 import { classifyPosterior, type PosteriorBand } from "../posterior/posterior";
 import { computeAhtVerdict, computeH0Confidence, type AhtVerdictResult } from "../posterior/ahtVerdict";
+import type { ResearchFinding, ResearchResult, ResearchTier } from "../research/api";
 
 export interface BriefMoment {
   ts: string;
@@ -30,6 +31,31 @@ export interface BriefMoment {
   capped: boolean;
   posteriorBefore: number;
   posteriorAfter: number;
+}
+
+/**
+ * A single research dossier as it appears in the brief — already
+ * tier-grouped so the renderer doesn't have to think about ordering.
+ * The full ResearchResult is preserved on `raw` for callers that want
+ * the suggestions / warnings / search-terms metadata.
+ */
+export interface BriefResearchDossier {
+  id: string;
+  venueName: string;
+  locationHint: string | null;
+  region: string;
+  createdAt: string;
+  model: string;
+  findingsByTier: { tier: ResearchTier; findings: ResearchFinding[] }[];
+  /** Total findings across all tiers — convenient for tally rendering. */
+  findingCount: number;
+  /** Total distinct source citations across the dossier. */
+  citationCount: number;
+  /** True iff at least one finding sits in a tier with primary-source
+   *  weight (HERITAGE or DOCUMENTED_INCIDENT). Drives the "cited
+   *  primary-source corroboration" header on the brief. */
+  hasPrimarySources: boolean;
+  raw: ResearchResult;
 }
 
 export interface EvidenceBrief {
@@ -58,6 +84,63 @@ export interface EvidenceBrief {
   h0SampleCount: number;
   /** The AHT post-roll verdict, derived from h0Confidence + peakPosterior. */
   ahtVerdict: AhtVerdictResult;
+  /** Saved AI-Investigator dossiers scoped to this case (newest first).
+   *  Empty when the operator hasn't run the deep-dive for this venue. */
+  researchDossiers: BriefResearchDossier[];
+}
+
+const TIER_DISPLAY_ORDER: ResearchTier[] = [
+  "CULTURAL_SIGNIFICANCE",
+  "HERITAGE",
+  "DOCUMENTED_INCIDENT",
+  "FOLKLORE",
+  "SYNTHESIS",
+];
+
+/** Parse a stored ResearchResult JSON safely, returning null on malformed
+ *  payloads. Defends against schema drift between dossier versions. */
+function parseDossierResult(json: string): ResearchResult | null {
+  try {
+    const parsed = JSON.parse(json) as ResearchResult;
+    if (!Array.isArray(parsed.findings)) return null;
+    return parsed;
+  } catch { return null; }
+}
+
+function groupFindingsByTier(findings: ResearchFinding[]): { tier: ResearchTier; findings: ResearchFinding[] }[] {
+  const buckets = new Map<ResearchTier, ResearchFinding[]>();
+  for (const f of findings) {
+    const list = buckets.get(f.tier) ?? [];
+    list.push(f);
+    buckets.set(f.tier, list);
+  }
+  const out: { tier: ResearchTier; findings: ResearchFinding[] }[] = [];
+  for (const tier of TIER_DISPLAY_ORDER) {
+    const list = buckets.get(tier);
+    if (list && list.length > 0) out.push({ tier, findings: list });
+  }
+  return out;
+}
+
+function toBriefDossier(row: ResearchDossierRow): BriefResearchDossier | null {
+  const parsed = parseDossierResult(row.result_json);
+  if (!parsed) return null;
+  const findingsByTier = groupFindingsByTier(parsed.findings);
+  const hasPrimarySources = findingsByTier.some((g) => g.tier === "HERITAGE" || g.tier === "DOCUMENTED_INCIDENT");
+  const citationCount = parsed.findings.reduce((n, f) => n + (Array.isArray(f.sources) ? f.sources.length : 0), 0);
+  return {
+    id: row.id,
+    venueName: row.venue_name,
+    locationHint: row.location_hint,
+    region: row.region,
+    createdAt: row.created_at,
+    model: row.model,
+    findingsByTier,
+    findingCount: parsed.findings.length,
+    citationCount,
+    hasPrimarySources,
+    raw: parsed,
+  };
 }
 
 export async function buildEvidenceBrief(investigationId: string): Promise<EvidenceBrief | null> {
@@ -153,6 +236,25 @@ export async function buildEvidenceBrief(investigationId: string): Promise<Evide
   const h0 = computeH0Confidence(maxPlausibilities);
   const ahtVerdict = computeAhtVerdict({ h0Confidence: h0.value, peakPosterior });
 
+  // v4: research dossiers saved against this investigation, newest first.
+  // We also include standalone dossiers (investigation_id NULL) whose
+  // venue_name matches the case's title or location_name — those were
+  // typically pre-visit recon for this very case.
+  const dossierRows = await query<ResearchDossierRow>(
+    `SELECT * FROM research_dossiers
+     WHERE investigation_id = ?
+        OR (investigation_id IS NULL
+            AND (LOWER(venue_name) = LOWER(?) OR LOWER(venue_name) = LOWER(?)))
+     ORDER BY created_at DESC
+     LIMIT 10`,
+    [investigationId, investigation.title ?? "", investigation.location_name ?? ""],
+  );
+  const researchDossiers: BriefResearchDossier[] = [];
+  for (const row of dossierRows) {
+    const d = toBriefDossier(row);
+    if (d) researchDossiers.push(d);
+  }
+
   // Chain + manifest are best-effort.
   const chainStatus = await verifyAuditChain();
   let merkleRoot: string | null = null;
@@ -185,6 +287,7 @@ export async function buildEvidenceBrief(investigationId: string): Promise<Evide
     h0FromData: h0.fromData,
     h0SampleCount: h0.n,
     ahtVerdict,
+    researchDossiers,
   };
 }
 

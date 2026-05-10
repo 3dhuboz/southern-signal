@@ -16,7 +16,16 @@ import { useEffect, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { buildEvidenceBrief, findMostRecentInvestigationId, type EvidenceBrief } from "../lib/forensic/evidenceBrief";
 import { describeChannel, describeSector, plainEnglishReason } from "../lib/posterior/plainEnglish";
+import type { ResearchTier } from "../lib/research/api";
 import s from "./EvidenceBrief.module.css";
+
+const TIER_LABEL: Record<ResearchTier, string> = {
+  CULTURAL_SIGNIFICANCE: "Cultural significance",
+  HERITAGE: "Heritage register",
+  DOCUMENTED_INCIDENT: "Documented incident",
+  FOLKLORE: "Folklore",
+  SYNTHESIS: "Synthesis — unverified",
+};
 
 const DISPOSITION_LABEL: Record<string, string> = {
   null: "Null — nothing happened",
@@ -213,6 +222,70 @@ export function EvidenceBrief() {
           </ol>
         )}
       </section>
+
+      {/* ARCHIVE RESEARCH — AI Investigator dossiers saved for this case.
+          Each finding ships with its sources; tier downgrade rules already
+          fired server-side (no-source claims drop to SYNTHESIS), so what
+          renders here is what the citation chain supports. */}
+      {brief.researchDossiers.length > 0 && (
+        <section className={s.section}>
+          <h2 className={s.sectionTitle}>
+            Archive research
+            {" "}
+            <span className={s.sectionSub}>
+              {brief.researchDossiers.length} dossier{brief.researchDossiers.length === 1 ? "" : "s"}
+              {brief.researchDossiers.some((d) => d.hasPrimarySources)
+                ? " · with primary-source corroboration"
+                : " · folklore / synthesis only"}
+            </span>
+          </h2>
+          {brief.researchDossiers.map((dossier) => (
+            <article key={dossier.id} className={s.dossier}>
+              <header className={s.dossierHead}>
+                <span className={s.dossierVenue}>{dossier.venueName}</span>
+                <span className={s.dossierMeta}>
+                  {dossier.findingCount} finding{dossier.findingCount === 1 ? "" : "s"}
+                  {" · "}{dossier.citationCount} citation{dossier.citationCount === 1 ? "" : "s"}
+                  {" · "}{dossier.region}
+                  {" · "}{formatDate(dossier.createdAt)}
+                  {" · "}<code>{dossier.model.replace(/^.*\//, "")}</code>
+                </span>
+              </header>
+              {dossier.findingsByTier.map((group) => (
+                <div key={group.tier} className={`${s.dossierTier} ${s[`tier_${group.tier}`] ?? ""}`.trim()}>
+                  <span className={s.dossierTierLabel}>{TIER_LABEL[group.tier]}</span>
+                  <ul className={s.dossierFindings}>
+                    {group.findings.map((f, i) => (
+                      <li key={`${group.tier}-${i}`} className={s.dossierFinding}>
+                        <span className={s.dossierFindingTitle}>{f.title}</span>
+                        <span className={s.dossierFindingBody}>{f.body}</span>
+                        {f.sources.length > 0 && (
+                          <ul className={s.dossierSources}>
+                            {f.sources.map((src, j) => {
+                              const host = (() => { try { return new URL(src.url).hostname; } catch { return src.url; } })();
+                              return (
+                                <li key={j} className={s.dossierSource}>
+                                  <a href={src.url} target="_blank" rel="noopener noreferrer">{src.label}</a>
+                                  <span className={s.dossierSourceHost}> — {host}</span>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+              {dossier.raw.warnings.length > 0 && (
+                <p className={s.dossierWarnings}>
+                  Validation warnings: {dossier.raw.warnings.join(" · ")}
+                </p>
+              )}
+            </article>
+          ))}
+        </section>
+      )}
 
       {/* MEDIA + EVENTS */}
       <section className={s.section}>
