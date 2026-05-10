@@ -15,6 +15,7 @@ import { exec, query } from "../lib/db/db";
 import { readFile, deletePath } from "../lib/opfs";
 import { appendAuditEntry } from "../lib/db/auditLog";
 import { setCulturallySensitive } from "../lib/db/repo";
+import { clearBaseline } from "../lib/posterior/sessionBaseline";
 import { buildExportBundle, downloadBlob } from "../lib/forensic/exportBundle";
 import type { EvidenceEvent, Investigation, MediaAsset } from "../lib/db/schema";
 import s from "./CaseManager.module.css";
@@ -315,6 +316,10 @@ export function CaseManager() {
         await deletePath(asset.file_path).catch(() => { /* ignore */ });
       }
       await exec("DELETE FROM investigations WHERE id = ?", [openCaseId]);
+      // Sweep the per-case baseline summary out of localStorage. The DB
+      // row is gone, the OPFS bytes are gone — this orphan would just
+      // accumulate. clearBaseline is a silent no-op if nothing's there.
+      clearBaseline(openCaseId);
       await appendAuditEntry({
         actor: "user",
         kind: "investigation.delete",
