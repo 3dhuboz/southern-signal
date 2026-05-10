@@ -258,6 +258,19 @@
 .secondaryBtn:hover { background: var(--bg-overlay); border-color: var(--signal-dim); }
 .secondaryBtn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+.transcribeBlockedHint {
+  align-self: center;
+  padding: 6px 10px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+.transcribeBlockedHint a {
+  color: var(--signal);
+  text-decoration: underline;
+}
+.transcribeBlockedHint a:hover { color: var(--signal-glow); }
+
 .transcriptBox {
   display: flex;
   flex-direction: column;

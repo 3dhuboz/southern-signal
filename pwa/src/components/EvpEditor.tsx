@@ -28,6 +28,9 @@ import {
   transcribeOnDevice,
   useLocalTranscribeStatus,
 } from "../lib/audio/localTranscribe";
+import { getInvestigation } from "../lib/db/repo";
+import { usePreferences } from "../lib/preferences";
+import { Link } from "react-router-dom";
 import type { MediaAsset } from "../lib/db/schema";
 import s from "./EvpEditor.module.css";
 
@@ -80,6 +83,19 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
   const [transcribing, setTranscribing] = useState(false);
   const [transcribingLocal, setTranscribingLocal] = useState(false);
   const localStatus = useLocalTranscribeStatus();
+  const [prefs] = usePreferences();
+  // Per-case sensitivity flag (mirrors investigations.culturally_sensitive).
+  // Defaults to true — fail-closed until we know otherwise — so the cloud
+  // button never flashes on for a sensitive case during the load race.
+  const [caseSensitive, setCaseSensitive] = useState<boolean>(true);
+  useEffect(() => {
+    let cancelled = false;
+    void getInvestigation(asset.investigation_id).then((inv) => {
+      if (!cancelled) setCaseSensitive(!!inv && inv.culturally_sensitive === 1);
+    });
+    return () => { cancelled = true; };
+  }, [asset.investigation_id]);
+  const cloudBlocked = caseSensitive || prefs.globalCulturalSensitivityFlag;
   const [transcript, setTranscript] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
@@ -455,7 +471,7 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
       const owned = new Uint8Array(wav.length);
       owned.set(wav);
       const blob = new Blob([owned], { type: "audio/wav" });
-      const result = await transcribeAudio(blob, { investigationId: asset.investigation_id, culturallySensitive: false }, {
+      const result = await transcribeAudio(blob, { investigationId: asset.investigation_id, culturallySensitive: caseSensitive }, {
         language: "en",
         filename: "evp-clip.wav",
         prompt: reviewerText.trim() ? `Possible utterance: ${reviewerText.trim()}` : undefined,
@@ -737,15 +753,17 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
               <button type="button" className={s.primaryBtn} onClick={handleSaveTrim} disabled={!selection || savingTrim}>
                 {savingTrim ? "Saving…" : "Save trim to case"}
               </button>
-              <button
-                type="button"
-                className={s.secondaryBtn}
-                onClick={handleTranscribe}
-                disabled={transcribing || transcribingLocal}
-                title="Cloud transcription via Whisper. Blocked on culturally-sensitive cases."
-              >
-                {transcribing ? "Transcribing…" : selection ? "Transcribe selection (cloud)" : "Transcribe full (cloud)"}
-              </button>
+              {!cloudBlocked && (
+                <button
+                  type="button"
+                  className={s.secondaryBtn}
+                  onClick={handleTranscribe}
+                  disabled={transcribing || transcribingLocal}
+                  title="Cloud transcription via Whisper. Blocked on culturally-sensitive cases."
+                >
+                  {transcribing ? "Transcribing…" : selection ? "Transcribe selection (cloud)" : "Transcribe full (cloud)"}
+                </button>
+              )}
               {localStatus.state === "ready" && (
                 <button
                   type="button"
@@ -756,6 +774,17 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
                 >
                   {transcribingLocal ? "Transcribing on-device…" : selection ? "Transcribe selection (on-device)" : "Transcribe full (on-device)"}
                 </button>
+              )}
+              {cloudBlocked && localStatus.state !== "ready" && (
+                <span className={s.transcribeBlockedHint}>
+                  Cloud transcription is blocked for this case ({caseSensitive ? "culturally-sensitive site" : "device-wide protection on"}).{" "}
+                  <Link to="/setup">Enable on-device transcription</Link> to transcribe locally.
+                </span>
+              )}
+              {cloudBlocked && localStatus.state === "ready" && (
+                <span className={s.transcribeBlockedHint}>
+                  On-device only — cloud transcription is blocked for this case.
+                </span>
               )}
               <button type="button" className={s.secondaryBtn} onClick={handleExportSelection} disabled={!selection}>
                 Export selection (.wav)

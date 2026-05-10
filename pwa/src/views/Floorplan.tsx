@@ -15,7 +15,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { generateQuestions, autoDebunk, type DebunkResult } from "../lib/ai/cloudAi";
 import { useSession } from "../lib/session";
-import { recordEvent } from "../lib/db/repo";
+import { getInvestigation, recordEvent } from "../lib/db/repo";
+import { usePreferences } from "../lib/preferences";
 import { appendAuditEntry } from "../lib/db/auditLog";
 import s from "./View.module.css";
 import f from "./Floorplan.module.css";
@@ -59,6 +60,21 @@ export function Floorplan() {
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiOff, setAiOff] = useState(false);
   const drawing = useRef<Stroke | null>(null);
+  const [prefs] = usePreferences();
+  // Per-case sensitivity — defaults to true (fail-closed) until the row is
+  // queried. The cloud-AI gate is server-side authoritative; this hint just
+  // matches the defense-in-depth contract.
+  const [caseSensitive, setCaseSensitive] = useState<boolean>(true);
+  useEffect(() => {
+    const id = session.current?.id;
+    if (!id) { setCaseSensitive(false); return; }
+    let cancelled = false;
+    void getInvestigation(id).then((inv) => {
+      if (!cancelled) setCaseSensitive(!!inv && inv.culturally_sensitive === 1);
+    });
+    return () => { cancelled = true; };
+  }, [session.current?.id]);
+  const cloudAiBlocked = caseSensitive || prefs.globalCulturalSensitivityFlag;
 
   const selectedStroke = selectedId ? strokes.find((s) => s.id === selectedId) ?? null : null;
 
@@ -217,7 +233,7 @@ export function Floorplan() {
     setAiError(null);
     setAiDebunk(null);
     try {
-      const ctx = { investigationId: session.current?.id ?? "anon", culturallySensitive: false };
+      const ctx = { investigationId: session.current?.id ?? "anon", culturallySensitive: caseSensitive };
       const siteContext = [
         session.current?.location_name ? `Location: ${session.current.location_name}.` : "",
         selectedStroke?.label ? `Selected room/marker: ${selectedStroke.label}.` : "",
@@ -239,7 +255,7 @@ export function Floorplan() {
     setAiError(null);
     setAiQuestions(null);
     try {
-      const ctx = { investigationId: session.current?.id ?? "anon", culturallySensitive: false };
+      const ctx = { investigationId: session.current?.id ?? "anon", culturallySensitive: caseSensitive };
       const result = await autoDebunk(
         {
           eventTitle: selectedStroke.label ? `Anomaly marker: ${selectedStroke.label}` : "Unlabelled anomaly marker",
@@ -398,7 +414,7 @@ export function Floorplan() {
               type="button"
               className={f.aiBtn}
               onClick={callSweepOrder}
-              disabled={aiOff || aiBusy != null}
+              disabled={aiOff || aiBusy != null || cloudAiBlocked}
             >
               {aiBusy === "sweep" ? "Planning…" : "Suggest sweep order"}
             </button>
@@ -406,7 +422,7 @@ export function Floorplan() {
               type="button"
               className={f.aiBtn}
               onClick={callQuestionsForSelected}
-              disabled={aiOff || aiBusy != null}
+              disabled={aiOff || aiBusy != null || cloudAiBlocked}
             >
               {aiBusy === "questions" ? "Generating…" : selectedStroke ? "Questions for selected" : "Site-wide questions"}
             </button>
@@ -414,11 +430,17 @@ export function Floorplan() {
               type="button"
               className={f.aiBtn}
               onClick={callDebunkForSelected}
-              disabled={aiOff || aiBusy != null || !selectedStroke || selectedStroke.kind !== "marker"}
+              disabled={aiOff || aiBusy != null || cloudAiBlocked || !selectedStroke || selectedStroke.kind !== "marker"}
             >
               {aiBusy === "debunk" ? "Working…" : "Debunk this marker"}
             </button>
           </div>
+
+          {cloudAiBlocked && (
+            <p className={f.aiHint}>
+              Cloud AI is blocked for this case ({caseSensitive ? "culturally-sensitive site" : "device-wide protection on"}). Sweep planning, question generation, and debunks all use cloud AI and are disabled here.
+            </p>
+          )}
 
           {aiError && <p className={f.aiError}>{aiError}</p>}
 
