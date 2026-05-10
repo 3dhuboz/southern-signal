@@ -109,6 +109,13 @@ export function AiAssistant({ investigationId, posterior, recentIncrements, site
         { investigationId, culturallySensitive },
       );
       setDebunks(out);
+      // Persist plausibility distribution so the Review screen can compute
+      // a real H₀ "AI insufficiency" confidence — see Review.tsx. Empty-result
+      // case sets max=0 / mean=0 (highest insufficiency).
+      const maxPlausibility = out.length > 0 ? Math.max(...out.map((d) => d.plausibility)) : 0;
+      const meanPlausibility = out.length > 0
+        ? out.reduce((sum, d) => sum + d.plausibility, 0) / out.length
+        : 0;
       await appendAuditEntry({
         actor: "ai",
         kind: "ai.debunk.proposed",
@@ -117,6 +124,8 @@ export function AiAssistant({ investigationId, posterior, recentIncrements, site
           count: out.length,
           posterior_at_request: posterior,
           model: "anthropic/sonnet",
+          max_plausibility: maxPlausibility,
+          mean_plausibility: meanPlausibility,
         },
       });
     } catch (err) {

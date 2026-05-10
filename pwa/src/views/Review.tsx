@@ -97,6 +97,29 @@ export function Review() {
       };
     });
 
+  // H₀ — AI insufficiency. Computed from `ai.debunk.proposed` audit entries
+  // that carry max_plausibility. Per request, insufficiency = 1 - max_plausibility
+  // (high when the AI couldn't propose any plausible mundane explanation).
+  // The displayed confidence is the mean across the operator's last 30
+  // debunk requests, fallback 0.18 when there's no usable history yet
+  // (matches the historical placeholder value so existing copy still applies).
+  const debunkAttempts = entries
+    .filter((e) => e.kind === "ai.debunk.proposed")
+    .map((e) => {
+      try {
+        const p = JSON.parse(e.payload_json) as Record<string, unknown>;
+        return typeof p.max_plausibility === "number" ? p.max_plausibility : null;
+      } catch { return null; }
+    })
+    .filter((p): p is number => p !== null && Number.isFinite(p))
+    .slice(0, 30); // entries are ordered DESC so this is the 30 most recent
+  const h0Confidence = debunkAttempts.length > 0
+    ? debunkAttempts.reduce((sum, p) => sum + (1 - p), 0) / debunkAttempts.length
+    : 0.18;
+  const h0Pct = Math.round(h0Confidence * 100);
+  const h0Computed = debunkAttempts.length > 0;
+  const h0Useful = h0Confidence < 0.4;
+
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
@@ -232,11 +255,17 @@ export function Review() {
       <div className={r.h0Card}>
         <div className={r.h0Header}>
           <strong>{isPro ? "H₀ — AI insufficiency" : "AI sanity check"}</strong>
-          <span className={r.h0Confidence}>{isPro ? "Confidence: 0.18" : "18% — AI is being useful"}</span>
+          <span className={r.h0Confidence}>
+            {isPro
+              ? `Confidence: ${h0Confidence.toFixed(2)}${h0Computed ? ` (n=${debunkAttempts.length})` : " (no data yet)"}`
+              : h0Computed
+                ? `${h0Pct}% — ${h0Useful ? "AI is being useful" : "AI is struggling"}`
+                : "no data yet"}
+          </span>
         </div>
         <p className={r.h0Body}>
           {isPro ? (
-            <>When AI fails to generate plausible mundane explanations, that's a model limitation, not evidence of the paranormal. If H₀ confidence exceeds 0.4 the post-roll renders <em>INCONCLUSIVE — model limitations exceed evidence threshold</em> instead of any verdict.</>
+            <>When AI fails to generate plausible mundane explanations, that's a model limitation, not evidence of the paranormal. If H₀ confidence exceeds 0.4 the post-roll renders <em>INCONCLUSIVE — model limitations exceed evidence threshold</em> instead of any verdict. Computed as mean(1 − max-plausibility) across recent debunk requests.</>
           ) : (
             <>If the AI can't think of normal explanations for what you saw, that's a limit of the AI, NOT proof of a ghost. When this number climbs above 40% we mark the case <em>inconclusive</em> instead of giving any verdict.</>
           )}
