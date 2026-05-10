@@ -15,6 +15,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { ScreenRecordButton } from "./ScreenRecordButton";
 import type { LogIncrement } from "../lib/posterior/posterior";
 import type { BaselineSummary } from "../lib/posterior/sessionBaseline";
@@ -449,6 +450,11 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
           <span className={s.quickLabel}>Ask a question</span>
           <span className={s.quickHint}>Respectful prompt by AI</span>
         </button>
+        <Link to="/research" className={s.quick}>
+          <span className={s.quickIcon} aria-hidden="true">🗂️</span>
+          <span className={s.quickLabel}>Research venue</span>
+          <span className={s.quickHint}>AI archive deep-dive · cited</span>
+        </Link>
       </div>
 
       {/* EVENT FEED */}

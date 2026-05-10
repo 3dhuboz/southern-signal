@@ -645,8 +645,14 @@
 
 .quickActions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* 2x2 on phone (more breathing room per tile), 4-up on wider screens
+     when the fourth tile (Research venue) is in play alongside the
+     three live-session actions. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--s-8);
+}
+@media (min-width: 540px) {
+  .quickActions { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 .quick {
@@ -660,6 +666,9 @@
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
   font-family: inherit;
+  text-align: center;
+  text-decoration: none;
+  color: var(--text-primary);
   color: var(--text-primary);
   cursor: pointer;
   text-align: center;
