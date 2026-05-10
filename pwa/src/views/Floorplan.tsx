@@ -249,6 +249,28 @@ export function Floorplan() {
         ctx,
       );
       setAiDebunk(result);
+      // Feed the same H₀ metric the in-session debunker feeds — record the
+      // plausibility distribution so Review's AHT post-roll status and the
+      // Evidence Brief verdict reflect floorplan-marker debunks too.
+      if (session.current?.id) {
+        const maxPlausibility = result.length > 0 ? Math.max(...result.map((d) => d.plausibility)) : 0;
+        const meanPlausibility = result.length > 0
+          ? result.reduce((sum, d) => sum + d.plausibility, 0) / result.length
+          : 0;
+        await appendAuditEntry({
+          actor: "ai",
+          kind: "ai.debunk.proposed",
+          payload: {
+            investigation_id: session.current.id,
+            count: result.length,
+            source: "floorplan_marker",
+            marker_label: selectedStroke.label ?? null,
+            model: "anthropic/sonnet",
+            max_plausibility: maxPlausibility,
+            mean_plausibility: meanPlausibility,
+          },
+        }).catch(() => { /* audit best-effort — never block the UI */ });
+      }
     } catch (err) {
       setAiError((err as Error).message);
     } finally {
