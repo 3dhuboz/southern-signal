@@ -1,0 +1,37 @@
+# Cloudflare Pages headers.
+# https://developers.cloudflare.com/pages/configuration/headers/
+#
+# Defensive defaults that don't break any of the app's cross-origin
+# integrations:
+#   - HuggingFace CDN (Whisper model fetch in the on-device worker)
+#   - WHIP ingest endpoints (Cloudflare Stream / Mux / Restream / Dolby /
+#     Eyevinn / FB-via-Cloudflare-relay)
+#   - Cloudflare Pages Functions on /api/*
+#
+# Notably NOT set: Cross-Origin-Embedder-Policy / Cross-Origin-Opener-Policy.
+# COEP=require-corp would unlock SharedArrayBuffer (faster transformers.js)
+# but block cross-origin video / model fetches without explicit CORP. The
+# slower-but-functional non-SAB path is the right trade for V1.
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: DENY
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Permissions-Policy: camera=(self), microphone=(self), geolocation=(self), accelerometer=(self), gyroscope=(self), magnetometer=(self), ambient-light-sensor=(self), screen-wake-lock=(self), display-capture=(self), browsing-topics=()
+
+# Service worker — never cache the SW registration; let updates ship fast.
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+# AudioWorklet processors — same as the SW, want the latest.
+/audio-worklet-recorder.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/sector-worklet.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+# Hashed asset chunks (Vite emits content-hashed filenames) — cache
+# aggressively. Vite chunk pattern: assets/<name>-<hash>.<ext>
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
