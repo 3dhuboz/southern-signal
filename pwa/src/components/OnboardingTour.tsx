@@ -22,38 +22,41 @@ type Step = {
 };
 
 // Schematic SVG cues — abstract, not literal. Match the dim/luminous aesthetic.
+// Opacity levels are tuned so the cues read on all three themes, including
+// daylight (where `currentColor` resolves to a darker green ~5:1 on white;
+// values below ~0.5 fade out against the bright bg).
 const cueWelcome = (
   <svg viewBox="0 0 64 64" aria-hidden="true" className={s.cueSvg}>
-    <circle cx="32" cy="32" r="22" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.35" />
-    <circle cx="32" cy="32" r="14" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.55" />
-    <circle cx="32" cy="32" r="6" fill="currentColor" opacity="0.85" />
+    <circle cx="32" cy="32" r="22" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.5" />
+    <circle cx="32" cy="32" r="14" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.7" />
+    <circle cx="32" cy="32" r="6" fill="currentColor" opacity="0.95" />
   </svg>
 );
 
 const cueCalibrate = (
   <svg viewBox="0 0 64 64" aria-hidden="true" className={s.cueSvg}>
-    <circle cx="32" cy="32" r="22" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.3" strokeDasharray="3 4" />
-    <path d="M32 32 L32 12" stroke="currentColor" strokeWidth="1.5" opacity="0.85" />
-    <path d="M32 32 L49 42" stroke="currentColor" strokeWidth="1.5" opacity="0.6" />
-    <path d="M32 32 L15 42" stroke="currentColor" strokeWidth="1.5" opacity="0.6" />
+    <circle cx="32" cy="32" r="22" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.5" strokeDasharray="3 4" />
+    <path d="M32 32 L32 12" stroke="currentColor" strokeWidth="1.5" opacity="0.95" />
+    <path d="M32 32 L49 42" stroke="currentColor" strokeWidth="1.5" opacity="0.75" />
+    <path d="M32 32 L15 42" stroke="currentColor" strokeWidth="1.5" opacity="0.75" />
     <circle cx="32" cy="32" r="2.5" fill="currentColor" />
   </svg>
 );
 
 const cueBroadcast = (
   <svg viewBox="0 0 64 64" aria-hidden="true" className={s.cueSvg}>
-    <rect x="10" y="18" width="44" height="28" rx="3" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.55" />
+    <rect x="10" y="18" width="44" height="28" rx="3" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.7" />
     <circle cx="48" cy="22" r="2" fill="currentColor" />
-    <path d="M16 40 L22 32 L28 38 L36 28 L48 42" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.85" />
-    <path d="M14 50 L50 50" stroke="currentColor" strokeWidth="1" opacity="0.4" strokeDasharray="2 3" />
+    <path d="M16 40 L22 32 L28 38 L36 28 L48 42" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.95" />
+    <path d="M14 50 L50 50" stroke="currentColor" strokeWidth="1" opacity="0.55" strokeDasharray="2 3" />
   </svg>
 );
 
 const cuePrivacy = (
   <svg viewBox="0 0 64 64" aria-hidden="true" className={s.cueSvg}>
-    <path d="M32 10 L48 18 V34 C48 44 40 50 32 54 C24 50 16 44 16 34 V18 Z" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.55" />
-    <rect x="26" y="28" width="12" height="12" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.85" />
-    <path d="M28 28 V24 A4 4 0 0 1 36 24 V28" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.85" />
+    <path d="M32 10 L48 18 V34 C48 44 40 50 32 54 C24 50 16 44 16 34 V18 Z" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.7" />
+    <rect x="26" y="28" width="12" height="12" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.95" />
+    <path d="M28 28 V24 A4 4 0 0 1 36 24 V28" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.95" />
   </svg>
 );
 
