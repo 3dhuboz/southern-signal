@@ -212,30 +212,17 @@
   flex-wrap: wrap;
   align-items: center;
 }
-.primary, .secondary {
-  appearance: none;
-  font-family: inherit;
+/* CaseManager buttons share one compact size — primary, ghost, and
+   danger flavours all consume .btn + their flavour utility for colour
+   and behaviour. .btnSize carries the case-row-sized geometry: 38px
+   touch target (smaller than view-level CTAs), --r-sm radius, 12px
+   text. */
+.btnSize {
   font-size: 12px;
-  font-weight: 700;
   padding: var(--s-8) 14px;
   border-radius: var(--r-sm);
-  cursor: pointer;
   min-height: 38px;
-  border: 1px solid;
 }
-.primary {
-  background: var(--signal);
-  color: var(--text-on-accent);
-  border-color: var(--signal);
-}
-.primary:hover { background: var(--signal-glow); }
-.secondary {
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  border-color: var(--border-default);
-}
-.secondary:hover { background: var(--bg-overlay); border-color: var(--signal-dim); }
-.secondary:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .sensitiveRow {
   display: flex;
@@ -452,20 +439,8 @@
   padding-top: 10px;
   display: flex;
 }
-.danger {
-  appearance: none;
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  padding: var(--s-8) 14px;
-  border-radius: var(--r-sm);
-  cursor: pointer;
-  background: var(--danger-wash);
-  color: var(--danger);
-  border: 1px solid var(--danger);
-  min-height: 38px;
-}
-.danger:hover { filter: brightness(1.1); }
+/* Delete case — destructive flavour shares .btnSize for geometry, gets
+   .btn-danger from the global. */
 
 .status {
   margin: 0;

@@ -375,7 +375,7 @@ export function CaseManager() {
         <h2 className={s.title}>Cases</h2>
         <span className={s.count}>{cases.length} investigation{cases.length === 1 ? "" : "s"} on this device</span>
         {!newCaseOpen && (
-          <button type="button" className={s.secondary} onClick={handleOpenNewCase}>
+          <button type="button" className={`btn btn-ghost ${s.btnSize}`} onClick={handleOpenNewCase}>
             + New case
           </button>
         )}
@@ -395,8 +395,8 @@ export function CaseManager() {
             />
           </label>
           <div className={s.actions}>
-            <button type="button" className={s.primary} onClick={handleSubmitNewCase}>Create case</button>
-            <button type="button" className={s.secondary} onClick={handleCancelNewCase}>Cancel</button>
+            <button type="button" className={`btn btn-primary ${s.btnSize}`} onClick={handleSubmitNewCase}>Create case</button>
+            <button type="button" className={`btn btn-ghost ${s.btnSize}`} onClick={handleCancelNewCase}>Cancel</button>
           </div>
         </div>
       )}
@@ -535,7 +535,7 @@ export function CaseManager() {
                   )}
 
                   <div className={s.actions}>
-                    <button type="button" className={s.primary} onClick={handleSaveEdits}>Save edits</button>
+                    <button type="button" className={`btn btn-primary ${s.btnSize}`} onClick={handleSaveEdits}>Save edits</button>
                     <div className={s.dispoGroup}>
                       <span className={s.fieldLabel}>Disposition</span>
                       <button type="button" className={s.dispo} onClick={() => handleSetDisposition("null")}>Null result</button>
@@ -565,14 +565,14 @@ export function CaseManager() {
                       <span className={s.blockLabel}>Media ({openMedia.length})</span>
                       <button
                         type="button"
-                        className={s.secondary}
+                        className={`btn btn-ghost ${s.btnSize}`}
                         onClick={handleExportBundle}
                       >
                         Export bundle (.zip)
                       </button>
                       <button
                         type="button"
-                        className={s.secondary}
+                        className={`btn btn-ghost ${s.btnSize}`}
                         onClick={handleDownloadAll}
                         disabled={openMedia.length === 0}
                       >
@@ -580,7 +580,7 @@ export function CaseManager() {
                       </button>
                       <Link
                         to={`/brief/${c.id}`}
-                        className={s.secondary}
+                        className={`btn btn-ghost ${s.btnSize}`}
                         title="Print a one-page case brief"
                       >
                         Print case brief
@@ -621,7 +621,7 @@ export function CaseManager() {
                   </div>
 
                   <div className={s.dangerBlock}>
-                    <button type="button" className={s.danger} onClick={handleDeleteCase}>
+                    <button type="button" className={`btn btn-danger ${s.btnSize}`} onClick={handleDeleteCase}>
                       Delete case + media
                     </button>
                   </div>
