@@ -35,6 +35,16 @@
   border: 1px dashed var(--border-subtle);
   border-radius: var(--r-md);
 }
+
+.newCaseBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: var(--s-12);
+  background: var(--bg-elevated);
+  border: 1px solid var(--signal-dim);
+  border-radius: var(--r-md);
+}
 .empty strong { color: var(--signal); }
 
 /* Empty-cases block: stacks the schematic illustration above the copy.

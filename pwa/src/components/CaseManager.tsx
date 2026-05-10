@@ -14,9 +14,10 @@ import { Link } from "react-router-dom";
 import { exec, query } from "../lib/db/db";
 import { readFile, deletePath } from "../lib/opfs";
 import { appendAuditEntry } from "../lib/db/auditLog";
-import { setCulturallySensitive } from "../lib/db/repo";
+import { createInvestigation, setCulturallySensitive } from "../lib/db/repo";
 import { clearBaseline } from "../lib/posterior/sessionBaseline";
 import { buildExportBundle, downloadBlob } from "../lib/forensic/exportBundle";
+import { autoName } from "../lib/cases/autoName";
 import type { EvidenceEvent, Investigation, MediaAsset } from "../lib/db/schema";
 import s from "./CaseManager.module.css";
 
@@ -79,6 +80,11 @@ export function CaseManager() {
   const [editing, setEditing] = useState<{ title: string; location_name: string; notes: string } | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [dismissedSuggestionFor, setDismissedSuggestionFor] = useState<Set<string>>(() => new Set());
+  // New-case form. `newCaseOpen` controls mount/unmount of the form, so the
+  // input only exists while the form is showing — when it remounts we get a
+  // fresh auto-name from the useState initialiser.
+  const [newCaseOpen, setNewCaseOpen] = useState(false);
+  const [newCaseTitle, setNewCaseTitle] = useState<string>(() => autoName());
 
   const refresh = useCallback(() => setReloadTick((t) => t + 1), []);
 
@@ -188,6 +194,33 @@ export function CaseManager() {
         payload: { investigation_id: openCaseId, suggested: "null", reason: "no posterior_after > 0.4" },
       });
     } catch { /* audit failures must not break UX */ }
+  };
+
+  const handleOpenNewCase = () => {
+    // Always re-seed the title on each "open" so the timestamp is current —
+    // even if the form was previously closed with stale text in state.
+    setNewCaseTitle(autoName());
+    setNewCaseOpen(true);
+  };
+
+  const handleCancelNewCase = () => {
+    setNewCaseOpen(false);
+  };
+
+  const handleSubmitNewCase = async () => {
+    // If the operator cleared the field, fall back to a fresh auto-name —
+    // never let an empty title hit the database.
+    const trimmed = newCaseTitle.trim();
+    const finalTitle = trimmed || autoName();
+    setStatusMsg(null);
+    try {
+      await createInvestigation({ title: finalTitle });
+      setNewCaseOpen(false);
+      setStatusMsg(`Created "${finalTitle}".`);
+      refresh();
+    } catch (err) {
+      setStatusMsg(`Create failed: ${(err as Error).message}`);
+    }
   };
 
   const handleSaveEdits = async () => {
@@ -341,7 +374,32 @@ export function CaseManager() {
       <header className={s.head}>
         <h2 className={s.title}>Cases</h2>
         <span className={s.count}>{cases.length} investigation{cases.length === 1 ? "" : "s"} on this device</span>
+        {!newCaseOpen && (
+          <button type="button" className={s.secondary} onClick={handleOpenNewCase}>
+            + New case
+          </button>
+        )}
       </header>
+
+      {newCaseOpen && (
+        <div className={s.newCaseBlock}>
+          <label className={s.field}>
+            <span className={s.fieldLabel}>Title</span>
+            <input
+              className={s.input}
+              autoFocus
+              value={newCaseTitle}
+              onChange={(e) => setNewCaseTitle(e.target.value)}
+              onFocus={(e) => e.currentTarget.select()}
+              placeholder={autoName()}
+            />
+          </label>
+          <div className={s.actions}>
+            <button type="button" className={s.primary} onClick={handleSubmitNewCase}>Create case</button>
+            <button type="button" className={s.secondary} onClick={handleCancelNewCase}>Cancel</button>
+          </div>
+        </div>
+      )}
 
       {cases.length === 0 ? (
         <div className={s.emptyBlock}>
