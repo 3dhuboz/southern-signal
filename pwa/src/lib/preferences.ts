@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from "react";
 
-export type Theme = "phosphor" | "scotopic";
+export type Theme = "phosphor" | "scotopic" | "daylight";
 export type ScotopicLevel = "dim" | "mid" | "max";
 export type ExperienceMode = "simple" | "pro";
 

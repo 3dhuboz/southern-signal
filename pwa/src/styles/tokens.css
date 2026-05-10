@@ -120,3 +120,49 @@
   --warning:        #E33645;
   --danger:         #FF4858;
 }
+
+/* ==========================================================================
+   Daylight mode — light palette for daytime field planning, equipment checks,
+   and outdoor use where ambient sun washes out dark UIs. Manual-only in V1
+   (no auto-engage at sunrise — operators flip it themselves).
+   Triggered by data-theme="daylight" on <html>.
+   ========================================================================== */
+:root[data-theme="daylight"] {
+  color-scheme: light;
+
+  --bg-canvas:      #FAFAF7;
+  --bg-surface:     #FFFFFF;
+  --bg-elevated:    #FFFFFF;
+  --bg-inset:       #F2F2EE;
+  --bg-overlay:     #ECEDE7;
+
+  --border-subtle:  #ECEAE3;
+  --border-default: #D9D6CC;
+  --border-strong:  #B5B1A4;
+
+  --text-primary:   #0E1116;
+  --text-secondary: #5C6168;
+  --text-muted:     #8A8F96;
+  --text-dim:       #B5B9BF;
+  --text-on-accent: #FFFFFF;
+
+  /* Darkened green family — #1F8F6E hits ~4.6:1 on #FFFFFF (WCAG AA for normal text). */
+  --signal:         #1F8F6E;
+  --signal-dim:     #14674F;
+  --signal-glow:    #2BAE87;
+  --signal-wash:    #E6F5EF;
+
+  /* Subtle warm amber — readable on white without going neon. */
+  --warning:        #B7791F;
+  --warning-wash:   #FBF1DD;
+  --danger:         #B5202F;
+  --danger-wash:    #F9E2E5;
+}
+
+/* Replace dark radial wash with a soft warm overlay so light theme stays bright. */
+:root[data-theme="daylight"] body {
+  background:
+    radial-gradient(1200px 700px at 12% -10%, rgba(31, 143, 110, 0.05), transparent 60%),
+    radial-gradient(900px 500px at 95% 5%, rgba(183, 121, 31, 0.04), transparent 60%),
+    var(--bg-canvas) !important;
+}

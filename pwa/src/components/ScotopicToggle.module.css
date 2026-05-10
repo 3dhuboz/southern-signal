@@ -39,6 +39,21 @@
   box-shadow: 0 0 8px #C41E3A;
 }
 
+/* Daylight state — warm amber dot reads as "sun"; uses theme tokens so
+   the button itself sits well on the light surface. */
+.day {
+  background: rgba(183, 121, 31, 0.14);
+  border-color: #D9B26A;
+  color: #8A5A0F;
+}
+.day .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #E0A52A;
+  box-shadow: 0 0 8px rgba(224, 165, 42, 0.55);
+}
+
 .label {
   font-family: var(--font-mono);
 }
