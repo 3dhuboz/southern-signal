@@ -54,6 +54,153 @@ function formatMmSs(seconds: number): string {
   return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
 }
 
+/** Map any 32-bit seed onto the FM broadcast band [88.0, 107.9] in 0.1 MHz
+ *  steps. Pure cosmetic — the dial is a visual metaphor for the spirit-box
+ *  scanning idiom; the underlying engine doesn't actually tune RF. */
+function seedToFrequency(seed: number): number {
+  return 88 + (Math.abs(seed | 0) % 200) / 10;
+}
+
+/** Same mapping but seeded from a station's stable id, so each loaded
+ *  radio station consistently "tunes" to the same dial position
+ *  throughout the session — feels like the dial settled on a real band. */
+function stationIdToFrequency(stationId: string): number {
+  let h = 5381;
+  for (let i = 0; i < stationId.length; i++) h = ((h * 33) ^ stationId.charCodeAt(i)) | 0;
+  return 88 + (Math.abs(h) % 200) / 10;
+}
+
+/** FrequencyDial — Necrophonic-style 88-108 MHz strip with a moving
+ *  needle. Renders into a canvas so the needle animates smoothly without
+ *  re-renders. Theme-aware: tick / label colours read from CSS custom
+ *  properties on the canvas element. */
+interface FrequencyDialProps {
+  frequencyMhz: number;
+  active: boolean;
+  /** "radio" highlights the needle amber to mirror the broadcast-
+   *  contamination chrome on the rest of the panel; "synth" uses
+   *  signal teal for evidence-safe mode. */
+  variant: "synth" | "radio";
+}
+function FrequencyDial({ frequencyMhz, active, variant }: FrequencyDialProps) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    if (canvas.width !== Math.floor(rect.width * dpr)) canvas.width = Math.floor(rect.width * dpr);
+    if (canvas.height !== Math.floor(rect.height * dpr)) canvas.height = Math.floor(rect.height * dpr);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const cs = getComputedStyle(canvas);
+    const signal = cs.getPropertyValue("--signal").trim() || "#7FFCD7";
+    const warning = cs.getPropertyValue("--warning").trim() || "#D99E20";
+    const textMuted = cs.getPropertyValue("--text-muted").trim() || "#71808C";
+    const textDim = cs.getPropertyValue("--text-dim").trim() || "#4A5560";
+
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    const padX = 14 * dpr;
+    const usable = w - padX * 2;
+    const railY = h * 0.62;
+    const minF = 88;
+    const maxF = 108;
+    const range = maxF - minF;
+
+    // Baseline rail
+    ctx.strokeStyle = textDim;
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = 1 * dpr;
+    ctx.beginPath();
+    ctx.moveTo(padX, railY);
+    ctx.lineTo(w - padX, railY);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // Tick marks — 0.5 MHz minor, 2 MHz major
+    for (let mhz = minF; mhz <= maxF; mhz += 0.5) {
+      const x = padX + ((mhz - minF) / range) * usable;
+      const isMajor = Math.round(mhz) % 2 === 0 && Math.abs(mhz - Math.round(mhz)) < 0.05;
+      const tickH = isMajor ? 7 * dpr : 3 * dpr;
+      ctx.strokeStyle = textMuted;
+      ctx.globalAlpha = isMajor ? 0.7 : 0.3;
+      ctx.beginPath();
+      ctx.moveTo(x, railY);
+      ctx.lineTo(x, railY + tickH);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    // Major tick labels
+    ctx.fillStyle = textMuted;
+    ctx.font = `${9 * dpr}px ui-monospace, monospace`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    for (let mhz = 88; mhz <= 108; mhz += 4) {
+      const x = padX + ((mhz - minF) / range) * usable;
+      ctx.fillText(`${mhz}`, x, railY + 10 * dpr);
+    }
+
+    // Top-of-strip labels: band on the left, live frequency on the right
+    ctx.fillStyle = textMuted;
+    ctx.font = `bold ${9 * dpr}px ui-monospace, monospace`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    ctx.fillText("FM  88.0 – 108.0 MHz", padX, 2 * dpr);
+
+    if (active) {
+      const liveColor = variant === "radio" ? warning : signal;
+      ctx.fillStyle = liveColor;
+      ctx.font = `bold ${10 * dpr}px ui-monospace, monospace`;
+      ctx.textAlign = "right";
+      ctx.fillText(`${frequencyMhz.toFixed(1)} MHz`, w - padX, 2 * dpr);
+    }
+
+    // Needle — line + triangle pointer
+    const clampedF = Math.max(minF, Math.min(maxF, frequencyMhz));
+    const needleX = padX + ((clampedF - minF) / range) * usable;
+    const needleColor = variant === "radio" ? warning : signal;
+
+    ctx.strokeStyle = needleColor;
+    ctx.globalAlpha = active ? 1 : 0.35;
+    ctx.lineWidth = 2 * dpr;
+
+    if (active) {
+      ctx.shadowColor = needleColor;
+      ctx.shadowBlur = 10 * dpr;
+    }
+    ctx.beginPath();
+    ctx.moveTo(needleX, railY - 16 * dpr);
+    ctx.lineTo(needleX, railY + 8 * dpr);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Pointer triangle at the top of the needle
+    ctx.fillStyle = needleColor;
+    ctx.beginPath();
+    ctx.moveTo(needleX - 4 * dpr, railY - 18 * dpr);
+    ctx.lineTo(needleX + 4 * dpr, railY - 18 * dpr);
+    ctx.lineTo(needleX, railY - 11 * dpr);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.globalAlpha = 1;
+  }, [frequencyMhz, active, variant]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{ display: "block", width: "100%", height: 60 }}
+      aria-hidden="true"
+    />
+  );
+}
+
 export function Estes() {
   const session = useSession();
   const [phase, setPhase] = useState<Phase>("pick-role");
@@ -66,6 +213,13 @@ export function Estes() {
   const [phonemeHistory, setPhonemeHistory] = useState<{ phoneme: string; ts: number; station?: Station | null }[]>([]);
   const [emissionCount, setEmissionCount] = useState(0);
   const [synthAmp, setSynthAmp] = useState(0);
+  // Virtual FM frequency the dial is "tuned to" — derived deterministically
+  // from the current seed (synth mode) or the current dwell station's id
+  // (radio mode). Visual metaphor only: the synth doesn't actually use FM;
+  // the radio sweep cycles internet stations, not RF bands. The dial is the
+  // ghost-hunting genre's canonical visual cue ("88-108 MHz scanner") and
+  // people read it instantly even though our forensic guts are different.
+  const [tunedFrequency, setTunedFrequency] = useState<number>(88.0);
   const [spiritBoxOn, setSpiritBoxOn] = useState(false);
   // "synth" — formant-noise burst (deterministic, no broadcast contamination).
   // "radio" — real internet-radio chunks proxied via /api/radio/proxy. Every
@@ -155,6 +309,7 @@ export function Estes() {
       // after the toggle goes off.
       setPhonemeHistory([]);
       setEmissionCount(0);
+      setTunedFrequency(88.0);
       setRadioState({ status: "idle", loaded: 0, total: 0, lastStation: null, error: null });
       return;
     }
@@ -178,6 +333,9 @@ export function Estes() {
           return next.length > 12 ? next.slice(next.length - 12) : next;
         });
         setEmissionCount((n) => n + 1);
+        // Visual: jump the FM needle to the seed-derived frequency.
+        // Cosmetic only — the synth doesn't actually tune RF.
+        setTunedFrequency(seedToFrequency(nextSeed));
         const ms = synthRef.current?.emit(p) ?? 0;
         if (ms > 0) setSynthAmp(1);
       }, 280);
@@ -238,15 +396,18 @@ export function Estes() {
             if (durationMs > 0) {
               setSynthAmp(1);
               setEmissionCount((n) => n + 1);
-              // Only push to history on a station JUMP — otherwise the
-              // trail would repeat "BBC, BBC, BBC" across every dwell
-              // tick, drowning out the sense of scanning. Dwell ticks
-              // still drive the amplitude meter and count.
+              // Only push to history (and tune the dial) on a station
+              // JUMP — otherwise the trail would repeat "BBC BBC BBC"
+              // across every dwell tick and the needle would jitter
+              // between two values mid-dwell. Dwell ticks still drive
+              // the amplitude meter and count, so the panel feels
+              // alive between jumps.
               if (didJump) {
                 setPhonemeHistory((arr) => {
                   const next = [...arr, { phoneme: station?.name ?? "—", ts: Date.now(), station }];
                   return next.length > 12 ? next.slice(next.length - 12) : next;
                 });
+                if (station) setTunedFrequency(stationIdToFrequency(station.id));
               }
             }
           }, 280);
@@ -651,6 +812,20 @@ export function Estes() {
                       </span>
                     </>
                   )}
+                </div>
+                {/* FM dial — the canonical spirit-box visual (Necrophonic,
+                    Ghost Voice Box, every hardware P-SB7 / SB11). The
+                    underlying engine doesn't actually tune RF; the needle
+                    position is derived from the current seed (synth) or
+                    the current dwell station's id (radio). Pure visual
+                    metaphor — the engineering chrome above still tells
+                    the truth about what's running. */}
+                <div className={e.freqDialWrap}>
+                  <FrequencyDial
+                    frequencyMhz={tunedFrequency}
+                    active={emissionCount > 0}
+                    variant={audioSource}
+                  />
                 </div>
                 <div className={e.synthTrail} aria-live="polite">
                   {phonemeHistory.length === 0 ? (

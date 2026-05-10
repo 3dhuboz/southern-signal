@@ -143,25 +143,78 @@
   gap: var(--s-12);
   position: relative;
 }
+/* Receiver display — designed to read as a piece of test equipment, not
+   a webpage. Three coordinated cues:
+     1. Hardware bezel — chamfered corners via clip-path, faint inner
+        signal-tinted highlight + outer drop shadow for a "metal edge".
+     2. Aurora wash — slow drifting radial-gradient behind the content
+        (uses the existing ss-aurora-drift keyframe in global.css). Adds
+        atmospheric motion to the surface without competing with the
+        readouts.
+     3. Scanlines — same as before, kept for the CRT-readout texture.
+   Content sits at z-index 1 so the aurora layer (::before) stays below. */
 .receiverDisplay {
-  background: #04080c;
-  border: 1px solid var(--border-default);
-  border-radius: var(--r-md);
-  padding: var(--s-12) var(--s-12) 10px;
+  position: relative;
+  background: var(--bg-canvas);
+  /* Soft outer shadow + inset signal highlight = "lit instrument edge". */
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--signal) 18%, transparent),
+    0 8px 32px -8px rgba(0, 0, 0, 0.55);
+  /* Chamfered corners — diagonals at the four corners suggest a bezel
+     rather than a generic rounded card. 12px chamfer scaled to feel
+     "machined" rather than "soft". */
+  clip-path: polygon(
+    12px 0,
+    calc(100% - 12px) 0,
+    100% 12px,
+    100% calc(100% - 12px),
+    calc(100% - 12px) 100%,
+    12px 100%,
+    0 calc(100% - 12px),
+    0 12px
+  );
+  padding: var(--s-16) var(--s-12) 10px;
   display: flex;
   flex-direction: column;
   gap: 10px;
   overflow: hidden;
-  position: relative;
-  /* Faint scanlines to push the "instrument readout, not flashcard" feel. */
+  /* Faint scanlines on top of the aurora — still the "instrument
+     readout, not flashcard" feel. */
   background-image:
     repeating-linear-gradient(
       to bottom,
-      rgba(127, 252, 215, 0.025) 0px,
-      rgba(127, 252, 215, 0.025) 1px,
+      color-mix(in srgb, var(--signal) 3%, transparent) 0px,
+      color-mix(in srgb, var(--signal) 3%, transparent) 1px,
       transparent 1px,
       transparent 3px
     );
+}
+/* Aurora wash — a soft signal-tinted radial gradient that slowly drifts
+   behind the readout content. Uses ss-aurora-drift (defined in
+   global.css, was unused). Low opacity + heavy blur so it's an
+   atmospheric undertone, not a distraction. */
+.receiverDisplay::before {
+  content: "";
+  position: absolute;
+  inset: -25%;
+  background:
+    radial-gradient(60% 60% at 25% 35%, color-mix(in srgb, var(--signal) 16%, transparent), transparent 70%),
+    radial-gradient(50% 50% at 80% 70%, color-mix(in srgb, var(--signal) 10%, transparent), transparent 75%);
+  filter: blur(18px);
+  pointer-events: none;
+  animation: ss-aurora-drift 22s ease-in-out infinite;
+  z-index: 0;
+}
+.receiverDisplay > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* FM dial wrapper — gives the canvas a fixed height + a soft bottom
+   divider so it reads as its own subpanel within the readout. */
+.freqDialWrap {
+  padding: 4px 0 var(--s-8);
+  border-bottom: 1px dashed var(--border-subtle);
 }
 
 /* Top chrome row — turns the engineering on display. The user sees a
@@ -286,12 +339,18 @@
   font-style: normal;
 }
 
-/* Visual cue that we're playing broadcast audio — amber outline + tint
-   on the readout chrome so the operator (and anyone on camera with
-   them) can tell at a glance which mode is live. */
+/* Visual cue that we're playing broadcast audio — amber bezel +
+   aurora retint so the operator (and anyone on camera with them) can
+   tell at a glance which mode is live. */
 .receiverDisplayRadio {
-  border-color: var(--warning);
-  box-shadow: 0 0 0 1px var(--warning-wash) inset;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--warning) 32%, transparent),
+    0 8px 32px -8px color-mix(in srgb, var(--warning) 25%, rgba(0, 0, 0, 0.55));
+}
+.receiverDisplayRadio::before {
+  background:
+    radial-gradient(60% 60% at 25% 35%, color-mix(in srgb, var(--warning) 18%, transparent), transparent 70%),
+    radial-gradient(50% 50% at 80% 70%, color-mix(in srgb, var(--warning) 12%, transparent), transparent 75%);
 }
 .receiverDisplayRadio .synthChromeLabel {
   color: var(--warning);
