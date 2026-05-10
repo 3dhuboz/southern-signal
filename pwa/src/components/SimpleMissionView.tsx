@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ScreenRecordButton } from "./ScreenRecordButton";
 import type { LogIncrement } from "../lib/posterior/posterior";
+import type { BaselineSummary } from "../lib/posterior/sessionBaseline";
 import {
   describeActivity,
   describeChannel,
@@ -57,6 +58,8 @@ interface SimpleMissionViewProps {
   statusMsg: string;
   recentIncrements: LogIncrement[];
   trustworthy: boolean;
+  /** Captured site baseline for this investigation, or null if none yet. Drives the readiness banner. */
+  baseline: BaselineSummary | null;
   hasInvestigation: boolean;
   investigationId: string | null;
   audioRms: number;
@@ -173,7 +176,7 @@ function relativeTime(now: number, ts: number): string {
 export function SimpleMissionView(props: SimpleMissionViewProps) {
   const {
     running, busy, posterior, elapsedSeconds, caseId, caseTitle, statusMsg,
-    recentIncrements, trustworthy, hasInvestigation, investigationId,
+    recentIncrements, trustworthy, baseline, hasInvestigation, investigationId,
     audioRms, sectorReading, narratorCaption, narratorSpeak, onToggleNarratorSpeak,
     onBegin, onStop, onMarker, onAskQuestion, onBroadcastLive, broadcasting, recordingClip, emitEvidence,
   } = props;
@@ -308,25 +311,59 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
         </p>
       </div>
 
-      {/* READINESS BANNER — set the operator's expectations before they tap Begin */}
-      {!running && (
-        <div className={`${s.readiness} ${trustworthy ? s.readinessOk : s.readinessWarn}`.trim()}>
-          <span className={s.readinessIcon} aria-hidden="true">{trustworthy ? "✓" : "⚠"}</span>
-          <div className={s.readinessBody}>
-            {trustworthy ? (
-              <>
-                <strong>Ready to record</strong>
-                <span> — calibration locked, sector readings trusted within ±60°.</span>
-              </>
-            ) : (
-              <>
-                <strong>Sector readings will be approximate.</strong>
-                <span> Switch to Pro mode (top-right) and run a quick 3-of-3 calibration to lock direction within ±60°. You can still record without it — anomalies will be tagged with no direction instead.</span>
-              </>
-            )}
+      {/* READINESS BANNER — multi-factor: calibration, baseline, baseline staleness.
+          Operator can still tap Begin in any state; this just sets honest expectations. */}
+      {!running && (() => {
+        // Compute each check independently.
+        const baselineAgeMs = baseline ? Date.now() - new Date(baseline.capturedAt).getTime() : null;
+        const STALE_AFTER_MS = 12 * 60 * 60 * 1000; // 12 hours
+        const baselineStale = baselineAgeMs != null && baselineAgeMs > STALE_AFTER_MS;
+        const baselineFresh = baseline != null && !baselineStale;
+        const allOk = trustworthy && baselineFresh;
+
+        const baselineAgeLabel = baselineAgeMs == null ? null
+          : baselineAgeMs < 60_000 ? "just now"
+          : baselineAgeMs < 3_600_000 ? `${Math.round(baselineAgeMs / 60_000)} min ago`
+          : baselineAgeMs < 86_400_000 ? `${Math.round(baselineAgeMs / 3_600_000)} h ago`
+          : `${Math.round(baselineAgeMs / 86_400_000)} d ago`;
+
+        return (
+          <div className={`${s.readiness} ${allOk ? s.readinessOk : s.readinessWarn}`.trim()}>
+            <div className={s.readinessHeadRow}>
+              <span className={s.readinessIcon} aria-hidden="true">{allOk ? "✓" : "⚠"}</span>
+              <strong>{allOk ? "Ready to record" : "Some checks pending — quality may suffer"}</strong>
+            </div>
+            <ul className={s.readinessList}>
+              <li className={s.readinessRow}>
+                <span className={`${s.readinessTick} ${trustworthy ? s.tickOk : s.tickWarn}`.trim()} aria-hidden="true">
+                  {trustworthy ? "✓" : "⚠"}
+                </span>
+                <span className={s.readinessRowBody}>
+                  <strong>Calibration</strong>
+                  <span>{trustworthy
+                    ? "locked, sector readings trusted within ±60°."
+                    : "not run. Switch to Pro mode to calibrate; anomalies fire without direction otherwise."}
+                  </span>
+                </span>
+              </li>
+              <li className={s.readinessRow}>
+                <span className={`${s.readinessTick} ${baselineFresh ? s.tickOk : s.tickWarn}`.trim()} aria-hidden="true">
+                  {baselineFresh ? "✓" : "⚠"}
+                </span>
+                <span className={s.readinessRowBody}>
+                  <strong>Site baseline</strong>
+                  <span>{baseline == null
+                    ? "not captured. The card above runs a 90s noise-floor capture so anomalies have a reference point."
+                    : baselineStale
+                      ? `captured ${baselineAgeLabel}. Older than 12h — different conditions likely. Re-capture for trustworthy weighting.`
+                      : `captured ${baselineAgeLabel}. RMS p95 ${baseline.audioRmsP95.toFixed(3)}, EMF p95 ${baseline.emfP95.toFixed(1)} μT.`}
+                  </span>
+                </span>
+              </li>
+            </ul>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* PRIMARY CALL TO ACTION */}
       <div className={s.controls}>

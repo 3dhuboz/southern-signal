@@ -451,6 +451,7 @@ export function MissionControl() {
           statusMsg={statusMsg}
           recentIncrements={siteSession.recentIncrements}
           trustworthy={trustworthy}
+          baseline={baseline}
           hasInvestigation={!!session.current}
           investigationId={session.current?.id ?? null}
           audioRms={audioRms}

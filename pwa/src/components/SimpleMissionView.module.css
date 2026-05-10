@@ -432,13 +432,58 @@
 
 .readiness {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
+  flex-direction: column;
+  gap: 10px;
   padding: 12px 14px;
   border-radius: var(--r-lg);
   border: 1px solid;
   font-size: 12px;
   line-height: 1.45;
+}
+.readinessHeadRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+.readinessList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.readinessRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.02);
+}
+.readinessTick {
+  font-size: 14px;
+  line-height: 1.2;
+  flex-shrink: 0;
+  margin-top: 1px;
+  font-weight: 700;
+}
+.tickOk { color: var(--accent-strong); }
+.tickWarn { color: rgb(242, 185, 93); }
+.readinessRowBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.readinessRowBody strong {
+  font-size: 12px;
+  letter-spacing: 0.4px;
+  color: var(--text);
+}
+.readinessRowBody span {
+  font-size: 11.5px;
+  color: var(--text-muted);
 }
 .readinessOk {
   background: rgba(93, 242, 199, 0.06);
