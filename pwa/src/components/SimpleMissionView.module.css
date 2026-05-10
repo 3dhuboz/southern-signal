@@ -471,6 +471,7 @@
 }
 .tickOk { color: var(--accent-strong); }
 .tickWarn { color: var(--warning); }
+.tickInfo { color: var(--text-muted); }
 .readinessRowBody {
   display: flex;
   flex-direction: column;

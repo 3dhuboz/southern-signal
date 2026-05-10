@@ -311,15 +311,23 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
         </p>
       </div>
 
-      {/* READINESS BANNER — multi-factor: calibration, baseline, baseline staleness.
-          Operator can still tap Begin in any state; this just sets honest expectations. */}
+      {/* READINESS BANNER — Simple-mode honesty: only the things the
+          operator can actually act on without leaving Simple mode. The
+          previous version warned about Calibration, but Simple mode has
+          no calibration UI — it's a Pro-only enhancement. Showing it as
+          a ⚠ row in Simple was misleading: amateurs read it as "I did
+          something wrong" when there's nothing to do. Now it's a neutral
+          row so the operator sees what's available without being scolded
+          about features they can't reach. */}
       {!running && (() => {
-        // Compute each check independently.
         const baselineAgeMs = baseline ? Date.now() - new Date(baseline.capturedAt).getTime() : null;
         const STALE_AFTER_MS = 12 * 60 * 60 * 1000; // 12 hours
         const baselineStale = baselineAgeMs != null && baselineAgeMs > STALE_AFTER_MS;
         const baselineFresh = baseline != null && !baselineStale;
-        const allOk = trustworthy && baselineFresh;
+        // Only the things the Simple-mode operator can act on contribute
+        // to the headline status. Calibration is Pro-only and deliberately
+        // doesn't downgrade Simple-mode readiness.
+        const allOk = baselineFresh;
 
         const baselineAgeLabel = baselineAgeMs == null ? null
           : baselineAgeMs < 60_000 ? "just now"
@@ -331,18 +339,18 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
           <div className={`${s.readiness} ${allOk ? s.readinessOk : s.readinessWarn}`.trim()}>
             <div className={s.readinessHeadRow}>
               <span className={s.readinessIcon} aria-hidden="true">{allOk ? "✓" : "⚠"}</span>
-              <strong>{allOk ? "Ready to record" : "Some checks pending — quality may suffer"}</strong>
+              <strong>{allOk ? "Ready to record" : "One step optional before recording"}</strong>
             </div>
             <ul className={s.readinessList}>
               <li className={s.readinessRow}>
-                <span className={`${s.readinessTick} ${trustworthy ? s.tickOk : s.tickWarn}`.trim()} aria-hidden="true">
-                  {trustworthy ? "✓" : "⚠"}
+                <span className={`${s.readinessTick} ${trustworthy ? s.tickOk : s.tickInfo}`.trim()} aria-hidden="true">
+                  {trustworthy ? "✓" : "·"}
                 </span>
                 <span className={s.readinessRowBody}>
                   <strong>Calibration</strong>
                   <span>{trustworthy
                     ? "locked, sector readings trusted within ±60°."
-                    : "not run. Switch to Pro mode to calibrate; anomalies fire without direction otherwise."}
+                    : "Pro-only enhancement. Anomalies still fire without it; they're just tagged with no direction. Switch to Pro in the header to expose it."}
                   </span>
                 </span>
               </li>
