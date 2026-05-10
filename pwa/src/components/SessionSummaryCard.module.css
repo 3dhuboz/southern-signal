@@ -79,9 +79,9 @@
   font-family: var(--font-mono);
 }
 .band_below { color: var(--text-secondary); }
-.band_inconclusive { color: rgb(242, 185, 93); }
+.band_inconclusive { color: var(--warning); }
 .band_elevated { color: rgb(242, 130, 93); }
-.band_flag { color: rgb(220, 60, 80); }
+.band_flag { color: var(--danger); }
 
 /* ----- AHT post-roll verdict ----- */
 
@@ -94,8 +94,8 @@
 }
 .verdict_suspended { border-left-color: var(--text-muted); }
 .verdict_null { border-left-color: var(--text-secondary); }
-.verdict_inconclusive { border-left-color: rgb(242, 185, 93); }
-.verdict_unexplained { border-left-color: rgb(220, 60, 80); }
+.verdict_inconclusive { border-left-color: var(--warning); }
+.verdict_unexplained { border-left-color: var(--danger); }
 .verdictHead {
   display: flex;
   align-items: baseline;
@@ -117,8 +117,8 @@
   letter-spacing: 0.8px;
   color: var(--text);
 }
-.verdict_inconclusive .verdictLabel { color: rgb(242, 185, 93); }
-.verdict_unexplained .verdictLabel { color: rgb(220, 60, 80); }
+.verdict_inconclusive .verdictLabel { color: var(--warning); }
+.verdict_unexplained .verdictLabel { color: var(--danger); }
 .verdictDetail {
   margin: 0 0 6px;
   font-size: 12px;

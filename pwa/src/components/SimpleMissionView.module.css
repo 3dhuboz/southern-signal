@@ -470,7 +470,7 @@
   font-weight: 700;
 }
 .tickOk { color: var(--accent-strong); }
-.tickWarn { color: rgb(242, 185, 93); }
+.tickWarn { color: var(--warning); }
 .readinessRowBody {
   display: flex;
   flex-direction: column;
@@ -496,7 +496,7 @@
   border-color: rgba(242, 185, 93, 0.35);
   color: var(--text);
 }
-.readinessWarn strong { color: rgb(242, 185, 93); }
+.readinessWarn strong { color: var(--warning); }
 .readinessIcon {
   font-size: 16px;
   line-height: 1;

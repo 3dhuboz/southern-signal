@@ -149,7 +149,7 @@
 .verdict_suspended { border-left-color: var(--text-muted); }
 .verdict_null { border-left-color: var(--text-secondary); }
 .verdict_inconclusive { border-left-color: var(--warning); }
-.verdict_unexplained { border-left-color: rgb(220, 60, 80); }
+.verdict_unexplained { border-left-color: var(--danger); }
 .verdictCardHead {
   display: flex;
   align-items: baseline;
@@ -172,7 +172,7 @@
   color: var(--text-primary);
 }
 .verdict_inconclusive .verdictCardLabel { color: var(--warning); }
-.verdict_unexplained .verdictCardLabel { color: rgb(220, 60, 80); }
+.verdict_unexplained .verdictCardLabel { color: var(--danger); }
 .verdictCardTitle {
   margin: 0 0 4px;
   font-size: 13px;

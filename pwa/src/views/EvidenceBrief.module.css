@@ -86,8 +86,8 @@
 }
 .verdict_suspended { border-left-color: var(--text-muted); }
 .verdict_null { border-left-color: var(--text-secondary); }
-.verdict_inconclusive { border-left-color: rgb(217, 158, 32); }
-.verdict_unexplained { border-left-color: rgb(220, 60, 80); }
+.verdict_inconclusive { border-left-color: var(--warning); }
+.verdict_unexplained { border-left-color: var(--danger); }
 .verdictHead {
   display: flex;
   align-items: baseline;
@@ -109,8 +109,8 @@
   letter-spacing: 1px;
   color: var(--text);
 }
-.verdict_inconclusive .verdictLabel { color: rgb(217, 158, 32); }
-.verdict_unexplained .verdictLabel { color: rgb(220, 60, 80); }
+.verdict_inconclusive .verdictLabel { color: var(--warning); }
+.verdict_unexplained .verdictLabel { color: var(--danger); }
 .verdictDetail {
   margin: 0 0 8px;
   font-size: 13px;
@@ -208,9 +208,9 @@
   color: var(--text-muted);
 }
 .band_below { color: var(--text-secondary); }
-.band_inconclusive { color: rgb(242, 185, 93); }
+.band_inconclusive { color: var(--warning); }
 .band_elevated { color: rgb(242, 130, 93); }
-.band_flag { color: rgb(220, 60, 80); }
+.band_flag { color: var(--danger); }
 
 /* ----- MOMENTS ----- */
 
