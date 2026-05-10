@@ -4,7 +4,9 @@ import { CaseManager } from "../components/CaseManager";
 import { SyncPanel } from "../components/SyncPanel";
 import {
   DEFAULT_LOCAL_MODEL,
+  WHISPER_SAMPLE_RATE,
   loadLocalWhisperModel,
+  transcribeOnDevice,
   unloadLocalWhisperModel,
   useLocalTranscribeStatus,
 } from "../lib/audio/localTranscribe";
@@ -59,6 +61,31 @@ export function Setup() {
   const handleUnloadModel = useCallback(() => {
     unloadLocalWhisperModel();
     setLoadError(null);
+    setSelfTest(null);
+  }, []);
+
+  // Self-test: synthesize 1 s of low-amplitude noise at 16 kHz, round-trip
+  // through the worker, and report timing + output. Real-browser sanity
+  // check — confirms the worker bundled, the model is actually loaded into
+  // the pipeline, and message-passing round-trips. Whisper on noise usually
+  // returns empty / "[BLANK_AUDIO]" — that's a passing test, not a failure.
+  const [selfTest, setSelfTest] = useState<{ status: "running" | "ok" | "fail"; ms?: number; text?: string; error?: string } | null>(null);
+  const handleSelfTest = useCallback(async () => {
+    setSelfTest({ status: "running" });
+    try {
+      const samples = new Float32Array(WHISPER_SAMPLE_RATE); // 1 s at 16 kHz
+      // Low-amplitude pseudorandom noise; deterministic seed-free is fine
+      // since we only care about pipeline plumbing.
+      for (let i = 0; i < samples.length; i += 1) {
+        samples[i] = (Math.random() - 0.5) * 0.001;
+      }
+      const t0 = performance.now();
+      const result = await transcribeOnDevice(samples, WHISPER_SAMPLE_RATE, { language: "en", returnTimestamps: false });
+      const ms = Math.round(performance.now() - t0);
+      setSelfTest({ status: "ok", ms, text: result.text });
+    } catch (err) {
+      setSelfTest({ status: "fail", error: err instanceof Error ? err.message : String(err) });
+    }
   }, []);
 
   return (
@@ -167,9 +194,28 @@ export function Setup() {
             <p className={st.toggleHint}>
               Model loaded: <code>{localStatus.loadedModel ?? DEFAULT_LOCAL_MODEL}</code>. EVP recordings can now be transcribed locally — see the editor on the EVP screen.
             </p>
-            <button type="button" className={st.linkBtn ?? ""} onClick={handleUnloadModel}>
-              Unload model (frees memory)
-            </button>
+            <div className={st.actionRow ?? ""}>
+              <button
+                type="button"
+                className={st.linkBtn ?? ""}
+                onClick={handleSelfTest}
+                disabled={selfTest?.status === "running"}
+                title="Round-trips a 1-second synthetic clip through the worker to confirm the pipeline is wired correctly."
+              >
+                {selfTest?.status === "running" ? "Testing…" : "Test pipeline"}
+              </button>
+              <button type="button" className={st.linkBtn ?? ""} onClick={handleUnloadModel}>
+                Unload model (frees memory)
+              </button>
+            </div>
+            {selfTest?.status === "ok" && (
+              <p className={st.toggleHint}>
+                Pipeline OK · {selfTest.ms} ms · output: <code>{selfTest.text?.trim() || "(empty — Whisper returned no transcript for synthetic noise, which is expected)"}</code>
+              </p>
+            )}
+            {selfTest?.status === "fail" && (
+              <p className={st.errorLine}>Pipeline test failed: {selfTest.error}</p>
+            )}
           </>
         )}
         {localStatus.state === "error" && (

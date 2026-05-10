@@ -133,6 +133,13 @@
   transition: width 200ms ease;
 }
 
+.actionRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .themeLabel {
   font-size: 13px;
   font-weight: 600;
