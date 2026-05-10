@@ -352,6 +352,25 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
         </p>
       </div>
 
+      {/* PRE-VISIT RECON — surfaces only when no case is active AND the
+          AI Investigator is enabled. Empty-state operators often don't
+          realise the archive deep-dive doesn't require a session — this
+          card tells them, with a one-click entry. */}
+      {!hasInvestigation && !running && researchEnabled && (
+        <Link to="/research" className={s.reconCard}>
+          <span className={s.reconIcon} aria-hidden="true">🗂️</span>
+          <span className={s.reconBody}>
+            <span className={s.reconTitle}>Pre-visit recon</span>
+            <span className={s.reconHint}>
+              Walking into a venue cold? Research it first — heritage records, court files,
+              Country significance, folklore tiers. No session required. Findings save to a
+              dossier you can attach to a case after you arrive.
+            </span>
+          </span>
+          <span className={s.reconArrow} aria-hidden="true">→</span>
+        </Link>
+      )}
+
       {/* READINESS BANNER — Simple-mode honesty: only the things the
           operator can actually act on without leaving Simple mode. The
           previous version warned about Calibration, but Simple mode has
