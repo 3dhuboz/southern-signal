@@ -246,6 +246,7 @@ export function EvidenceBrief() {
                 <span className={s.dossierMeta}>
                   {dossier.findingCount} finding{dossier.findingCount === 1 ? "" : "s"}
                   {" · "}{dossier.citationCount} citation{dossier.citationCount === 1 ? "" : "s"}
+                  {dossier.reviewerNoteCount > 0 && <>{" · "}{dossier.reviewerNoteCount} reviewer note{dossier.reviewerNoteCount === 1 ? "" : "s"}</>}
                   {" · "}{dossier.region}
                   {" · "}{formatDate(dossier.createdAt)}
                   {" · "}<code>{dossier.model.replace(/^.*\//, "")}</code>
@@ -271,6 +272,12 @@ export function EvidenceBrief() {
                               );
                             })}
                           </ul>
+                        )}
+                        {f.reviewerNote && (
+                          <div className={s.dossierNote}>
+                            <span className={s.dossierNoteLabel}>Reviewer note · {formatDate(f.reviewerNote.updatedAt)}</span>
+                            <span className={s.dossierNoteText}>{f.reviewerNote.text}</span>
+                          </div>
                         )}
                       </li>
                     ))}

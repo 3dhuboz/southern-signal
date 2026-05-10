@@ -17,9 +17,10 @@ import { query } from "../db/db";
 import { verifyAuditChain } from "../db/auditLog";
 import { getPreferences } from "../preferences";
 import { buildManifest } from "./manifest";
-import type { Investigation, ResearchDossierRow } from "../db/schema";
+import type { Investigation, ResearchDossierRow, ResearchFindingNoteRow } from "../db/schema";
 import { classifyPosterior, type PosteriorBand } from "../posterior/posterior";
 import { computeAhtVerdict, computeH0Confidence, type AhtVerdictResult } from "../posterior/ahtVerdict";
+import { findingKeyFor } from "../db/repo";
 import type { ResearchFinding, ResearchResult, ResearchTier } from "../research/api";
 
 export interface BriefMoment {
@@ -39,6 +40,18 @@ export interface BriefMoment {
  * The full ResearchResult is preserved on `raw` for callers that want
  * the suggestions / warnings / search-terms metadata.
  */
+/**
+ * A finding as it appears in the brief — extends the raw model output
+ * with the reviewer's note (if any). `findingKey` is the SHA-256 prefix
+ * the note is anchored to, exposed so a reviewer-side verifier can
+ * confirm the note attached to *this* finding text and not some
+ * neighbour.
+ */
+export interface BriefResearchFinding extends ResearchFinding {
+  findingKey: string;
+  reviewerNote: { text: string; updatedAt: string } | null;
+}
+
 export interface BriefResearchDossier {
   id: string;
   venueName: string;
@@ -46,11 +59,13 @@ export interface BriefResearchDossier {
   region: string;
   createdAt: string;
   model: string;
-  findingsByTier: { tier: ResearchTier; findings: ResearchFinding[] }[];
+  findingsByTier: { tier: ResearchTier; findings: BriefResearchFinding[] }[];
   /** Total findings across all tiers — convenient for tally rendering. */
   findingCount: number;
   /** Total distinct source citations across the dossier. */
   citationCount: number;
+  /** Total reviewer notes attached across all findings. */
+  reviewerNoteCount: number;
   /** True iff at least one finding sits in a tier with primary-source
    *  weight (HERITAGE or DOCUMENTED_INCIDENT). Drives the "cited
    *  primary-source corroboration" header on the brief. */
@@ -107,14 +122,14 @@ function parseDossierResult(json: string): ResearchResult | null {
   } catch { return null; }
 }
 
-function groupFindingsByTier(findings: ResearchFinding[]): { tier: ResearchTier; findings: ResearchFinding[] }[] {
-  const buckets = new Map<ResearchTier, ResearchFinding[]>();
+function groupFindingsByTier(findings: BriefResearchFinding[]): { tier: ResearchTier; findings: BriefResearchFinding[] }[] {
+  const buckets = new Map<ResearchTier, BriefResearchFinding[]>();
   for (const f of findings) {
     const list = buckets.get(f.tier) ?? [];
     list.push(f);
     buckets.set(f.tier, list);
   }
-  const out: { tier: ResearchTier; findings: ResearchFinding[] }[] = [];
+  const out: { tier: ResearchTier; findings: BriefResearchFinding[] }[] = [];
   for (const tier of TIER_DISPLAY_ORDER) {
     const list = buckets.get(tier);
     if (list && list.length > 0) out.push({ tier, findings: list });
@@ -122,12 +137,29 @@ function groupFindingsByTier(findings: ResearchFinding[]): { tier: ResearchTier;
   return out;
 }
 
-function toBriefDossier(row: ResearchDossierRow): BriefResearchDossier | null {
+async function toBriefDossier(row: ResearchDossierRow, notes: ResearchFindingNoteRow[]): Promise<BriefResearchDossier | null> {
   const parsed = parseDossierResult(row.result_json);
   if (!parsed) return null;
-  const findingsByTier = groupFindingsByTier(parsed.findings);
+  const noteByKey = new Map<string, ResearchFindingNoteRow>();
+  for (const n of notes) noteByKey.set(n.finding_key, n);
+
+  // Compute the finding_key for each finding so we can look up notes.
+  // Same hash the UI uses on save — content-anchored, not index-anchored.
+  const annotatedFindings: BriefResearchFinding[] = [];
+  for (const f of parsed.findings) {
+    const findingKey = await findingKeyFor(f);
+    const note = noteByKey.get(findingKey);
+    annotatedFindings.push({
+      ...f,
+      findingKey,
+      reviewerNote: note ? { text: note.text, updatedAt: note.updated_at } : null,
+    });
+  }
+
+  const findingsByTier = groupFindingsByTier(annotatedFindings);
   const hasPrimarySources = findingsByTier.some((g) => g.tier === "HERITAGE" || g.tier === "DOCUMENTED_INCIDENT");
   const citationCount = parsed.findings.reduce((n, f) => n + (Array.isArray(f.sources) ? f.sources.length : 0), 0);
+  const reviewerNoteCount = annotatedFindings.reduce((n, f) => n + (f.reviewerNote ? 1 : 0), 0);
   return {
     id: row.id,
     venueName: row.venue_name,
@@ -138,6 +170,7 @@ function toBriefDossier(row: ResearchDossierRow): BriefResearchDossier | null {
     findingsByTier,
     findingCount: parsed.findings.length,
     citationCount,
+    reviewerNoteCount,
     hasPrimarySources,
     raw: parsed,
   };
@@ -249,9 +282,29 @@ export async function buildEvidenceBrief(investigationId: string): Promise<Evide
      LIMIT 10`,
     [investigationId, investigation.title ?? "", investigation.location_name ?? ""],
   );
+  // Bulk-load notes for all dossiers we're about to render. Wrapped
+  // in try/catch — pre-v5 schemas don't have the table.
+  const dossierIds = dossierRows.map((d) => d.id);
+  let noteRows: ResearchFindingNoteRow[] = [];
+  if (dossierIds.length > 0) {
+    try {
+      const placeholders = dossierIds.map(() => "?").join(",");
+      noteRows = await query<ResearchFindingNoteRow>(
+        `SELECT * FROM research_finding_notes WHERE dossier_id IN (${placeholders})`,
+        dossierIds,
+      );
+    } catch { /* pre-v5 schema — no notes */ }
+  }
+  const notesByDossierId = new Map<string, ResearchFindingNoteRow[]>();
+  for (const n of noteRows) {
+    const list = notesByDossierId.get(n.dossier_id) ?? [];
+    list.push(n);
+    notesByDossierId.set(n.dossier_id, list);
+  }
+
   const researchDossiers: BriefResearchDossier[] = [];
   for (const row of dossierRows) {
-    const d = toBriefDossier(row);
+    const d = await toBriefDossier(row, notesByDossierId.get(row.id) ?? []);
     if (d) researchDossiers.push(d);
   }
 

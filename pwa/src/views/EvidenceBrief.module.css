@@ -481,6 +481,30 @@
   letter-spacing: 0.3px;
   border-radius: 3px;
 }
+.dossierNote {
+  margin-top: 4px;
+  padding: 6px var(--s-10);
+  background: color-mix(in srgb, var(--accent-strong) 6%, transparent);
+  border-left: 2px solid var(--accent-strong);
+  border-radius: 3px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.dossierNoteLabel {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--accent-strong);
+}
+.dossierNoteText {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text);
+  white-space: pre-wrap;
+}
 
 /* ----- PRINT ----- */
 
@@ -562,4 +586,10 @@
   .dossierFindingBody { color: #333 !important; }
   .dossierSource a { color: #000 !important; }
   .dossierWarnings { background: #f5f5f5 !important; color: #444 !important; border-left-color: #777 !important; }
+  .dossierNote {
+    background: #f7f7f7 !important;
+    border-left-color: #000 !important;
+  }
+  .dossierNoteLabel { color: #000 !important; }
+  .dossierNoteText { color: #222 !important; }
 }

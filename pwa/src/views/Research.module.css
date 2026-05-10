@@ -409,6 +409,47 @@
   letter-spacing: 0.4px;
 }
 
+/* Reviewer note — sits at the bottom of each finding, anchored to the
+   finding's content hash so it persists across re-renders. Compact
+   default; auto-expands as the operator writes. Saved on blur. */
+.noteBlock {
+  margin-top: var(--s-8);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: var(--s-8) var(--s-10);
+  background: color-mix(in srgb, var(--text-muted) 4%, var(--bg-surface));
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+}
+.noteLabel {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+.noteSaved { color: var(--signal); font-weight: 700; }
+.noteDirty { color: var(--warning); font-weight: 700; }
+.noteInput {
+  width: 100%;
+  resize: vertical;
+  min-height: 36px;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  padding: 6px var(--s-10);
+}
+.noteInput:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+  border-color: var(--signal);
+}
+
 /* Drill-down (follow-up) — sits inside each finding so children are
    visually anchored to their parent. The trigger is a quiet text-style
    button until activated, then expands into a textarea + run/cancel

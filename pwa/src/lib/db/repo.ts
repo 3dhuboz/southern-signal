@@ -7,7 +7,7 @@
 
 import { appendAuditEntry } from "./auditLog";
 import { exec, query } from "./db";
-import type { EvidenceEvent, Investigation, MediaAsset, ResearchDossierRow, SensorSample } from "./schema";
+import type { EvidenceEvent, Investigation, MediaAsset, ResearchDossierRow, ResearchFindingNoteRow, SensorSample } from "./schema";
 import { clearSensitivityCache, enqueue } from "../sync/queue";
 
 async function safeEnqueue(args: Parameters<typeof enqueue>[0]): Promise<void> {
@@ -349,4 +349,92 @@ export async function getDossier(id: string): Promise<ResearchDossierRow | null>
 export async function deleteDossier(id: string): Promise<void> {
   await exec("DELETE FROM research_dossiers WHERE id = ?", [id]);
   await appendAuditEntry({ actor: ACTOR_DEFAULT, kind: "research.dossier.delete", payload: { id } });
+}
+
+// ---------------------- research finding notes (v5) ----------------------
+
+/**
+ * Compute the stable 24-char SHA-256 prefix key for a finding so notes
+ * survive the parent findings array being re-rendered in a different
+ * order. Exported so the UI can compute the same key at render time.
+ *
+ * The key intentionally folds tier, title, and body — if the model
+ * generates a slightly different rewording on a re-run, the note will
+ * unlink (which is what we want — a note is an annotation on specific
+ * wording, not a tag on "the third finding").
+ */
+export async function findingKeyFor(finding: { tier: string; title: string; body: string }): Promise<string> {
+  const data = new TextEncoder().encode(`${finding.tier}|${finding.title}|${finding.body}`);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 24);
+}
+
+export interface FindingNoteInput {
+  dossier_id: string;
+  finding_key: string;
+  text: string;
+}
+
+/**
+ * Upsert a reviewer note. INSERT OR REPLACE on (dossier_id, finding_key)
+ * — same finding gets one note, overwriting on edit. Empty text is
+ * treated as a delete so the operator can clear a note by saving it
+ * empty. Audit chain records save / delete separately so the reviewer
+ * can see how a note evolved.
+ */
+export async function saveFindingNote(input: FindingNoteInput): Promise<ResearchFindingNoteRow | null> {
+  const text = input.text.trim();
+  if (text.length === 0) {
+    await deleteFindingNote(input.dossier_id, input.finding_key);
+    return null;
+  }
+  const now = nowUtc();
+  // Look up existing so created_at is preserved across edits.
+  const existing = await query<ResearchFindingNoteRow>(
+    "SELECT * FROM research_finding_notes WHERE dossier_id = ? AND finding_key = ?",
+    [input.dossier_id, input.finding_key],
+  );
+  const id = existing[0]?.id ?? uuid();
+  const createdAt = existing[0]?.created_at ?? now;
+  await exec(
+    `INSERT INTO research_finding_notes (id, dossier_id, finding_key, text, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(dossier_id, finding_key) DO UPDATE SET text = excluded.text, updated_at = excluded.updated_at`,
+    [id, input.dossier_id, input.finding_key, text, createdAt, now],
+  );
+  await appendAuditEntry({
+    actor: ACTOR_DEFAULT,
+    kind: existing[0] ? "research.finding_note.update" : "research.finding_note.create",
+    payload: { id, dossier_id: input.dossier_id, finding_key: input.finding_key, text_length: text.length },
+  });
+  return { id, dossier_id: input.dossier_id, finding_key: input.finding_key, text, created_at: createdAt, updated_at: now };
+}
+
+export async function deleteFindingNote(dossierId: string, findingKey: string): Promise<void> {
+  const existing = await query<ResearchFindingNoteRow>(
+    "SELECT * FROM research_finding_notes WHERE dossier_id = ? AND finding_key = ?",
+    [dossierId, findingKey],
+  );
+  if (!existing[0]) return;
+  await exec(
+    "DELETE FROM research_finding_notes WHERE dossier_id = ? AND finding_key = ?",
+    [dossierId, findingKey],
+  );
+  await appendAuditEntry({
+    actor: ACTOR_DEFAULT,
+    kind: "research.finding_note.delete",
+    payload: { id: existing[0].id, dossier_id: dossierId, finding_key: findingKey },
+  });
+}
+
+export async function listFindingNotesForDossier(dossierId: string): Promise<ResearchFindingNoteRow[]> {
+  try {
+    return await query<ResearchFindingNoteRow>(
+      "SELECT * FROM research_finding_notes WHERE dossier_id = ? ORDER BY updated_at DESC",
+      [dossierId],
+    );
+  } catch {
+    // Pre-v5 schema — table doesn't exist yet.
+    return [];
+  }
 }

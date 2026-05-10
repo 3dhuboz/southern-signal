@@ -31,7 +31,7 @@ import {
   type ResearchFinding,
   type ResearchTier,
 } from "../lib/research/api";
-import { recordEvent, saveDossier, listDossiers, getDossier, deleteDossier } from "../lib/db/repo";
+import { recordEvent, saveDossier, listDossiers, getDossier, deleteDossier, findingKeyFor, saveFindingNote, listFindingNotesForDossier } from "../lib/db/repo";
 import type { ResearchDossierRow } from "../lib/db/schema";
 import { appendAuditEntry } from "../lib/db/auditLog";
 import s from "./View.module.css";
@@ -92,6 +92,31 @@ function formatResetIn(ms: number | null): string {
   return `Resets in ~${mins}m`;
 }
 
+/**
+ * Progress labels rotated while a run is in flight. These are
+ * illustrative — Perplexity Sonar doesn't actually emit per-source
+ * progress events — but they tie the wait time to the *kind* of work
+ * the system prompt asks for. AU and GLOBAL lists differ because the
+ * source ordering in the prompt differs.
+ */
+const PROGRESS_LABELS_AU: string[] = [
+  "Walking the archives…",
+  "Pulling state heritage register entries…",
+  "Cross-referencing AustLII court records…",
+  "Searching Trove newspaper archive…",
+  "Checking First Nations Country layer…",
+  "Reviewing local-council heritage citations…",
+  "Synthesising sources…",
+];
+const PROGRESS_LABELS_GLOBAL: string[] = [
+  "Walking the archives…",
+  "Querying government heritage registers…",
+  "Reviewing court records and primary news…",
+  "Checking indigenous-land databases…",
+  "Pulling newspaper / library archive entries…",
+  "Synthesising sources…",
+];
+
 export function Research() {
   const session = useSession();
   const [prefs] = usePreferences();
@@ -125,6 +150,20 @@ export function Research() {
   }
   const [followups, setFollowups] = useState<Record<string, FollowupState>>({});
 
+  /** v5: reviewer notes per finding. Keyed by finding_key (sha256
+   *  prefix over tier|title|body). Values: { text, savedText, dirty }.
+   *  `savedText` mirrors what's in the DB so we can mark dirty / show
+   *  a Save indicator without re-querying on every keystroke. */
+  interface NoteState { text: string; savedText: string; saving: boolean }
+  const [notes, setNotes] = useState<Record<string, NoteState>>({});
+  const [findingKeys, setFindingKeys] = useState<Record<string, string>>({});
+
+  /** v5: rotating progress label shown while the run is in flight.
+   *  Cycles through archive layers the system prompt actually asks the
+   *  model to consult — illustrative, not literal. Index resets on
+   *  busy↑ so each run gets a fresh sequence. */
+  const [progressIndex, setProgressIndex] = useState(0);
+
   // Prefill priority: URL params (deep link from CaseManager) → active
   // investigation. URL takes precedence so a "Research this case"
   // shortcut from a non-active case still prefills correctly.
@@ -151,6 +190,101 @@ export function Research() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.current?.id]);
 
+  // Active dossier id — the row reviewer notes attach to. Either the
+  // dossier we just saved (after a fresh run) or the one currently
+  // open (loaded from past dossiers).
+  const activeDossierId = loadedFromDossierId ?? savedDossierId;
+
+  // v5: compute stable finding keys whenever findings change. Keys are
+  // sha256(tier|title|body) prefixes so notes survive findings being
+  // re-ordered, and so we can lookup by content rather than index.
+  useEffect(() => {
+    if (!result) {
+      setFindingKeys({});
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const built: Record<string, string> = {};
+      for (let i = 0; i < result.findings.length; i++) {
+        const f = result.findings[i];
+        const cacheKey = `${f.tier}-${i}`;
+        built[cacheKey] = await findingKeyFor(f);
+      }
+      // Also process drill-down children so notes can attach to those too.
+      for (const [parentKey, fu] of Object.entries(followups)) {
+        const list = fu?.findings;
+        if (!list) continue;
+        for (let i = 0; i < list.length; i++) {
+          const f = list[i];
+          built[`${parentKey}-child-${i}`] = await findingKeyFor(f);
+        }
+      }
+      if (!cancelled) setFindingKeys(built);
+    })();
+    return () => { cancelled = true; };
+  }, [result, followups]);
+
+  // v5: load saved notes for the active dossier. Re-runs when the
+  // dossier id changes (open / save / delete).
+  useEffect(() => {
+    if (!activeDossierId) {
+      setNotes({});
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const rows = await listFindingNotesForDossier(activeDossierId);
+        if (cancelled) return;
+        const next: Record<string, NoteState> = {};
+        for (const r of rows) {
+          next[r.finding_key] = { text: r.text, savedText: r.text, saving: false };
+        }
+        setNotes(next);
+      } catch (err) {
+        console.warn("[research] listFindingNotesForDossier failed", err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeDossierId]);
+
+  const handleNoteChange = useCallback((findingKey: string, text: string) => {
+    setNotes((m) => ({
+      ...m,
+      [findingKey]: {
+        text,
+        savedText: m[findingKey]?.savedText ?? "",
+        saving: m[findingKey]?.saving ?? false,
+      },
+    }));
+  }, []);
+
+  const handleNoteSave = useCallback(async (findingKey: string) => {
+    if (!activeDossierId) return;
+    const cur = notes[findingKey];
+    if (!cur || cur.text === cur.savedText) return;
+    setNotes((m) => ({ ...m, [findingKey]: { ...m[findingKey]!, saving: true } }));
+    try {
+      const saved = await saveFindingNote({
+        dossier_id: activeDossierId,
+        finding_key: findingKey,
+        text: cur.text,
+      });
+      setNotes((m) => ({
+        ...m,
+        [findingKey]: {
+          text: saved ? saved.text : "",
+          savedText: saved ? saved.text : "",
+          saving: false,
+        },
+      }));
+    } catch (err) {
+      console.warn("[research] saveFindingNote failed", err);
+      setNotes((m) => ({ ...m, [findingKey]: { ...m[findingKey]!, saving: false } }));
+    }
+  }, [activeDossierId, notes]);
+
   // Load past dossiers for this investigation (or recent standalone runs
   // when no case is open). Cheap query — at most 20 rows.
   useEffect(() => {
@@ -170,6 +304,22 @@ export function Research() {
   const researchDisabled = !prefs.research.enabled;
   const rateBlocked = rate.used >= rate.cap;
   const canRun = venueName.trim().length >= 2 && !busy && !culturallyBlocked && !researchDisabled && !rateBlocked;
+
+  // Rotate the progress label while a run is in flight. Reset to 0 on
+  // busy=false so each new run starts at "Walking the archives…".
+  useEffect(() => {
+    if (!busy) { setProgressIndex(0); return; }
+    const labels = region === "AU" ? PROGRESS_LABELS_AU : PROGRESS_LABELS_GLOBAL;
+    const id = window.setInterval(() => {
+      setProgressIndex((i) => Math.min(i + 1, labels.length - 1));
+    }, 2200);
+    return () => window.clearInterval(id);
+  }, [busy, region]);
+
+  const progressLabel = (() => {
+    const labels = region === "AU" ? PROGRESS_LABELS_AU : PROGRESS_LABELS_GLOBAL;
+    return labels[Math.min(progressIndex, labels.length - 1)] ?? labels[0];
+  })();
 
   const handleRun = useCallback(async () => {
     if (!canRun) return;
@@ -573,7 +723,7 @@ export function Research() {
             onClick={handleRun}
             disabled={!canRun}
           >
-            {busy ? "Walking the archives…" : "Run AI Investigator"}
+            {busy ? progressLabel : "Run AI Investigator"}
           </button>
           <span className={r.rateNote}>
             <span className={rateBlocked ? r.rateNoteUsed : r.rateNoteOk}>
@@ -631,6 +781,10 @@ export function Research() {
                       const fuBusy = fu?.busy === true;
                       const fuFindings = fu?.findings ?? null;
                       const drillDisabled = rateBlocked || busy || fuBusy || culturallyBlocked || researchDisabled || loadedFromDossierId != null;
+                      const fKey = findingKeys[key];
+                      const note = fKey ? notes[fKey] : undefined;
+                      const noteDirty = note != null && note.text !== note.savedText;
+                      const canNote = activeDossierId != null && fKey != null;
                       return (
                         <article key={key} className={r.finding}>
                           <h3 className={r.findingTitle}>{f.title}</h3>
@@ -647,6 +801,31 @@ export function Research() {
                               ))}
                             </ul>
                           )}
+                          {/* Reviewer note — anchored to a stable content
+                              key so it survives the findings array being
+                              re-ordered. Disabled (with a hint) until the
+                              dossier is saved or loaded, since the note
+                              row needs a dossier_id foreign key. */}
+                          {canNote && fKey ? (
+                            <div className={r.noteBlock}>
+                              <label className={r.noteLabel}>
+                                Reviewer note
+                                {note?.savedText && note.savedText.length > 0 && !noteDirty && (
+                                  <span className={r.noteSaved}> · saved</span>
+                                )}
+                                {noteDirty && <span className={r.noteDirty}> · unsaved</span>}
+                              </label>
+                              <textarea
+                                className={r.noteInput}
+                                rows={2}
+                                placeholder={`e.g. "Verified via Trove on ${new Date().toLocaleDateString()}", or context for the on-camera read`}
+                                value={note?.text ?? ""}
+                                onChange={(e) => handleNoteChange(fKey, e.target.value)}
+                                onBlur={() => handleNoteSave(fKey)}
+                                maxLength={2000}
+                              />
+                            </div>
+                          ) : null}
                           {/* Drill-down trigger. Disabled when viewing a
                               saved dossier — those are immutable; the
                               user can re-run from a fresh form if they

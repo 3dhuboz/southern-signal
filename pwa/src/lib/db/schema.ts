@@ -6,7 +6,7 @@
  * via a `source` column so cross-device sync can union rows safely.
  */
 
-export const CURRENT_SCHEMA_VERSION = 4;
+export const CURRENT_SCHEMA_VERSION = 5;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -143,6 +143,24 @@ CREATE TABLE IF NOT EXISTS research_dossiers (
 CREATE INDEX IF NOT EXISTS idx_dossiers_inv ON research_dossiers (investigation_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_dossiers_ts  ON research_dossiers (created_at DESC);
 
+-- v5: reviewer notes attached to individual AI Investigator findings.
+-- The finding_key is a SHA-256 prefix over (tier|title|body) so a note
+-- survives the parent findings array being re-rendered in a different
+-- order — what we anchor to is the *content* of the finding, not its
+-- index. UNIQUE constraint lets the UI do upsert-on-save naturally.
+CREATE TABLE IF NOT EXISTS research_finding_notes (
+  id            TEXT PRIMARY KEY,
+  dossier_id    TEXT NOT NULL,
+  finding_key   TEXT NOT NULL,
+  -- 24 hex chars of sha256(tier + "|" + title + "|" + body)
+  text          TEXT NOT NULL,
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL,
+  UNIQUE (dossier_id, finding_key),
+  FOREIGN KEY (dossier_id) REFERENCES research_dossiers (id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_finding_notes_dossier ON research_finding_notes (dossier_id);
+
 -- Hash-chained event log (Tier 1 #5 — every state change is appended).
 -- 'edits' become new entries; never UPDATE this table.
 CREATE TABLE IF NOT EXISTS audit_log (
@@ -227,4 +245,13 @@ export interface ResearchDossierRow {
   created_at: string;
   model: string;
   result_json: string;
+}
+
+export interface ResearchFindingNoteRow {
+  id: string;
+  dossier_id: string;
+  finding_key: string;
+  text: string;
+  created_at: string;
+  updated_at: string;
 }
