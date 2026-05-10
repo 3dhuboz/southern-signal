@@ -7,13 +7,13 @@
   flex-direction: column;
   gap: 10px;
 }
-.compact { padding: 10px 12px; gap: 6px; }
+.compact { padding: 10px var(--s-12); gap: 6px; }
 
 .head {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--s-8);
   flex-wrap: wrap;
 }
 .eyebrow {
@@ -33,7 +33,7 @@
 .row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--s-12);
 }
 
 .startBtn, .stopBtn {
@@ -99,7 +99,7 @@
   background: var(--danger-wash);
   border: 1px solid var(--danger);
   border-radius: var(--r-sm);
-  padding: 8px 10px;
+  padding: var(--s-8) 10px;
 }
 .success {
   margin: 0;

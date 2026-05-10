@@ -12,7 +12,7 @@
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--s-8);
   flex-wrap: wrap;
 }
 
@@ -35,7 +35,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: var(--s-4);
   padding: 18px 14px;
   border-radius: var(--r-lg);
   border: 1px dashed var(--border-default);
@@ -59,11 +59,11 @@
   background: var(--danger-wash);
   border: 1px solid var(--danger);
   border-radius: var(--r-sm);
-  padding: 10px 12px;
+  padding: 10px var(--s-12);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--s-8);
 }
 .errorRetry {
   margin-left: auto;
@@ -75,7 +75,7 @@
   font-weight: 700;
   letter-spacing: 0.4px;
   border-radius: var(--r-full);
-  padding: 4px 10px;
+  padding: var(--s-4) 10px;
   cursor: pointer;
 }
 
@@ -114,14 +114,14 @@
   font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: 1px;
-  padding: 4px 8px;
+  padding: var(--s-4) var(--s-8);
   border-radius: var(--r-full);
 }
 
 .controls {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 12px;
+  gap: var(--s-12);
   align-items: center;
 }
 
@@ -178,7 +178,7 @@
   font-size: 11px;
   letter-spacing: 0.4px;
   border-radius: var(--r-full);
-  padding: 4px 10px;
+  padding: var(--s-4) 10px;
   cursor: pointer;
 }
 

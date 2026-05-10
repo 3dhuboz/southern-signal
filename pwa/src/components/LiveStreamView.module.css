@@ -15,7 +15,7 @@
   padding: 14px 14px 18px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--s-12);
   box-shadow: 0 40px 80px -40px rgba(0, 0, 0, 0.6);
 }
 
@@ -23,9 +23,9 @@
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--s-8);
   flex-wrap: wrap;
-  padding: 0 4px;
+  padding: 0 var(--s-4);
 }
 
 .eyebrow {
@@ -79,10 +79,10 @@
   background: var(--danger-wash);
   border: 1px solid var(--danger);
   border-radius: var(--r-sm);
-  padding: 10px 12px;
+  padding: 10px var(--s-12);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--s-8);
 }
 .errorRetry {
   margin-left: auto;
@@ -93,7 +93,7 @@
   font-size: 11px;
   font-weight: 700;
   border-radius: var(--r-full);
-  padding: 4px 10px;
+  padding: var(--s-4) 10px;
   cursor: pointer;
 }
 
@@ -123,7 +123,7 @@
   left: 50%;
   transform: translateX(-50%);
   display: flex;
-  gap: 8px;
+  gap: var(--s-8);
   z-index: 5;
   pointer-events: none;
 }
@@ -133,7 +133,7 @@
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 1.4px;
-  padding: 4px 10px;
+  padding: var(--s-4) 10px;
   border-radius: var(--r-full);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
@@ -155,7 +155,7 @@
 .controls {
   display: grid;
   grid-template-columns: 1fr 1fr auto;
-  gap: 8px;
+  gap: var(--s-8);
 }
 
 .action, .actionGhost {
@@ -197,15 +197,15 @@
   color: var(--text-secondary);
   border-color: var(--border-default);
   font-size: 12px;
-  padding: 8px 14px;
+  padding: var(--s-8) 14px;
   min-height: 0;
 }
 
 .live {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px 12px;
+  gap: var(--s-8);
+  padding: var(--s-12) var(--s-12);
   border-radius: 14px;
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
@@ -214,7 +214,7 @@
 .field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--s-4);
 }
 
 .fieldLabel {
@@ -232,7 +232,7 @@
   background: var(--bg-inset);
   border: 1px solid var(--border-default);
   border-radius: var(--r-sm);
-  padding: 8px 10px;
+  padding: var(--s-8) 10px;
   color: var(--text-primary);
   width: 100%;
 }
@@ -244,7 +244,7 @@
   background: var(--bg-inset);
   border: 1px solid var(--border-default);
   border-radius: var(--r-sm);
-  padding: 8px 10px;
+  padding: var(--s-8) 10px;
   color: var(--text-primary);
   width: 100%;
   appearance: auto;
@@ -263,8 +263,8 @@
 .fbConnector {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px;
+  gap: var(--s-8);
+  padding: var(--s-12);
   background: rgba(var(--fb-brand), 0.06);
   border: 1px solid rgba(var(--fb-brand), 0.35);
   border-radius: var(--r-sm);
@@ -277,7 +277,7 @@
 }
 .fbConnectorIntro code {
   font-size: 10px;
-  padding: 1px 4px;
+  padding: 1px var(--s-4);
   background: var(--bg-inset);
   border-radius: 3px;
   color: var(--text-primary);
@@ -295,12 +295,12 @@
   font-size: 11px;
   color: var(--text-secondary);
   margin: 0;
-  padding: 0 4px;
+  padding: 0 var(--s-4);
 }
 
 .cameraControls {
   display: flex;
-  gap: 8px;
+  gap: var(--s-8);
   flex-wrap: wrap;
 }
 .cameraBtn {
@@ -312,7 +312,7 @@
   color: var(--text-primary);
   border: 1px solid var(--border-default);
   border-radius: var(--r-full);
-  padding: 6px 12px;
+  padding: 6px var(--s-12);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -331,7 +331,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
+  padding: var(--s-8) var(--s-12);
   background: var(--bg-inset);
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-sm);

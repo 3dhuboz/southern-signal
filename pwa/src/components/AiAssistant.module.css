@@ -12,7 +12,7 @@
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--s-8);
   flex-wrap: wrap;
 }
 
@@ -70,7 +70,7 @@
   background: var(--danger-wash);
   border: 1px solid var(--danger);
   border-radius: var(--r-sm);
-  padding: 8px 10px;
+  padding: var(--s-8) 10px;
   margin: 0;
   line-height: 1.5;
 }
@@ -86,7 +86,7 @@
   grid-template-columns: auto 1fr auto;
   gap: 10px;
   align-items: center;
-  padding: 12px 14px;
+  padding: var(--s-12) 14px;
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-md);
@@ -127,7 +127,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 12px 14px;
+  padding: var(--s-12) 14px;
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-md);
@@ -162,7 +162,7 @@
   font-size: 13px;
   color: var(--text-primary);
   font-weight: 600;
-  margin-top: 8px;
+  margin-top: var(--s-8);
 }
 
 .debunkTest {

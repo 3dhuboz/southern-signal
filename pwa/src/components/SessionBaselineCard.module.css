@@ -49,7 +49,7 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
-  padding: 8px 10px;
+  padding: var(--s-8) 10px;
   border-radius: var(--r-md);
   border: 1px solid var(--border-default);
   background: var(--bg-surface);
@@ -86,10 +86,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--s-8);
   width: 100%;
   min-height: 48px;
-  padding: 0 16px;
+  padding: 0 var(--s-16);
   border-radius: var(--r-lg);
   background: var(--signal-wash);
   color: var(--signal);
@@ -230,7 +230,7 @@
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--s-8);
 }
 
 .statLabel {
@@ -250,7 +250,7 @@
   grid-column: 1 / -1;
   display: flex;
   justify-content: center;
-  gap: 8px;
+  gap: var(--s-8);
   font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: 1.2px;

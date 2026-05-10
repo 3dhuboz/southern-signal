@@ -75,7 +75,7 @@
 .lrAnnotation {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--s-8);
   font-family: var(--font-mono);
   font-size: 10px;
   background: var(--bg-inset);

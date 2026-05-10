@@ -3,7 +3,7 @@
   background: linear-gradient(180deg, rgba(20, 26, 36, 0.85), rgba(8, 12, 18, 0.9)), var(--bg-elevated);
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 24px;
-  padding: 14px 14px 16px;
+  padding: 14px 14px var(--s-16);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -14,9 +14,9 @@
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--s-8);
   flex-wrap: wrap;
-  padding: 0 4px;
+  padding: 0 var(--s-4);
 }
 
 .eyebrow {
@@ -63,11 +63,11 @@
   background: var(--danger-wash);
   border: 1px solid var(--danger);
   border-radius: var(--r-sm);
-  padding: 10px 12px;
+  padding: 10px var(--s-12);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--s-8);
 }
 .errorRetry {
   margin-left: auto;
@@ -79,7 +79,7 @@
   font-weight: 700;
   letter-spacing: 0.4px;
   border-radius: var(--r-full);
-  padding: 4px 10px;
+  padding: var(--s-4) 10px;
   cursor: pointer;
 }
 
@@ -127,7 +127,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 8px;
+  gap: var(--s-8);
   z-index: 5;
   pointer-events: none;
 }
@@ -140,7 +140,7 @@
   color: #fff;
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
   background: rgba(0, 0, 0, 0.32);
-  padding: 4px 10px;
+  padding: var(--s-4) 10px;
   border-radius: var(--r-full);
   border: 1px solid var(--ar-stroke, rgba(255, 255, 255, 0.18));
   backdrop-filter: blur(6px);
@@ -153,7 +153,7 @@
   letter-spacing: 1.4px;
   color: var(--ar-strong, #5DF2C7);
   background: rgba(0, 0, 0, 0.32);
-  padding: 3px 8px;
+  padding: 3px var(--s-8);
   border-radius: var(--r-full);
   border: 1px solid var(--ar-stroke, rgba(93, 242, 199, 0.45));
   backdrop-filter: blur(6px);
@@ -166,7 +166,7 @@
   letter-spacing: 1.4px;
   color: #fff;
   background: rgba(0, 0, 0, 0.32);
-  padding: 3px 8px;
+  padding: 3px var(--s-8);
   border-radius: var(--r-full);
   border: 1px solid rgba(255, 255, 255, 0.18);
   backdrop-filter: blur(6px);
@@ -199,7 +199,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: var(--s-4);
   filter: drop-shadow(0 0 16px var(--ar-glow, rgba(93, 242, 199, 0.6)));
   animation: ss-arrow-bob 1.6s ease-in-out infinite;
 }
@@ -234,8 +234,8 @@
   bottom: 12px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: var(--s-8);
+  padding: 10px var(--s-12);
   border-radius: var(--r-md);
   background: rgba(0, 0, 0, 0.55);
   border: 1px solid var(--ar-stroke, rgba(93, 242, 199, 0.4));
@@ -285,7 +285,7 @@
   grid-template-columns: auto 1fr;
   gap: 14px;
   align-items: center;
-  padding: 4px;
+  padding: var(--s-4);
 }
 
 .shutter {
@@ -316,7 +316,7 @@
 .sideControls {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--s-4);
   font-size: 11px;
 }
 
@@ -342,9 +342,9 @@
   font-size: 11px;
   letter-spacing: 0.4px;
   border-radius: var(--r-full);
-  padding: 4px 10px;
+  padding: var(--s-4) 10px;
   cursor: pointer;
-  margin-top: 4px;
+  margin-top: var(--s-4);
 }
 
 .thumbRow {

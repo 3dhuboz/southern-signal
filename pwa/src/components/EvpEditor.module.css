@@ -8,7 +8,7 @@
   display: flex;
   align-items: stretch;
   justify-content: center;
-  padding: 12px;
+  padding: var(--s-12);
   overflow-y: auto;
 }
 
@@ -19,10 +19,10 @@
   width: 100%;
   max-width: 880px;
   margin: auto;
-  padding: 16px;
+  padding: var(--s-16);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--s-12);
   box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.7);
 }
 
@@ -53,7 +53,7 @@
   font-size: 26px;
   line-height: 1;
   cursor: pointer;
-  padding: 0 4px;
+  padding: 0 var(--s-4);
 }
 .closeBtn:hover { color: var(--text-primary); }
 
@@ -61,7 +61,7 @@
   margin: 0;
   font-family: var(--font-mono);
   font-size: 12px;
-  padding: 8px 10px;
+  padding: var(--s-8) 10px;
   border-radius: var(--r-sm);
 }
 .loading { color: var(--text-secondary); }
@@ -85,7 +85,7 @@
 .timeRail {
   display: flex;
   justify-content: space-between;
-  padding: 4px 8px;
+  padding: var(--s-4) var(--s-8);
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--text-muted);
@@ -98,14 +98,14 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--s-8);
 }
 .transportBtn, .ghostBtn {
   appearance: none;
   font-family: inherit;
   font-size: 13px;
   font-weight: 600;
-  padding: 8px 12px;
+  padding: var(--s-8) var(--s-12);
   border-radius: var(--r-sm);
   cursor: pointer;
   min-height: 40px;
@@ -138,22 +138,22 @@
 .selectionStats {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--s-12);
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-secondary);
   background: var(--bg-inset);
-  padding: 8px 12px;
+  padding: var(--s-8) var(--s-12);
   border-radius: var(--r-sm);
   border: 1px solid var(--border-subtle);
 }
-.selectionStats strong { color: var(--signal); margin-right: 4px; }
+.selectionStats strong { color: var(--signal); margin-right: var(--s-4); }
 
 .tagPanel {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 12px;
+  padding: var(--s-12);
   border-radius: 12px;
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
@@ -169,7 +169,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 8px 10px;
+  padding: var(--s-8) 10px;
   border-radius: var(--r-sm);
   border: 1px solid var(--border-default);
   background: var(--bg-inset);
@@ -200,7 +200,7 @@
 .field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--s-4);
 }
 .fieldLabel {
   font-family: var(--font-mono);
@@ -216,7 +216,7 @@
   background: var(--bg-inset);
   border: 1px solid var(--border-default);
   border-radius: var(--r-sm);
-  padding: 8px 10px;
+  padding: var(--s-8) 10px;
   color: var(--text-primary);
   width: 100%;
   resize: vertical;
@@ -229,7 +229,7 @@
 .actionRow {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--s-8);
 }
 .primaryBtn, .secondaryBtn {
   appearance: none;
@@ -275,7 +275,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 10px 12px;
+  padding: 10px var(--s-12);
   background: var(--bg-inset);
   border-left: 3px solid var(--signal);
   border-radius: var(--r-sm);

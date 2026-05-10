@@ -4,7 +4,7 @@
 .page {
   max-width: 720px;
   margin: 0 auto;
-  padding: 32px 28px 80px;
+  padding: var(--s-32) 28px 80px;
   color: var(--text);
   font-family: var(--font-body, system-ui);
   line-height: 1.55;
@@ -14,9 +14,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 32px;
-  padding-bottom: 12px;
+  gap: var(--s-12);
+  margin-bottom: var(--s-32);
+  padding-bottom: var(--s-12);
   border-bottom: 1px solid var(--border-default);
 }
 .toolbarLink {
@@ -27,7 +27,7 @@
 }
 .toolbarLink:hover { color: var(--text); }
 .button {
-  padding: 8px 14px;
+  padding: var(--s-8) 14px;
   border-radius: var(--r-md);
   border: 1px solid var(--border-strong);
   background: var(--bg-surface);
@@ -59,7 +59,7 @@
   letter-spacing: 2px;
   text-transform: uppercase;
   color: var(--accent-strong);
-  margin-bottom: 12px;
+  margin-bottom: var(--s-12);
 }
 .title {
   margin: 0 0 6px;
@@ -78,7 +78,7 @@
 
 .verdict {
   margin: 0 0 28px;
-  padding: 18px 20px;
+  padding: 18px var(--s-20);
   border-radius: var(--r-md);
   border: 1px solid var(--border-default);
   border-left-width: 4px;
@@ -91,8 +91,8 @@
 .verdictHead {
   display: flex;
   align-items: baseline;
-  gap: 12px;
-  margin-bottom: 8px;
+  gap: var(--s-12);
+  margin-bottom: var(--s-8);
   flex-wrap: wrap;
 }
 .verdictEyebrow {
@@ -112,7 +112,7 @@
 .verdict_inconclusive .verdictLabel { color: var(--warning); }
 .verdict_unexplained .verdictLabel { color: var(--danger); }
 .verdictDetail {
-  margin: 0 0 8px;
+  margin: 0 0 var(--s-8);
   font-size: 13px;
   color: var(--text-secondary);
   line-height: 1.5;
@@ -124,8 +124,8 @@
   color: var(--text-muted);
 }
 .verdictDivergence {
-  margin: 8px 0 0;
-  padding: 8px 10px;
+  margin: var(--s-8) 0 0;
+  padding: var(--s-8) 10px;
   border-radius: var(--r-sm);
   background: var(--bg-overlay);
   font-size: 11.5px;
@@ -136,8 +136,8 @@
 .coverGrid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 12px 24px;
-  padding: 16px 18px;
+  gap: var(--s-12) var(--s-24);
+  padding: var(--s-16) 18px;
   border-radius: var(--r-md);
   border: 1px solid var(--border-default);
   background: var(--bg-surface);
@@ -163,7 +163,7 @@
   page-break-inside: avoid;
 }
 .sectionTitle {
-  margin: 0 0 12px;
+  margin: 0 0 var(--s-12);
   font-size: 14px;
   font-weight: 700;
   letter-spacing: 1.4px;
@@ -184,7 +184,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 12px 14px;
+  padding: var(--s-12) 14px;
   border-radius: var(--r-md);
   border: 1px solid var(--border-default);
   background: var(--bg-surface);
@@ -216,7 +216,7 @@
 
 .empty {
   margin: 0;
-  padding: 14px 16px;
+  padding: 14px var(--s-16);
   border-radius: var(--r-md);
   background: var(--bg-surface);
   font-size: 13px;
@@ -229,14 +229,14 @@
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--s-8);
 }
 .moment {
   display: grid;
   grid-template-columns: 28px 1fr auto;
-  gap: 12px;
+  gap: var(--s-12);
   align-items: center;
-  padding: 12px 14px;
+  padding: var(--s-12) 14px;
   border-radius: var(--r-md);
   border: 1px solid var(--border-default);
   background: var(--bg-surface);
@@ -284,10 +284,10 @@
   list-style: none;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 8px;
+  gap: var(--s-8);
 }
 .tally li {
-  padding: 10px 12px;
+  padding: 10px var(--s-12);
   border-radius: var(--r-md);
   border: 1px solid var(--border-default);
   background: var(--bg-surface);
@@ -310,10 +310,10 @@
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--s-8);
 }
 .integrityList li {
-  padding: 12px 14px;
+  padding: var(--s-12) 14px;
   border-radius: var(--r-md);
   border: 1px solid var(--border-default);
   background: var(--bg-surface);
@@ -325,7 +325,7 @@
   word-break: break-all;
   color: var(--text);
   background: var(--bg-overlay);
-  padding: 1px 4px;
+  padding: 1px var(--s-4);
   border-radius: 3px;
 }
 .muted { color: var(--text-muted); }
@@ -334,7 +334,7 @@
 
 .acknowledgement {
   margin: 0 0 6px;
-  padding: 14px 16px;
+  padding: 14px var(--s-16);
   border-left: 3px solid var(--accent-strong);
   background: var(--bg-surface);
   font-size: 13px;
@@ -353,9 +353,9 @@
   color: var(--text-muted);
   line-height: 1.55;
 }
-.disclaimers p { margin: 0 0 8px; }
+.disclaimers p { margin: 0 0 var(--s-8); }
 .briefMeta {
-  margin-top: 16px !important;
+  margin-top: var(--s-16) !important;
   font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: 0.4px;

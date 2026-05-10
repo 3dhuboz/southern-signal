@@ -50,13 +50,13 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--s-8);
 }
 .recPill {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 12px;
+  gap: var(--s-8);
+  padding: var(--s-4) var(--s-12);
   border-radius: var(--r-full);
   font-size: 10px;
   font-weight: 600;
@@ -92,7 +92,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
+  padding: var(--s-4) 10px;
   border-radius: var(--r-full);
   font-family: inherit;
   font-size: 10px;
@@ -151,7 +151,7 @@
   letter-spacing: -1px;
   color: var(--signal);
   line-height: 1;
-  margin-top: 4px;
+  margin-top: var(--s-4);
 }
 
 .heroTimerLabel {
@@ -171,7 +171,7 @@
 .primaryAction, .secondaryAction, .dangerAction {
   flex: 1;
   border-radius: var(--r-md);
-  padding: 12px 14px;
+  padding: var(--s-12) 14px;
   font-weight: 700;
   font-size: 14px;
   cursor: pointer;
@@ -218,7 +218,7 @@
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--s-8);
   flex-wrap: wrap;
 }
 
@@ -258,7 +258,7 @@
 .calibrationStep p {
   font-size: 12px;
   color: var(--text-secondary);
-  margin: 0 0 8px;
+  margin: 0 0 var(--s-8);
   line-height: 1.5;
 }
 .calibrationStep p strong {
@@ -277,7 +277,7 @@
   background: var(--bg-inset);
   border: 1px solid var(--border-default);
   color: var(--text-secondary);
-  padding: 8px 12px;
+  padding: var(--s-8) var(--s-12);
   border-radius: var(--r-full);
   font-family: var(--font-mono);
   font-size: 11px;
@@ -304,7 +304,7 @@
 .estesTile {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--s-4);
   padding: 14px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
@@ -344,7 +344,7 @@
 .optionalSection > summary {
   list-style: none;
   cursor: pointer;
-  padding: 12px 14px;
+  padding: var(--s-12) 14px;
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 1.4px;
@@ -354,5 +354,5 @@
 }
 .optionalSection > summary::-webkit-details-marker { display: none; }
 .optionalSection[open] > summary { border-bottom: 1px solid var(--border-subtle); color: var(--signal); }
-.optionalSection > *:not(summary) { padding: 12px; }
+.optionalSection > *:not(summary) { padding: var(--s-12); }
 

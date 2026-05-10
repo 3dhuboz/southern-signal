@@ -9,7 +9,7 @@
 .titleBlock {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--s-4);
   margin-bottom: var(--s-8);
 }
 
@@ -79,7 +79,7 @@
 }
 
 .heroTitle {
-  margin-top: 4px;
+  margin-top: var(--s-4);
   font-size: 20px;
   color: var(--text-primary);
   font-weight: 600;
@@ -94,7 +94,7 @@
 .checklist {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--s-8);
   margin: 0;
   padding: 0;
   list-style: none;

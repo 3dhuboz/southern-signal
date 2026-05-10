@@ -50,7 +50,7 @@
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-lg);
-  padding: 16px;
+  padding: var(--s-16);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -82,7 +82,7 @@
 }
 .codeActions {
   display: flex;
-  gap: 8px;
+  gap: var(--s-8);
 }
 
 .statusBar {
@@ -93,7 +93,7 @@
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-md);
-  padding: 8px 12px;
+  padding: var(--s-8) var(--s-12);
 }
 .statusBadge {
   font-family: var(--font-mono);
@@ -102,7 +102,7 @@
   text-transform: uppercase;
   color: var(--signal);
   background: var(--signal-wash);
-  padding: 4px 8px;
+  padding: var(--s-4) var(--s-8);
   border-radius: var(--r-full);
   font-weight: 700;
 }
@@ -128,7 +128,7 @@
   color: var(--danger);
   border: 1px solid var(--danger);
   border-radius: var(--r-sm);
-  padding: 6px 12px;
+  padding: 6px var(--s-12);
   cursor: pointer;
 }
 .endBtn:hover { filter: brightness(1.15); }
@@ -137,10 +137,10 @@
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-lg);
-  padding: 16px;
+  padding: var(--s-16);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--s-12);
   position: relative;
 }
 .receiverDisplay {
@@ -162,7 +162,7 @@
 .toggleRow {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--s-12);
 }
 .toggle {
   display: inline-flex;
@@ -194,7 +194,7 @@
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-lg);
-  padding: 12px;
+  padding: var(--s-12);
 }
 .hiddenAudio { display: none; }
 
@@ -224,8 +224,8 @@
 .transcriptItem {
   display: grid;
   grid-template-columns: 76px 80px 1fr;
-  gap: 8px;
-  padding: 4px 0;
+  gap: var(--s-8);
+  padding: var(--s-4) 0;
   font-size: 12px;
   border-bottom: 1px dashed var(--border-subtle);
 }
@@ -260,7 +260,7 @@
   background: var(--bg-inset);
   border: 1px solid var(--border-default);
   border-radius: var(--r-sm);
-  padding: 10px 12px;
+  padding: 10px var(--s-12);
   color: var(--text-primary);
 }
 .questionInput:focus { outline: none; border-color: var(--signal-dim); }
@@ -271,7 +271,7 @@
   font-family: inherit;
   font-size: 13px;
   font-weight: 700;
-  padding: 10px 16px;
+  padding: 10px var(--s-16);
   border-radius: var(--r-sm);
   cursor: pointer;
   min-height: 44px;
@@ -298,7 +298,7 @@
   background: var(--danger-wash);
   border: 1px solid var(--danger);
   border-radius: var(--r-sm);
-  padding: 8px 10px;
+  padding: var(--s-8) 10px;
 }
 
 .disclaimer {
@@ -312,7 +312,7 @@
 .prepHeader {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--s-4);
 }
 .prepEyebrow {
   font-family: var(--font-mono);
@@ -338,11 +338,11 @@
 .codeBigRow {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--s-12);
   background: var(--bg-inset);
   border: 1px solid var(--border-default);
   border-radius: var(--r-md);
-  padding: 16px;
+  padding: var(--s-16);
   justify-content: space-between;
 }
 .codeBigText {
@@ -365,7 +365,7 @@
 .ttlRow {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--s-8);
   justify-content: center;
 }
 .ttlLabel {
@@ -437,7 +437,7 @@
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 10px;
-  padding: 8px 10px;
+  padding: var(--s-8) 10px;
   background: var(--bg-inset);
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-sm);

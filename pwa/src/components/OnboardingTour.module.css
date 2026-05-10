@@ -110,7 +110,7 @@
   letter-spacing: 0.6px;
   text-transform: uppercase;
   cursor: pointer;
-  padding: 10px 8px;
+  padding: 10px var(--s-8);
   min-height: 44px;
 }
 .skip:hover {
@@ -118,7 +118,7 @@
 }
 
 .secondary {
-  padding: 10px 16px;
+  padding: 10px var(--s-16);
   border-radius: var(--r-md);
   background: transparent;
   color: var(--text-secondary);
@@ -139,7 +139,7 @@
 }
 
 .primary {
-  padding: 10px 20px;
+  padding: 10px var(--s-20);
   border-radius: var(--r-md);
   background: var(--signal);
   color: var(--text-on-accent);
