@@ -194,34 +194,50 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
     const mid = h / 2;
     ctx.clearRect(0, 0, w, h);
 
+    // Theme-driven colours. Read from CSS custom properties on the
+    // canvas element so the waveform retints on scotopic / daylight
+    // without rewriting the draw code. Fallbacks match the previous
+    // phosphor-default values so an offline browser doesn't render
+    // black-on-black.
+    const cs = getComputedStyle(canvas);
+    const signal = cs.getPropertyValue("--signal").trim() || "#7FFCD7";
+    const danger = cs.getPropertyValue("--danger").trim() || "#FF5A5A";
+    const bgInset = cs.getPropertyValue("--bg-inset").trim() || "rgba(8, 12, 18, 0.95)";
+
     // Background.
-    ctx.fillStyle = "rgba(8, 12, 18, 0.95)";
+    ctx.fillStyle = bgInset;
     ctx.fillRect(0, 0, w, h);
 
     // Centerline.
-    ctx.strokeStyle = "rgba(127, 252, 215, 0.18)";
+    ctx.strokeStyle = signal;
+    ctx.globalAlpha = 0.18;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(0, mid);
     ctx.lineTo(w, mid);
     ctx.stroke();
+    ctx.globalAlpha = 1;
 
     // Selection band.
     if (selection && decoded.durationSec > 0) {
       const x0 = (selection.startSec / decoded.durationSec) * w;
       const x1 = (selection.endSec / decoded.durationSec) * w;
-      ctx.fillStyle = "rgba(127, 252, 215, 0.18)";
+      ctx.fillStyle = signal;
+      ctx.globalAlpha = 0.18;
       ctx.fillRect(x0, 0, Math.max(1, x1 - x0), h);
-      ctx.strokeStyle = "rgba(127, 252, 215, 0.7)";
+      ctx.globalAlpha = 0.7;
+      ctx.strokeStyle = signal;
       ctx.beginPath();
       ctx.moveTo(x0, 0); ctx.lineTo(x0, h);
       ctx.moveTo(x1, 0); ctx.lineTo(x1, h);
       ctx.stroke();
+      ctx.globalAlpha = 1;
     }
 
     // Peaks.
     const peaks = computeWaveformPeaks(decoded.samples, Math.floor(w));
-    ctx.fillStyle = "rgba(127, 252, 215, 0.85)";
+    ctx.fillStyle = signal;
+    ctx.globalAlpha = 0.85;
     for (let x = 0; x < Math.floor(w); x++) {
       const min = peaks[x * 2];
       const max = peaks[x * 2 + 1];
@@ -230,16 +246,19 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
       const barH = Math.max(1, y1 - y0);
       ctx.fillRect(x, y0, 1, barH);
     }
+    ctx.globalAlpha = 1;
 
     // Playhead.
     if (decoded.durationSec > 0) {
       const px = (currentTime / decoded.durationSec) * w;
-      ctx.strokeStyle = "rgba(255, 90, 90, 0.95)";
+      ctx.strokeStyle = danger;
+      ctx.globalAlpha = 0.95;
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(px, 0);
       ctx.lineTo(px, h);
       ctx.stroke();
+      ctx.globalAlpha = 1;
     }
   }, [decoded, currentTime, selection]);
 
@@ -665,6 +684,26 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
 
         {decoded && (
           <>
+            {/* Forensic file chrome — mono readout of the underlying WAV's
+                technical properties. An external reviewer skimming the
+                editor immediately sees the source format without having
+                to ask: sample rate, channel count, bit depth, exact
+                duration. Same idiom as the spirit-box instrument
+                chrome. */}
+            <div className={s.fileChrome}>
+              <span className={s.fileChromeStat}>
+                fmt <code>WAV · 16-bit · mono</code>
+              </span>
+              <span className={s.fileChromeStat}>
+                sr <code>{decoded.sampleRate.toLocaleString()} Hz</code>
+              </span>
+              <span className={s.fileChromeStat}>
+                dur <code>{formatTime(decoded.durationSec)}</code>
+              </span>
+              <span className={s.fileChromeStat}>
+                samples <code>{decoded.samples.length.toLocaleString()}</code>
+              </span>
+            </div>
             <div className={s.canvasWrap}>
               <canvas
                 ref={canvasRef}

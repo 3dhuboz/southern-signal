@@ -68,9 +68,37 @@
 .error { color: var(--danger); background: var(--danger-wash); border: 1px solid var(--danger); }
 .success { color: var(--signal); background: rgba(127, 252, 215, 0.08); border: 1px solid var(--signal-dim); }
 
+/* Forensic file chrome — mono row above the waveform, same idiom as
+   the spirit-box instrument chrome. Shows format, sample rate, exact
+   duration, total samples. Read directly from the decoded WAV; if
+   decode failed this row never renders (the parent <></> branch is
+   guarded on `decoded`). */
+.fileChrome {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-12);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: var(--s-8) 0 var(--s-4);
+  border-bottom: 1px dashed var(--border-subtle);
+}
+.fileChromeStat code {
+  color: var(--text-primary);
+  font-family: inherit;
+  background: color-mix(in srgb, var(--signal) 6%, transparent);
+  padding: 1px 5px;
+  border-radius: 3px;
+  letter-spacing: 0.4px;
+  text-transform: none;
+}
+
 .canvasWrap {
   position: relative;
-  background: #04080c;
+  background: var(--bg-inset);
   border-radius: 12px;
   border: 1px solid var(--border-subtle);
   overflow: hidden;
@@ -89,7 +117,7 @@
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--text-muted);
-  background: rgba(8, 12, 18, 0.6);
+  background: color-mix(in srgb, var(--bg-inset) 60%, transparent);
 }
 
 .hiddenAudio { display: none; }
