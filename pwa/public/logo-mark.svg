@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Southern Signal">
+  <!-- Southern Signal mark.
+       Elements:
+         - 3/4 posterior arc (matches ActivityDial signature)
+         - Southern Cross constellation: 5 stars (Acrux, Mimosa, Gacrux, Delta, Epsilon)
+         - Acrux (the alpha/brightest) sits on the arc as the "signal node"
+       All paint uses currentColor so the consumer (CSS mask, SVG context) tints. -->
+
+  <!-- Posterior arc: ~270° sweep, opens at the bottom, matches ActivityDial -->
+  <!-- Arc from angle 135° (top-left) clockwise through to angle 45° (top-right), passing top.
+       Using stroke + fill=none keeps it crisp at 16x16. -->
+  <circle cx="32" cy="32" r="26" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.18" />
+  <path
+    d="M 13.64 50.36 A 26 26 0 1 1 50.36 50.36"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2.4"
+    stroke-linecap="round"
+    opacity="0.85"
+  />
+
+  <!-- Faint signal-graph guide: faint lines connecting the constellation stars,
+       reading as a signal trace. Suppressed at favicon scale by low opacity. -->
+  <g stroke="currentColor" stroke-width="0.6" fill="none" opacity="0.35" stroke-linecap="round">
+    <!-- Vertical of the cross: Gacrux -> Acrux -->
+    <line x1="32" y1="18" x2="32" y2="46" />
+    <!-- Crossbar: Mimosa -> Delta -->
+    <line x1="20" y1="30" x2="44" y2="30" />
+  </g>
+
+  <!-- Southern Cross stars.
+       Positions chosen to read as the constellation while remaining schematic.
+       Acrux is the brightest, sized larger and accented with a faint halo. -->
+
+  <!-- Gacrux (top of cross) -->
+  <circle cx="32" cy="18" r="2.2" fill="currentColor" />
+
+  <!-- Mimosa (left arm) -->
+  <circle cx="20" cy="30" r="2.0" fill="currentColor" />
+
+  <!-- Delta Crucis (right arm) -->
+  <circle cx="44" cy="30" r="1.8" fill="currentColor" />
+
+  <!-- Epsilon Crucis (small companion star, lower-right) -->
+  <circle cx="38" cy="38" r="1.2" fill="currentColor" opacity="0.75" />
+
+  <!-- Acrux — the alpha / signal node. Sits on the arc.
+       Halo + bright core; reads as the "current posterior" highlight. -->
+  <circle cx="32" cy="46" r="5.2" fill="currentColor" opacity="0.18" />
+  <circle cx="32" cy="46" r="3.2" fill="currentColor" />
+</svg>

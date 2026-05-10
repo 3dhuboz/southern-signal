@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 64" role="img" aria-label="Southern Signal">
+  <!-- Lockup: mark (left, 64x64) + wordmark (right, embedded text).
+       All paint uses currentColor so the consumer can tint via color. -->
+
+  <!-- ===== Mark (mirrors logo-mark.svg) ===== -->
+  <g>
+    <circle cx="32" cy="32" r="26" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.18" />
+    <path
+      d="M 13.64 50.36 A 26 26 0 1 1 50.36 50.36"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2.4"
+      stroke-linecap="round"
+      opacity="0.85"
+    />
+    <g stroke="currentColor" stroke-width="0.6" fill="none" opacity="0.35" stroke-linecap="round">
+      <line x1="32" y1="18" x2="32" y2="46" />
+      <line x1="20" y1="30" x2="44" y2="30" />
+    </g>
+    <circle cx="32" cy="18" r="2.2" fill="currentColor" />
+    <circle cx="20" cy="30" r="2.0" fill="currentColor" />
+    <circle cx="44" cy="30" r="1.8" fill="currentColor" />
+    <circle cx="38" cy="38" r="1.2" fill="currentColor" opacity="0.75" />
+    <circle cx="32" cy="46" r="5.2" fill="currentColor" opacity="0.18" />
+    <circle cx="32" cy="46" r="3.2" fill="currentColor" />
+  </g>
+
+  <!-- ===== Wordmark =====
+       System-font stack so no font file is required. Caps-height tuned to
+       sit at the mark's optical centre. Letter-spacing matches the in-app
+       wordmark in AppHeader (1.5px on a 13px line ~ 11.5%). -->
+  <text
+    x="80"
+    y="40"
+    fill="currentColor"
+    font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace"
+    font-size="22"
+    font-weight="600"
+    letter-spacing="2.4"
+  >SOUTHERN SIGNAL</text>
+</svg>
