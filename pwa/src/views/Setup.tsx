@@ -2,10 +2,23 @@ import { useCallback, useEffect, useState } from "react";
 import { applyTheme, usePreferences } from "../lib/preferences";
 import { CaseManager } from "../components/CaseManager";
 import { SyncPanel } from "../components/SyncPanel";
+import {
+  DEFAULT_LOCAL_MODEL,
+  loadLocalWhisperModel,
+  unloadLocalWhisperModel,
+  useLocalTranscribeStatus,
+} from "../lib/audio/localTranscribe";
 import s from "./View.module.css";
 import st from "./Setup.module.css";
 
 const ONBOARDING_KEY = "ss-onboarding-completed-v1";
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "—";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
 
 export function Setup() {
   const [prefs, setPrefs] = usePreferences();
@@ -29,6 +42,23 @@ export function Setup() {
     // and brings the tour back. window.location.assign keeps router history
     // intact better than reload() for users coming from a deep link.
     window.location.assign("/");
+  }, []);
+
+  // On-device transcription — opt-in. Drives the Whisper Worker via the
+  // localTranscribe library; the worker is created lazily on first load().
+  const localStatus = useLocalTranscribeStatus();
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const handleDownloadModel = useCallback(async () => {
+    setLoadError(null);
+    try {
+      await loadLocalWhisperModel(DEFAULT_LOCAL_MODEL);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
+  const handleUnloadModel = useCallback(() => {
+    unloadLocalWhisperModel();
+    setLoadError(null);
   }, []);
 
   return (
@@ -86,6 +116,71 @@ export function Setup() {
 
       {/* Cloud sync (R2 + D1) */}
       <SyncPanel />
+
+      {/* On-device Whisper transcription — opt-in, model is downloaded once. */}
+      <section className={st.panel}>
+        <header className={st.panelHeader}>
+          <h2 className={st.panelTitle}>On-device transcription</h2>
+          <span className={st.panelBadge}>
+            {localStatus.state === "ready" ? "Ready" :
+             localStatus.state === "loading" ? "Loading…" :
+             localStatus.state === "error" ? "Error" : "Off"}
+          </span>
+        </header>
+        <p className={st.panelLede}>
+          Transcribe EVP recordings entirely on this device — no audio leaves
+          the phone. Required for culturally-sensitive cases (cloud
+          transcription is hard-blocked there). Default model is
+          Whisper-tiny.en, English-only, downloaded once and cached.
+        </p>
+        {localStatus.state === "unloaded" && (
+          <>
+            <button type="button" className={st.linkBtn ?? ""} onClick={handleDownloadModel}>
+              Download model (~40 MB, one-off)
+            </button>
+            {loadError && <p className={st.errorLine}>{loadError}</p>}
+          </>
+        )}
+        {localStatus.state === "loading" && (
+          <div className={st.loadProgress}>
+            <p className={st.toggleHint}>
+              {localStatus.progress?.stage ?? "Downloading"}
+              {localStatus.progress?.file ? ` · ${localStatus.progress.file}` : ""}
+              {localStatus.progress?.total
+                ? ` · ${formatBytes(localStatus.progress.loaded)} / ${formatBytes(localStatus.progress.total)}`
+                : ""}
+            </p>
+            {localStatus.progress?.total ? (
+              <div className={st.progressBar} aria-hidden="true">
+                <div
+                  className={st.progressFill}
+                  style={{
+                    width: `${Math.min(100, Math.max(0, (localStatus.progress.loaded / localStatus.progress.total) * 100))}%`,
+                  }}
+                />
+              </div>
+            ) : null}
+          </div>
+        )}
+        {localStatus.state === "ready" && (
+          <>
+            <p className={st.toggleHint}>
+              Model loaded: <code>{localStatus.loadedModel ?? DEFAULT_LOCAL_MODEL}</code>. EVP recordings can now be transcribed locally — see the editor on the EVP screen.
+            </p>
+            <button type="button" className={st.linkBtn ?? ""} onClick={handleUnloadModel}>
+              Unload model (frees memory)
+            </button>
+          </>
+        )}
+        {localStatus.state === "error" && (
+          <>
+            <p className={st.errorLine}>{localStatus.error ?? "Loading failed."}</p>
+            <button type="button" className={st.linkBtn ?? ""} onClick={handleDownloadModel}>
+              Try again
+            </button>
+          </>
+        )}
+      </section>
 
       {/* EVP capture */}
       <section className={st.panel}>

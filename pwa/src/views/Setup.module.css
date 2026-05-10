@@ -104,6 +104,35 @@
 }
 .linkBtn:hover { background: var(--bg-overlay); }
 
+.errorLine {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--danger-wash);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.loadProgress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.progressBar {
+  width: 100%;
+  height: 6px;
+  border-radius: var(--r-full);
+  background: var(--bg-overlay);
+  overflow: hidden;
+}
+.progressFill {
+  height: 100%;
+  background: var(--signal);
+  transition: width 200ms ease;
+}
+
 .themeLabel {
   font-size: 13px;
   font-weight: 600;

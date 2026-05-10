@@ -24,6 +24,10 @@ import { registerMedia, recordEvent } from "../lib/db/repo";
 import { appendAuditEntry } from "../lib/db/auditLog";
 import { exec } from "../lib/db/db";
 import { transcribeAudio } from "../lib/ai/cloudTranscribe";
+import {
+  transcribeOnDevice,
+  useLocalTranscribeStatus,
+} from "../lib/audio/localTranscribe";
 import type { MediaAsset } from "../lib/db/schema";
 import s from "./EvpEditor.module.css";
 
@@ -74,6 +78,8 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
   const [savingTag, setSavingTag] = useState(false);
   const [savingTrim, setSavingTrim] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
+  const [transcribingLocal, setTranscribingLocal] = useState(false);
+  const localStatus = useLocalTranscribeStatus();
   const [transcript, setTranscript] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
@@ -509,6 +515,93 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
     }
   };
 
+  const handleTranscribeLocal = async () => {
+    if (!decoded) return;
+    if (localStatus.state !== "ready") {
+      setError("On-device transcription not loaded — enable it in Setup first.");
+      return;
+    }
+    setTranscribingLocal(true);
+    setStatusMsg(null);
+    setTranscript(null);
+    setError(null);
+    try {
+      let samples: Float32Array;
+      let startSec = 0;
+      let endSec = decoded.durationSec;
+      if (selection) {
+        const startIdx = Math.floor(selection.startSec * decoded.sampleRate);
+        const endIdx = Math.min(decoded.samples.length, Math.floor(selection.endSec * decoded.sampleRate));
+        samples = decoded.samples.slice(startIdx, endIdx);
+        startSec = selection.startSec;
+        endSec = selection.endSec;
+      } else {
+        samples = decoded.samples;
+      }
+      // Transfer a copy — transcribeOnDevice transfers the buffer to the
+      // worker, so the operator's `decoded.samples` ref stays valid for
+      // playback / re-transcription on the same clip.
+      const audio = new Float32Array(samples.length);
+      audio.set(samples);
+      const result = await transcribeOnDevice(audio, decoded.sampleRate, {
+        language: "en",
+        returnTimestamps: true,
+      });
+      setTranscript(result.text);
+
+      const transcriptId = crypto.randomUUID();
+      await exec(
+        `INSERT INTO transcripts (id, media_id, investigation_id, segment_start_s, segment_end_s, text, confidence, engine, metadata_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          transcriptId,
+          asset.id,
+          asset.investigation_id,
+          startSec,
+          endSec,
+          result.text,
+          null,
+          result.engine,
+          JSON.stringify({ segments: result.segments, language: "en", on_device: true }),
+        ],
+      );
+      await recordEvent({
+        investigation_id: asset.investigation_id,
+        source: "ai",
+        event_type: "audio.evp_transcribe",
+        title: "EVP transcribed (on-device)",
+        description: result.text.slice(0, 200),
+        linked_file: asset.file_path,
+        metadata: {
+          source_media_id: asset.id,
+          transcript_id: transcriptId,
+          start_offset_s: startSec,
+          end_offset_s: endSec,
+          engine: result.engine,
+          on_device: true,
+        },
+      });
+      await appendAuditEntry({
+        actor: "ai",
+        kind: "audio.evp.transcribe",
+        payload: {
+          investigation_id: asset.investigation_id,
+          media_id: asset.id,
+          transcript_id: transcriptId,
+          engine: result.engine,
+          on_device: true,
+          start_offset_s: startSec,
+          end_offset_s: endSec,
+        },
+      });
+      setStatusMsg(`Transcribed on-device (${result.engine})`);
+    } catch (err) {
+      setError(`On-device transcribe failed: ${(err as Error).message}`);
+    } finally {
+      setTranscribingLocal(false);
+    }
+  };
+
   const handleExportSelection = () => {
     if (!selection || !decoded) return;
     const startIdx = Math.floor(selection.startSec * decoded.sampleRate);
@@ -644,9 +737,26 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
               <button type="button" className={s.primaryBtn} onClick={handleSaveTrim} disabled={!selection || savingTrim}>
                 {savingTrim ? "Saving…" : "Save trim to case"}
               </button>
-              <button type="button" className={s.secondaryBtn} onClick={handleTranscribe} disabled={transcribing}>
-                {transcribing ? "Transcribing…" : selection ? "Transcribe selection" : "Transcribe full"}
+              <button
+                type="button"
+                className={s.secondaryBtn}
+                onClick={handleTranscribe}
+                disabled={transcribing || transcribingLocal}
+                title="Cloud transcription via Whisper. Blocked on culturally-sensitive cases."
+              >
+                {transcribing ? "Transcribing…" : selection ? "Transcribe selection (cloud)" : "Transcribe full (cloud)"}
               </button>
+              {localStatus.state === "ready" && (
+                <button
+                  type="button"
+                  className={s.secondaryBtn}
+                  onClick={handleTranscribeLocal}
+                  disabled={transcribing || transcribingLocal}
+                  title="Runs Whisper entirely on this device — no audio leaves the phone."
+                >
+                  {transcribingLocal ? "Transcribing on-device…" : selection ? "Transcribe selection (on-device)" : "Transcribe full (on-device)"}
+                </button>
+              )}
               <button type="button" className={s.secondaryBtn} onClick={handleExportSelection} disabled={!selection}>
                 Export selection (.wav)
               </button>
