@@ -76,6 +76,10 @@ interface SimpleMissionViewProps {
   broadcasting: boolean;
   /** True when the LiveStreamView is recording a local clip. */
   recordingClip: boolean;
+  /** Per-case cultural-sensitivity flag, mirroring Pro hero. */
+  culturallySensitive: boolean;
+  /** Toggle the per-case flag. Null when there's no active investigation. */
+  onToggleSensitive: (() => void) | null;
   emitEvidence: (input: {
     channel: string;
     logLr: number;
@@ -178,7 +182,9 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
     running, busy, posterior, elapsedSeconds, caseId, caseTitle, statusMsg,
     recentIncrements, trustworthy, baseline, hasInvestigation, investigationId,
     audioRms, sectorReading, narratorCaption, narratorSpeak, onToggleNarratorSpeak,
-    onBegin, onStop, onMarker, onAskQuestion, onBroadcastLive, broadcasting, recordingClip, emitEvidence,
+    onBegin, onStop, onMarker, onAskQuestion, onBroadcastLive, broadcasting, recordingClip,
+    culturallySensitive, onToggleSensitive,
+    emitEvidence,
   } = props;
   const [markSheetOpen, setMarkSheetOpen] = useState(false);
   const [latched, setLatched] = useState<string | null>(null);
@@ -245,6 +251,20 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
             {running ? "Recording" : "Standing by"}
           </span>
           <ScreenRecordButton investigationId={investigationId} />
+          {onToggleSensitive && (
+            <button
+              type="button"
+              className={`${s.sensitivePill} ${culturallySensitive ? s.sensitivePillActive : ""}`.trim()}
+              onClick={onToggleSensitive}
+              title={culturallySensitive
+                ? "This case is flagged culturally sensitive. Cloud AI and sync are blocked. Tap to clear."
+                : "Tap if this site is culturally significant or restricted — blocks cloud AI and sync for this case only."}
+              aria-pressed={culturallySensitive}
+            >
+              <span className={s.sensitivePillDot} aria-hidden="true" />
+              {culturallySensitive ? "Sensitive · cloud blocked" : "Site OK"}
+            </button>
+          )}
           {caseId && <span className={s.caseId}>{caseId.slice(0, 8).toUpperCase()}</span>}
         </div>
 

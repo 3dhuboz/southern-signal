@@ -472,6 +472,51 @@
 .tickOk { color: var(--accent-strong); }
 .tickWarn { color: var(--warning); }
 .tickInfo { color: var(--text-muted); }
+
+/* Cultural-sensitivity pill — mirrors the Pro hero variant so the per-case
+   toggle is reachable to amateurs without leaving Simple mode. */
+.sensitivePill {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--r-full);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  border: 1px solid var(--border-default);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+  min-height: 26px;
+}
+.sensitivePill:hover {
+  background: var(--bg-overlay);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.sensitivePillActive {
+  background: var(--danger-wash);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.sensitivePillActive:hover {
+  background: var(--danger-wash);
+  color: var(--danger);
+  border-color: var(--danger);
+  filter: brightness(1.1);
+}
+.sensitivePillDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
 .readinessRowBody {
   display: flex;
   flex-direction: column;

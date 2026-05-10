@@ -486,6 +486,8 @@ export function MissionControl() {
           onBroadcastLive={handleBroadcastLive}
           broadcasting={liveStreamState.broadcasting}
           recordingClip={liveStreamState.recording}
+          culturallySensitive={culturallySensitive}
+          onToggleSensitive={session.current ? handleToggleSensitive : null}
           emitEvidence={emitEvidence}
         />
       )}
