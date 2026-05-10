@@ -15,6 +15,7 @@ const Setup = lazy(() => import("./views/Setup").then((m) => ({ default: m.Setup
 const Floorplan = lazy(() => import("./views/Floorplan").then((m) => ({ default: m.Floorplan })));
 const EvpReview = lazy(() => import("./views/EvpReview").then((m) => ({ default: m.EvpReview })));
 const Estes = lazy(() => import("./views/Estes").then((m) => ({ default: m.Estes })));
+const EvidenceBrief = lazy(() => import("./views/EvidenceBrief").then((m) => ({ default: m.EvidenceBrief })));
 
 function RouteFallback() {
   return (
@@ -69,6 +70,8 @@ export default function App() {
             <Route path="/estes" element={<Estes />} />
             <Route path="/setup" element={<Setup />} />
             <Route path="/floorplan" element={<Floorplan />} />
+            <Route path="/brief" element={<EvidenceBrief />} />
+            <Route path="/brief/:investigationId" element={<EvidenceBrief />} />
           </Routes>
         </Suspense>
       </main>

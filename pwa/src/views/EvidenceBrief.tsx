@@ -1,0 +1,241 @@
+/**
+ * EvidenceBrief view — printable one-page case summary. Loaded at
+ * /brief/:investigationId, or /brief which auto-resolves the most
+ * recent investigation. Designed for the operator to:
+ *
+ *   • Print directly from the browser (Ctrl/Cmd + P)
+ *   • Save as PDF via the system print dialog
+ *   • Screenshot for sharing on social
+ *
+ * Body layout is intentionally narrow + serif-leaning so it reads as a
+ * printable artefact, not a UI screen. The 8 disclaimers from the
+ * ethical-floor commit are baked into the footer.
+ */
+
+import { useEffect, useState } from "react";
+import { Link, useParams, useNavigate } from "react-router-dom";
+import { buildEvidenceBrief, findMostRecentInvestigationId, type EvidenceBrief } from "../lib/forensic/evidenceBrief";
+import { describeChannel, describeSector, plainEnglishReason } from "../lib/posterior/plainEnglish";
+import s from "./EvidenceBrief.module.css";
+
+const DISPOSITION_LABEL: Record<string, string> = {
+  null: "Null — nothing happened",
+  inconclusive: "Inconclusive — something, not enough",
+  flagged: "Flagged — worth reviewing",
+  confirmed_mundane: "Mundane — explained at the time",
+};
+
+function formatDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, { dateStyle: "long", timeStyle: "short" });
+}
+
+function formatDuration(seconds: number | null): string {
+  if (seconds == null) return "—";
+  const t = Math.max(0, Math.floor(seconds));
+  const hh = Math.floor(t / 3600);
+  const mm = Math.floor((t % 3600) / 60);
+  const ss = t % 60;
+  if (hh > 0) return `${hh}h ${mm}m ${ss}s`;
+  if (mm > 0) return `${mm}m ${ss}s`;
+  return `${ss}s`;
+}
+
+export function EvidenceBrief() {
+  const { investigationId: paramId } = useParams<{ investigationId?: string }>();
+  const navigate = useNavigate();
+  const [brief, setBrief] = useState<EvidenceBrief | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const id = paramId ?? (await findMostRecentInvestigationId());
+        if (!id) {
+          setError("No investigations yet. Run a session in Mission Control first.");
+          return;
+        }
+        const result = await buildEvidenceBrief(id);
+        if (!result) {
+          setError(`Investigation ${id} not found.`);
+          return;
+        }
+        setBrief(result);
+      } catch (err) {
+        setError(`Couldn't build brief: ${(err as Error).message}`);
+      }
+    })();
+  }, [paramId]);
+
+  if (error) {
+    return (
+      <article className={s.page}>
+        <p className={s.error}>{error}</p>
+        <button type="button" className={s.button} onClick={() => navigate("/review")}>← Back to Review</button>
+      </article>
+    );
+  }
+
+  if (!brief) {
+    return (
+      <article className={s.page}>
+        <p className={s.loading}>Assembling brief…</p>
+      </article>
+    );
+  }
+
+  const inv = brief.investigation;
+  const dispositionText = inv.disposition ? (DISPOSITION_LABEL[inv.disposition] ?? inv.disposition) : "Unclassified";
+
+  return (
+    <article className={s.page}>
+      {/* Toolbar — hidden when printing */}
+      <header className={s.toolbar}>
+        <Link to="/review" className={s.toolbarLink}>← Review</Link>
+        <button type="button" className={s.button} onClick={() => window.print()}>
+          Print / Save PDF
+        </button>
+      </header>
+
+      {/* COVER */}
+      <section className={s.cover}>
+        <span className={s.brand}>SOUTHERN SIGNAL · CASE BRIEF</span>
+        <h1 className={s.title}>{inv.title}</h1>
+        {inv.location_name && <p className={s.location}>{inv.location_name}</p>}
+        <dl className={s.coverGrid}>
+          <div><dt>Started</dt><dd>{formatDate(inv.started_at)}</dd></div>
+          <div><dt>Ended</dt><dd>{formatDate(inv.ended_at)}</dd></div>
+          <div><dt>Duration</dt><dd>{formatDuration(brief.durationSeconds)}</dd></div>
+          <div><dt>Disposition</dt><dd>{dispositionText}</dd></div>
+        </dl>
+      </section>
+
+      {/* KEY FINDINGS */}
+      <section className={s.section}>
+        <h2 className={s.sectionTitle}>Key findings</h2>
+        <div className={s.findingsGrid}>
+          <div className={s.finding}>
+            <span className={s.findingLabel}>Peak score</span>
+            <span className={`${s.findingValue} ${s[`band_${brief.peakPosteriorBand}`]}`.trim()}>
+              {(brief.peakPosterior * 100).toFixed(0)}%
+            </span>
+            <span className={s.findingHint}>highest posterior reached</span>
+          </div>
+          <div className={s.finding}>
+            <span className={s.findingLabel}>At session end</span>
+            <span className={s.findingValue}>{(brief.finalPosterior * 100).toFixed(0)}%</span>
+            <span className={s.findingHint}>posterior after final increment</span>
+          </div>
+          <div className={s.finding}>
+            <span className={s.findingLabel}>Increments</span>
+            <span className={s.findingValue}>{brief.totalIncrements}</span>
+            <span className={s.findingHint}>posterior updates this session</span>
+          </div>
+          <div className={s.finding}>
+            <span className={s.findingLabel}>Interference tags</span>
+            <span className={s.findingValue}>{brief.contaminationCount}</span>
+            <span className={s.findingHint}>contaminations the operator flagged</span>
+          </div>
+        </div>
+      </section>
+
+      {/* TOP MOMENTS */}
+      <section className={s.section}>
+        <h2 className={s.sectionTitle}>Top moments {brief.topMoments.length > 0 ? `(top ${brief.topMoments.length} by evidence weight)` : ""}</h2>
+        {brief.topMoments.length === 0 ? (
+          <p className={s.empty}>
+            No anomalies above noise this session. A quiet room is honest data — the base-rate dashboard counts null sessions too.
+          </p>
+        ) : (
+          <ol className={s.moments}>
+            {brief.topMoments.map((m, i) => {
+              const ch = describeChannel(m.channel);
+              const sector = describeSector(m.sector);
+              return (
+                <li key={`${m.ts}-${i}`} className={s.moment}>
+                  <span className={s.momentRank}>{i + 1}</span>
+                  <div className={s.momentBody}>
+                    <span className={s.momentKind}>
+                      {ch.label}
+                      {sector ? ` · ${sector}` : ""}
+                    </span>
+                    <span className={s.momentReason}>{plainEnglishReason(m.reason)}</span>
+                    <span className={s.momentMath}>
+                      P {(m.posteriorBefore * 100).toFixed(0)}% → {(m.posteriorAfter * 100).toFixed(0)}%
+                      {" · "}log LR {m.logLr >= 0 ? "+" : ""}{m.logLr.toFixed(2)}
+                      {m.capped ? " · CAPPED" : ""}
+                    </span>
+                  </div>
+                  <span className={s.momentTs}>{new Date(m.ts).toLocaleTimeString()}</span>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+      </section>
+
+      {/* MEDIA + EVENTS */}
+      <section className={s.section}>
+        <h2 className={s.sectionTitle}>Recordings &amp; events</h2>
+        <ul className={s.tally}>
+          <li><strong>{brief.mediaByType.video}</strong> video clip{brief.mediaByType.video === 1 ? "" : "s"}</li>
+          <li><strong>{brief.mediaByType.audio}</strong> audio clip{brief.mediaByType.audio === 1 ? "" : "s"}</li>
+          <li><strong>{brief.mediaByType.image}</strong> still{brief.mediaByType.image === 1 ? "" : "s"}</li>
+          <li><strong>{brief.markerCount}</strong> manual marker{brief.markerCount === 1 ? "" : "s"}</li>
+          <li><strong>{brief.observationCount}</strong> observation note{brief.observationCount === 1 ? "" : "s"}</li>
+        </ul>
+      </section>
+
+      {/* FORENSIC INTEGRITY */}
+      <section className={s.section}>
+        <h2 className={s.sectionTitle}>Forensic integrity</h2>
+        <ul className={s.integrityList}>
+          <li>
+            {brief.chainStatus.ok ? (
+              <><strong>Audit chain verified.</strong> Every posterior update, marker, contamination tag, and disposition is hash-chained — no entry has been altered since capture.</>
+            ) : (
+              <><strong>Audit chain BROKEN.</strong> Entry seq {brief.chainStatus.brokenAtSeq} failed verification ({brief.chainStatus.reason}). Treat this case's data with caution.</>
+            )}
+          </li>
+          {brief.merkleRoot && (
+            <li>
+              <strong>Merkle root: </strong>
+              <code>{brief.merkleRoot}</code>
+              <span className={s.muted}> — the export bundle for this device hashes to this value.</span>
+            </li>
+          )}
+          {brief.culturallySensitive && (
+            <li><strong>Cultural-sensitivity flag: ON.</strong> Cloud AI and cloud sync are blocked for this case. Audio and notes never left the device.</li>
+          )}
+        </ul>
+      </section>
+
+      {/* ACKNOWLEDGEMENT */}
+      {brief.acknowledgementStatement && (
+        <section className={s.section}>
+          <h2 className={s.sectionTitle}>Acknowledgement of Country</h2>
+          <blockquote className={s.acknowledgement}>
+            {brief.acknowledgementStatement}
+          </blockquote>
+          {brief.acknowledgementAcceptedAt && (
+            <p className={s.muted}>Recorded {formatDate(brief.acknowledgementAcceptedAt)}</p>
+          )}
+        </section>
+      )}
+
+      {/* DISCLAIMERS */}
+      <footer className={s.disclaimers}>
+        <p>
+          <strong>Posterior is a model estimate, not a measurement of presence.</strong> Sector accuracy ±60° (calibrated) or unknown (uncalibrated). AI proposes; the investigator decides — AI never claims to hear voices or see ghosts.
+        </p>
+        <p>
+          The Adversarial Hypothesis Tournament (AHT) eliminates explanations; it does not confirm causes. When the H₀ "AI insufficiency" confidence exceeds 0.4, the verdict is INCONCLUSIVE, never confirmed.
+        </p>
+        <p className={s.briefMeta}>
+          Brief generated {formatDate(brief.generatedAt)} · Southern Signal v0.1.0
+        </p>
+      </footer>
+    </article>
+  );
+}

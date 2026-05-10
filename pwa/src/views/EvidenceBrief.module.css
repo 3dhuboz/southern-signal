@@ -1,0 +1,348 @@
+/* Print-friendly case-brief layout. Stays narrow on screen + cleanly
+   converts to A4 when the user hits Print / Save PDF. */
+
+.page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 32px 28px 80px;
+  color: var(--text);
+  font-family: var(--font-body, system-ui);
+  line-height: 1.55;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 32px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-default);
+}
+.toolbarLink {
+  color: var(--text-muted);
+  font-size: 12px;
+  text-decoration: none;
+  letter-spacing: 0.4px;
+}
+.toolbarLink:hover { color: var(--text); }
+.button {
+  padding: 8px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-surface);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.button:hover { background: var(--bg-overlay); }
+
+.error,
+.loading {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ----- COVER ----- */
+
+.cover {
+  margin-bottom: 28px;
+}
+.brand {
+  display: block;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+  margin-bottom: 12px;
+}
+.title {
+  margin: 0 0 6px;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  color: var(--text);
+}
+.location {
+  margin: 0 0 18px;
+  font-size: 14px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+.coverGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px 24px;
+  padding: 16px 18px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+}
+.coverGrid div { display: flex; flex-direction: column; gap: 2px; }
+.coverGrid dt {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.coverGrid dd {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+/* ----- SECTIONS ----- */
+
+.section {
+  margin-bottom: 28px;
+  page-break-inside: avoid;
+}
+.sectionTitle {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-default);
+}
+
+/* ----- KEY FINDINGS ----- */
+
+.findingsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.finding {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+}
+.findingLabel {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.findingValue {
+  font-size: 26px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.findingHint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.band_below { color: var(--text-secondary); }
+.band_inconclusive { color: rgb(242, 185, 93); }
+.band_elevated { color: rgb(242, 130, 93); }
+.band_flag { color: rgb(220, 60, 80); }
+
+/* ----- MOMENTS ----- */
+
+.empty {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+  font-size: 13px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+.moments {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.moment {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+}
+.momentRank {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--accent-strong);
+}
+.momentBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.momentKind {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.momentReason {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.momentMath {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.momentTs {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ----- TALLY ----- */
+
+.tally {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+.tally li {
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.tally strong {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 18px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ----- INTEGRITY ----- */
+
+.integrityList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.integrityList li {
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  font-size: 12px;
+}
+.integrityList code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  word-break: break-all;
+  color: var(--text);
+  background: var(--bg-overlay);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.muted { color: var(--text-muted); }
+
+/* ----- ACKNOWLEDGEMENT ----- */
+
+.acknowledgement {
+  margin: 0 0 6px;
+  padding: 14px 16px;
+  border-left: 3px solid var(--accent-strong);
+  background: var(--bg-surface);
+  font-size: 13px;
+  font-style: italic;
+  color: var(--text);
+  line-height: 1.6;
+}
+
+/* ----- DISCLAIMERS ----- */
+
+.disclaimers {
+  margin-top: 36px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border-default);
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+.disclaimers p { margin: 0 0 8px; }
+.briefMeta {
+  margin-top: 16px !important;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.4px;
+}
+
+/* ----- PRINT ----- */
+
+@media print {
+  .page {
+    max-width: none;
+    padding: 0;
+    color: #000;
+    background: #fff;
+  }
+  .toolbar { display: none; }
+  .sectionTitle {
+    color: #000;
+    border-color: #999;
+  }
+  .coverGrid,
+  .finding,
+  .moment,
+  .tally li,
+  .integrityList li,
+  .acknowledgement,
+  .empty {
+    background: transparent !important;
+    border-color: #999 !important;
+    color: #000 !important;
+  }
+  .findingLabel,
+  .momentReason,
+  .momentMath,
+  .momentTs,
+  .findingHint,
+  .muted,
+  .disclaimers,
+  .briefMeta {
+    color: #444 !important;
+  }
+  .findingValue,
+  .momentKind,
+  .momentRank,
+  .tally strong {
+    color: #000 !important;
+  }
+  .acknowledgement { border-left-color: #000 !important; }
+  .integrityList code { background: #eee !important; color: #000 !important; }
+}

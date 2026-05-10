@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { BaseRatePanel } from "../components/BaseRatePanel";
 import { CaseManager } from "../components/CaseManager";
 import { query } from "../lib/db/db";
@@ -187,6 +188,9 @@ export function Review() {
                 Manifest + chain (.json)
               </button>
             )}
+            <Link to="/brief" className={r.downloadButton}>
+              Print case brief
+            </Link>
           </>
         )}
         {chainStatus === "broken" && (
