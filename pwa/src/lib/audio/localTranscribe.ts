@@ -32,7 +32,11 @@ import type {
   WhisperWorkerOutbound,
 } from "../../workers/whisperTranscribe.worker";
 
-export const DEFAULT_LOCAL_MODEL = "Xenova/whisper-tiny.en";
+// Was "Xenova/whisper-tiny.en" — that repo's quantized decoder fails to load
+// on current onnxruntime-web with a QDQ "Missing required scale" error.
+// `onnx-community/whisper-tiny.en` is the maintained successor with
+// quantization configs that load cleanly under the dtype config in the worker.
+export const DEFAULT_LOCAL_MODEL = "onnx-community/whisper-tiny.en";
 export const WHISPER_SAMPLE_RATE = 16_000;
 
 export type LocalTranscribeState = "unloaded" | "loading" | "ready" | "error";

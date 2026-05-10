@@ -62,11 +62,20 @@ async function load(model: string): Promise<void> {
   if (loadingPromise) return loadingPromise;
 
   loadingPromise = (async () => {
+    // Explicit dtype config — the default ("auto") picks q8 for CPU/WASM,
+    // and the older Xenova quantization shipped with that variant fails to
+    // load on current onnxruntime-web with a "Missing required scale"
+    // QDQ error. fp32 encoder + q4 decoder is the smallest combo that's
+    // verified to load + run on every backend transformers.js targets.
     asr = (await pipeline("automatic-speech-recognition", model, {
+      dtype: {
+        encoder_model: "fp32",
+        decoder_model_merged: "q4",
+      },
       progress_callback: (info: ProgressInfo) => {
         post({ type: "loading_progress", info });
       },
-    })) as AutomaticSpeechRecognitionPipeline;
+    } as Parameters<typeof pipeline>[2])) as AutomaticSpeechRecognitionPipeline;
     loadedModel = model;
     post({ type: "loaded", model });
   })();
@@ -88,6 +97,13 @@ interface WhisperRunResult {
   chunks?: WhisperChunk[];
 }
 
+function isEnglishOnlyModel(model: string | null): boolean {
+  if (!model) return false;
+  // Whisper "*.en" repos are English-only and reject task/language args.
+  // Match the suffix `.en` followed by either end-of-string, `_`, or `-`.
+  return /\.en(?:[_-]|$)/i.test(model);
+}
+
 async function transcribe(
   requestId: string,
   audio: Float32Array,
@@ -99,11 +115,13 @@ async function transcribe(
     return;
   }
   try {
-    // The pipeline accepts Float32Array directly. Language is optional —
-    // omitting it lets Whisper auto-detect (slower; English-only models
-    // ignore it anyway). returnTimestamps yields per-chunk start/end.
+    // The pipeline accepts Float32Array directly. English-only models
+    // (whisper-tiny.en, whisper-base.en, etc.) reject any `language` arg
+    // outright; multilingual variants accept "en" / "es" / etc. or
+    // omit-for-auto-detect.
+    const englishOnly = isEnglishOnlyModel(loadedModel);
     const result = (await asr(audio, {
-      ...(language ? { language } : {}),
+      ...(language && !englishOnly ? { language } : {}),
       return_timestamps: returnTimestamps,
     } as Record<string, unknown>)) as WhisperRunResult | WhisperRunResult[];
 
