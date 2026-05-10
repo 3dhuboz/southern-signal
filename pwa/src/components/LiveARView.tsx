@@ -108,18 +108,94 @@ export function LiveARView({ investigationId, running, posterior, audioRms, sect
 
   // Attach stream to video once both exist. Order-independent — the video
   // element only mounts when streamOn flips true after stream is set.
+  //
+  // Robustness notes for the play() call:
+  //   • Some browsers (older Safari, in-app browsers like Messenger /
+  //     Instagram) gate autoplay on the *attribute* `muted`, not the JSX
+  //     prop. React reflects `muted={true}` as a property, but the
+  //     attribute is what the autoplay heuristic reads on some engines.
+  //     We set both defensively before assigning srcObject.
+  //   • If the first play() rejects, it's usually because the element
+  //     hasn't received `loadedmetadata` yet. We wait for that event
+  //     once and retry — this avoids the spurious "Playback couldn't
+  //     start" error users were seeing on Android Chrome.
+  //   • Only surface an error if both attempts fail AND the video isn't
+  //     actually playing. Many browsers reject the promise but the video
+  //     plays once metadata arrives — don't punish the user for that.
   useEffect(() => {
     const v = videoRef.current;
     if (!v || !stream) return;
+
+    v.muted = true;
+    v.setAttribute("muted", "");
+    v.setAttribute("playsinline", "");
     v.srcObject = stream;
-    const playPromise = v.play();
-    if (playPromise && typeof playPromise.catch === "function") {
-      playPromise.catch((err) => {
-        console.warn("LiveARView video.play() rejected:", err);
-        setError("Playback couldn't start. Tap the camera again.");
-      });
-    }
+
+    let cancelled = false;
+
+    const tryPlay = async () => {
+      try {
+        await v.play();
+        if (!cancelled) setError(null);
+      } catch (err) {
+        if (cancelled) return;
+        console.warn("LiveARView video.play() rejected — waiting for metadata to retry:", err);
+        const ready = await new Promise<boolean>((resolve) => {
+          if (v.readyState >= 2) { resolve(true); return; }
+          const onMeta = () => { cleanup(); resolve(true); };
+          const onError = () => { cleanup(); resolve(false); };
+          const t = window.setTimeout(() => { cleanup(); resolve(false); }, 2500);
+          const cleanup = () => {
+            window.clearTimeout(t);
+            v.removeEventListener("loadedmetadata", onMeta);
+            v.removeEventListener("error", onError);
+          };
+          v.addEventListener("loadedmetadata", onMeta);
+          v.addEventListener("error", onError);
+        });
+        if (cancelled) return;
+        if (!ready) {
+          if (!v.paused) return;
+          setError("Playback couldn't start. Tap retry below.");
+          return;
+        }
+        try {
+          await v.play();
+          if (!cancelled) setError(null);
+        } catch (err2) {
+          if (cancelled) return;
+          if (!v.paused && v.readyState >= 2) return;
+          console.warn("LiveARView retry play() rejected:", err2);
+          setError("Playback couldn't start. Tap retry below.");
+        }
+      }
+    };
+
+    void tryPlay();
+    return () => { cancelled = true; };
   }, [stream]);
+
+  // Retry handler used by the error card. The old version called start()
+  // which early-returns when `stream` is non-null — meaning the button
+  // was a no-op once the stream was acquired but play() rejected. We now
+  // distinguish: if a stream is in hand, just try v.play() again (no
+  // gesture needed for a muted stream); otherwise re-acquire from scratch.
+  const retry = useCallback(async () => {
+    setError(null);
+    const v = videoRef.current;
+    if (stream && v) {
+      try {
+        v.muted = true;
+        await v.play();
+        return;
+      } catch (err) {
+        console.warn("LiveARView manual retry play() rejected, re-acquiring:", err);
+        stream.getTracks().forEach((t) => t.stop());
+        setStream(null);
+      }
+    }
+    void start();
+  }, [stream, start]);
 
   const captureBlob = useCallback(async (): Promise<{ blob: Blob; thumb: string } | null> => {
     const v = videoRef.current;
@@ -222,7 +298,7 @@ export function LiveARView({ investigationId, running, posterior, audioRms, sect
       {error && (
         <div className={s.error}>
           <strong>Camera unavailable.</strong> {error}
-          <button type="button" className={s.errorRetry} onClick={start}>Try again</button>
+          <button type="button" className={s.errorRetry} onClick={retry}>Try again</button>
         </div>
       )}
 
