@@ -212,9 +212,19 @@ export function LiveStreamView(props: LiveStreamViewProps) {
         video: { facingMode: { ideal: mode }, width: { ideal: 1920 }, height: { ideal: 1080 } },
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
       });
-    } catch {
-      // Fallback: any camera, any mic.
-      return await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    } catch (err) {
+      // Only fall back for constraint-related rejections. Retrying after a
+      // NotAllowedError / NotFoundError / NotReadableError / SecurityError /
+      // AbortError would just trigger a second permission prompt or hit the
+      // same hardware failure — doubling user-visible thrash and, on
+      // Android Chrome, surfacing the "This site can't ask for your
+      // permission" system dialog twice when a bubble/overlay is blocking
+      // the standard permission UI.
+      const e = err as Error & { name?: string };
+      if (e.name === "OverconstrainedError" || e.name === "ConstraintNotSatisfiedError") {
+        return await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      }
+      throw err;
     }
   }, []);
 
@@ -242,10 +252,17 @@ export function LiveStreamView(props: LiveStreamViewProps) {
       setStreamOn(true);
     } catch (err) {
       const e = err as Error & { name?: string };
+      // AbortError / SecurityError fire on Android Chrome when a system
+      // overlay or another app's bubble blocks the standard permission UI
+      // ("This site can't ask for your permission"). The standard
+      // NotAllowedError text "denied" implies user choice — which isn't
+      // accurate here — so we give a hint about closing overlays instead.
       const msg =
-        e.name === "NotAllowedError" ? "Camera/mic permission was denied."
+        e.name === "NotAllowedError" ? "Camera/mic permission was denied. Open browser site settings to re-enable."
         : e.name === "NotFoundError" ? "No camera or microphone found."
-        : e.name === "NotReadableError" ? "Camera or mic is busy in another app."
+        : e.name === "NotReadableError" ? "Camera or mic is busy in another app. Close other camera apps and try again."
+        : e.name === "AbortError" ? "The camera prompt was interrupted. If you saw an Android system dialog about overlays or bubbles, close other apps with floating windows (e.g. Messenger chat heads, edge panels) and try again."
+        : e.name === "SecurityError" ? "Camera/mic blocked by browser security. Ensure the site is loaded over HTTPS and that site permissions allow camera + microphone."
         : (e.message || "Camera unavailable");
       setError(msg);
     } finally {

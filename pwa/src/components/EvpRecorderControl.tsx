@@ -149,10 +149,17 @@ export function EvpRecorderControl({ investigationId, onSaved, variant = "defaul
       await recorderRef.current!.start(tmpPath);
     } catch (err) {
       const e = err as Error & { name?: string };
+      // AbortError / SecurityError fire on Android Chrome when a system
+      // overlay (Messenger chat heads, edge panels, accessibility bubbles)
+      // blocks the standard permission UI with "This site can't ask for
+      // your permission". The standard "denied" copy implies user choice
+      // — which isn't accurate here — so we give a hint about overlays.
       setLastError(
-        e.name === "NotAllowedError" ? "Microphone permission was denied. Allow it in browser settings."
+        e.name === "NotAllowedError" ? "Microphone permission was denied. Allow it in browser site settings."
         : e.name === "NotFoundError" ? "No microphone found."
-        : e.name === "NotReadableError" ? "Microphone is busy in another app."
+        : e.name === "NotReadableError" ? "Microphone is busy in another app. Close other recording apps and try again."
+        : e.name === "AbortError" ? "The microphone prompt was interrupted. If you saw an Android system dialog about overlays or bubbles, close other apps with floating windows and try again."
+        : e.name === "SecurityError" ? "Microphone blocked by browser security. Ensure the site is loaded over HTTPS and that site permissions allow microphone."
         : (e.message || "Microphone unavailable"),
       );
     }
