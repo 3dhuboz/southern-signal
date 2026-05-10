@@ -87,21 +87,16 @@
   margin-top: var(--s-4);
 }
 
-.primary {
+/* Hero CTA — sits below the acknowledgement textarea, stretches full-width
+   of the panel for a clear "tap this to continue". Colour / hover / focus
+   come from .btn .btn-primary. .primarySize is just the call-site sizing. */
+.primarySize {
   flex: 1;
   padding: var(--s-12) var(--s-16);
   border-radius: var(--r-md);
-  background: var(--signal);
-  color: var(--text-on-accent);
-  border: 1px solid var(--signal);
-  font-weight: 700;
   font-size: 14px;
-  cursor: pointer;
-  font-family: inherit;
   min-height: 48px;
 }
-.primary:hover { background: var(--signal-glow); }
-.primary:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .footnote {
   margin: 0;

@@ -117,7 +117,7 @@ export function InterruptedSessionBanner() {
       <div className={s.actions}>
         <button
           type="button"
-          className={s.primary}
+          className={`btn btn-warning-filled ${s.size}`}
           onClick={handleEnd}
           disabled={busy}
         >
@@ -125,7 +125,7 @@ export function InterruptedSessionBanner() {
         </button>
         <button
           type="button"
-          className={s.dismiss}
+          className={`btn btn-ghost ${s.size}`}
           onClick={handleDismiss}
           disabled={busy}
         >

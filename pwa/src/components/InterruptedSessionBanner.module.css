@@ -65,32 +65,14 @@
   flex-shrink: 0;
 }
 
-.primary,
-.dismiss {
+/* Banner buttons consume the global .btn / .btn-warning-filled / .btn-ghost
+   utilities for colour + behaviour. .size is the call-site override for
+   padding, font-size, and uppercase letter-spacing — the
+   "this is banner-sized, not hero-CTA" decisions. */
+.size {
   padding: var(--s-8) 14px;
   border-radius: var(--r-md);
   font-size: 12px;
-  font-weight: 700;
   letter-spacing: 0.4px;
   text-transform: uppercase;
-  cursor: pointer;
-  transition: background 120ms, transform 80ms;
-  font-family: inherit;
 }
-
-.primary {
-  background: var(--warning);
-  color: var(--text-on-accent, #fff);
-  border: 1px solid var(--warning);
-}
-.primary:hover { filter: brightness(1.05); }
-.primary:active { transform: scale(0.99); }
-.primary:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.dismiss {
-  background: transparent;
-  color: var(--text-secondary);
-  border: 1px solid var(--border-default);
-}
-.dismiss:hover { background: var(--bg-overlay); color: var(--text); }
-.dismiss:disabled { opacity: 0.5; cursor: not-allowed; }

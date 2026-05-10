@@ -93,7 +93,7 @@ export function AcknowledgementGate() {
         </label>
 
         <div className={s.actions}>
-          <button type="button" className={s.primary} onClick={accept} disabled={!statement.trim()}>
+          <button type="button" className={`btn btn-primary ${s.primarySize}`} onClick={accept} disabled={!statement.trim()}>
             Acknowledge and continue
           </button>
         </div>

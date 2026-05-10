@@ -1,0 +1,119 @@
+/**
+ * Button utility classes — global, NOT a CSS module.
+ *
+ * Why global: every component had its own `.primary` / `.secondary` / `.danger`
+ * with near-identical token sets that drifted over time (some used
+ * --r-md, some --r-sm; some used `border-color`, some `border`). CSS-modules
+ * scope class names so these don't *collide*, but the duplication means a
+ * future colour or hover-state change has to be made in 10+ places to land
+ * consistently.
+ *
+ * What's shared here:
+ *   - colour / border / hover / disabled / focus behaviour
+ *   - cursor + font-family inheritance
+ *   - the :active scale tap
+ *
+ * What's NOT shared (call-site decides):
+ *   - padding, min-height, font-size — these encode intent (chip vs CTA
+ *     vs hero) and must stay local.
+ *   - border-radius — most callers want --r-md, but Setup uses --r-md
+ *     while CaseManager uses --r-sm; not enforcing.
+ *
+ * Specificity: these globals are imported BEFORE any CSS module (via
+ * `global.css`), so local `.primary` rules from a `.module.css` always
+ * win on conflict. That means migration is opt-in per component: add
+ * `className="btn btn-primary"` next to the local class and the local
+ * rules continue to apply on top. Remove the local rules only once the
+ * caller is verified.
+ */
+
+.btn {
+  appearance: none;
+  font-family: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 120ms, transform 80ms, filter 120ms, border-color 120ms;
+}
+.btn:active:not(:disabled) {
+  transform: scale(0.99);
+}
+.btn:disabled {
+  cursor: not-allowed;
+}
+.btn:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+/* Promoted CTA — Signal-tinted, "do the main thing" */
+.btn-primary {
+  background: var(--signal);
+  color: var(--text-on-accent);
+  border: 1px solid var(--signal);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--signal-glow);
+}
+.btn-primary:disabled {
+  opacity: 0.45;
+}
+
+/* Ghost / secondary — surface fill, "the other option" */
+.btn-ghost {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--bg-overlay);
+  border-color: var(--signal-dim);
+}
+.btn-ghost:disabled {
+  opacity: 0.4;
+}
+
+/* Destructive — danger-washed background, edge case button */
+.btn-danger {
+  background: var(--danger-wash);
+  color: var(--danger);
+  border: 1px solid var(--danger);
+}
+.btn-danger:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+.btn-danger:disabled {
+  opacity: 0.5;
+}
+
+/* Filled-danger variant — used where "destructive AND promoted" needs to
+   stand out. */
+.btn-danger-filled {
+  background: var(--danger);
+  color: var(--text-on-accent, #fff);
+  border: 1px solid var(--danger);
+}
+.btn-danger-filled:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+.btn-danger-filled:disabled {
+  opacity: 0.5;
+}
+
+/* Filled-warning variant — "needs attention, do this housekeeping action"
+   without escalating to destructive red. Used by InterruptedSessionBanner
+   so the CTA matches the banner's amber/warning chrome. */
+.btn-warning-filled {
+  background: var(--warning);
+  color: var(--text-on-accent, #fff);
+  border: 1px solid var(--warning);
+}
+.btn-warning-filled:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+.btn-warning-filled:disabled {
+  opacity: 0.5;
+}
