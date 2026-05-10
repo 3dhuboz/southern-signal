@@ -64,6 +64,36 @@ export class EvpRecorder {
     for (const fn of this.listeners) fn(this.state);
   }
 
+  /**
+   * Tear down any audio resources currently held WITHOUT touching public
+   * state. Used by both stop() (after a successful capture) and the start()
+   * error path (so a failed start doesn't leak mic tracks or AudioContexts
+   * into the next attempt). Idempotent — safe to call when nothing is
+   * allocated.
+   */
+  private tearDownAudio(): void {
+    if (this.workletNode) {
+      try { this.workletNode.port.onmessage = null; } catch { /* swallow */ }
+      try { this.workletNode.disconnect(); } catch { /* swallow */ }
+    }
+    if (this.scriptProcessor) {
+      try { this.scriptProcessor.onaudioprocess = null; } catch { /* swallow */ }
+      try { this.scriptProcessor.disconnect(); } catch { /* swallow */ }
+    }
+    if (this.sourceNode) {
+      try { this.sourceNode.disconnect(); } catch { /* swallow */ }
+    }
+    this.mediaStream?.getTracks().forEach((t) => { try { t.stop(); } catch { /* swallow */ } });
+    this.audioCtx?.close().catch(() => { /* swallow */ });
+
+    this.workletNode = null;
+    this.scriptProcessor = null;
+    this.sourceNode = null;
+    this.mediaStream = null;
+    this.audioCtx = null;
+    this.processingPath = null;
+  }
+
   async start(opfsPath: string): Promise<void> {
     if (this.state.status !== "idle") return;
     this.update({ status: "starting", error: null });
@@ -128,6 +158,17 @@ export class EvpRecorder {
       // private field — the value is genuinely useful when debugging which
       // pipeline ran (worklet vs script-processor) but we keep it internal.
       void this.processingPath;
+
+      // iOS Safari quirk: AudioContext created in `suspended` state even
+      // when getUserMedia provided a gesture chain, especially when the
+      // recorder is invoked from an awaited handler several layers deep.
+      // An explicit resume() is harmless on contexts that already started
+      // and prevents silent zero-byte captures on iOS. Failure here isn't
+      // fatal — capture may still work; the user gesture has been granted.
+      if (this.audioCtx.state === "suspended") {
+        try { await this.audioCtx.resume(); } catch { /* swallow */ }
+      }
+
       this.update({ status: "recording", startedAt: Date.now(), durationSeconds: 0 });
       this.timerHandle = window.setInterval(() => {
         if (this.state.startedAt) {
@@ -135,6 +176,10 @@ export class EvpRecorder {
         }
       }, 1000);
     } catch (err) {
+      // Release any partially-allocated audio resources so a retry doesn't
+      // accumulate orphaned mic tracks / AudioContexts on the device.
+      this.tearDownAudio();
+      this.outputPath = null;
       this.update({ status: "error", error: (err as Error).message });
       throw err;
     }
@@ -145,23 +190,12 @@ export class EvpRecorder {
     this.update({ status: "stopping" });
     if (this.timerHandle != null) { window.clearInterval(this.timerHandle); this.timerHandle = null; }
 
-    try {
-      // Disconnect whichever processing path was active, then tear down
-      // the source and stop mic tracks before closing the AudioContext.
-      if (this.workletNode) {
-        try { this.workletNode.port.onmessage = null; } catch { /* swallow */ }
-        try { this.workletNode.disconnect(); } catch { /* swallow */ }
-      }
-      if (this.scriptProcessor) {
-        try { this.scriptProcessor.onaudioprocess = null; } catch { /* swallow */ }
-        try { this.scriptProcessor.disconnect(); } catch { /* swallow */ }
-      }
-      if (this.sourceNode) {
-        try { this.sourceNode.disconnect(); } catch { /* swallow */ }
-      }
-      this.mediaStream?.getTracks().forEach((t) => t.stop());
-      await this.audioCtx?.close();
-    } catch { /* swallow */ }
+    // Snapshot the WAV-relevant state BEFORE teardown nullifies it.
+    const sampleRate = this.sampleRate;
+    const path = this.outputPath ?? "cases/_unfiled/recording.wav";
+    const durationSeconds = this.state.durationSeconds;
+
+    this.tearDownAudio();
 
     // Concatenate all Float32 chunks.
     const totalSamples = this.chunks.reduce((sum, c) => sum + c.length, 0);
@@ -169,25 +203,18 @@ export class EvpRecorder {
     let off = 0;
     for (const c of this.chunks) { merged.set(c, off); off += c.length; }
 
-    const wav = encodeWavFromFloat32(merged, this.sampleRate, 1);
-    const path = this.outputPath ?? "cases/_unfiled/recording.wav";
+    const wav = encodeWavFromFloat32(merged, sampleRate, 1);
     await writeBytes(path, wav);
 
     const result = {
       path,
       sizeBytes: wav.byteLength,
-      sampleRate: this.sampleRate,
-      durationSeconds: this.state.durationSeconds,
+      sampleRate,
+      durationSeconds,
     };
 
     this.chunks = [];
-    this.mediaStream = null;
-    this.audioCtx = null;
     this.outputPath = null;
-    this.sourceNode = null;
-    this.workletNode = null;
-    this.scriptProcessor = null;
-    this.processingPath = null;
     this.update({ status: "idle", startedAt: null });
 
     return result;
