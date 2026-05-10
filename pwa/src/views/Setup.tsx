@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { applyTheme, usePreferences } from "../lib/preferences";
 import { CaseManager } from "../components/CaseManager";
+import { ManifestVerifier } from "../components/ManifestVerifier";
 import { SyncPanel } from "../components/SyncPanel";
 import {
   DEFAULT_LOCAL_MODEL,
@@ -290,6 +291,15 @@ export function Setup() {
             onChange={(e) => setPrefs({ globalCulturalSensitivityFlag: e.target.checked })}
           />
         </label>
+      </section>
+
+      {/* Manifest verifier — reviewer-side integrity check */}
+      <section className={st.panel}>
+        <header className={st.panelHeader}>
+          <h2 className={st.panelTitle}>Manifest verifier</h2>
+          <span className={st.panelBadge}>Forensic</span>
+        </header>
+        <ManifestVerifier />
       </section>
 
       {/* Onboarding tour */}

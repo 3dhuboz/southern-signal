@@ -1,0 +1,287 @@
+/* ManifestVerifier — Setup-page reviewer tool. Same forensic-instrument
+   idiom as the rest of the app: mono labels, status dots, hashes shown
+   inline in <code> blocks. Drop-zone has a quiet dashed border that
+   solidifies on drag/hover. */
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-12);
+}
+.lede {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+.lede code {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  background: var(--bg-inset);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.dropzone {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-8);
+  padding: var(--s-12) var(--s-16);
+  border: 1px dashed var(--border-default);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+  transition: background 120ms, border-color 120ms;
+}
+.dropzone:hover { background: var(--bg-inset); border-color: var(--accent-strong); }
+.dropzoneCue {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.dropzoneFile {
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent-strong);
+  letter-spacing: 0.4px;
+  padding: 4px 10px;
+  border: 1px solid var(--accent-strong);
+  border-radius: var(--r-sm);
+  background: transparent;
+  transition: background 120ms, color 120ms;
+}
+.dropzoneFile:hover {
+  background: color-mix(in srgb, var(--accent-strong) 12%, transparent);
+}
+
+.paste {
+  width: 100%;
+  resize: vertical;
+  min-height: 80px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-primary);
+  background: var(--bg-inset);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-sm);
+  padding: var(--s-8) var(--s-12);
+}
+.paste:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 1px;
+  border-color: var(--accent-strong);
+}
+
+.actions {
+  display: flex;
+  gap: var(--s-8);
+  flex-wrap: wrap;
+}
+.runBtn,
+.clearBtn {
+  appearance: none;
+  padding: 8px var(--s-16);
+  border-radius: var(--r-sm);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 36px;
+}
+.runBtn {
+  background: var(--accent-strong);
+  color: var(--bg-canvas);
+  border: 1px solid var(--accent-strong);
+}
+.runBtn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-strong) 85%, white);
+}
+.runBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+.clearBtn {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+}
+.clearBtn:hover { background: var(--bg-surface); color: var(--text-primary); }
+
+.error {
+  margin: 0;
+  padding: var(--s-8) var(--s-12);
+  background: var(--danger-wash);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  border-radius: var(--r-sm);
+  font-size: 12px;
+}
+
+.report {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-12);
+  padding: var(--s-12) var(--s-16);
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+}
+.reportOk { border-color: var(--accent-strong); background: color-mix(in srgb, var(--accent-strong) 4%, var(--bg-elevated)); }
+.reportFail { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 4%, var(--bg-elevated)); }
+
+.reportHead {
+  display: flex;
+  align-items: center;
+  gap: var(--s-12);
+  flex-wrap: wrap;
+}
+.reportBadge {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 1.4px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid currentColor;
+}
+.reportOk .reportBadge { color: var(--accent-strong); }
+.reportFail .reportBadge { color: var(--danger); }
+.reportSummary {
+  font-size: 12.5px;
+  color: var(--text-primary);
+  line-height: 1.45;
+}
+
+.reportMeta {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px var(--s-12);
+  font-size: 11px;
+}
+.reportMeta > div { display: contents; }
+.reportMeta dt {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 700;
+  padding-top: 1px;
+}
+.reportMeta dd {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--text-primary);
+}
+.reportMeta dd code {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+
+.section {
+  border-top: 1px dashed var(--border-subtle);
+  padding-top: var(--s-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-8);
+}
+.sectionLabel {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.3px;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.chainRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+  flex-wrap: wrap;
+}
+.hashCode {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-primary);
+  background: var(--bg-inset);
+  padding: 2px 6px;
+  border-radius: 3px;
+  word-break: break-all;
+}
+.arrow {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.statusDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+.statusOk { background: var(--accent-strong); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-strong) 25%, transparent); }
+.statusBad { background: var(--danger); box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 25%, transparent); }
+
+.list,
+.dossierList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.invRow {
+  padding: var(--s-8);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  background: var(--bg-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.invHead {
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+}
+.invTitle {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.invStatus {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+}
+
+.dossierList {
+  margin-left: 18px;
+  border-left: 2px dashed var(--border-subtle);
+  padding-left: var(--s-8);
+}
+.dossierRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+  font-size: 11.5px;
+}
+.dossierVenue {
+  flex: 1;
+  color: var(--text-primary);
+}
+.dossierStatus {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 0.4px;
+}
