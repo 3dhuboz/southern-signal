@@ -179,6 +179,20 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
 
   const upstreamText = await upstream.text();
   if (!upstream.ok) {
+    // OpenRouter's audio endpoint is currently broken — its gateway JSON-parses
+    // the multipart body and returns 400 "No number after minus sign in JSON at
+    // position 1" for every single request, regardless of payload. If we detect
+    // that exact signature, convert the raw 400 into a 503 with the actionable
+    // hint so the operator gets a useful message instead of debugging a JSON
+    // parse error from a system that should be accepting multipart binary.
+    if (provider.key === "openrouter" && /No number after minus sign in JSON/i.test(upstreamText)) {
+      return jsonResponse({
+        error: "Cloud transcription is not available on this deployment.",
+        detail:
+          "OpenRouter's /audio/transcriptions endpoint is currently broken — it returns 400 because the gateway JSON-parses the multipart body instead of accepting binary. Set GROQ_API_KEY (free, fast) or OPENAI_API_KEY in Cloudflare Pages → Settings → Environment variables, or enable on-device transcription in the app's Setup screen for a fully local path.",
+        provider: provider.key,
+      }, 503);
+    }
     return jsonResponse({
       error: `Upstream ${upstream.status}`,
       provider: provider.key,
