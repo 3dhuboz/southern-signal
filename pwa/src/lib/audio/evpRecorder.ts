@@ -1,30 +1,44 @@
 /**
- * EVP recorder (Step 6 — scaffold).
+ * EVP recorder.
  *
- * **Status: scaffold.** The pipeline shape is right; the Whisper.cpp WASM
- * + Silero VAD integration is pending. When wired:
+ * **Status: working capture; on-device transcription pending.**
  *
- *   - AudioWorklet streams raw 16 kHz mono PCM to the WAV writer (in OPFS).
- *   - Silero VAD WASM gates speech regions.
- *   - Whisper-base.en quantized (~57 MB, fetched + cached via modelCache.ts)
- *     transcribes the gated audio in 1-second windows.
- *   - Transcripts persist to the `transcripts` SQLite table linked to the
- *     parent media_asset row, with file-offset references for click-to-play.
+ * What works today:
+ *   - getUserMedia → AudioContext → AudioWorkletNode (with ScriptProcessor
+ *     fallback) streams mono Float32 frames into `this.chunks`.
+ *   - stop() concatenates, encodes a self-describing 16-bit WAV at the
+ *     actual context rate (44.1 kHz on iOS, 48 kHz elsewhere), and writes
+ *     it to OPFS via writeBytes().
+ *   - Cloud transcription path (cloudTranscribe.ts → /api/ai/transcribe)
+ *     accepts that WAV at its native rate — Whisper resamples internally.
+ *     Gated by the cultural-sensitivity flag (per-case OR device-wide).
  *
- * **Bring-up checklist** (when ready to ship step 6 fully):
- *   1. Add a worker file `src/workers/audioWriter.worker.ts` that uses
- *      `FileSystemSyncAccessHandle` to append PCM chunks to a rolling WAV file
- *      in `/cases/<inv>/media/audio/<session>.wav`.
- *   2. Fetch + cache Whisper model via `modelCache.ts` (URL + sha256 once
- *      a stable hosting decision lands; ggml.ai mirrors are not stable).
- *   3. Decide: whisper.cpp WASM (smaller, slower) vs whisper-onnx via
- *      Transformers.js (bigger, faster on WebGPU).
- *   4. Add Silero VAD WASM (~2 MB) for voice-activity gating.
- *   5. Wire Class A/B/C reviewer classification UI per Panel 3 #5.
+ * What's pending — on-device Whisper.cpp WASM (so transcription works
+ * offline / on culturally-sensitive sites):
+ *   1. [DONE] Resample-to-16kHz utility — `downsampleFloat32` in wav.ts.
+ *      Whisper.cpp expects 16 kHz mono; the pipeline is
+ *      `downsampleFloat32(merged, this.sampleRate, 16000)` → feed to the
+ *      Whisper worker (Whisper holds Float32 internally; no Int16 step
+ *      needed for the WASM build, though `float32ToInt16` stays exported).
+ *   2. Fetch + cache the Whisper model via `modelCache.ts` (URL + sha256
+ *      once a stable hosting decision lands — ggml.ai mirrors aren't
+ *      stable; consider self-hosting whisper-base.en-q5 ~57 MB on R2).
+ *   3. Decide whisper.cpp WASM (smaller, CPU) vs whisper-onnx via
+ *      Transformers.js (bigger, WebGPU). Lean whisper.cpp for the phone-
+ *      first target — WebGPU support on mobile Safari is still spotty.
+ *   4. Add Silero VAD WASM (~2 MB) to gate speech regions before
+ *      transcription so we don't burn CPU on silence.
+ *   5. Worker thread for the model run (main thread can't block on a
+ *      multi-second transcription). Post Float32 windows in, get
+ *      segment text + timestamps back.
+ *   6. Persist transcripts to the `transcripts` SQLite table linked to
+ *      the parent media_asset row, with file-offset refs for click-to-play.
+ *   7. Wire Class A/B/C reviewer classification UI per Panel 3 #5.
  *
- * Privacy default: NEVER send audio to cloud unless user has set their
- * own Anthropic/Gemini key AND the case is NOT flagged
- * `culturallySensitive`. The router in cloudAi.ts enforces this.
+ * Privacy default: NEVER send audio to cloud unless the case is NOT
+ * flagged `culturallySensitive` and the device-wide flag is off. The
+ * router in cloudAi.ts / cloudTranscribe.ts enforces this; the on-device
+ * Whisper path (when shipped) needs no such gate — it never leaves.
  */
 
 import { encodeWavFromFloat32 } from "../wav";
