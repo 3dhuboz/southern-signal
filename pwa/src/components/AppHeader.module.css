@@ -73,12 +73,15 @@
 }
 
 .statusPillDanger {
-  border-color: #7C0F1F;
-  background: rgba(196, 30, 58, 0.12);
-  color: #E33645;
+  border-color: var(--danger);
+  background: var(--danger-wash);
+  color: var(--danger);
 }
 
-/* App-wide REC / LIVE pin — sticky across every route while broadcasting */
+/* App-wide REC / LIVE pin — sticky across every route while broadcasting.
+   All colour comes from --danger / --danger-wash so the badge tints
+   correctly across phosphor (orange-red), scotopic (red), and daylight
+   (deeper red on light bg). */
 .liveBadge {
   display: inline-flex;
   align-items: center;
@@ -94,15 +97,14 @@
   text-transform: uppercase;
 }
 .liveBadgeRec {
-  background: rgba(196, 30, 58, 0.18);
-  color: #E33645;
-  border: 1px solid #7C0F1F;
+  background: var(--danger-wash);
+  color: var(--danger);
+  border: 1px solid var(--danger);
 }
 .liveBadgeOnAir {
-  background: linear-gradient(180deg, #E33645, #B5202F);
-  color: #fff;
-  border: 1px solid #7C0F1F;
-  box-shadow: 0 0 0 1px rgba(227, 54, 69, 0.4), 0 4px 14px -4px rgba(227, 54, 69, 0.65);
+  background: var(--danger);
+  color: var(--text-on-accent, #fff);
+  border: 1px solid var(--danger);
   animation: ss-livebadge-pulse 1.4s ease-in-out infinite;
 }
 .liveBadgeDot {
@@ -113,17 +115,14 @@
   flex-shrink: 0;
 }
 .liveBadgeOnAir .liveBadgeDot {
-  background: #fff;
+  background: var(--text-on-accent, #fff);
 }
 @keyframes ss-livebadge-pulse {
-  0%, 100% { box-shadow: 0 0 0 1px rgba(227, 54, 69, 0.4), 0 4px 14px -4px rgba(227, 54, 69, 0.65); }
-  50%      { box-shadow: 0 0 0 1px rgba(227, 54, 69, 0.7), 0 8px 20px -4px rgba(227, 54, 69, 0.95); }
+  0%, 100% { box-shadow: 0 0 0 1px var(--danger), 0 0 0 0 transparent; }
+  50%      { box-shadow: 0 0 0 1px var(--danger), 0 0 12px -2px var(--danger); }
 }
 
-/* Cultural-sensitivity global pin — visible across every route while the
-   device-wide "treat all sites as culturally sensitive" pref is on.
-   Amber, distinct from REC red, and tappable straight to /setup so the
-   operator can review or clear it. */
+/* Cultural-sensitivity global pin — amber on every theme via --warning. */
 .sensitiveBadge {
   display: inline-flex;
   align-items: center;
@@ -138,14 +137,15 @@
   white-space: nowrap;
   text-transform: uppercase;
   text-decoration: none;
-  background: rgba(217, 158, 32, 0.18);
-  color: #E2A53C;
-  border: 1px solid #8E5E11;
+  background: var(--warning-wash);
+  color: var(--warning);
+  border: 1px solid var(--warning);
   cursor: pointer;
 }
 .sensitiveBadge:hover {
-  background: rgba(217, 158, 32, 0.28);
-  border-color: #B07719;
+  background: var(--warning-wash);
+  border-color: var(--warning);
+  filter: brightness(1.15);
 }
 .sensitiveBadgeDot {
   width: 7px;
