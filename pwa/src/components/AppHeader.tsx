@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { ExperienceToggle } from "./ExperienceToggle";
 import { ScotopicToggle } from "./ScotopicToggle";
 import { useSystemStatus } from "../lib/system/systemStatus";
@@ -25,10 +26,10 @@ export function AppHeader() {
   return (
     <header className={styles.header}>
       <div className={styles.bar}>
-        <div className={styles.brand}>
+        <Link to="/about" className={styles.brand} aria-label="About Southern Signal">
           <span className={styles.mark} aria-hidden="true" />
           <span className={styles.wordmark}>SOUTHERN SIGNAL</span>
-        </div>
+        </Link>
         <div className={styles.toolbar}>
           {(live.recording || live.broadcasting) && (
             <span
