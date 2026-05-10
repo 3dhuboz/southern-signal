@@ -195,6 +195,48 @@ export function Review() {
         {chainStatus === "checking" && (isPro ? "Verifying audit chain…" : "Checking the record…")}
         {chainStatus === "ok" && entries.length === 0 && (
           <>
+            {/* Schematic empty-chain illustration: a short Merkle / hash-chain
+                fragment of three rounded blocks linked by solid connectors,
+                trailing off into dotted segments that fade — reads as "no
+                links recorded yet" without any literal text. Pure currentColor,
+                same line-based idiom as the OnboardingTour cue glyphs and the
+                logo-mark. Decorative; the banner copy carries the meaning. */}
+            <svg
+              viewBox="0 0 160 56"
+              className={r.emptyArt}
+              aria-hidden="true"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              {/* Three present "hash blocks" — rounded rects */}
+              <g fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.85">
+                <rect x="8"  y="18" width="22" height="20" rx="3" />
+                <rect x="42" y="18" width="22" height="20" rx="3" />
+                <rect x="76" y="18" width="22" height="20" rx="3" />
+              </g>
+              {/* Inner hash-prefix tick inside each block, suggestive of a SHA digest */}
+              <g stroke="currentColor" strokeWidth="0.9" opacity="0.55" strokeLinecap="round">
+                <line x1="12" y1="28" x2="26" y2="28" />
+                <line x1="46" y1="28" x2="60" y2="28" />
+                <line x1="80" y1="28" x2="94" y2="28" />
+              </g>
+              {/* Solid connectors between the present blocks */}
+              <g stroke="currentColor" strokeWidth="1.2" opacity="0.7" strokeLinecap="round">
+                <line x1="30" y1="28" x2="42" y2="28" />
+                <line x1="64" y1="28" x2="76" y2="28" />
+              </g>
+              {/* Outbound dotted chain trailing into nothing — the absence */}
+              <g stroke="currentColor" strokeWidth="1.1" fill="none" strokeLinecap="round" strokeDasharray="2 4">
+                <line x1="98"  y1="28" x2="116" y2="28" opacity="0.45" />
+                <line x1="120" y1="28" x2="136" y2="28" opacity="0.28" />
+                <line x1="140" y1="28" x2="152" y2="28" opacity="0.15" />
+              </g>
+              {/* Faint ghost outline of the next block that would have been here */}
+              <rect
+                x="110" y="18" width="22" height="20" rx="3"
+                fill="none" stroke="currentColor" strokeWidth="1"
+                strokeDasharray="2 3" opacity="0.22"
+              />
+            </svg>
             <strong>{isPro ? "CHAIN EMPTY" : "Nothing recorded yet"}</strong>
             <span>
               {isPro

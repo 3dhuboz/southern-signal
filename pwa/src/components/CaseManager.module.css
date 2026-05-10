@@ -37,6 +37,35 @@
 }
 .empty strong { color: var(--signal); }
 
+/* Empty-cases block: stacks the schematic illustration above the copy.
+   The illustration is decorative — the .empty paragraph carries the
+   meaning. Shares the dashed-border chrome with .empty so the surface
+   still reads as an "empty container". */
+.emptyBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 14px 14px;
+  text-align: center;
+  background: var(--bg-inset);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--r-md);
+}
+.emptyBlock .empty {
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+.casesEmptyArt {
+  display: block;
+  width: 100px;
+  max-width: 100%;
+  height: auto;
+  color: var(--signal);
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.18));
+}
+
 .list {
   list-style: none;
   padding: 0;

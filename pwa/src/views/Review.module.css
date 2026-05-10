@@ -17,6 +17,29 @@
 .ok strong { color: var(--signal); }
 .broken { border-color: var(--danger); color: var(--danger); background: var(--danger-wash); }
 
+/* Empty-chain illustration: schematic Merkle/hash-chain fragment that fades
+   into dotted nothing. Pure currentColor, line-based, ~120px wide, centred
+   above the banner copy. Same idiom as the About hero SVG and the
+   OnboardingTour cue glyphs — soft drop-shadow gives it presence on light
+   themes without making it loud on dark. */
+.emptyArt {
+  display: block;
+  width: 120px;
+  max-width: 100%;
+  height: auto;
+  margin: 4px auto 8px;
+  color: var(--signal);
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.18));
+}
+/* On the empty branch the banner is a column so the SVG stacks above text. */
+.chainStatus.ok:has(> .emptyArt) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 18px 16px 16px;
+}
+
 .merkleLine code {
   font-family: var(--font-mono);
   font-size: 10px;

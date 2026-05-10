@@ -344,7 +344,52 @@ export function CaseManager() {
       </header>
 
       {cases.length === 0 ? (
-        <p className={s.empty}>No investigations yet. Begin one in <strong>Mission Control</strong>.</p>
+        <div className={s.emptyBlock}>
+          {/* Schematic empty-cases illustration: a case-folder / clipboard
+              outline with a soft pulse-line waveform sitting "inside" — the
+              container that will hold the user's first investigation. Pure
+              currentColor, line-based, ~100px wide. Decorative; the copy
+              below carries the meaning. */}
+          <svg
+            viewBox="0 0 120 90"
+            className={s.casesEmptyArt}
+            aria-hidden="true"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            {/* Clipboard / folder body */}
+            <rect
+              x="14" y="14" width="92" height="68" rx="6"
+              fill="none" stroke="currentColor" strokeWidth="1.4" opacity="0.85"
+            />
+            {/* Folder tab + clip at top */}
+            <rect
+              x="46" y="8" width="28" height="10" rx="2"
+              fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.85"
+            />
+            {/* Two faint ruled lines suggesting "fields waiting to be filled" */}
+            <g stroke="currentColor" strokeWidth="0.8" opacity="0.32" strokeLinecap="round">
+              <line x1="24" y1="30" x2="64" y2="30" />
+              <line x1="24" y1="38" x2="54" y2="38" />
+            </g>
+            {/* Pulse-line waveform inside the folder — a flat baseline with a
+                single subtle blip, signalling "this is where signal lands" */}
+            <g fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
+              <path
+                d="M 22 62 H 44 L 50 54 L 56 70 L 62 50 L 68 66 L 74 62 H 98"
+                strokeWidth="1.6"
+                opacity="0.9"
+              />
+              {/* Faint baseline rule behind it */}
+              <path
+                d="M 22 62 H 98"
+                strokeWidth="0.7"
+                strokeDasharray="2 3"
+                opacity="0.3"
+              />
+            </g>
+          </svg>
+          <p className={s.empty}>No investigations yet. Begin one in <strong>Mission Control</strong>.</p>
+        </div>
       ) : (
         <ul className={s.list}>
           {cases.map((c) => (
