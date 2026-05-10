@@ -82,6 +82,27 @@
 .themeSwatch[data-theme="scotopic"] {
   background: linear-gradient(135deg, #0A0000, #07090C 50%, #C41E3A 50%);
 }
+.themeSwatch[data-theme="daylight"] {
+  background: linear-gradient(135deg, #FAFAF7, #FFFFFF 50%, #1F8F6E 50%);
+  border-color: #D9D6CC;
+}
+
+.linkBtn {
+  align-self: flex-start;
+  margin-top: 8px;
+  padding: 8px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 120ms;
+}
+.linkBtn:hover { background: var(--bg-overlay); }
 
 .themeLabel {
   font-size: 13px;
