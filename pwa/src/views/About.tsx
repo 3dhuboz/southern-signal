@@ -65,6 +65,105 @@ export function About() {
   return (
     <article className={s.page}>
       <header className={s.hero}>
+        {/* Schematic hero illustration: a phone-as-instrument framed by a faint
+            doorway silhouette. Pure line + dot SVG, currentColor only, so it
+            tints to var(--accent-strong) and reads on every theme. Matches the
+            OnboardingTour cue idiom + the Crux Posterior logo language. */}
+        <svg
+          viewBox="0 0 240 180"
+          className={s.heroSvg}
+          aria-hidden="true"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          {/* Faint doorway silhouette behind the phone — sets the 'investigation' tone. */}
+          <g stroke="currentColor" strokeWidth="0.8" fill="none" opacity="0.18" strokeLinecap="round">
+            <path d="M 30 20 V 175" />
+            <path d="M 210 20 V 175" />
+            <path d="M 30 20 Q 120 4 210 20" />
+            {/* Door edge inside the frame */}
+            <path d="M 60 36 V 175" opacity="0.55" />
+          </g>
+
+          {/* Dotted "field line" arcs — subtle EMF / sound propagation hint */}
+          <g stroke="currentColor" strokeWidth="0.8" fill="none" opacity="0.25" strokeDasharray="2 5">
+            <path d="M 16 90 Q 50 60 96 88" />
+            <path d="M 224 90 Q 190 60 144 88" />
+          </g>
+
+          {/* Phone body — rounded rectangle */}
+          <rect
+            x="84" y="22" width="72" height="138" rx="12"
+            fill="none" stroke="currentColor" strokeWidth="1.4" opacity="0.85"
+          />
+          {/* Phone notch / speaker */}
+          <rect x="112" y="28" width="16" height="2" rx="1" fill="currentColor" opacity="0.55" />
+
+          {/* Activity dial inside the phone — same arc the ActivityDial component draws */}
+          <g transform="translate(120 70)">
+            {/* Outer ring */}
+            <circle r="20" fill="none" stroke="currentColor" strokeWidth="0.8" opacity="0.25" />
+            {/* 3/4 arc — opens at the bottom */}
+            <path
+              d="M -14.14 14.14 A 20 20 0 1 1 14.14 14.14"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              opacity="0.95"
+            />
+            {/* Sector tick marks */}
+            {[0, 60, 120, 180, 240, 300].map((a) => {
+              const r1 = 18;
+              const r2 = 22;
+              const rad = (a - 90) * (Math.PI / 180);
+              return (
+                <line
+                  key={a}
+                  x1={r1 * Math.cos(rad)} y1={r1 * Math.sin(rad)}
+                  x2={r2 * Math.cos(rad)} y2={r2 * Math.sin(rad)}
+                  stroke="currentColor"
+                  strokeWidth="0.8"
+                  opacity="0.45"
+                />
+              );
+            })}
+            {/* Dial label dot — the current "posterior" position */}
+            <circle cx="0" cy="-20" r="2.5" fill="currentColor" />
+            {/* Center dot */}
+            <circle r="2" fill="currentColor" opacity="0.8" />
+          </g>
+
+          {/* Spectrum strip below the dial */}
+          <g transform="translate(96 110)">
+            {[3, 6, 10, 14, 9, 5, 8, 13, 17, 12, 7, 4].map((h, i) => (
+              <rect
+                key={i}
+                x={i * 4}
+                y={20 - h}
+                width="2.4"
+                height={h}
+                rx="0.8"
+                fill="currentColor"
+                opacity={0.35 + (h / 30)}
+              />
+            ))}
+          </g>
+
+          {/* Timer line */}
+          <g transform="translate(96 142)" opacity="0.7">
+            <text
+              x="0" y="0"
+              fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+              fontSize="9"
+              fontWeight="700"
+              fill="currentColor"
+              letterSpacing="0.6"
+            >
+              00:08:42 · CASE A1
+            </text>
+          </g>
+        </svg>
+
         <span className={s.eyebrow}>SOUTHERN SIGNAL · ABOUT</span>
         <h1 className={s.title}>Forensic-grade paranormal field tools that fit in a phone.</h1>
         <p className={s.lede}>
