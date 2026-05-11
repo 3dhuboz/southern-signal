@@ -12,6 +12,7 @@ import { query } from "../db/db";
 import { verifyAuditChain } from "../db/auditLog";
 import type { AuditLogEntry, EvidenceEvent, Investigation, MediaAsset, ResearchDossierRow } from "../db/schema";
 import { leafFromExistingHashHex, merkleRoot } from "./merkle";
+import { sha256Hex } from "./canonicalJson";
 
 /**
  * Per-dossier view in the manifest. The full ResearchResult JSON isn't
@@ -88,12 +89,6 @@ async function buildAuditChainSummary(entries: AuditLogEntry[]) {
     leaf_count: entries.length,
     merkle_root: root,
   };
-}
-
-async function sha256Hex(text: string): Promise<string> {
-  const data = new TextEncoder().encode(text);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 async function toDossierView(row: ResearchDossierRow): Promise<ManifestDossierView> {

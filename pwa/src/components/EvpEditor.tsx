@@ -23,6 +23,7 @@ import { encodeWavFromFloat32 } from "../lib/wav";
 import { registerMedia, recordEvent } from "../lib/db/repo";
 import { appendAuditEntry } from "../lib/db/auditLog";
 import { exec } from "../lib/db/db";
+import { sha256HexBytes } from "../lib/forensic/canonicalJson";
 import { transcribeAudio } from "../lib/ai/cloudTranscribe";
 import {
   transcribeOnDevice,
@@ -53,11 +54,6 @@ const REVIEWER_CLASSES = [
 ] as const;
 
 type ReviewerClass = (typeof REVIEWER_CLASSES)[number]["value"];
-
-async function sha256Hex(buf: ArrayBuffer): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", buf);
-  return Array.from(new Uint8Array(digest)).map((x) => x.toString(16).padStart(2, "0")).join("");
-}
 
 function formatTime(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) sec = 0;
@@ -403,7 +399,7 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
       const owned = new Uint8Array(wav.length);
       owned.set(wav);
       const buf: ArrayBuffer = owned.buffer;
-      const sha = await sha256Hex(buf);
+      const sha = await sha256HexBytes(buf);
       const ts = Date.now();
       const finalPath = `media/${asset.investigation_id}/evp-trim-${ts}-${sha.slice(0, 8)}.wav`;
       await writeBytes(finalPath, buf);

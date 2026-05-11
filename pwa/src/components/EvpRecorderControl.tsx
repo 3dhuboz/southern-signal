@@ -16,6 +16,7 @@ import { registerMedia, recordEvent } from "../lib/db/repo";
 import { appendAuditEntry } from "../lib/db/auditLog";
 import { exec } from "../lib/db/db";
 import { transcribeAudio, isInvestigationSensitive } from "../lib/ai/cloudTranscribe";
+import { sha256HexBytes } from "../lib/forensic/canonicalJson";
 import { getPreferences } from "../lib/preferences";
 import s from "./EvpRecorderControl.module.css";
 
@@ -23,11 +24,6 @@ interface Props {
   investigationId: string | null;
   onSaved?: () => void;
   variant?: "default" | "compact";
-}
-
-async function sha256Hex(buf: ArrayBuffer): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", buf);
-  return Array.from(new Uint8Array(digest)).map((x) => x.toString(16).padStart(2, "0")).join("");
 }
 
 function formatDuration(seconds: number): string {
@@ -173,7 +169,7 @@ export function EvpRecorderControl({ investigationId, onSaved, variant = "defaul
     try {
       const file = await readFile(result.path);
       const buf = await file.arrayBuffer();
-      const sha = await sha256Hex(buf);
+      const sha = await sha256HexBytes(buf);
       const ts = Date.now();
       const finalPath = `media/${investigationId}/evp-${ts}-${sha.slice(0, 8)}.wav`;
       await writeBytes(finalPath, buf);

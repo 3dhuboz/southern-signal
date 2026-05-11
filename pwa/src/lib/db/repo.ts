@@ -9,6 +9,7 @@ import { appendAuditEntry } from "./auditLog";
 import { exec, query } from "./db";
 import type { EvidenceEvent, Investigation, MediaAsset, ResearchDossierRow, ResearchFindingNoteRow, SensorSample } from "./schema";
 import { clearSensitivityCache, enqueue } from "../sync/queue";
+import { sha256Hex } from "../forensic/canonicalJson";
 
 async function safeEnqueue(args: Parameters<typeof enqueue>[0]): Promise<void> {
   try { await enqueue(args); } catch (err) { console.warn("[sync] enqueue failed", err); }
@@ -399,9 +400,8 @@ export async function deleteDossier(id: string): Promise<void> {
  * wording, not a tag on "the third finding").
  */
 export async function findingKeyFor(finding: { tier: string; title: string; body: string }): Promise<string> {
-  const data = new TextEncoder().encode(`${finding.tier}|${finding.title}|${finding.body}`);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 24);
+  const hex = await sha256Hex(`${finding.tier}|${finding.title}|${finding.body}`);
+  return hex.slice(0, 24);
 }
 
 export interface FindingNoteInput {

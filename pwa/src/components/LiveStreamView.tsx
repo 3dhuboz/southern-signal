@@ -21,6 +21,7 @@ import { describeActivity } from "../lib/posterior/plainEnglish";
 import { createCanvasCompositor, type CanvasCompositor, type OverlayState } from "../lib/media/canvasCompositor";
 import { startWhipSession, type WhipSession, type WhipState, type WhipOutboundStats } from "../lib/media/whip";
 import { setLiveBroadcastState } from "../lib/system/liveBroadcast";
+import { sha256HexBytes } from "../lib/forensic/canonicalJson";
 import s from "./LiveStreamView.module.css";
 
 type WhipProviderKey = "cloudflare" | "fb_live_via_cloudflare" | "fb_live_via_restream" | "mux" | "dolby" | "eyevinn" | "custom";
@@ -103,11 +104,6 @@ interface LiveStreamViewProps {
   /** Bubbles recording / live state up so the parent can reflect it in
    *  out-of-band UI (e.g. the Simple-mode broadcast CTA). */
   onStateChange?: (state: { recording: boolean; broadcasting: boolean }) => void;
-}
-
-async function sha256Hex(buf: ArrayBuffer): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", buf);
-  return Array.from(new Uint8Array(digest)).map((x) => x.toString(16).padStart(2, "0")).join("");
 }
 
 export function LiveStreamView(props: LiveStreamViewProps) {
@@ -413,7 +409,7 @@ export function LiveStreamView(props: LiveStreamViewProps) {
       if (blob.size === 0 || !investigationId) return;
       try {
         const buf = await blob.arrayBuffer();
-        const sha = await sha256Hex(buf);
+        const sha = await sha256HexBytes(buf);
         const ts = Date.now();
         const ext = mime.includes("mp4") ? "mp4" : "webm";
         const filePath = `media/${investigationId}/clip-${ts}-${sha.slice(0, 8)}.${ext}`;

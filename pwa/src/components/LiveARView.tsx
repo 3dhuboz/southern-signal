@@ -19,6 +19,7 @@ import { writeBytes } from "../lib/opfs";
 import { registerMedia, recordEvent } from "../lib/db/repo";
 import { appendAuditEntry } from "../lib/db/auditLog";
 import { describeActivity } from "../lib/posterior/plainEnglish";
+import { sha256HexBytes } from "../lib/forensic/canonicalJson";
 import s from "./LiveARView.module.css";
 
 interface LiveARViewProps {
@@ -43,11 +44,6 @@ const SECTOR_DEG: Record<string, number> = {
 
 const ACTIVITY_AUTO_SNAP_THRESHOLD = 0.75;
 const AUTO_SNAP_COOLDOWN_MS = 6000;
-
-async function sha256Hex(buf: ArrayBuffer): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", buf);
-  return Array.from(new Uint8Array(digest)).map((x) => x.toString(16).padStart(2, "0")).join("");
-}
 
 export function LiveARView({ investigationId, running, posterior, audioRms, sector, coherence, caption }: LiveARViewProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -217,7 +213,7 @@ export function LiveARView({ investigationId, running, posterior, audioRms, sect
   const persist = useCallback(async (blob: Blob, thumb: string, kind: "user" | "auto"): Promise<void> => {
     if (!investigationId) return;
     const buf = await blob.arrayBuffer();
-    const sha = await sha256Hex(buf);
+    const sha = await sha256HexBytes(buf);
     const ts = Date.now();
     const filePath = `media/${investigationId}/ar-${ts}-${sha.slice(0, 8)}.jpg`;
     await writeBytes(filePath, buf);

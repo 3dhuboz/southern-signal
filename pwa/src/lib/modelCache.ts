@@ -7,6 +7,7 @@
  */
 
 import { exists, readFile, writeBytes } from "./opfs";
+import { sha256HexBytes } from "./forensic/canonicalJson";
 
 export interface ModelDescriptor {
   /** Stable identifier — also the OPFS path under /models/. */
@@ -19,11 +20,6 @@ export interface ModelDescriptor {
   approxSizeMb?: number;
 }
 
-async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
 export async function ensureModel(
   desc: ModelDescriptor,
   onProgress?: (loadedBytes: number, totalBytes: number | null) => void,
@@ -33,7 +29,7 @@ export async function ensureModel(
     const cached = await readFile(path);
     if (desc.sha256) {
       const buf = await cached.arrayBuffer();
-      const hex = await sha256Hex(buf);
+      const hex = await sha256HexBytes(buf);
       if (hex !== desc.sha256) {
         // Cache poisoned somehow — re-download.
         return downloadAndCache(desc, onProgress);
@@ -73,7 +69,7 @@ async function downloadAndCache(
   for (const c of chunks) { merged.set(c, off); off += c.byteLength; }
 
   if (desc.sha256) {
-    const hex = await sha256Hex(merged.buffer);
+    const hex = await sha256HexBytes(merged.buffer);
     if (hex !== desc.sha256) throw new Error(`${desc.id} integrity check failed (got ${hex.slice(0, 16)}…)`);
   }
 

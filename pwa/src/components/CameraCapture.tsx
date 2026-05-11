@@ -19,6 +19,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { writeBytes } from "../lib/opfs";
 import { registerMedia, recordEvent } from "../lib/db/repo";
 import { appendAuditEntry } from "../lib/db/auditLog";
+import { sha256HexBytes } from "../lib/forensic/canonicalJson";
 import s from "./CameraCapture.module.css";
 
 interface CameraCaptureProps {
@@ -29,11 +30,6 @@ interface CameraCaptureProps {
 const MOTION_INTERVAL_MS = 800;
 const MOTION_DELTA_THRESHOLD = 16; // average per-pixel luminance delta (0-255)
 const MOTION_COOLDOWN_MS = 4000;
-
-async function sha256Hex(buf: ArrayBuffer): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", buf);
-  return Array.from(new Uint8Array(digest)).map((x) => x.toString(16).padStart(2, "0")).join("");
-}
 
 export function CameraCapture({ investigationId, running }: CameraCaptureProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -135,7 +131,7 @@ export function CameraCapture({ investigationId, running }: CameraCaptureProps) 
   const persistFrame = useCallback(async (blob: Blob, thumbDataUrl: string, source: "user" | "motion"): Promise<void> => {
     if (!investigationId) return;
     const buf = await blob.arrayBuffer();
-    const sha = await sha256Hex(buf);
+    const sha = await sha256HexBytes(buf);
     const ts = Date.now();
     const filePath = `media/${investigationId}/photo-${ts}-${sha.slice(0, 8)}.jpg`;
     await writeBytes(filePath, buf);

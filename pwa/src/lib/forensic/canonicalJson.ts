@@ -55,3 +55,13 @@ export async function sha256Hex(text: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", data);
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
+
+/**
+ * SHA-256 hex digest of a binary buffer (ArrayBuffer or typed array view).
+ * Used for media-file integrity hashes — captures bytes-on-disk rather
+ * than a re-encoded string round-trip.
+ */
+export async function sha256HexBytes(bytes: ArrayBuffer | ArrayBufferView): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", bytes as BufferSource);
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
