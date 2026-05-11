@@ -22,6 +22,7 @@
   font-weight: 400;
   text-shadow: 0 0 6px color-mix(in srgb, var(--signal) 30%, transparent);
 }
+:global([data-theme="daylight"]) .eyebrow { text-shadow: none; }
 
 .title {
   font-family: "Orbitron", var(--font-display), sans-serif;

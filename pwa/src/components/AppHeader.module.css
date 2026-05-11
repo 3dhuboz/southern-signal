@@ -18,6 +18,10 @@
     0 1px 0 color-mix(in srgb, var(--signal) 18%, transparent),
     0 14px 24px -18px color-mix(in srgb, var(--signal) 18%, transparent);
 }
+:global([data-theme="daylight"]) .header {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(250, 250, 247, 0.92));
+  box-shadow: 0 1px 0 var(--border-default);
+}
 
 .bar {
   display: flex;
@@ -242,6 +246,7 @@
   text-overflow: ellipsis;
   min-width: 0;
 }
+:global([data-theme="daylight"]) .wordmark { text-shadow: none; }
 
 /* Narrow-screen layout: with NO SAVE + SENSITIVE + REC/LIVE + BAT + DSK
    + SIMPLE + RED OFF all in play, the toolbar can be ~360-400px wide
