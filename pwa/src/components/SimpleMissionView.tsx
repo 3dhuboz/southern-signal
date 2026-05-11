@@ -363,7 +363,13 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
           card tells them, with a one-click entry. */}
       {!hasInvestigation && !running && researchEnabled && (
         <Link to="/research" className={s.reconCard}>
-          <span className={s.reconIcon} aria-hidden="true">🗂️</span>
+          <span className={s.reconIcon} aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" strokeLinejoin="round" />
+              <circle cx="14.5" cy="13" r="2.4" />
+              <line x1="16.4" y1="14.9" x2="18" y2="16.5" strokeLinecap="round" />
+            </svg>
+          </span>
           <span className={s.reconBody}>
             <span className={s.reconTitle}>Pre-visit recon</span>
             <span className={s.reconHint}>
@@ -478,26 +484,51 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
         </span>
       </button>
 
-      {/* QUICK ACTIONS */}
+      {/* QUICK ACTIONS — emoji icons → instrument-panel SVGs so the
+          tiles read as tool symbols, not casual chat affordances. */}
       <div className={s.quickActions}>
         <button type="button" className={s.quick} onClick={onMarker} disabled={!running || busy}>
-          <span className={s.quickIcon} aria-hidden="true">📍</span>
+          <span className={s.quickIcon} aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <path d="M12 21s-7-7.5-7-12a7 7 0 1 1 14 0c0 4.5-7 12-7 12Z" strokeLinejoin="round" />
+              <circle cx="12" cy="9.5" r="2.4" />
+            </svg>
+          </span>
           <span className={s.quickLabel}>Mark this moment</span>
           <span className={s.quickHint}>Saves a timestamp</span>
         </button>
         <button type="button" className={s.quick} onClick={() => setMarkSheetOpen(true)} disabled={!running || busy}>
-          <span className={s.quickIcon} aria-hidden="true">🚧</span>
+          <span className={s.quickIcon} aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <path d="M12 3 21 20H3L12 3Z" strokeLinejoin="round" />
+              <line x1="12" y1="10" x2="12" y2="15" strokeLinecap="round" />
+              <circle cx="12" cy="17.4" r="0.9" fill="currentColor" />
+            </svg>
+          </span>
           <span className={s.quickLabel}>Mark interference</span>
           <span className={s.quickHint}>Tag a normal cause</span>
         </button>
         <button type="button" className={s.quick} onClick={onAskQuestion} disabled={busy || !investigationId}>
-          <span className={s.quickIcon} aria-hidden="true">💬</span>
+          <span className={s.quickIcon} aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-7l-4 4v-4H6a2 2 0 0 1-2-2V6Z" strokeLinejoin="round" />
+              <circle cx="9" cy="10.5" r="0.9" fill="currentColor" />
+              <circle cx="12" cy="10.5" r="0.9" fill="currentColor" />
+              <circle cx="15" cy="10.5" r="0.9" fill="currentColor" />
+            </svg>
+          </span>
           <span className={s.quickLabel}>Ask a question</span>
           <span className={s.quickHint}>Respectful prompt by AI</span>
         </button>
         {researchEnabled && (
           <Link to="/research" className={s.quick}>
-            <span className={s.quickIcon} aria-hidden="true">🗂️</span>
+            <span className={s.quickIcon} aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+                <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" strokeLinejoin="round" />
+                <circle cx="14.5" cy="13" r="2.4" />
+                <line x1="16.4" y1="14.9" x2="18" y2="16.5" strokeLinecap="round" />
+              </svg>
+            </span>
             <span className={s.quickLabel}>Research venue</span>
             <span className={s.quickHint}>AI archive deep-dive · cited</span>
           </Link>

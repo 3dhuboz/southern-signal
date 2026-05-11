@@ -14,17 +14,22 @@
 }
 
 .eyebrow {
-  font-size: 10px;
-  letter-spacing: 1.6px;
+  font-family: "VT323", var(--font-mono), monospace;
+  font-size: 15px;
+  letter-spacing: 2.8px;
   text-transform: uppercase;
-  color: var(--text-muted);
-  font-weight: 600;
+  color: var(--signal);
+  font-weight: 400;
+  text-shadow: 0 0 6px color-mix(in srgb, var(--signal) 30%, transparent);
 }
 
 .title {
-  font-size: 22px;
+  font-family: "Orbitron", var(--font-display), sans-serif;
+  font-size: 24px;
   color: var(--text-primary);
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
 }
 
 .lede {

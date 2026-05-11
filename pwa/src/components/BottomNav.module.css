@@ -1,12 +1,20 @@
+/* Bottom nav as the lower bezel of the instrument: solid top edge with
+   a phosphor hairline that mirrors the AppHeader, plus a faint
+   reflective gradient so it reads as a piece of metal/plastic chassis
+   rather than a translucent overlay. */
 .nav {
   position: fixed;
   bottom: 0; left: 0; right: 0;
   z-index: 40;
   display: flex;
-  background: rgba(14, 18, 24, 0.95);
+  background:
+    linear-gradient(180deg, rgba(20, 26, 36, 0.96) 0%, rgba(7, 9, 12, 0.96) 100%);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border-top: 1px solid var(--border-subtle);
+  box-shadow:
+    0 -1px 0 color-mix(in srgb, var(--signal) 18%, transparent),
+    0 -16px 32px -20px color-mix(in srgb, var(--signal) 25%, transparent);
   padding: var(--s-8) var(--s-8) var(--safe-bottom);
   gap: 2px;
 }
@@ -21,23 +29,44 @@
   padding: 6px var(--s-4);
   cursor: pointer;
   color: var(--text-muted);
-  min-height: 50px;
+  min-height: 56px;
   position: relative;
   text-decoration: none;
   border-radius: var(--r-md);
-  transition: color 120ms ease;
+  transition: color 160ms ease, background 160ms ease;
 }
 
 .tab:hover { color: var(--text-secondary); }
 
 .tabActive {
   color: var(--signal);
+  background: color-mix(in srgb, var(--signal) 6%, transparent);
 }
 
 .tabActive .label {
-  font-weight: 600;
+  font-weight: 700;
+  text-shadow: 0 0 6px color-mix(in srgb, var(--signal) 40%, transparent);
+}
+.tabActive .icon svg {
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--signal) 55%, transparent));
 }
 
+/* Active indicator — a small phosphor bar pinned to the top edge of
+   the tab so the active state reads as a lit segment of the bezel,
+   not just a coloured icon. */
+.tabActive::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 22%;
+  right: 22%;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--signal);
+  box-shadow:
+    0 0 6px var(--signal),
+    0 0 14px color-mix(in srgb, var(--signal) 60%, transparent);
+}
 .tabActive::after {
   content: "";
   width: 4px;
