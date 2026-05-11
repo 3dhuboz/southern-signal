@@ -61,32 +61,63 @@ const cuePrivacy = (
   </svg>
 );
 
-const STEPS: Step[] = [
+// Archive-folder cue for the AI Investigator step: a stack of three
+// tabbed cards with a sourced citation indicator. Mirrors the dossier
+// metaphor used throughout the Research view.
+const cueResearch = (
+  <svg viewBox="0 0 64 64" aria-hidden="true" className={s.cueSvg}>
+    <rect x="14" y="22" width="34" height="26" rx="2" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.55" />
+    <rect x="18" y="18" width="34" height="26" rx="2" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.78" />
+    <rect x="22" y="14" width="34" height="26" rx="2" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.95" />
+    <path d="M22 14 L34 14 L36 18 L56 18" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.95" />
+    <path d="M28 24 L50 24" stroke="currentColor" strokeWidth="1" opacity="0.7" />
+    <path d="M28 28 L46 28" stroke="currentColor" strokeWidth="1" opacity="0.55" />
+    <circle cx="50" cy="38" r="3" fill="currentColor" opacity="0.95" />
+    <path d="M52 40 L56 44" stroke="currentColor" strokeWidth="1.4" opacity="0.95" />
+  </svg>
+);
+
+// The tour's step count drives the "Step X of Y" eyebrow at render
+// time so adding a new step doesn't require rewiring every eyebrow
+// string. Total count is derived from STEPS.length below.
+interface RawStep {
+  title: string;
+  body: string;
+  cue: ReactElement;
+}
+
+const RAW_STEPS: RawStep[] = [
   {
-    eyebrow: "Step 1 of 4",
     title: "Welcome to Southern Signal",
     body: "A phone-first paranormal investigation tool that fuses sensor data, transparent statistics, and on-device storage into a defensible record. Begin a session in Mission Control, or flip Switch to Pro if you want the math exposed.",
     cue: cueWelcome,
   },
   {
-    eyebrow: "Step 2 of 4",
     title: "Calibrate before you trust direction",
     body: "Run the 3-of-3 sector calibration ritual at the start of each session — it locks acoustic direction to within plus or minus 60 degrees. Simple mode hides the calibration UI; Pro exposes it with the underlying angles.",
     cue: cueCalibrate,
   },
   {
-    eyebrow: "Step 3 of 4",
     title: "Broadcast or record with sensor overlays",
     body: "Camera, mic, posterior bar, sector readout, and captions composited at 30fps. Record to disk or push WHIP live to Cloudflare, Mux, Restream, or Facebook through a relay.",
     cue: cueBroadcast,
   },
   {
-    eyebrow: "Step 4 of 4",
+    title: "Research a venue without leaving site",
+    body: "The AI Investigator pulls heritage records, court files, news archives, Country significance, and folklore tiers — every claim cited. Run it pre-visit as standalone recon, or against the active case. Findings save to a dossier that folds into your Evidence Brief. Three runs per device per day; refused on culturally-sensitive sites.",
+    cue: cueResearch,
+  },
+  {
     title: "Your data stays here",
     body: "Cases live in SQLite-WASM in OPFS on this device. Cloud AI is opt-in. The cultural-sensitivity flag, set per-case or device-wide, hard-blocks all cloud calls and sync uploads.",
     cue: cuePrivacy,
   },
 ];
+
+const STEPS: Step[] = RAW_STEPS.map((step, i) => ({
+  ...step,
+  eyebrow: `Step ${i + 1} of ${RAW_STEPS.length}`,
+}));
 
 function isCompleted(): boolean {
   try {
