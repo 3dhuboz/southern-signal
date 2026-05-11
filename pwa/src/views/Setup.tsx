@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { applyTheme, usePreferences } from "../lib/preferences";
+import { AuditLogInspector } from "../components/AuditLogInspector";
 import { CaseManager } from "../components/CaseManager";
+import { DeploymentHealth } from "../components/DeploymentHealth";
 import { ManifestVerifier } from "../components/ManifestVerifier";
 import { SyncPanel } from "../components/SyncPanel";
 import {
@@ -293,6 +295,14 @@ export function Setup() {
         </label>
       </section>
 
+      {/* Deployment health — which server features are configured */}
+      <section className={st.panel}>
+        <header className={st.panelHeader}>
+          <h2 className={st.panelTitle}>Deployment health</h2>
+        </header>
+        <DeploymentHealth />
+      </section>
+
       {/* Manifest verifier — reviewer-side integrity check */}
       <section className={st.panel}>
         <header className={st.panelHeader}>
@@ -300,6 +310,15 @@ export function Setup() {
           <span className={st.panelBadge}>Forensic</span>
         </header>
         <ManifestVerifier />
+      </section>
+
+      {/* Audit log inspector — chain status + recent entries */}
+      <section className={st.panel}>
+        <header className={st.panelHeader}>
+          <h2 className={st.panelTitle}>Audit log</h2>
+          <span className={st.panelBadge}>Forensic</span>
+        </header>
+        <AuditLogInspector />
       </section>
 
       {/* Onboarding tour */}
