@@ -280,6 +280,20 @@
   text-transform: uppercase;
   color: var(--text-muted);
 }
+.streamCounter {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  color: var(--signal);
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--signal) 10%, transparent);
+  animation: ss-stream-pulse 1.6s ease-in-out infinite;
+}
+@keyframes ss-stream-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
 .rateNoteOk { color: var(--text-secondary); }
 .rateNoteUsed { color: var(--warning); font-weight: 700; }
 .rateReset { color: var(--text-muted); }

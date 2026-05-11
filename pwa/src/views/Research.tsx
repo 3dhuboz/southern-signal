@@ -31,6 +31,7 @@ import {
   type ResearchFinding,
   type ResearchTier,
 } from "../lib/research/api";
+import { streamResearch } from "../lib/research/stream";
 import { diffResearchResults, type DossierDiff } from "../lib/research/diff";
 import { recordEvent, saveDossier, listDossiers, getDossier, deleteDossier, findingKeyFor, saveFindingNote, listFindingNotesForDossier } from "../lib/db/repo";
 import type { ResearchDossierRow } from "../lib/db/schema";
@@ -193,6 +194,13 @@ export function Research() {
    *  model to consult — illustrative, not literal. Index resets on
    *  busy↑ so each run gets a fresh sequence. */
   const [progressIndex, setProgressIndex] = useState(0);
+
+  /** v5: real progress label + chunk counter from the SSE stream.
+   *  Preferred over the rotating fallback when the stream is alive —
+   *  the stages come from the server, tied to actual elapsed time on
+   *  the upstream call instead of a client interval timer. */
+  const [streamStage, setStreamStage] = useState<string | null>(null);
+  const [streamChunks, setStreamChunks] = useState<number>(0);
 
   /** v5: diff against the most recent prior dossier for the same
    *  venue. Computed after a successful run; null when this is the
@@ -393,6 +401,11 @@ export function Research() {
   }, [busy, region]);
 
   const progressLabel = (() => {
+    // Real server stage wins when streaming is alive — it's tied to
+    // actual upstream elapsed time. The rotating fallback runs
+    // alongside for cases where the stream hasn't reported a stage
+    // yet (very first 100ms) or fell back to the one-shot endpoint.
+    if (streamStage) return streamStage;
     const labels = region === "AU" ? PROGRESS_LABELS_AU : PROGRESS_LABELS_GLOBAL;
     return labels[Math.min(progressIndex, labels.length - 1)] ?? labels[0];
   })();
@@ -433,13 +446,45 @@ export function Research() {
       }).catch(() => { /* */ });
     }
 
+    // Reset streaming progress for this run.
+    setStreamStage(null);
+    setStreamChunks(0);
+
     try {
-      const res = await runResearch({
-        venueName: venueName.trim(),
-        locationHint: locationHint.trim() || undefined,
-        region,
-        culturallySensitive: culturallyBlocked,
-      });
+      // Prefer the streaming endpoint — real stage events tied to the
+      // upstream call's elapsed time. Fall back to the one-shot
+      // endpoint if streaming throws anything other than a known
+      // user-facing error (rate-limit, cultural block) so transient
+      // SSE issues don't block research.
+      let res: ResearchResult;
+      try {
+        res = await new Promise<ResearchResult>((resolve, reject) => {
+          const handle = streamResearch(
+            {
+              venueName: venueName.trim(),
+              locationHint: locationHint.trim() || undefined,
+              region,
+              culturallySensitive: culturallyBlocked,
+            },
+            {
+              onStage: (label) => setStreamStage(label),
+              onChunk: (_chunks, chars) => setStreamChunks(chars),
+              onFinal: (r) => resolve(r),
+            },
+          );
+          handle.done.catch(reject);
+        });
+      } catch (streamErr) {
+        // ResearchRateLimitError already carries enough — re-throw.
+        if (streamErr instanceof ResearchRateLimitError) throw streamErr;
+        console.warn("[research] streaming failed, falling back to one-shot:", streamErr);
+        res = await runResearch({
+          venueName: venueName.trim(),
+          locationHint: locationHint.trim() || undefined,
+          region,
+          culturallySensitive: culturallyBlocked,
+        });
+      }
       setResult(res);
       setLoadedFromDossierId(null);
       setFollowups({});
@@ -532,8 +577,10 @@ export function Research() {
       setRate(getResearchRateState());
     } finally {
       setBusy(false);
+      setStreamStage(null);
+      setStreamChunks(0);
     }
-  }, [canRun, venueName, locationHint, region, culturallyBlocked, session]);
+  }, [canRun, venueName, locationHint, region, culturallyBlocked, session, pastDossiers]);
 
   const grouped = useMemo(() => result ? groupByTier(result.findings) : new Map<ResearchTier, ResearchFinding[]>(), [result]);
 
@@ -833,6 +880,11 @@ export function Research() {
           >
             {busy ? progressLabel : "Run AI Investigator"}
           </button>
+          {busy && streamChunks > 0 && (
+            <span className={r.streamCounter} aria-live="polite">
+              {streamChunks.toLocaleString()} chars streamed
+            </span>
+          )}
           <span className={r.rateNote}>
             <span className={rateBlocked ? r.rateNoteUsed : r.rateNoteOk}>
               {rate.used}/{rate.cap} runs today

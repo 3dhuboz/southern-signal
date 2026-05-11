@@ -75,7 +75,7 @@ export class ResearchRateLimitError extends Error {
 }
 
 const RATE_LIMIT_KEY = "ss-research-runs-v1";
-const RATE_LIMIT_CAP = 3;
+export const RATE_LIMIT_CAP = 3;
 const RATE_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 function readRunLog(): number[] {
