@@ -687,7 +687,7 @@ export function LiveStreamView(props: LiveStreamViewProps) {
 
           <div className={s.live}>
             <label className={s.field}>
-              <span className={s.fieldLabel}>Provider template</span>
+              <span className={s.fieldLabel}>Where do you want to broadcast?</span>
               <select
                 className={s.providerSelect}
                 value={whipProvider}
@@ -699,6 +699,22 @@ export function LiveStreamView(props: LiveStreamViewProps) {
                 ))}
               </select>
             </label>
+
+            {/* Simple per-provider input: paste the one or two pieces
+                we need from your provider's dashboard, we build the
+                WHIP URL. Advanced URL+token below stays available for
+                "Custom" or anyone who wants to override. */}
+            <SimpleProviderSetup
+              providerKey={whipProvider}
+              whipUrl={whipUrl}
+              onWhipUrl={setWhipUrl}
+              onBearer={setWhipBearer}
+              liveOn={liveOn}
+              fieldClassName={s.field}
+              labelClassName={s.fieldLabel}
+              inputClassName={s.input}
+              hintClassName={s.providerHint}
+            />
 
             {showFbConnector && (
               <div className={s.fbConnector}>
@@ -742,43 +758,282 @@ export function LiveStreamView(props: LiveStreamViewProps) {
                 {fbConnectMsg && <p className={s.providerHint}>{fbConnectMsg}</p>}
               </div>
             )}
-            <label className={s.field}>
-              <span className={s.fieldLabel}>WHIP ingest URL</span>
-              <input
-                type="text"
-                className={s.input}
-                value={whipUrl}
-                onChange={(e) => setWhipUrl(e.target.value)}
-                placeholder="https://customer-XXXX.cloudflarestream.com/<input>/webrtc/publish"
-                autoComplete="off"
-                spellCheck={false}
-                disabled={liveOn}
-              />
-              {activeProvider && activeProvider.note && (
-                <p className={s.providerHint}>{activeProvider.note}</p>
-              )}
-            </label>
-            <label className={s.field}>
-              <span className={s.fieldLabel}>Bearer token (if required)</span>
-              <input
-                type="password"
-                className={s.input}
-                value={whipBearer}
-                onChange={(e) => setWhipBearer(e.target.value)}
-                placeholder="Leave empty for Cloudflare Stream Live"
-                autoComplete="off"
-                spellCheck={false}
-                disabled={liveOn}
-              />
-            </label>
-            <p className={s.liveHint}>
-              Provider templates above pre-fill the URL — replace placeholders with your stream-specific values.
-            </p>
+            {/* Advanced: raw URL + token override. Hidden by default
+                so the regular path stays "pick provider + paste key". */}
+            <details className={s.advanced}>
+              <summary className={s.advancedSummary}>Advanced — paste your own WHIP URL</summary>
+              <label className={s.field}>
+                <span className={s.fieldLabel}>WHIP ingest URL</span>
+                <input
+                  type="text"
+                  className={s.input}
+                  value={whipUrl}
+                  onChange={(e) => setWhipUrl(e.target.value)}
+                  placeholder="https://customer-XXXX.cloudflarestream.com/<input>/webrtc/publish"
+                  autoComplete="off"
+                  spellCheck={false}
+                  disabled={liveOn}
+                />
+                {activeProvider && activeProvider.note && (
+                  <p className={s.providerHint}>{activeProvider.note}</p>
+                )}
+              </label>
+              <label className={s.field}>
+                <span className={s.fieldLabel}>Bearer token (if required)</span>
+                <input
+                  type="password"
+                  className={s.input}
+                  value={whipBearer}
+                  onChange={(e) => setWhipBearer(e.target.value)}
+                  placeholder="Leave empty for Cloudflare Stream Live"
+                  autoComplete="off"
+                  spellCheck={false}
+                  disabled={liveOn}
+                />
+              </label>
+            </details>
           </div>
 
           {statusMsg && <p className={s.statusLine}>{statusMsg}{recordingsCount > 0 ? ` · ${recordingsCount} clips saved` : ""}</p>}
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * Operator-friendly per-provider input. The PROVIDER TEMPLATE dropdown
+ * picks a provider; this block then asks for ONLY the one or two
+ * placeholders that vary per stream (stream key, customer/input id,
+ * etc.) and builds the WHIP URL automatically. Falls back to nothing
+ * for "Custom" — those users want the Advanced URL field directly.
+ *
+ * Bearer tokens only surface for providers that require one (Mux,
+ * Dolby). For others the field stays in the Advanced disclosure.
+ */
+function SimpleProviderSetup({
+  providerKey, whipUrl, onWhipUrl, onBearer, liveOn,
+  fieldClassName, labelClassName, inputClassName, hintClassName,
+}: {
+  providerKey: WhipProviderKey;
+  whipUrl: string;
+  onWhipUrl: (v: string) => void;
+  onBearer: (v: string) => void;
+  liveOn: boolean;
+  fieldClassName: string;
+  labelClassName: string;
+  inputClassName: string;
+  hintClassName: string;
+}) {
+  // Each provider declares its own simple form. The functions here
+  // take the input values, build the final WHIP URL, and push it up
+  // via onWhipUrl. Bearer-token side effects mirror the same.
+  switch (providerKey) {
+    case "cloudflare":
+      return (
+        <CloudflareStreamSimpleSetup
+          whipUrl={whipUrl}
+          onWhipUrl={onWhipUrl}
+          liveOn={liveOn}
+          fieldClassName={fieldClassName}
+          labelClassName={labelClassName}
+          inputClassName={inputClassName}
+          hintClassName={hintClassName}
+        />
+      );
+    case "fb_live_via_cloudflare":
+      // Existing Facebook quick-connector path stays above this block;
+      // nothing extra to render here.
+      return null;
+    case "fb_live_via_restream":
+      return (
+        <SingleKeySimpleSetup
+          label="Restream WHIP stream key"
+          helperText="From restream.io → Settings → Encoding → WHIP URL. Paste the part after https://live.restream.io/whip/."
+          urlPattern={(key) => `https://live.restream.io/whip/${key}`}
+          parseFromUrl={(url) => url.match(/restream\.io\/whip\/([^/?#]+)/)?.[1] ?? ""}
+          whipUrl={whipUrl}
+          onWhipUrl={onWhipUrl}
+          liveOn={liveOn}
+          fieldClassName={fieldClassName}
+          labelClassName={labelClassName}
+          inputClassName={inputClassName}
+          hintClassName={hintClassName}
+        />
+      );
+    case "mux":
+      return (
+        <SingleKeySimpleSetup
+          label="Mux stream key"
+          helperText="From Mux dashboard → Live Streams → Stream Key. Then paste your Mux access token below in Advanced if Mux requires it for your account."
+          urlPattern={(key) => `https://global-live.mux.com/api/whip/${key}`}
+          parseFromUrl={(url) => url.match(/mux\.com\/api\/whip\/([^/?#]+)/)?.[1] ?? ""}
+          whipUrl={whipUrl}
+          onWhipUrl={onWhipUrl}
+          liveOn={liveOn}
+          fieldClassName={fieldClassName}
+          labelClassName={labelClassName}
+          inputClassName={inputClassName}
+          hintClassName={hintClassName}
+          bearerLabel="Mux access token"
+          onBearer={onBearer}
+        />
+      );
+    case "dolby":
+      return (
+        <SingleKeySimpleSetup
+          label="Dolby.io stream name"
+          helperText="From Dolby.io dashboard → Live → WHIP. Then paste your Dolby token below in Advanced."
+          urlPattern={(key) => `https://director.millicast.com/api/whip/${key}`}
+          parseFromUrl={(url) => url.match(/millicast\.com\/api\/whip\/([^/?#]+)/)?.[1] ?? ""}
+          whipUrl={whipUrl}
+          onWhipUrl={onWhipUrl}
+          liveOn={liveOn}
+          fieldClassName={fieldClassName}
+          labelClassName={labelClassName}
+          inputClassName={inputClassName}
+          hintClassName={hintClassName}
+          bearerLabel="Dolby.io token"
+          onBearer={onBearer}
+        />
+      );
+    case "eyevinn":
+      return (
+        <SingleKeySimpleSetup
+          label="Eyevinn channel id"
+          helperText="Free public test endpoint — treat as throwaway."
+          urlPattern={(key) => `https://wht.eyevinn.technology/${key}`}
+          parseFromUrl={(url) => url.match(/eyevinn\.technology\/([^/?#]+)/)?.[1] ?? ""}
+          whipUrl={whipUrl}
+          onWhipUrl={onWhipUrl}
+          liveOn={liveOn}
+          fieldClassName={fieldClassName}
+          labelClassName={labelClassName}
+          inputClassName={inputClassName}
+          hintClassName={hintClassName}
+        />
+      );
+    case "custom":
+    default:
+      return null;
+  }
+}
+
+function SingleKeySimpleSetup({
+  label, helperText, urlPattern, parseFromUrl, whipUrl, onWhipUrl, liveOn,
+  fieldClassName, labelClassName, inputClassName, hintClassName,
+  bearerLabel, onBearer,
+}: {
+  label: string;
+  helperText: string;
+  urlPattern: (key: string) => string;
+  parseFromUrl: (url: string) => string;
+  whipUrl: string;
+  onWhipUrl: (v: string) => void;
+  liveOn: boolean;
+  fieldClassName: string;
+  labelClassName: string;
+  inputClassName: string;
+  hintClassName: string;
+  bearerLabel?: string;
+  onBearer?: (v: string) => void;
+}) {
+  // Lift the key out of whipUrl if we recognise the pattern, so when
+  // the user lands on a provider with a pre-filled URL we don't blank
+  // their input.
+  const parsedKey = parseFromUrl(whipUrl);
+  return (
+    <>
+      <label className={fieldClassName}>
+        <span className={labelClassName}>{label}</span>
+        <input
+          type="text"
+          className={inputClassName}
+          value={parsedKey}
+          onChange={(e) => {
+            const key = e.target.value.trim();
+            onWhipUrl(key ? urlPattern(key) : "");
+          }}
+          placeholder="Paste from your provider's dashboard"
+          autoComplete="off"
+          spellCheck={false}
+          disabled={liveOn}
+        />
+        <p className={hintClassName}>{helperText}</p>
+      </label>
+      {bearerLabel && onBearer && (
+        <label className={fieldClassName}>
+          <span className={labelClassName}>{bearerLabel}</span>
+          <input
+            type="password"
+            className={inputClassName}
+            onChange={(e) => onBearer(e.target.value)}
+            placeholder="Paste your provider's access token"
+            autoComplete="off"
+            spellCheck={false}
+            disabled={liveOn}
+          />
+        </label>
+      )}
+    </>
+  );
+}
+
+function CloudflareStreamSimpleSetup({
+  whipUrl, onWhipUrl, liveOn,
+  fieldClassName, labelClassName, inputClassName, hintClassName,
+}: {
+  whipUrl: string;
+  onWhipUrl: (v: string) => void;
+  liveOn: boolean;
+  fieldClassName: string;
+  labelClassName: string;
+  inputClassName: string;
+  hintClassName: string;
+}) {
+  // Cloudflare WebRTC ingest URL shape:
+  //   https://customer-<customer-id>.cloudflarestream.com/<input-id>/webrtc/publish
+  const match = whipUrl.match(/customer-([^.]+)\.cloudflarestream\.com\/([^/]+)\/webrtc\/publish/);
+  const customerId = match?.[1] ?? "";
+  const inputId = match?.[2] ?? "";
+
+  const update = (nextCustomer: string, nextInput: string) => {
+    const c = nextCustomer.trim();
+    const i = nextInput.trim();
+    if (c && i) onWhipUrl(`https://customer-${c}.cloudflarestream.com/${i}/webrtc/publish`);
+    else onWhipUrl("");
+  };
+
+  return (
+    <>
+      <label className={fieldClassName}>
+        <span className={labelClassName}>Cloudflare customer id</span>
+        <input
+          type="text"
+          className={inputClassName}
+          value={customerId}
+          onChange={(e) => update(e.target.value, inputId)}
+          placeholder="e.g. customer-a1b2c3"
+          autoComplete="off"
+          spellCheck={false}
+          disabled={liveOn}
+        />
+        <p className={hintClassName}>From the WebRTC URL on your Cloudflare Live Input — the bit between "customer-" and ".cloudflarestream.com".</p>
+      </label>
+      <label className={fieldClassName}>
+        <span className={labelClassName}>Cloudflare Live Input id</span>
+        <input
+          type="text"
+          className={inputClassName}
+          value={inputId}
+          onChange={(e) => update(customerId, e.target.value)}
+          placeholder="The long id after the customer subdomain"
+          autoComplete="off"
+          spellCheck={false}
+          disabled={liveOn}
+        />
+        <p className={hintClassName}>Cloudflare → Stream → Live Inputs → click your input → WebRTC URL.</p>
+      </label>
+    </>
   );
 }

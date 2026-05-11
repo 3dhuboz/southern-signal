@@ -260,6 +260,35 @@
   line-height: 1.35;
 }
 
+/* Advanced disclosure — the raw WHIP URL + bearer token fields live
+   here so the simple operator flow above stays uncluttered. Power
+   users / Custom-provider users expand and edit directly. */
+.advanced {
+  margin-top: var(--s-4);
+  border-top: 1px dashed var(--border-subtle);
+  padding-top: var(--s-8);
+}
+.advancedSummary {
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 4px 0;
+}
+.advancedSummary::-webkit-details-marker { display: none; }
+.advancedSummary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 9px;
+  transition: transform 120ms ease;
+}
+.advanced[open] .advancedSummary::before { transform: rotate(90deg); }
+.advancedSummary:hover { color: var(--text-secondary); }
+
 .fbConnector {
   display: flex;
   flex-direction: column;
