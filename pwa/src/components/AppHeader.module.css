@@ -1,11 +1,22 @@
+/* Instrument-bezel header — solid bottom edge, hairline phosphor
+   underline, faint scanline echo so it reads as the top of a piece
+   of field equipment rather than a web navbar. */
 .header {
   position: sticky;
   top: 0;
   z-index: 30;
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
-  background: linear-gradient(180deg, rgba(7, 9, 12, 0.92) 0%, rgba(7, 9, 12, 0.78) 80%, rgba(7, 9, 12, 0) 100%);
+  background:
+    linear-gradient(180deg,
+      rgba(7, 9, 12, 0.96) 0%,
+      rgba(7, 9, 12, 0.88) 70%,
+      rgba(7, 9, 12, 0.72) 100%);
   padding: calc(var(--s-12) + var(--safe-top)) var(--s-20) var(--s-12);
+  border-bottom: 1px solid var(--border-subtle);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--signal) 18%, transparent),
+    0 14px 24px -18px color-mix(in srgb, var(--signal) 18%, transparent);
 }
 
 .bar {
@@ -216,12 +227,16 @@
 }
 
 .wordmark {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 1.5px;
-  color: var(--text-primary);
-  /* When the toolbar pills squeeze the brand container, clip cleanly
-     with an ellipsis rather than overflowing behind the pills. */
+  font-family: "Orbitron", var(--font-display), sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 3.2px;
+  text-transform: uppercase;
+  color: var(--signal);
+  text-shadow:
+    0 0 1px color-mix(in srgb, var(--signal) 80%, transparent),
+    0 0 8px color-mix(in srgb, var(--signal) 30%, transparent);
+  /* Squeeze-clip cleanly so it doesn't overflow behind the toolbar. */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

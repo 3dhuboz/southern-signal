@@ -333,24 +333,29 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
         />
       )}
 
-      {/* AI CO-INVESTIGATOR — live narration + speech toggle */}
-      <div className={`${s.narrator} ${narratorCaption ? s.narratorActive : ""}`.trim()}>
-        <div className={s.narratorHead}>
-          <span className={s.narratorEyebrow}>AI CO-INVESTIGATOR</span>
-          <button
-            type="button"
-            className={`${s.narratorSpeak} ${narratorSpeak ? s.narratorSpeakOn : ""}`.trim()}
-            onClick={() => onToggleNarratorSpeak(!narratorSpeak)}
-            aria-pressed={narratorSpeak}
-          >
-            <span className={s.narratorSpeakDot} aria-hidden="true" />
-            {narratorSpeak ? "Speaking" : "Mute"}
-          </button>
+      {/* AI co-investigator — only surfaces when there's actually
+          something to narrate (active session OR a caption already
+          arrived). When idle the card was burning real estate to say
+          "Ready when you are", which the hero CTA already implies. */}
+      {(running || narratorCaption) && (
+        <div className={`${s.narrator} ${narratorCaption ? s.narratorActive : ""}`.trim()}>
+          <div className={s.narratorHead}>
+            <span className={s.narratorEyebrow}>AI CO-INVESTIGATOR</span>
+            <button
+              type="button"
+              className={`${s.narratorSpeak} ${narratorSpeak ? s.narratorSpeakOn : ""}`.trim()}
+              onClick={() => onToggleNarratorSpeak(!narratorSpeak)}
+              aria-pressed={narratorSpeak}
+            >
+              <span className={s.narratorSpeakDot} aria-hidden="true" />
+              {narratorSpeak ? "Speaking" : "Mute"}
+            </button>
+          </div>
+          <p className={s.narratorBody}>
+            {narratorCaption ?? "Watching the room. I'll narrate what I see."}
+          </p>
         </div>
-        <p className={s.narratorBody}>
-          {narratorCaption ?? (running ? "Watching the room. I'll narrate what I see." : "Ready when you are. Begin a session and I'll start watching.")}
-        </p>
-      </div>
+      )}
 
       {/* PRE-VISIT RECON — surfaces only when no case is active AND the
           AI Investigator is enabled. Empty-state operators often don't
@@ -396,11 +401,12 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
           : `${Math.round(baselineAgeMs / 86_400_000)} d ago`;
 
         return (
-          <div className={`${s.readiness} ${allOk ? s.readinessOk : s.readinessWarn}`.trim()}>
-            <div className={s.readinessHeadRow}>
+          <details className={`${s.readiness} ${allOk ? s.readinessOk : s.readinessWarn}`.trim()}>
+            <summary className={s.readinessHeadRow}>
               <span className={s.readinessIcon} aria-hidden="true">{allOk ? "✓" : "⚠"}</span>
               <strong>{allOk ? "Ready to record" : "One step optional before recording"}</strong>
-            </div>
+              <span className={s.readinessChevron} aria-hidden="true">▾</span>
+            </summary>
             <ul className={s.readinessList}>
               <li className={s.readinessRow}>
                 <span className={`${s.readinessTick} ${trustworthy ? s.tickOk : s.tickInfo}`.trim()} aria-hidden="true">
@@ -429,7 +435,7 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
                 </span>
               </li>
             </ul>
-          </div>
+          </details>
         );
       })()}
 

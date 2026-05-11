@@ -1,6 +1,6 @@
 @import "./tokens.css";
 @import "./buttons.css";
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Orbitron:wght@500;700;900&family=VT323&display=swap");
 
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
@@ -63,6 +63,46 @@ body {
   -webkit-tap-highlight-color: transparent;
   -webkit-text-size-adjust: 100%;
 }
+
+/* Paranormal-tool atmosphere: faint CRT scanlines drifting over the
+   whole viewport, plus a corner vignette so the edges fall off into
+   the dark. Pointer-events: none and very low opacity so the layer
+   informs the mood without interfering with anything. Daylight mode
+   skips both — the look is "instrument", not "haunted picture frame". */
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+}
+body::before {
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(255, 255, 255, 0.022) 0px,
+    rgba(255, 255, 255, 0.022) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  mix-blend-mode: overlay;
+  opacity: 0.55;
+  animation: ss-scanline-drift 7s linear infinite;
+}
+body::after {
+  background: radial-gradient(
+    120% 80% at 50% 50%,
+    transparent 55%,
+    rgba(0, 0, 0, 0.45) 100%
+  );
+}
+@keyframes ss-scanline-drift {
+  0%   { transform: translateY(0); }
+  100% { transform: translateY(3px); }
+}
+:root[data-theme="daylight"] body::before,
+:root[data-theme="daylight"] body::after { display: none; }
+:root[data-theme="scotopic"] body::before { opacity: 0.35; }
 
 #root {
   min-height: 100dvh;
