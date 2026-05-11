@@ -17,12 +17,15 @@
 }
 
 .eyebrow {
-  font-size: 10px;
-  letter-spacing: 1.6px;
+  font-family: "VT323", var(--font-mono), monospace;
+  font-size: 14px;
+  letter-spacing: 2.2px;
   text-transform: uppercase;
   color: var(--signal);
-  font-weight: 700;
+  font-weight: 400;
+  text-shadow: 0 0 6px color-mix(in srgb, var(--signal) 30%, transparent);
 }
+:global([data-theme="daylight"]) .eyebrow { text-shadow: none; }
 
 .note {
   font-size: 10px;
@@ -36,21 +39,45 @@
   flex-wrap: wrap;
 }
 
-/* "Suggest a question" / "Test mundane explanations" buttons consume
-   .btn .btn-primary / .btn .btn-ghost for colour + behaviour.
-   .actionSize carries the AI-panel-specific geometry: flex:1 to share
-   the row evenly, 160px minimum to avoid wrapping mid-label on narrow
-   screens, 44px touch target, --r-md radius, font-weight 600
-   (slightly lighter than the canonical .btn weight of 700 — these
-   are utility actions, not hero CTAs). */
+/* AI Assist's two utility buttons override the canonical .btn-primary /
+   .btn-ghost full-paint to a quieter "instrument tab" look: bezel ring +
+   subtle signal-tinted background. Primary keeps a small inner glow so
+   it still reads as the recommended action without dominating like the
+   hero CTA does. */
 .actionSize {
   flex: 1;
   min-width: 160px;
   padding: 10px 14px;
   border-radius: var(--r-md);
-  font-weight: 600;
-  font-size: 13px;
+  font-family: "VT323", var(--font-mono), monospace;
+  font-size: 15px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  font-weight: 400;
   min-height: 44px;
+  background: var(--bg-inset);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+  box-shadow: none;
+}
+.actionSize:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--signal) 8%, var(--bg-inset));
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--signal) 40%, var(--border-default));
+}
+.actionSize.btn-primary,
+.btn-primary.actionSize {
+  background: color-mix(in srgb, var(--signal) 10%, var(--bg-inset));
+  color: var(--signal);
+  border: 1px solid color-mix(in srgb, var(--signal) 60%, var(--border-default));
+  box-shadow:
+    inset 0 0 12px color-mix(in srgb, var(--signal) 12%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--signal) 12%, transparent);
+}
+.actionSize.btn-primary:hover:not(:disabled),
+.btn-primary.actionSize:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--signal) 18%, var(--bg-inset));
+  border-color: var(--signal);
 }
 
 .error {
