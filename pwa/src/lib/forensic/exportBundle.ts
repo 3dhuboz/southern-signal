@@ -348,6 +348,113 @@ for (const line of lines) {
 console.log('OK ·', lines.length, 'entries verified · last entry_hash =', prev);
 `;
 
+export interface BundleDossierRow {
+  id: string;
+  investigation_id: string | null;
+  venue_name: string;
+  location_hint: string | null;
+  region: string;
+  created_at: string;
+  model: string;
+  result_json: string;
+}
+
+export interface BundleFindingNoteRow {
+  id: string;
+  dossier_id: string;
+  finding_key: string;
+  text: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ResearchBundleData {
+  dossiers: BundleDossierRow[];
+  notes: BundleFindingNoteRow[];
+}
+
+/**
+ * Pull dossiers attached to the bundle's investigations OR standalone
+ * (investigation_id NULL) dossiers whose venue_name matches a case
+ * title OR location_name — same rule the brief uses. Plus the notes
+ * joined to those dossiers. Returns empty arrays for pre-v4 / pre-v5
+ * schemas so the bundle still builds on older installs.
+ *
+ * Exported for unit testing — see exportBundle.test.ts.
+ */
+export async function loadResearchForBundle(
+  investigationIds: string[],
+  investigations: Pick<Investigation, "id" | "title" | "location_name">[],
+): Promise<ResearchBundleData> {
+  let dossiers: BundleDossierRow[] = [];
+  try {
+    if (investigationIds.length === 0) {
+      dossiers = await query<BundleDossierRow>(
+        "SELECT * FROM research_dossiers WHERE investigation_id IS NULL",
+      );
+    } else {
+      const titles = investigations.map((i) => (i.title ?? "").toLowerCase());
+      const locations = investigations.map((i) => (i.location_name ?? "").toLowerCase());
+      const invPh = investigationIds.map(() => "?").join(",");
+      const titlePh = titles.map(() => "?").join(",") || "''";
+      const locPh = locations.map(() => "?").join(",") || "''";
+      dossiers = await query<BundleDossierRow>(
+        `SELECT * FROM research_dossiers WHERE investigation_id IN (${invPh})
+           OR (investigation_id IS NULL
+               AND (LOWER(venue_name) IN (${titlePh}) OR LOWER(venue_name) IN (${locPh})))`,
+        [...investigationIds, ...titles, ...locations],
+      );
+    }
+  } catch { /* pre-v4 — no research_dossiers table */ }
+
+  let notes: BundleFindingNoteRow[] = [];
+  if (dossiers.length > 0) {
+    try {
+      const dossierIds = dossiers.map((d) => d.id);
+      const ph = dossierIds.map(() => "?").join(",");
+      notes = await query<BundleFindingNoteRow>(
+        `SELECT * FROM research_finding_notes WHERE dossier_id IN (${ph})`,
+        dossierIds,
+      );
+    } catch { /* pre-v5 — no research_finding_notes table */ }
+  }
+
+  return { dossiers, notes };
+}
+
+/**
+ * Turn loaded dossier + note rows into the ZIP entries to append.
+ * Grouped per-investigation for grep-ability; standalone dossiers
+ * land under research/standalone/. Pretty-prints the result JSON;
+ * malformed payloads keep their raw string so a reviewer can still
+ * inspect what the model produced.
+ *
+ * Exported for unit testing.
+ */
+export function buildResearchEntries({ dossiers, notes }: ResearchBundleData): ZipEntry[] {
+  if (dossiers.length === 0) return [];
+  const out: ZipEntry[] = [];
+  for (const d of dossiers) {
+    let resultObj: unknown = d.result_json;
+    try { resultObj = JSON.parse(d.result_json); } catch { /* keep raw */ }
+    const folder = d.investigation_id ?? "standalone";
+    out.push(jsonEntry(`research/${folder}/${d.id}.json`, {
+      id: d.id,
+      investigation_id: d.investigation_id,
+      venue_name: d.venue_name,
+      location_hint: d.location_hint,
+      region: d.region,
+      created_at: d.created_at,
+      model: d.model,
+      result: resultObj,
+    }));
+  }
+  if (notes.length > 0) {
+    out.push(jsonEntry("research/finding_notes.json", notes));
+  }
+  return out;
+}
+
 export async function buildExportBundle(investigationId?: string): Promise<{ blob: Blob; summary: ExportSummary }> {
   const scope = investigationId ? "single" : "all";
   const manifest = await buildManifest();
@@ -387,80 +494,12 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
   entries.push(jsonEntry("evidence_events.json", events));
   entries.push(jsonEntry("transcripts.json", transcripts));
 
-  // 3b. Research dossiers (v4) + reviewer notes (v5). The manifest
-  // already anchors each dossier with a SHA-256 of result_json; we
-  // include the raw rows here so a reviewer with both the bundle and
-  // the manifest can re-hash and confirm. Pre-v4 schemas (no table)
-  // just skip — bundle still builds. Per-investigation file layout
-  // keeps the export grep-able by case.
-  try {
-    type DossierRowFull = { id: string; investigation_id: string | null; venue_name: string; location_hint: string | null; region: string; created_at: string; model: string; result_json: string };
-    let dossiers: DossierRowFull[];
-    if (investigationIds.length === 0) {
-      dossiers = await query<DossierRowFull>(
-        "SELECT * FROM research_dossiers WHERE investigation_id IS NULL",
-      );
-    } else {
-      // Match dossiers attached to this scope's cases OR standalone
-      // (investigation_id NULL) whose venue_name matches a case title
-      // OR a case location_name — same rule the brief uses.
-      const titles = investigations.map((i) => (i.title ?? "").toLowerCase());
-      const locations = investigations.map((i) => (i.location_name ?? "").toLowerCase());
-      const titlePh = titles.map(() => "?").join(",") || "''";
-      const locPh = locations.map(() => "?").join(",") || "''";
-      dossiers = await query<DossierRowFull>(
-        `SELECT * FROM research_dossiers WHERE investigation_id IN (${placeholders})
-           OR (investigation_id IS NULL
-               AND (LOWER(venue_name) IN (${titlePh}) OR LOWER(venue_name) IN (${locPh})))`,
-        [...investigationIds, ...titles, ...locations],
-      );
-    }
-    if (dossiers.length > 0) {
-      // Group by investigation id for readable archive layout. Standalone
-      // dossiers (investigation_id NULL) land in research/standalone/.
-      const byInv = new Map<string, typeof dossiers>();
-      for (const d of dossiers) {
-        const key = d.investigation_id ?? "standalone";
-        const list = byInv.get(key) ?? [];
-        list.push(d);
-        byInv.set(key, list);
-      }
-      for (const [key, rows] of byInv.entries()) {
-        for (const d of rows) {
-          // result_json is already a JSON string — round-trip-parse so
-          // the bundle file is pretty-printed, not single-line. If it's
-          // malformed we still include the raw string.
-          let resultObj: unknown = d.result_json;
-          try { resultObj = JSON.parse(d.result_json); } catch { /* keep raw */ }
-          entries.push(jsonEntry(`research/${key}/${d.id}.json`, {
-            id: d.id,
-            investigation_id: d.investigation_id,
-            venue_name: d.venue_name,
-            location_hint: d.location_hint,
-            region: d.region,
-            created_at: d.created_at,
-            model: d.model,
-            result: resultObj,
-          }));
-        }
-      }
-      // Reviewer notes — joined by dossier_id. Single file per case
-      // works fine here since notes are small.
-      const dossierIds = dossiers.map((d) => d.id);
-      const notePlaceholders = dossierIds.map(() => "?").join(",");
-      try {
-        const notes = dossierIds.length === 0 ? [] : await query<{
-          id: string; dossier_id: string; finding_key: string; text: string; created_at: string; updated_at: string;
-        }>(
-          `SELECT * FROM research_finding_notes WHERE dossier_id IN (${notePlaceholders})`,
-          dossierIds,
-        );
-        if (notes.length > 0) {
-          entries.push(jsonEntry("research/finding_notes.json", notes));
-        }
-      } catch { /* pre-v5 schema */ }
-    }
-  } catch { /* pre-v4 schema — no research_dossiers table */ }
+  // Research dossiers + reviewer notes (v4 + v5). The manifest already
+  // anchors each dossier with a SHA-256; we include raw rows here so
+  // reviewers with both the bundle and the manifest can re-hash and
+  // confirm. Pre-v4/v5 schemas skip silently.
+  const research = await loadResearchForBundle(investigationIds, investigations);
+  for (const entry of buildResearchEntries(research)) entries.push(entry);
 
   // 4. Media binaries.
   let mediaIncluded = 0;
