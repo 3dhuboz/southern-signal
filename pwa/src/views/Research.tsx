@@ -19,7 +19,7 @@
  *     UI so operators see what they've used.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useSession } from "../lib/session";
 import { usePreferences, setPreferences } from "../lib/preferences";
@@ -94,13 +94,9 @@ function formatResetIn(ms: number | null): string {
   return `Resets in ~${mins}m`;
 }
 
-/**
- * Tier-aware verification-angle templates that seed the reviewer note
- * input on demand. Local-only — no AI call, no rate-limit impact —
- * these are scaffolds the operator edits in place. The point is to
- * lower the activation energy for actually writing a note: an empty
- * textarea gets ignored, a templated starting point gets refined.
- */
+/** Tier-aware scaffolds that pre-fill the reviewer note input. Local-
+ *  only — no AI call. Lowers activation energy: an empty textarea
+ *  gets ignored, a templated start gets refined. */
 const NOTE_TEMPLATES: Record<ResearchTier, (f: ResearchFinding) => string> = {
   HERITAGE: (f) => {
     const url = f.sources[0]?.url ?? "(citation URL)";
@@ -123,13 +119,8 @@ const NOTE_TEMPLATES: Record<ResearchTier, (f: ResearchFinding) => string> = {
     `Do not repeat synthesis-tier claims as fact. Recommendation: do not use without independent verification.`,
 };
 
-/**
- * Progress labels rotated while a run is in flight. These are
- * illustrative — Perplexity Sonar doesn't actually emit per-source
- * progress events — but they tie the wait time to the *kind* of work
- * the system prompt asks for. AU and GLOBAL lists differ because the
- * source ordering in the prompt differs.
- */
+/** Fallback rotating progress labels — used only until the streaming
+ *  endpoint reports its first real stage. */
 const PROGRESS_LABELS_AU: string[] = [
   "Walking the archives…",
   "Pulling state heritage register entries…",
@@ -159,18 +150,15 @@ export function Research() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ResearchResult | null>(null);
   const [rate, setRate] = useState(() => getResearchRateState());
-  /** v4: past dossiers persisted to research_dossiers. Scoped to the
-   *  current investigation (or to standalone runs when no case is open).
-   *  Lets the operator re-open prior research without burning a new
-   *  cloud-AI call. */
+  /** Past dossiers for this investigation (or recent standalone when
+   *  no case is open). Lets the operator re-open prior research
+   *  without burning a new cloud-AI call. */
   const [pastDossiers, setPastDossiers] = useState<ResearchDossierRow[]>([]);
   const [loadedFromDossierId, setLoadedFromDossierId] = useState<string | null>(null);
   const [savedDossierId, setSavedDossierId] = useState<string | null>(null);
 
-  /** v4: follow-up turn state. Keyed by `${tier}-${index}` of the parent
-   *  finding so each card runs independently. Map values hold the input
-   *  question, busy flag, error, and the appended findings to render
-   *  beneath the parent. */
+  /** Follow-up turn state, keyed by `${tier}-${index}` of the parent
+   *  finding so each card runs independently. */
   interface FollowupState {
     open: boolean;
     question: string;
@@ -181,40 +169,43 @@ export function Research() {
   }
   const [followups, setFollowups] = useState<Record<string, FollowupState>>({});
 
-  /** v5: reviewer notes per finding. Keyed by finding_key (sha256
-   *  prefix over tier|title|body). Values: { text, savedText, dirty }.
-   *  `savedText` mirrors what's in the DB so we can mark dirty / show
-   *  a Save indicator without re-querying on every keystroke. */
+  /** Reviewer notes per finding, keyed by finding_key. `savedText`
+   *  mirrors the DB row so the dirty / saved indicators can fire
+   *  without re-querying on every keystroke. */
   interface NoteState { text: string; savedText: string; saving: boolean }
   const [notes, setNotes] = useState<Record<string, NoteState>>({});
   const [findingKeys, setFindingKeys] = useState<Record<string, string>>({});
 
-  /** v5: rotating progress label shown while the run is in flight.
-   *  Cycles through archive layers the system prompt actually asks the
-   *  model to consult — illustrative, not literal. Index resets on
-   *  busy↑ so each run gets a fresh sequence. */
+  /** Fallback rotating-label index when the SSE stream hasn't reported
+   *  a real stage yet. Resets on busy↑ so each run starts fresh. */
   const [progressIndex, setProgressIndex] = useState(0);
 
-  /** v5: real progress label + chunk counter from the SSE stream.
-   *  Preferred over the rotating fallback when the stream is alive —
-   *  the stages come from the server, tied to actual elapsed time on
-   *  the upstream call instead of a client interval timer. */
-  const [streamStage, setStreamStage] = useState<string | null>(null);
-  const [streamChunks, setStreamChunks] = useState<number>(0);
+  /** Real progress from the SSE stream. Preferred over the rotating
+   *  fallback when alive — stages come from the server, tied to actual
+   *  upstream elapsed time. `null` means "not streaming"; collapses
+   *  three previous setState calls into one. */
+  const [streamProgress, setStreamProgress] = useState<{ stage: string; chars: number } | null>(null);
 
-  /** v5: diff against the most recent prior dossier for the same
-   *  venue. Computed after a successful run; null when this is the
-   *  first dossier for the venue, or when the user opened a saved
-   *  dossier (read-only mode — diff would compare to itself). */
+  /** Stream handle ref — used to abort an in-flight stream when the
+   *  view unmounts so the fetch doesn't keep running and setting state
+   *  on a dead component (and burning the rate-limit slot on a final
+   *  the user never sees). */
+  const streamHandleRef = useRef<{ abort: () => void } | null>(null);
+
+  /** Mirror of pastDossiers so the run callback can read the latest
+   *  list without taking pastDossiers as a dep (which would re-allocate
+   *  the callback on every dossier list change). */
+  const pastDossiersRef = useRef<ResearchDossierRow[]>([]);
+
+  /** Diff against the most recent prior dossier for the same venue.
+   *  Null when this is the first dossier for the venue, or when the
+   *  user opened a saved dossier (diff would compare to itself). */
   const [diff, setDiff] = useState<DossierDiff | null>(null);
   const [diffPriorAt, setDiffPriorAt] = useState<string | null>(null);
   const [diffExpanded, setDiffExpanded] = useState(false);
 
-  /** v5: AoC-from-dossier capture. Keyed by finding_key — clicking the
-   *  "Use as Acknowledgement of Country" button on a CULTURAL_SIGNIFICANCE
-   *  finding opens an inline editor pre-filled with the body. Save
-   *  updates prefs.acknowledgementOfCountry + fires an audit entry
-   *  tagged so the chain reflects "this came from research". */
+  /** AoC-from-dossier capture state. Keyed by finding_key so each
+   *  CULTURAL_SIGNIFICANCE card has its own editor. */
   const [aocDraftFor, setAocDraftFor] = useState<string | null>(null);
   const [aocDraftText, setAocDraftText] = useState<string>("");
 
@@ -249,9 +240,8 @@ export function Research() {
   // open (loaded from past dossiers).
   const activeDossierId = loadedFromDossierId ?? savedDossierId;
 
-  // v5: compute stable finding keys whenever findings change. Keys are
-  // sha256(tier|title|body) prefixes so notes survive findings being
-  // re-ordered, and so we can lookup by content rather than index.
+  // Compute stable content-keyed finding hashes so notes survive
+  // re-ordering across re-runs.
   useEffect(() => {
     if (!result) {
       setFindingKeys({});
@@ -279,8 +269,7 @@ export function Research() {
     return () => { cancelled = true; };
   }, [result, followups]);
 
-  // v5: load saved notes for the active dossier. Re-runs when the
-  // dossier id changes (open / save / delete).
+  // Load saved notes whenever the active dossier id changes.
   useEffect(() => {
     if (!activeDossierId) {
       setNotes({});
@@ -389,23 +378,21 @@ export function Research() {
   const rateBlocked = rate.used >= rate.cap;
   const canRun = venueName.trim().length >= 2 && !busy && !culturallyBlocked && !researchDisabled && !rateBlocked;
 
-  // Rotate the progress label while a run is in flight. Reset to 0 on
-  // busy=false so each new run starts at "Walking the archives…".
+  // Rotate the fallback progress label while a run is in flight AND no
+  // server stage has arrived yet. The streaming endpoint's stage events
+  // are tied to real elapsed time on the upstream call, so once one
+  // arrives the rotation stops being useful.
   useEffect(() => {
-    if (!busy) { setProgressIndex(0); return; }
+    if (!busy || streamProgress) { setProgressIndex(0); return; }
     const labels = region === "AU" ? PROGRESS_LABELS_AU : PROGRESS_LABELS_GLOBAL;
     const id = window.setInterval(() => {
       setProgressIndex((i) => Math.min(i + 1, labels.length - 1));
     }, 2200);
     return () => window.clearInterval(id);
-  }, [busy, region]);
+  }, [busy, region, streamProgress]);
 
   const progressLabel = (() => {
-    // Real server stage wins when streaming is alive — it's tied to
-    // actual upstream elapsed time. The rotating fallback runs
-    // alongside for cases where the stream hasn't reported a stage
-    // yet (very first 100ms) or fell back to the one-shot endpoint.
-    if (streamStage) return streamStage;
+    if (streamProgress?.stage) return streamProgress.stage;
     const labels = region === "AU" ? PROGRESS_LABELS_AU : PROGRESS_LABELS_GLOBAL;
     return labels[Math.min(progressIndex, labels.length - 1)] ?? labels[0];
   })();
@@ -446,16 +433,9 @@ export function Research() {
       }).catch(() => { /* */ });
     }
 
-    // Reset streaming progress for this run.
-    setStreamStage(null);
-    setStreamChunks(0);
+    setStreamProgress(null);
 
     try {
-      // Prefer the streaming endpoint — real stage events tied to the
-      // upstream call's elapsed time. Fall back to the one-shot
-      // endpoint if streaming throws anything other than a known
-      // user-facing error (rate-limit, cultural block) so transient
-      // SSE issues don't block research.
       let res: ResearchResult;
       try {
         res = await new Promise<ResearchResult>((resolve, reject) => {
@@ -467,15 +447,15 @@ export function Research() {
               culturallySensitive: culturallyBlocked,
             },
             {
-              onStage: (label) => setStreamStage(label),
-              onChunk: (_chunks, chars) => setStreamChunks(chars),
+              onStage: (label) => setStreamProgress((p) => ({ stage: label, chars: p?.chars ?? 0 })),
+              onChunk: (_chunks, chars) => setStreamProgress((p) => ({ stage: p?.stage ?? "", chars })),
               onFinal: (r) => resolve(r),
             },
           );
+          streamHandleRef.current = handle;
           handle.done.catch(reject);
         });
       } catch (streamErr) {
-        // ResearchRateLimitError already carries enough — re-throw.
         if (streamErr instanceof ResearchRateLimitError) throw streamErr;
         console.warn("[research] streaming failed, falling back to one-shot:", streamErr);
         res = await runResearch({
@@ -484,17 +464,18 @@ export function Research() {
           region,
           culturallySensitive: culturallyBlocked,
         });
+      } finally {
+        streamHandleRef.current = null;
       }
       setResult(res);
       setLoadedFromDossierId(null);
       setFollowups({});
       setRate(getResearchRateState());
 
-      // v5: diff against the most recent prior dossier for this venue
-      // (matched case-insensitively). Computed BEFORE save fires so
-      // the prior is still the prior, not the just-saved row.
+      // Diff vs the most recent prior dossier for this venue. Computed
+      // BEFORE save so the prior is still the prior, not this run.
       const venueLower = venueName.trim().toLowerCase();
-      const prior = pastDossiers.find((d) => d.venue_name.toLowerCase() === venueLower);
+      const prior = pastDossiersRef.current.find((d) => d.venue_name.toLowerCase() === venueLower);
       if (prior) {
         try {
           const priorResult = JSON.parse(prior.result_json) as ResearchResult;
@@ -512,9 +493,8 @@ export function Research() {
         setDiffPriorAt(null);
       }
 
-      // v4: persist the dossier so it survives the session and feeds
-      // the Evidence Brief. Fire-and-forget — UI doesn't gate on it,
-      // but we surface the saved id so the user sees a confirmation.
+      // Fire-and-forget save; the UI doesn't gate on it, but we
+      // surface the saved id so the user sees a confirmation.
       void saveDossier({
         investigation_id: investigationId,
         venue_name: venueName.trim(),
@@ -577,10 +557,18 @@ export function Research() {
       setRate(getResearchRateState());
     } finally {
       setBusy(false);
-      setStreamStage(null);
-      setStreamChunks(0);
+      setStreamProgress(null);
     }
-  }, [canRun, venueName, locationHint, region, culturallyBlocked, session, pastDossiers]);
+  }, [canRun, venueName, locationHint, region, culturallyBlocked, session]);
+
+  // Keep the ref in sync with the state. Reading the ref inside the
+  // run callback avoids re-allocating it on every dossier list change.
+  useEffect(() => { pastDossiersRef.current = pastDossiers; }, [pastDossiers]);
+
+  // Abort any in-flight stream on unmount — keeps a navigated-away
+  // fetch from setStating on a dead component and burning a rate-limit
+  // slot for a final the user will never see.
+  useEffect(() => () => streamHandleRef.current?.abort(), []);
 
   const grouped = useMemo(() => result ? groupByTier(result.findings) : new Map<ResearchTier, ResearchFinding[]>(), [result]);
 
@@ -880,9 +868,9 @@ export function Research() {
           >
             {busy ? progressLabel : "Run AI Investigator"}
           </button>
-          {busy && streamChunks > 0 && (
+          {busy && streamProgress && streamProgress.chars > 0 && (
             <span className={r.streamCounter} aria-live="polite">
-              {streamChunks.toLocaleString()} chars streamed
+              {streamProgress.chars.toLocaleString()} chars streamed
             </span>
           )}
           <span className={r.rateNote}>
@@ -917,11 +905,8 @@ export function Research() {
             </p>
           ) : null}
 
-          {/* v5: dossier diff vs the prior dossier for this venue.
-              Counts header is always visible; the full added/removed
-              detail expands on click. Surfaces "the archive changed
-              since last time" — useful for re-research as a case
-              progresses, or to spot model output drift. */}
+          {/* Dossier diff vs the prior dossier for this venue.
+              "Show detail" expands to per-finding tier + title. */}
           {diff && (diff.counts.added > 0 || diff.counts.removed > 0) && diffPriorAt && (
             <section className={r.diffBlock}>
               <header className={r.diffHead}>

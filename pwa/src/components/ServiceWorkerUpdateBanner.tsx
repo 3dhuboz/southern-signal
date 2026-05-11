@@ -15,18 +15,22 @@ import s from "./ServiceWorkerUpdateBanner.module.css";
 
 export function ServiceWorkerUpdateBanner() {
   const [show, setShow] = useState(false);
-  // Track which update we last dismissed so a *new* update re-surfaces.
-  const [dismissedRegistrationToken, setDismissedRegistrationToken] = useState<unknown>(null);
+  // Identity of the waiting worker the user dismissed. A subsequent
+  // updatefound produces a different ServiceWorker instance for
+  // registration.waiting, which won't equal this — so the banner
+  // re-surfaces automatically on the *next* deploy.
+  const [dismissedWaitingWorker, setDismissedWaitingWorker] = useState<ServiceWorker | null>(null);
 
   useEffect(() => {
     function onEvent(e: Event) {
-      const detail = (e as CustomEvent).detail;
-      if (detail && detail.registration === dismissedRegistrationToken) return;
+      const detail = (e as CustomEvent).detail as { registration?: ServiceWorkerRegistration } | undefined;
+      const waiting = detail?.registration?.waiting ?? null;
+      if (waiting && waiting === dismissedWaitingWorker) return;
       setShow(true);
     }
     window.addEventListener(SW_UPDATE_EVENT, onEvent as EventListener);
     return () => window.removeEventListener(SW_UPDATE_EVENT, onEvent as EventListener);
-  }, [dismissedRegistrationToken]);
+  }, [dismissedWaitingWorker]);
 
   const handleReload = useCallback(() => {
     applyServiceWorkerUpdate();
@@ -34,11 +38,12 @@ export function ServiceWorkerUpdateBanner() {
 
   const handleDismiss = useCallback(() => {
     setShow(false);
-    // Remember this registration token; if a NEW updatefound fires the
-    // banner returns automatically.
-    if (typeof navigator !== "undefined" && navigator.serviceWorker?.controller) {
-      setDismissedRegistrationToken(navigator.serviceWorker.controller);
-    }
+    // Snapshot the currently-waiting worker so a later updatefound
+    // (with a different ServiceWorker instance) wins past the
+    // equality gate and re-surfaces the banner.
+    void navigator.serviceWorker?.getRegistration?.()?.then?.((reg) => {
+      if (reg?.waiting) setDismissedWaitingWorker(reg.waiting);
+    });
   }, []);
 
   if (!show) return null;

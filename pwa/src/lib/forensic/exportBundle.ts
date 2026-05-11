@@ -394,21 +394,27 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
   // just skip — bundle still builds. Per-investigation file layout
   // keeps the export grep-able by case.
   try {
-    const dossiers = investigationIds.length === 0
-      ? await query<{ id: string; investigation_id: string | null; venue_name: string; location_hint: string | null; region: string; created_at: string; model: string; result_json: string }>(
-          "SELECT * FROM research_dossiers WHERE investigation_id IS NULL",
-        )
-      : await query<{ id: string; investigation_id: string | null; venue_name: string; location_hint: string | null; region: string; created_at: string; model: string; result_json: string }>(
-          `SELECT * FROM research_dossiers WHERE investigation_id IN (${placeholders})
-             OR (investigation_id IS NULL
-                 AND LOWER(venue_name) IN (${investigationIds.map(() => "?").join(",") || "''"})
-                 AND LOWER(venue_name) IN (${investigationIds.map(() => "?").join(",") || "''"}))`,
-          [
-            ...investigationIds,
-            ...investigations.map((i) => (i.title ?? "").toLowerCase()),
-            ...investigations.map((i) => (i.location_name ?? "").toLowerCase()),
-          ],
-        );
+    type DossierRowFull = { id: string; investigation_id: string | null; venue_name: string; location_hint: string | null; region: string; created_at: string; model: string; result_json: string };
+    let dossiers: DossierRowFull[];
+    if (investigationIds.length === 0) {
+      dossiers = await query<DossierRowFull>(
+        "SELECT * FROM research_dossiers WHERE investigation_id IS NULL",
+      );
+    } else {
+      // Match dossiers attached to this scope's cases OR standalone
+      // (investigation_id NULL) whose venue_name matches a case title
+      // OR a case location_name — same rule the brief uses.
+      const titles = investigations.map((i) => (i.title ?? "").toLowerCase());
+      const locations = investigations.map((i) => (i.location_name ?? "").toLowerCase());
+      const titlePh = titles.map(() => "?").join(",") || "''";
+      const locPh = locations.map(() => "?").join(",") || "''";
+      dossiers = await query<DossierRowFull>(
+        `SELECT * FROM research_dossiers WHERE investigation_id IN (${placeholders})
+           OR (investigation_id IS NULL
+               AND (LOWER(venue_name) IN (${titlePh}) OR LOWER(venue_name) IN (${locPh})))`,
+        [...investigationIds, ...titles, ...locations],
+      );
+    }
     if (dossiers.length > 0) {
       // Group by investigation id for readable archive layout. Standalone
       // dossiers (investigation_id NULL) land in research/standalone/.

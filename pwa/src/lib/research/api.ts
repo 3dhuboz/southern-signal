@@ -107,9 +107,10 @@ export function getResearchRateState(): { used: number; cap: number; nextResetMs
   };
 }
 
-/** Record a successful run (after the server responds OK). Called by
- *  runResearch on success; exported separately for tests. */
-function recordRun(): void {
+/** Record a successful run in the localStorage soft-cap log. Called
+ *  by both the one-shot (runResearch) and the streaming wrapper on
+ *  successful completion. */
+export function recordResearchRun(): void {
   const now = Date.now();
   const log = [...readRunLog().filter((ts) => now - ts < RATE_LIMIT_WINDOW_MS), now];
   writeRunLog(log);
@@ -163,7 +164,7 @@ export async function runResearch(req: ResearchRequest): Promise<ResearchResult>
   }
 
   const json = await res.json() as ResearchResult;
-  // Record only on a 2xx success so users aren't burned for failures.
-  recordRun();
+  // Only on a 2xx — failures don't burn the user's budget.
+  recordResearchRun();
   return json;
 }

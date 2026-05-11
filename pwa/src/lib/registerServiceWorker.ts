@@ -1,25 +1,10 @@
 /**
- * Service-worker registration + update detection.
- *
- * The SW does the cache work (stale-while-revalidate). What this
- * module adds is *update detection*: when a new SW deploys to the
- * server, the existing tab needs to be reloaded to pick up the new
- * bundle. Without UI nudge, operators stay on stale builds for days.
- *
- * Strategy:
- *   1. Register the SW. Cache the registration.
- *   2. Listen for `updatefound` and watch the incoming worker.
- *   3. When the new worker transitions to "installed" AND
- *      navigator.serviceWorker.controller is non-null (i.e. an older
- *      SW is currently controlling this tab), publish an "update
- *      available" event.
- *   4. UI mounts a banner that listens for the event and offers a
- *      reload button.
- *   5. Bonus: poll for updates every 30 minutes so long-running tabs
- *      eventually find new deploys.
- *
- * Custom event name: `ss:sw-update-available`. Cancelable: false.
- * Detail: { registration: ServiceWorkerRegistration }.
+ * Service-worker registration + update detection. Without a UI nudge,
+ * operators stay on stale builds for days after a deploy — so this
+ * module emits a `ss:sw-update-available` window CustomEvent (detail
+ * `{ registration }`) when an incoming worker reaches `installed`
+ * AND a prior SW was already controlling the tab. The banner picks
+ * that up and offers reload.
  */
 
 export const SW_UPDATE_EVENT = "ss:sw-update-available";
@@ -32,8 +17,8 @@ function publishUpdateAvailable(registration: ServiceWorkerRegistration): void {
 
 function watchForUpdate(registration: ServiceWorkerRegistration): void {
   cachedRegistration = registration;
-  // If there's already a waiting worker (e.g. the user came back to a
-  // tab that was hibernated through a deploy), publish immediately.
+  // Hibernated-through-deploy: a waiting worker is already pending
+  // before this module ever runs.
   if (registration.waiting && navigator.serviceWorker.controller) {
     publishUpdateAvailable(registration);
   }
@@ -42,36 +27,27 @@ function watchForUpdate(registration: ServiceWorkerRegistration): void {
     if (!incoming) return;
     incoming.addEventListener("statechange", () => {
       if (incoming.state !== "installed") return;
-      if (!navigator.serviceWorker.controller) {
-        // No controller → first install, not an update. Don't nudge.
-        return;
-      }
+      // No controller → first install, not an update; skip the nudge.
+      if (!navigator.serviceWorker.controller) return;
       publishUpdateAvailable(registration);
     });
   });
 }
 
 /**
- * Trigger a controlled reload after a new SW has installed. Posts
- * SKIP_WAITING to the waiting worker (in case the SW honours it), then
- * reloads after a controller change OR a short timeout fallback.
+ * Trigger a controlled reload. Asks the waiting worker to skipWaiting,
+ * then reloads on controllerchange — with a 1.2s timeout fallback for
+ * browsers where the event doesn't fire reliably.
  */
 export function applyServiceWorkerUpdate(): void {
-  const reg = cachedRegistration;
-  const waiting = reg?.waiting;
-  if (waiting) {
-    waiting.postMessage({ type: "SKIP_WAITING" });
-  }
+  cachedRegistration?.waiting?.postMessage({ type: "SKIP_WAITING" });
   let reloaded = false;
   const reload = () => {
     if (reloaded) return;
     reloaded = true;
     window.location.reload();
   };
-  // If the new SW takes over, controllerchange fires — reload then.
   navigator.serviceWorker.addEventListener("controllerchange", reload);
-  // Fallback: reload after a short delay even if controllerchange
-  // doesn't fire (some browsers' edge cases).
   window.setTimeout(reload, 1200);
 }
 

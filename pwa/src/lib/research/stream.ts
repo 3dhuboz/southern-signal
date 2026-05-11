@@ -1,21 +1,11 @@
 /**
- * Streaming variant of runResearch. Posts to /api/ai/research/stream
- * (Server-Sent Events) and surfaces three event kinds to the caller:
- *
- *   onStage(label, elapsedMs)  synthetic stage milestone from the server
- *   onChunk(chunks, chars)     upstream token slices have arrived
- *   onFinal(result)            validated ResearchResult — same shape as
- *                              runResearch returns
- *
- * Plus a single rejection for unrecoverable errors.
- *
- * The non-streaming endpoint is the canonical source for cap state /
- * cultural blocks; this wrapper enforces the same client soft-cap
- * before reaching the wire, and lifts a 429 / 403 into the same error
- * types runResearch throws.
+ * Streaming variant of runResearch (SSE → /api/ai/research/stream).
+ * The wrapper enforces the same client soft-cap as runResearch and
+ * lifts 429 responses into ResearchRateLimitError, so callers can
+ * treat the two paths interchangeably.
  */
 
-import { ResearchRateLimitError, RATE_LIMIT_CAP, getResearchRateState, type ResearchRequest, type ResearchResult } from "./api";
+import { ResearchRateLimitError, RATE_LIMIT_CAP, getResearchRateState, recordResearchRun, type ResearchRequest, type ResearchResult } from "./api";
 
 export interface StreamCallbacks {
   onStage?: (label: string, elapsedMs: number) => void;
@@ -29,23 +19,6 @@ export interface StreamHandle {
   abort(): void;
   /** Promise resolves when onFinal has been called or rejects on error. */
   done: Promise<void>;
-}
-
-/**
- * Record a successful run in the same localStorage soft-cap log the
- * non-streaming flow uses. Exported separately because the SSE flow
- * has to know when "final" arrives — see the consumer below.
- */
-function recordRun(): void {
-  try {
-    const KEY = "ss-research-runs-v1";
-    const raw = localStorage.getItem(KEY);
-    const log = raw ? JSON.parse(raw) as number[] : [];
-    const now = Date.now();
-    const fresh = log.filter((t) => now - t < 24 * 60 * 60 * 1000);
-    fresh.push(now);
-    localStorage.setItem(KEY, JSON.stringify(fresh));
-  } catch { /* */ }
 }
 
 export function streamResearch(req: ResearchRequest, callbacks: StreamCallbacks): StreamHandle {
@@ -157,7 +130,7 @@ export function streamResearch(req: ResearchRequest, callbacks: StreamCallbacks)
 
     // Server recorded the rate-limit slot already; mirror locally so
     // the UI's localStorage cap stays in sync.
-    recordRun();
+    recordResearchRun();
     callbacks.onFinal(final);
   })();
 
