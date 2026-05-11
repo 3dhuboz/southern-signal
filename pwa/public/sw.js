@@ -3,18 +3,27 @@
 // registerServiceWorker.ts — when this file changes the browser sees
 // a new SW and walks it through install → installed → activate; the
 // client banner picks up the "installed" state and offers a reload.
-const VERSION = "ss-pwa-v2";
+//
+// v3 (2026-05-11): switch to a network-first strategy for HTML
+// navigations, and skipWaiting on install. Why: the old
+// stale-while-revalidate path served the cached `/` first, which kept
+// pointing scripts at old asset hashes. Users would refresh, still see
+// the broken old bundle, and the SW would only catch up on a *second*
+// refresh. Network-first for HTML guarantees a freshly-deployed bundle
+// reaches the user on the very next reload. Hashed assets keep
+// cache-first since the content-hash is the cache key.
+const VERSION = "ss-pwa-v3";
 const STATIC_CACHE = `static-${VERSION}`;
-const STATIC_ASSETS = ["/", "/manifest.webmanifest", "/icon-192.svg", "/icon-512.svg", "/icon-mask.svg"];
+const STATIC_ASSETS = ["/manifest.webmanifest", "/icon-192.svg", "/icon-512.svg", "/icon-mask.svg"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(STATIC_CACHE).then((cache) => cache.addAll(STATIC_ASSETS)).catch(() => {})
   );
-  // Don't skipWaiting unconditionally — let the client decide when to
-  // swap. The client sends a SKIP_WAITING message after the user
-  // clicks "Reload to update" so we don't yank the rug out from under
-  // a session mid-recording.
+  // Take over immediately so a single reload is enough to escape a
+  // bad cached bundle. The previous SW would only swap on the second
+  // refresh, which made the "stuck on Starting…" failure mode worse.
+  self.skipWaiting();
 });
 
 self.addEventListener("message", (event) => {
@@ -36,22 +45,43 @@ self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
   const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
 
-  // Stale-while-revalidate for same-origin GET
-  if (url.origin === self.location.origin) {
+  // HTML navigations: NETWORK FIRST. Falls back to the most-recent cached
+  // HTML only when offline, so the freshly-deployed bundle's asset hashes
+  // are always picked up on the next reload.
+  const isHtml = req.mode === "navigate" || req.destination === "document";
+  if (isHtml) {
     event.respondWith(
-      caches.match(req).then((cached) => {
-        const fresh = fetch(req)
-          .then((res) => {
-            if (res && res.status === 200) {
-              const copy = res.clone();
-              caches.open(STATIC_CACHE).then((c) => c.put(req, copy));
-            }
-            return res;
-          })
-          .catch(() => cached);
-        return cached || fresh;
-      })
+      fetch(req)
+        .then((res) => {
+          if (res && res.status === 200) {
+            const copy = res.clone();
+            caches.open(STATIC_CACHE).then((c) => c.put(req, copy));
+          }
+          return res;
+        })
+        .catch(() => caches.match(req).then((cached) => cached || caches.match("/")))
     );
+    return;
   }
+
+  // Hashed assets + everything else: stale-while-revalidate. Vite emits
+  // content-hashed filenames so the cache key changes when content
+  // changes — safe to serve cached aggressively while we refresh in the
+  // background.
+  event.respondWith(
+    caches.match(req).then((cached) => {
+      const fresh = fetch(req)
+        .then((res) => {
+          if (res && res.status === 200) {
+            const copy = res.clone();
+            caches.open(STATIC_CACHE).then((c) => c.put(req, copy));
+          }
+          return res;
+        })
+        .catch(() => cached);
+      return cached || fresh;
+    })
+  );
 });
