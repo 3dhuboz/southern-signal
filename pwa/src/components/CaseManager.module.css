@@ -442,6 +442,39 @@
 .iconBtnDanger { color: var(--danger); }
 .iconBtnDanger:hover { background: var(--danger-wash); }
 
+/* Dossier list — sits in the same chrome as mediaRow but with a
+   two-column main/actions layout. */
+.dossierRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+  padding: 6px var(--s-8);
+  background: var(--bg-inset);
+  border-radius: var(--r-sm);
+}
+.dossierMain {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.dossierVenue {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.dossierMeta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 0.3px;
+}
+.dossierActions {
+  display: flex;
+  gap: 4px;
+}
+
 .dangerBlock {
   border-top: 1px solid var(--border-subtle);
   padding-top: 10px;

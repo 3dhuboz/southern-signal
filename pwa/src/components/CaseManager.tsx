@@ -14,8 +14,9 @@ import { Link } from "react-router-dom";
 import { exec, query } from "../lib/db/db";
 import { readFile, deletePath } from "../lib/opfs";
 import { appendAuditEntry } from "../lib/db/auditLog";
-import { createInvestigation, setCulturallySensitive } from "../lib/db/repo";
+import { createInvestigation, deleteDossier, setCulturallySensitive } from "../lib/db/repo";
 import { usePreferences } from "../lib/preferences";
+import type { ResearchDossierRow } from "../lib/db/schema";
 import { clearBaseline } from "../lib/posterior/sessionBaseline";
 import { buildExportBundle, downloadBlob } from "../lib/forensic/exportBundle";
 import { autoName } from "../lib/cases/autoName";
@@ -85,6 +86,7 @@ export function CaseManager() {
   const [reloadTick, setReloadTick] = useState(0);
   const [openMedia, setOpenMedia] = useState<MediaAsset[]>([]);
   const [openEvents, setOpenEvents] = useState<EvidenceEvent[]>([]);
+  const [openDossiers, setOpenDossiers] = useState<ResearchDossierRow[]>([]);
   const [editing, setEditing] = useState<{ title: string; location_name: string; notes: string } | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [dismissedSuggestionFor, setDismissedSuggestionFor] = useState<Set<string>>(() => new Set());
@@ -158,8 +160,24 @@ export function CaseManager() {
         "SELECT * FROM evidence_events WHERE investigation_id = ? ORDER BY timestamp ASC",
         [openCaseId],
       );
+      // Dossiers attached to this case OR standalone recon matching the
+      // case's title / location_name — same rule the brief uses.
+      let dossiers: ResearchDossierRow[] = [];
+      try {
+        const c = cases.find((x) => x.id === openCaseId);
+        dossiers = await query<ResearchDossierRow>(
+          `SELECT * FROM research_dossiers
+           WHERE investigation_id = ?
+              OR (investigation_id IS NULL
+                  AND (LOWER(venue_name) = LOWER(?) OR LOWER(venue_name) = LOWER(?)))
+           ORDER BY created_at DESC
+           LIMIT 50`,
+          [openCaseId, c?.title ?? "", c?.location_name ?? ""],
+        );
+      } catch { /* pre-v4 — no dossiers table */ }
       setOpenMedia(media);
       setOpenEvents(events);
+      setOpenDossiers(dossiers);
       const c = cases.find((x) => x.id === openCaseId);
       if (c) {
         setEditing({
@@ -356,6 +374,18 @@ export function CaseManager() {
         [asset.investigation_id],
       );
       setOpenMedia(media);
+    } catch (err) {
+      setStatusMsg(`Delete failed: ${(err as Error).message}`);
+    }
+  };
+
+  const handleDeleteDossier = async (dossier: ResearchDossierRow) => {
+    if (!confirm(`Delete dossier "${dossier.venue_name}" (${new Date(dossier.created_at).toLocaleString()})?\n\nIt'll be removed from this case's Evidence Brief. An audit entry will record the deletion.`)) return;
+    try {
+      await deleteDossier(dossier.id);
+      setStatusMsg("Dossier deleted.");
+      setOpenDossiers((rows) => rows.filter((r) => r.id !== dossier.id));
+      refresh();
     } catch (err) {
       setStatusMsg(`Delete failed: ${(err as Error).message}`);
     }
@@ -587,6 +617,39 @@ export function CaseManager() {
                             <span className={s.sessionEvents}>{sg.events.length} events</span>
                           </li>
                         ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* AI Investigator dossiers attached to this case — same
+                      matching rule the brief uses. Each row links to the
+                      single-dossier print view; delete fires through the
+                      audit chain. */}
+                  {researchEnabled && openDossiers.length > 0 && (
+                    <div className={s.sessionsBlock}>
+                      <span className={s.blockLabel}>Research dossiers ({openDossiers.length})</span>
+                      <ul className={s.sessionsList}>
+                        {openDossiers.map((d) => {
+                          let findingCount = 0;
+                          try { findingCount = (JSON.parse(d.result_json) as { findings?: unknown[] }).findings?.length ?? 0; } catch { /* */ }
+                          return (
+                            <li key={d.id} className={s.dossierRow}>
+                              <div className={s.dossierMain}>
+                                <span className={s.dossierVenue}>{d.venue_name}</span>
+                                <span className={s.dossierMeta}>
+                                  {new Date(d.created_at).toLocaleString()}
+                                  {" · "}{findingCount} findings
+                                  {" · "}{d.region}
+                                  {d.investigation_id == null && " · standalone recon"}
+                                </span>
+                              </div>
+                              <div className={s.dossierActions}>
+                                <Link to={`/dossier/${d.id}`} className={s.iconBtn} title="Open print view">🖨</Link>
+                                <button type="button" className={s.iconBtnDanger} onClick={() => handleDeleteDossier(d)} title="Delete dossier">×</button>
+                              </div>
+                            </li>
+                          );
+                        })}
                       </ul>
                     </div>
                   )}
