@@ -1,0 +1,216 @@
+/* AuditLogInspector — Setup-page chain viewer. Forensic-instrument
+   chrome: mono columns, signal/danger status dots, expandable payload
+   previews. Tight density because chains accumulate hundreds of rows. */
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-12);
+}
+.lede {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+  padding: var(--s-8) var(--s-12);
+  border-radius: var(--r-sm);
+  border: 1px solid currentColor;
+}
+.statusOk { color: var(--signal); background: color-mix(in srgb, var(--signal) 6%, transparent); }
+.statusBad { color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); }
+.statusDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 25%, transparent);
+  flex-shrink: 0;
+}
+.statusLabel {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 1.4px;
+  font-weight: 800;
+}
+.statusDetail {
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.controls {
+  display: flex;
+  gap: var(--s-8);
+  flex-wrap: wrap;
+}
+.filterInput {
+  flex: 1;
+  min-width: 200px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-inset);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-sm);
+  padding: 6px var(--s-12);
+}
+.filterInput:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 1px;
+  border-color: var(--accent-strong);
+}
+.refreshBtn {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-sm);
+  padding: 6px var(--s-12);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.refreshBtn:hover:not(:disabled) {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+.refreshBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.error {
+  margin: 0;
+  padding: var(--s-8) var(--s-12);
+  background: var(--danger-wash);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  border-radius: var(--r-sm);
+  font-size: 12px;
+}
+
+.kindRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.kindRowLabel {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-right: 4px;
+}
+.kindChip {
+  appearance: none;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.2px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.kindChip:hover {
+  background: color-mix(in srgb, var(--accent-strong) 8%, var(--bg-inset));
+  color: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 480px;
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+}
+.row {
+  padding: var(--s-8) var(--s-12);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.row:last-child { border-bottom: none; }
+
+.rowHead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-8);
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+.rowSeq {
+  color: var(--text-muted);
+  letter-spacing: 0.2px;
+  min-width: 50px;
+}
+.rowKind {
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+.rowActor {
+  color: var(--text-secondary);
+  background: var(--bg-inset);
+  padding: 0 5px;
+  border-radius: 3px;
+}
+.rowTs {
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.rowPayload summary {
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 2px 0;
+}
+.rowPayload pre {
+  margin: 4px 0 0;
+  padding: 6px var(--s-8);
+  background: var(--bg-inset);
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-primary);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.rowHash {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-muted);
+  letter-spacing: 0.3px;
+}
+
+.foot,
+.empty {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: var(--s-8);
+}
