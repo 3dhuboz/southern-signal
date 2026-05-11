@@ -97,9 +97,13 @@ function compareDossierLists(
  * Run the verification. Builds a fresh manifest from current data so
  * the caller doesn't have to. Returns a structured report; ok=true iff
  * everything matched.
+ *
+ * `current` can be supplied to compare two prepared manifests without
+ * touching the DB — used by the test suite. Production callers omit
+ * it and the function builds from current state.
  */
-export async function verifyManifest(trusted: Manifest): Promise<VerificationReport> {
-  const current = await buildManifest();
+export async function verifyManifest(trusted: Manifest, current?: Manifest): Promise<VerificationReport> {
+  if (!current) current = await buildManifest();
 
   // Global audit chain root.
   const globalChainMatch = trusted.global_audit_chain.merkle_root === current.global_audit_chain.merkle_root;
