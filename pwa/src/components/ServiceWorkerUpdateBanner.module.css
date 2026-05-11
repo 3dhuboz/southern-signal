@@ -1,0 +1,61 @@
+/* Sits between the header and the route content. Signal-toned so it's
+   visible but not alarming — this is good news (new build available),
+   not an error. */
+
+.banner {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: var(--s-12);
+  padding: var(--s-8) var(--s-16);
+  background: color-mix(in srgb, var(--signal) 10%, var(--bg-elevated));
+  border-bottom: 1px solid var(--signal);
+  font-size: 12.5px;
+  color: var(--text-primary);
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--signal);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--signal) 30%, transparent);
+  flex-shrink: 0;
+  animation: ss-sw-pulse 2.4s ease-in-out infinite;
+}
+@keyframes ss-sw-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+.body { flex: 1; min-width: 0; line-height: 1.4; }
+.body strong { color: var(--signal); }
+.reload {
+  appearance: none;
+  background: var(--signal);
+  color: var(--bg-canvas);
+  border: 0;
+  border-radius: var(--r-sm);
+  padding: 6px var(--s-12);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.reload:hover {
+  background: color-mix(in srgb, var(--signal) 85%, white);
+}
+.dismiss {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 6px;
+  flex-shrink: 0;
+}
+.dismiss:hover { color: var(--text-primary); }
