@@ -1,46 +1,55 @@
 /**
- * sqlite-wasm + OPFS connection for the PWA, mediated through a dedicated
- * Web Worker.
+ * sqlite-wasm connection for the PWA, mediated through a dedicated Web
+ * Worker that uses the **opfs-sahpool** VFS for persistence.
  *
- * Why the Worker: `FileSystemFileHandle.createSyncAccessHandle()` — the API
- * sqlite-wasm needs for OPFS persistence — is **not available on the main
- * thread** in any current browser. The standard OpfsDb VFS uses Atomics +
- * SharedArrayBuffer to bridge to a worker, which requires COOP/COEP cross-
- * origin isolation. Setting those headers would break our WHIP cross-origin
- * video ingest, so we instead run the entire SQLite engine inside a
- * dedicated worker via `sqlite3Worker1Promiser`. The worker has direct
- * access to FileSystemSyncAccessHandle and full OPFS persistence — no
- * COOP/COEP required.
+ * Why a custom worker (not sqlite3Worker1Promiser): the stock worker1
+ * promiser only auto-registers the `opfs` VFS, which silently fails to
+ * open without COOP/COEP cross-origin isolation. We can't set those
+ * headers because they break WHIP cross-origin video ingest and
+ * cross-origin model fetches. The SAH-pool VFS works without isolation
+ * because it grabs FileSystemSyncAccessHandle directly inside the worker
+ * (no Atomics+SAB bridge).
  *
- * Public API stays the same as before: `query()`, `exec()`,
- * `getPersistenceMode()`. Callers don't need to know the engine moved.
+ * The worker is in `./sahPoolWorker.ts`. It installs SAH-pool, opens
+ * `/southern_signal.sqlite`, and answers a small request/reply protocol.
  *
- * Persistence ladder (first that opens wins):
+ * Persistence ladder:
  *
- *   1. opfs-worker  — Worker promiser opens with `vfs=opfs`. Persists.
- *      The expected path on every modern desktop + Android browser, and
- *      iOS Safari 17+.
+ *   1. opfs-sahpool — SAH-pool installs, DB opens against OPFS. Survives
+ *      page refresh. The expected path on Chromium / WebKit when the
+ *      origin isn't in private mode and OPFS hasn't been disabled.
  *
- *   2. memory       — :memory: fallback when even the worker can't reach
- *      OPFS (private browsing, restrictive iOS configs, locked storage).
- *      `getPersistenceMode()` returns "memory" so the UI can warn the
- *      operator that data won't survive a refresh.
+ *   2. memory — :memory: fallback when even SAH-pool can't initialize
+ *      (private browsing, locked OPFS quota, missing SyncAccessHandle).
+ *      `getPersistenceMode()` returns "memory" so the AppHeader badge
+ *      warns the operator that data won't survive a refresh.
  */
 
 import { useEffect, useState } from "react";
-import { sqlite3Worker1Promiser } from "@sqlite.org/sqlite-wasm";
 import { CURRENT_SCHEMA_VERSION, SCHEMA_SQL } from "./schema";
 
-export type PersistenceMode = "opfs-worker" | "memory";
+export type PersistenceMode = "opfs-sahpool" | "memory";
 
-// The promiser's call-site shape is loose; we type just what we use.
-type Promiser = (
-  type: "open" | "exec" | "close" | "config-get",
-  args?: Record<string, unknown>,
-) => Promise<{ result?: { resultRows?: unknown[]; [k: string]: unknown }; [k: string]: unknown }>;
+// ---------------------------------------------------------------------------
+// Worker promiser — request/reply over postMessage with monotonic ids.
+// ---------------------------------------------------------------------------
+
+interface ExecReply {
+  id: number;
+  ok: boolean;
+  resultRows?: unknown[];
+  error?: string;
+}
+
+interface ReadyMessage {
+  type: "ready";
+  mode: PersistenceMode;
+}
+
+type WorkerMessage = ExecReply | ReadyMessage;
 
 interface InitResult {
-  promiser: Promiser;
+  exec: (sql: string, bind: BindValue[], wantRows: boolean) => Promise<unknown[]>;
   mode: PersistenceMode;
 }
 
@@ -55,67 +64,84 @@ function setMode(next: PersistenceMode): void {
 }
 
 async function init(): Promise<InitResult> {
-  // The promiser launches its own Worker internally, loads the wasm, and
-  // resolves once it's ready to accept messages.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const promiser = (await (sqlite3Worker1Promiser as any)({
-    // Quiet the package's default error handler — we surface failures
-    // through the open() try/catch below.
-    onerror: () => { /* swallow */ },
-  })) as Promiser;
+  const worker = new Worker(new URL("./sahPoolWorker.ts", import.meta.url), {
+    type: "module",
+  });
+  let nextId = 1;
+  const pending = new Map<number, { resolve: (rows: unknown[]) => void; reject: (err: Error) => void }>();
+  let readyResolve!: (mode: PersistenceMode) => void;
+  const ready = new Promise<PersistenceMode>((resolve) => { readyResolve = resolve; });
 
-  let mode: PersistenceMode = "memory";
+  worker.addEventListener("message", (event: MessageEvent<WorkerMessage>) => {
+    const data = event.data;
+    if ("type" in data && data.type === "ready") {
+      readyResolve(data.mode);
+      return;
+    }
+    if ("id" in data) {
+      const waiter = pending.get(data.id);
+      if (!waiter) return;
+      pending.delete(data.id);
+      if (data.ok) waiter.resolve(data.resultRows ?? []);
+      else waiter.reject(new Error(data.error ?? "sqlite worker error"));
+    }
+  });
+  worker.addEventListener("error", (event) => {
+    console.error("[sqlite] worker error", event.message);
+  });
 
-  // Strategy 1 — open with the OPFS VFS. The worker has the synchronous
-  // FileSystemAccessHandle APIs available natively; persistence works.
-  try {
-    await promiser("open", {
-      filename: "file:southern_signal.sqlite?vfs=opfs",
+  const exec = (sql: string, bind: BindValue[], wantRows: boolean): Promise<unknown[]> => {
+    const id = nextId++;
+    return new Promise<unknown[]>((resolve, reject) => {
+      pending.set(id, { resolve, reject });
+      worker.postMessage({
+        id,
+        type: "exec",
+        sql,
+        bind,
+        rowMode: "object",
+        returnRows: wantRows,
+      });
     });
-    mode = "opfs-worker";
-  } catch (err) {
-    // Strategy 2 — fall back to :memory:. Browsers that block OPFS
-    // (private mode, restrictive iOS configs) land here. UI warns.
-    console.warn("[sqlite] worker OPFS open failed; falling back to :memory:", err);
-    await promiser("open", { filename: ":memory:" });
-    mode = "memory";
-    console.warn(
-      "[sqlite] running in-memory only — data will NOT persist across page refresh.",
-    );
-  }
+  };
 
+  const mode = await ready;
   setMode(mode);
 
-  // Schema setup — same SQL the previous main-thread path ran.
-  await promiser("exec", { sql: SCHEMA_SQL });
+  // Schema setup — same SQL the previous path ran. Idempotent.
+  await exec(SCHEMA_SQL, [], false);
 
   // v2 -> v3 migration: SQLite has no IF NOT EXISTS for ADD COLUMN, so
   // try/swallow. CREATE TABLE IF NOT EXISTS in SCHEMA_SQL handles fresh DBs.
   try {
-    await promiser("exec", {
-      sql: "ALTER TABLE investigations ADD COLUMN culturally_sensitive INTEGER NOT NULL DEFAULT 0",
-    });
+    await exec(
+      "ALTER TABLE investigations ADD COLUMN culturally_sensitive INTEGER NOT NULL DEFAULT 0",
+      [],
+      false,
+    );
   } catch {
     /* column already exists (v3+ DB) — fine */
   }
 
   // Stamp schema version on fresh DBs.
-  await promiser("exec", {
-    sql: "INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('schema_version', ?)",
-    bind: [String(CURRENT_SCHEMA_VERSION)],
-  });
+  await exec(
+    "INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('schema_version', ?)",
+    [String(CURRENT_SCHEMA_VERSION)],
+    false,
+  );
   // Bump on already-stamped older DBs.
-  await promiser("exec", {
-    sql: "UPDATE schema_meta SET value = ? WHERE key = 'schema_version' AND CAST(value AS INTEGER) < ?",
-    bind: [String(CURRENT_SCHEMA_VERSION), CURRENT_SCHEMA_VERSION],
-  });
+  await exec(
+    "UPDATE schema_meta SET value = ? WHERE key = 'schema_version' AND CAST(value AS INTEGER) < ?",
+    [String(CURRENT_SCHEMA_VERSION), CURRENT_SCHEMA_VERSION],
+    false,
+  );
 
-  return { promiser, mode };
+  return { exec, mode };
 }
 
-async function getPromiser(): Promise<Promiser> {
+async function getExec(): Promise<InitResult["exec"]> {
   if (!initPromise) initPromise = init();
-  return (await initPromise).promiser;
+  return (await initPromise).exec;
 }
 
 /**
@@ -158,15 +184,11 @@ export function usePersistenceMode(): PersistenceMode {
   return mode;
 }
 
-/** Convenience for tests / cleanup. Closes the underlying database connection. */
+/** Convenience for tests / cleanup. Resets the in-process init handle. */
 export async function closeDb(): Promise<void> {
-  if (!initPromise) return;
-  try {
-    const { promiser } = await initPromise;
-    await promiser("close", {});
-  } catch {
-    /* ignore */
-  }
+  // The worker is owned by the page; we just drop the cached promise so a
+  // subsequent call respawns the worker. The browser garbage-collects the
+  // dead worker when its message channel is unreferenced.
   initPromise = null;
   lastKnownMode = "memory";
 }
@@ -174,26 +196,20 @@ export async function closeDb(): Promise<void> {
 type BindValue = string | number | bigint | null | Uint8Array;
 
 /**
- * Run a SELECT and return rows as plain objects. Mirrors the prior main-
- * thread API exactly so all existing callers and tests keep working.
+ * Run a SELECT and return rows as plain objects. Mirrors the prior API
+ * exactly so all existing callers and tests keep working.
  */
 export async function query<T = Record<string, unknown>>(
   sql: string,
   bind: BindValue[] = [],
 ): Promise<T[]> {
-  const promiser = await getPromiser();
-  const response = await promiser("exec", {
-    sql,
-    bind,
-    rowMode: "object",
-    returnRows: true,
-  });
-  const rows = response?.result?.resultRows;
+  const exec = await getExec();
+  const rows = await exec(sql, bind, true);
   return Array.isArray(rows) ? (rows as T[]) : [];
 }
 
 /** Run an INSERT/UPDATE/DELETE/DDL statement. */
 export async function exec(sql: string, bind: BindValue[] = []): Promise<void> {
-  const promiser = await getPromiser();
-  await promiser("exec", { sql, bind });
+  const fn = await getExec();
+  await fn(sql, bind, false);
 }
