@@ -1,23 +1,14 @@
 /**
- * DossierPrint — a single AI Investigator dossier rendered in the same
- * print-friendly idiom as the Evidence Brief. Loaded at /dossier/:id.
- *
- * Use cases:
- *   - Operator wants to share recon findings without exposing the rest
- *     of the case file.
- *   - Reviewer wants a paper trail anchored to one venue.
- *   - Pre-visit handout: hit "Save as PDF" from the system print
- *     dialog, attach to a team brief.
- *
- * Mirrors the Evidence Brief's dossier section, lifted into a
- * standalone artefact with its own cover, disclaimer footer, and
- * SHA-256 of the canonical result_json so the printout carries the
- * same integrity anchor the manifest does.
+ * Single AI Investigator dossier rendered at /dossier/:id in the same
+ * print-friendly idiom as the Evidence Brief. Carries the same SHA-256
+ * integrity anchor the manifest uses so a printout (PDF or paper) can
+ * be cross-checked against a separately-exported manifest later.
  */
 
 import { useEffect, useState } from "react";
 import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { getDossier, listFindingNotesForDossier, findingKeyFor } from "../lib/db/repo";
+import { sha256Hex } from "../lib/forensic/canonicalJson";
 import type { ResearchTier, ResearchFinding, ResearchResult } from "../lib/research/api";
 import type { ResearchFindingNoteRow } from "../lib/db/schema";
 import s from "./EvidenceBrief.module.css";
@@ -51,12 +42,6 @@ interface Loaded {
   findingKeys: string[];
 }
 
-async function sha256Hex(text: string): Promise<string> {
-  const data = new TextEncoder().encode(text);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString(undefined, { dateStyle: "long", timeStyle: "short" });
 }
@@ -69,12 +54,11 @@ export function DossierPrint() {
   const [error, setError] = useState<string | null>(null);
   const autoPrint = searchParams.get("print") === "1";
 
-  // Auto-print when ?print=1 in the URL. Same pattern as the
-  // EvidenceBrief — useful for "share this URL to print".
+  // 300ms lets the print layout settle before the dialog snapshots it.
   useEffect(() => {
     if (!autoPrint || !loaded) return;
     const t = window.setTimeout(() => {
-      try { window.print(); } catch { /* */ }
+      try { window.print(); } catch { /* no printer attached — harmless */ }
     }, 300);
     return () => window.clearTimeout(t);
   }, [autoPrint, loaded]);
@@ -96,12 +80,15 @@ export function DossierPrint() {
           setError("Dossier result_json is malformed (no findings array).");
           return;
         }
-        const notes = await listFindingNotesForDossier(row.id);
+        // Notes lookup, every finding's content-key, and the SHA-256
+        // anchor are independent — run them concurrently.
+        const [notes, findingKeys, resultSha] = await Promise.all([
+          listFindingNotesForDossier(row.id),
+          Promise.all(result.findings.map((f) => findingKeyFor(f))),
+          sha256Hex(row.result_json),
+        ]);
         const notesByKey = new Map<string, ResearchFindingNoteRow>();
         for (const n of notes) notesByKey.set(n.finding_key, n);
-        const findingKeys: string[] = [];
-        for (const f of result.findings) findingKeys.push(await findingKeyFor(f));
-        const resultSha = await sha256Hex(row.result_json);
         setLoaded({
           id: row.id,
           venueName: row.venue_name,
