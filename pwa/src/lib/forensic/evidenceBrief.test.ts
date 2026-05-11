@@ -36,6 +36,26 @@ const PREFS_DEFAULT = {
   acknowledgementOfCountry: { statement: "We acknowledge…", acceptedAt: SESSION_START },
 };
 
+interface DossierRowFixture {
+  id: string;
+  investigation_id: string | null;
+  venue_name: string;
+  location_hint: string | null;
+  region: string;
+  created_at: string;
+  model: string;
+  result_json: string;
+}
+
+interface FindingNoteFixture {
+  id: string;
+  dossier_id: string;
+  finding_key: string;
+  text: string;
+  created_at: string;
+  updated_at: string;
+}
+
 /** Configure queryFn to dispatch by SQL fragment match. Order-independent. */
 function setupQueries(opts: {
   investigation?: Investigation | null;
@@ -43,6 +63,8 @@ function setupQueries(opts: {
   events?: { event_type: string; n: number }[];
   media?: { media_type: string; n: number }[];
   debunks?: { payload_json: string }[];
+  dossiers?: DossierRowFixture[];
+  notes?: FindingNoteFixture[];
 }) {
   queryFn.mockImplementation((sql: string, _params: unknown[] = []) => {
     if (sql.includes("FROM investigations")) {
@@ -59,6 +81,12 @@ function setupQueries(opts: {
     }
     if (sql.includes("FROM audit_log") && sql.includes("ai.debunk.proposed")) {
       return Promise.resolve(opts.debunks ?? []);
+    }
+    if (sql.includes("FROM research_dossiers")) {
+      return Promise.resolve(opts.dossiers ?? []);
+    }
+    if (sql.includes("FROM research_finding_notes")) {
+      return Promise.resolve(opts.notes ?? []);
     }
     return Promise.resolve([]);
   });
@@ -224,6 +252,167 @@ describe("buildEvidenceBrief", () => {
     expect(r!.merkleRoot).toBeNull();
     // brief still assembled
     expect(r!.investigation.id).toBe("case-1");
+  });
+});
+
+describe("buildEvidenceBrief — research dossiers", () => {
+  /**
+   * Compute the same finding_key the production code does so we can
+   * line up note fixtures with finding fixtures without depending on
+   * the repo module (which would pull in the DB layer at test time).
+   */
+  async function findingKey(tier: string, title: string, body: string): Promise<string> {
+    const data = new TextEncoder().encode(`${tier}|${title}|${body}`);
+    const digest = await crypto.subtle.digest("SHA-256", data);
+    return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 24);
+  }
+
+  function mkDossier(partial: Partial<DossierRowFixture> & { findings: { tier: string; title: string; body: string; sources?: { label: string; url: string }[] }[] }): DossierRowFixture {
+    const result = {
+      findings: partial.findings.map((f) => ({ tier: f.tier, title: f.title, body: f.body, sources: f.sources ?? [] })),
+      suggestions: [],
+      search_terms_used: [],
+      citations_raw: [],
+      model: "test/mock",
+      warnings: [],
+    };
+    return {
+      id: partial.id ?? "d1",
+      investigation_id: partial.investigation_id ?? FIXTURE_INV.id,
+      venue_name: partial.venue_name ?? "Old Town Hall",
+      location_hint: partial.location_hint ?? null,
+      region: partial.region ?? "AU",
+      created_at: partial.created_at ?? SESSION_START,
+      model: partial.model ?? "perplexity/sonar",
+      result_json: JSON.stringify(result),
+    };
+  }
+
+  it("returns an empty dossier array when no rows exist", async () => {
+    setupQueries({ investigation: FIXTURE_INV });
+    const r = await buildEvidenceBrief("case-1");
+    expect(r!.researchDossiers).toEqual([]);
+  });
+
+  it("renders one dossier with tier-grouped findings and citation count", async () => {
+    setupQueries({
+      investigation: FIXTURE_INV,
+      dossiers: [mkDossier({
+        findings: [
+          { tier: "HERITAGE", title: "Built 1894", body: "Foundation date.", sources: [{ label: "NSW Heritage", url: "https://heritage.nsw" }] },
+          { tier: "DOCUMENTED_INCIDENT", title: "Fire 1953", body: "Court records.", sources: [{ label: "AustLII", url: "https://austlii" }, { label: "SMH", url: "https://smh" }] },
+          { tier: "FOLKLORE", title: "Ghost story", body: "Tour anecdote.", sources: [] },
+        ],
+      })],
+    });
+    const r = await buildEvidenceBrief("case-1");
+    expect(r!.researchDossiers).toHaveLength(1);
+    const d = r!.researchDossiers[0];
+    expect(d.findingCount).toBe(3);
+    expect(d.citationCount).toBe(3);
+    expect(d.hasPrimarySources).toBe(true);
+    // Tier order: CULTURAL_SIGNIFICANCE → HERITAGE → DOCUMENTED_INCIDENT → FOLKLORE → SYNTHESIS
+    expect(d.findingsByTier.map((g) => g.tier)).toEqual(["HERITAGE", "DOCUMENTED_INCIDENT", "FOLKLORE"]);
+  });
+
+  it("flags hasPrimarySources=false when all findings are folklore / synthesis", async () => {
+    setupQueries({
+      investigation: FIXTURE_INV,
+      dossiers: [mkDossier({
+        findings: [
+          { tier: "FOLKLORE", title: "Local legend", body: "Said to be haunted." },
+          { tier: "SYNTHESIS", title: "Possibly Victorian-era", body: "Inferred from photos." },
+        ],
+      })],
+    });
+    const r = await buildEvidenceBrief("case-1");
+    expect(r!.researchDossiers[0].hasPrimarySources).toBe(false);
+  });
+
+  it("attaches reviewer notes via content-anchored finding_key", async () => {
+    const notedFinding = { tier: "HERITAGE", title: "Built 1894", body: "Foundation date." };
+    const key = await findingKey(notedFinding.tier, notedFinding.title, notedFinding.body);
+    setupQueries({
+      investigation: FIXTURE_INV,
+      dossiers: [mkDossier({ id: "d1", findings: [notedFinding] })],
+      notes: [{
+        id: "n1",
+        dossier_id: "d1",
+        finding_key: key,
+        text: "Verified via Trove 2026-05-08.",
+        created_at: SESSION_START,
+        updated_at: SESSION_START,
+      }],
+    });
+    const r = await buildEvidenceBrief("case-1");
+    const finding = r!.researchDossiers[0].findingsByTier[0].findings[0];
+    expect(finding.findingKey).toBe(key);
+    expect(finding.reviewerNote?.text).toBe("Verified via Trove 2026-05-08.");
+    expect(r!.researchDossiers[0].reviewerNoteCount).toBe(1);
+  });
+
+  it("leaves reviewerNote=null when finding_key doesn't match any note row", async () => {
+    setupQueries({
+      investigation: FIXTURE_INV,
+      dossiers: [mkDossier({ id: "d1", findings: [{ tier: "HERITAGE", title: "T1", body: "B1" }] })],
+      notes: [{
+        id: "n1",
+        dossier_id: "d1",
+        finding_key: "deadbeefdeadbeefdeadbeef", // intentionally wrong key
+        text: "Orphan note.",
+        created_at: SESSION_START,
+        updated_at: SESSION_START,
+      }],
+    });
+    const r = await buildEvidenceBrief("case-1");
+    expect(r!.researchDossiers[0].findingsByTier[0].findings[0].reviewerNote).toBeNull();
+    expect(r!.researchDossiers[0].reviewerNoteCount).toBe(0);
+  });
+
+  it("preserves the raw ResearchResult for callers needing suggestions / warnings", async () => {
+    const dossier = mkDossier({ findings: [{ tier: "HERITAGE", title: "x", body: "y" }] });
+    // Override result_json with suggestions+warnings.
+    const raw = JSON.parse(dossier.result_json);
+    raw.suggestions = ["Try Trove from 1894-1920"];
+    raw.warnings = ["citation A had no scheme"];
+    dossier.result_json = JSON.stringify(raw);
+    setupQueries({ investigation: FIXTURE_INV, dossiers: [dossier] });
+    const r = await buildEvidenceBrief("case-1");
+    expect(r!.researchDossiers[0].raw.suggestions).toEqual(["Try Trove from 1894-1920"]);
+    expect(r!.researchDossiers[0].raw.warnings).toEqual(["citation A had no scheme"]);
+  });
+
+  it("skips dossiers with malformed result_json instead of crashing the brief", async () => {
+    const ok = mkDossier({ id: "ok", findings: [{ tier: "HERITAGE", title: "x", body: "y" }] });
+    const bad: DossierRowFixture = {
+      id: "bad",
+      investigation_id: FIXTURE_INV.id,
+      venue_name: "Bad row",
+      location_hint: null,
+      region: "AU",
+      created_at: SESSION_START,
+      model: "test/mock",
+      result_json: "{not valid json",
+    };
+    setupQueries({ investigation: FIXTURE_INV, dossiers: [ok, bad] });
+    const r = await buildEvidenceBrief("case-1");
+    // Only the ok dossier should render.
+    expect(r!.researchDossiers).toHaveLength(1);
+    expect(r!.researchDossiers[0].id).toBe("ok");
+  });
+
+  it("counts citations across all findings, not just primary-source tiers", async () => {
+    setupQueries({
+      investigation: FIXTURE_INV,
+      dossiers: [mkDossier({
+        findings: [
+          { tier: "HERITAGE", title: "A", body: "x", sources: [{ label: "s1", url: "https://a" }] },
+          { tier: "FOLKLORE", title: "B", body: "y", sources: [{ label: "s2", url: "https://b" }, { label: "s3", url: "https://c" }] },
+        ],
+      })],
+    });
+    const r = await buildEvidenceBrief("case-1");
+    expect(r!.researchDossiers[0].citationCount).toBe(3);
   });
 });
 
