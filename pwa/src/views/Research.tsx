@@ -31,6 +31,7 @@ import {
   type ResearchFinding,
   type ResearchTier,
 } from "../lib/research/api";
+import { diffResearchResults, type DossierDiff } from "../lib/research/diff";
 import { recordEvent, saveDossier, listDossiers, getDossier, deleteDossier, findingKeyFor, saveFindingNote, listFindingNotesForDossier } from "../lib/db/repo";
 import type { ResearchDossierRow } from "../lib/db/schema";
 import { appendAuditEntry } from "../lib/db/auditLog";
@@ -163,6 +164,14 @@ export function Research() {
    *  model to consult — illustrative, not literal. Index resets on
    *  busy↑ so each run gets a fresh sequence. */
   const [progressIndex, setProgressIndex] = useState(0);
+
+  /** v5: diff against the most recent prior dossier for the same
+   *  venue. Computed after a successful run; null when this is the
+   *  first dossier for the venue, or when the user opened a saved
+   *  dossier (read-only mode — diff would compare to itself). */
+  const [diff, setDiff] = useState<DossierDiff | null>(null);
+  const [diffPriorAt, setDiffPriorAt] = useState<string | null>(null);
+  const [diffExpanded, setDiffExpanded] = useState(false);
 
   // Prefill priority: URL params (deep link from CaseManager) → active
   // investigation. URL takes precedence so a "Research this case"
@@ -368,6 +377,28 @@ export function Research() {
       setLoadedFromDossierId(null);
       setFollowups({});
       setRate(getResearchRateState());
+
+      // v5: diff against the most recent prior dossier for this venue
+      // (matched case-insensitively). Computed BEFORE save fires so
+      // the prior is still the prior, not the just-saved row.
+      const venueLower = venueName.trim().toLowerCase();
+      const prior = pastDossiers.find((d) => d.venue_name.toLowerCase() === venueLower);
+      if (prior) {
+        try {
+          const priorResult = JSON.parse(prior.result_json) as ResearchResult;
+          const computedDiff = await diffResearchResults(priorResult, res);
+          setDiff(computedDiff);
+          setDiffPriorAt(prior.created_at);
+          setDiffExpanded(false);
+        } catch (err) {
+          console.warn("[research] diff against prior dossier failed", err);
+          setDiff(null);
+          setDiffPriorAt(null);
+        }
+      } else {
+        setDiff(null);
+        setDiffPriorAt(null);
+      }
 
       // v4: persist the dossier so it survives the session and feeds
       // the Evidence Brief. Fire-and-forget — UI doesn't gate on it,
@@ -577,6 +608,8 @@ export function Research() {
       setRegion(row.region === "GLOBAL" ? "GLOBAL" : "AU");
       setLoadedFromDossierId(row.id);
       setFollowups({});
+      setDiff(null);
+      setDiffPriorAt(null);
       setError(null);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err) {
@@ -649,6 +682,14 @@ export function Research() {
                       {" · "}{findingCount} findings{" · "}{d.region}
                     </span>
                   </button>
+                  <Link
+                    to={`/dossier/${d.id}`}
+                    className={r.pastDossierPrint}
+                    aria-label={`Print dossier for ${d.venue_name}`}
+                    title="Open print-friendly view of this dossier"
+                  >
+                    🖨
+                  </Link>
                   <button
                     type="button"
                     className={r.pastDossierDelete}
@@ -756,6 +797,62 @@ export function Research() {
               <span aria-hidden="true">✓</span> Saved to {session.current ? "this case" : "your device"} — flows into the Evidence Brief.
             </p>
           ) : null}
+
+          {/* v5: dossier diff vs the prior dossier for this venue.
+              Counts header is always visible; the full added/removed
+              detail expands on click. Surfaces "the archive changed
+              since last time" — useful for re-research as a case
+              progresses, or to spot model output drift. */}
+          {diff && (diff.counts.added > 0 || diff.counts.removed > 0) && diffPriorAt && (
+            <section className={r.diffBlock}>
+              <header className={r.diffHead}>
+                <span className={r.diffEyebrow}>SINCE LAST RESEARCH · {new Date(diffPriorAt).toLocaleDateString()}</span>
+                <span className={r.diffCounts}>
+                  {diff.counts.added > 0 && <span className={r.diffAdded}>+{diff.counts.added} new</span>}
+                  {diff.counts.removed > 0 && <span className={r.diffRemoved}>−{diff.counts.removed} missing</span>}
+                  {diff.counts.unchanged > 0 && <span className={r.diffUnchanged}>{diff.counts.unchanged} unchanged</span>}
+                </span>
+                <button
+                  type="button"
+                  className={r.diffToggle}
+                  onClick={() => setDiffExpanded((v) => !v)}
+                  aria-expanded={diffExpanded}
+                >
+                  {diffExpanded ? "Hide detail" : "Show detail"}
+                </button>
+              </header>
+              {diffExpanded && (
+                <div className={r.diffDetail}>
+                  {diff.added.length > 0 && (
+                    <div>
+                      <span className={r.diffSectionLabel}>Appeared in this run</span>
+                      <ul className={r.diffList}>
+                        {diff.added.map((f, i) => (
+                          <li key={`a-${i}`} className={`${r.diffItem} ${r.diffItemAdded}`}>
+                            <span className={r.diffTier}>{f.tier}</span>
+                            <span className={r.diffTitle}>{f.title}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {diff.removed.length > 0 && (
+                    <div>
+                      <span className={r.diffSectionLabel}>No longer in the dossier</span>
+                      <ul className={r.diffList}>
+                        {diff.removed.map((f, i) => (
+                          <li key={`r-${i}`} className={`${r.diffItem} ${r.diffItemRemoved}`}>
+                            <span className={r.diffTier}>{f.tier}</span>
+                            <span className={r.diffTitle}>{f.title}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
 
           {result.findings.length === 0 ? (
             <p className={r.emptyFindings}>

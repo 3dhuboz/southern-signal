@@ -101,6 +101,31 @@
   gap: 4px;
 }
 .pastDossierRow .pastDossierItem { flex: 1; }
+.pastDossierPrint {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 12px;
+  min-width: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+.pastDossierPrint:hover {
+  background: color-mix(in srgb, var(--signal) 12%, transparent);
+  color: var(--signal);
+  border-color: color-mix(in srgb, var(--signal) 40%, var(--border-subtle));
+}
+.pastDossierPrint:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
 .pastDossierDelete {
   appearance: none;
   background: transparent;
@@ -407,6 +432,113 @@
   font-size: 10px;
   color: var(--text-muted);
   letter-spacing: 0.4px;
+}
+
+/* Dossier diff — appears beneath the saved/loaded badge when this
+   run produced different findings than the prior dossier for the same
+   venue. Counts header is dense; click "Show detail" to expand the
+   per-finding list with tier + title. Reads as a forensic delta, not
+   a celebration of growth. */
+.diffBlock {
+  margin: 0;
+  padding: var(--s-8) var(--s-12);
+  background: color-mix(in srgb, var(--signal) 4%, var(--bg-elevated));
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--signal);
+  border-radius: var(--r-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-8);
+}
+.diffHead {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-8);
+}
+.diffEyebrow {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 1.2px;
+  color: var(--signal);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.diffCounts {
+  display: inline-flex;
+  gap: var(--s-8);
+  flex-wrap: wrap;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.3px;
+  margin-left: auto;
+}
+.diffAdded { color: var(--signal); font-weight: 700; }
+.diffRemoved { color: var(--warning); font-weight: 700; }
+.diffUnchanged { color: var(--text-muted); }
+.diffToggle {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-sm);
+  padding: 3px 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+.diffToggle:hover { background: var(--bg-surface); color: var(--text-primary); }
+.diffDetail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-8);
+  border-top: 1px dashed var(--border-subtle);
+  padding-top: var(--s-8);
+}
+.diffSectionLabel {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+.diffList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.diffItem {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-8);
+  font-size: 12px;
+  padding: 4px var(--s-10);
+  border-radius: var(--r-sm);
+}
+.diffItemAdded { background: color-mix(in srgb, var(--signal) 8%, transparent); }
+.diffItemRemoved { background: color-mix(in srgb, var(--warning) 8%, transparent); text-decoration: line-through; opacity: 0.85; }
+.diffTier {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.8px;
+  font-weight: 700;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.diffItemAdded .diffTier { color: var(--signal); }
+.diffItemRemoved .diffTier { color: var(--warning); }
+.diffTitle {
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
 /* Reviewer note — sits at the bottom of each finding, anchored to the
