@@ -19,7 +19,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { query } from "../lib/db/db";
 import type { ResearchDossierRow } from "../lib/db/schema";
-import type { ResearchFinding, ResearchResult } from "../lib/research/api";
+import type { ResearchResult } from "../lib/research/api";
+import { ageLabel, pickHeadline } from "./researchSnapshotHelpers";
 import s from "./ResearchSnapshot.module.css";
 
 interface ResearchSnapshotProps {
@@ -40,41 +41,6 @@ interface Snapshot {
   findingCount: number;
   citationCount: number;
   headline: { tier: string; title: string; sources: number } | null;
-}
-
-const HEADLINE_PRIORITY: Record<string, number> = {
-  // Lower index = higher priority for the "headline" pick. Cultural
-  // significance is surfaced FIRST because the operator needs to see
-  // any sensitivity context before they read incident records.
-  CULTURAL_SIGNIFICANCE: 0,
-  DOCUMENTED_INCIDENT: 1,
-  HERITAGE: 2,
-  FOLKLORE: 3,
-  SYNTHESIS: 4,
-};
-
-function pickHeadline(findings: ResearchFinding[]): Snapshot["headline"] {
-  if (findings.length === 0) return null;
-  let best = findings[0];
-  let bestRank = HEADLINE_PRIORITY[best.tier] ?? 99;
-  for (let i = 1; i < findings.length; i++) {
-    const f = findings[i];
-    const rank = HEADLINE_PRIORITY[f.tier] ?? 99;
-    // Tie-break: prefer findings with sources over those without.
-    if (rank < bestRank || (rank === bestRank && f.sources.length > best.sources.length)) {
-      best = f;
-      bestRank = rank;
-    }
-  }
-  return { tier: best.tier, title: best.title, sources: best.sources.length };
-}
-
-function ageLabel(iso: string): string {
-  const dt = Date.now() - new Date(iso).getTime();
-  if (dt < 60_000) return "just now";
-  if (dt < 3_600_000) return `${Math.round(dt / 60_000)} min ago`;
-  if (dt < 86_400_000) return `${Math.round(dt / 3_600_000)} h ago`;
-  return `${Math.round(dt / 86_400_000)} d ago`;
 }
 
 const TIER_LABEL: Record<string, string> = {
