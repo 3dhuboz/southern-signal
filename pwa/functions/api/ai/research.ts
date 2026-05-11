@@ -524,6 +524,20 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
   const { findings, suggestions, search_terms_used, warnings } = validateAndCleanFindings(parsed);
   const citations_raw = Array.isArray(upstreamJson.citations) ? upstreamJson.citations.filter((s): s is string => typeof s === "string") : [];
 
+  // Size sanity check. With max_tokens=2400 a normal dossier is well
+  // under 30KB. If we see something much bigger the model probably
+  // looped or echoed huge source bodies — surface that to the operator
+  // so they can decide whether to trust the dossier. The payload still
+  // saves; this is a yellow flag, not a block.
+  const payloadBytes = new TextEncoder().encode(JSON.stringify({ findings, suggestions, search_terms_used, citations_raw })).length;
+  const SIZE_WARN_BYTES = 80_000;
+  const SIZE_ALARM_BYTES = 250_000;
+  if (payloadBytes >= SIZE_ALARM_BYTES) {
+    warnings.push(`Dossier payload is unusually large (${Math.round(payloadBytes / 1024)} KB). Model may have looped or echoed source bodies — review findings carefully before trusting.`);
+  } else if (payloadBytes >= SIZE_WARN_BYTES) {
+    warnings.push(`Dossier payload is larger than typical (${Math.round(payloadBytes / 1024)} KB).`);
+  }
+
   // Only burn a rate-limit slot on a 2xx. 5xx fails (above) bypass this,
   // matching the client behavior (recordRun() only on 200 OK).
   try { await recordRateLimitRun(env.AI_RATE_LIMIT, rate); } catch (err) {

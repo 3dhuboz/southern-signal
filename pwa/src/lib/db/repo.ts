@@ -287,9 +287,33 @@ export interface DossierInput {
   timestamp?: string;
 }
 
+/** Hard ceiling on a dossier's serialized result_json. ~1 MB is well
+ *  above anything Perplexity Sonar would legitimately produce inside
+ *  max_tokens=2400 — anything bigger is a runaway, and we'd rather
+ *  refuse than fill OPFS with a single huge row. */
+const DOSSIER_MAX_BYTES = 1_000_000;
+
 export async function saveDossier(input: DossierInput): Promise<ResearchDossierRow> {
   const id = uuid();
   const ts = input.timestamp ?? nowUtc();
+  const result_json = JSON.stringify(input.result);
+  const byteLen = new TextEncoder().encode(result_json).length;
+  if (byteLen > DOSSIER_MAX_BYTES) {
+    // Hard refuse — but write the refusal to the audit chain so a
+    // reviewer can see why no row exists.
+    await appendAuditEntry({
+      actor: ACTOR_DEFAULT,
+      kind: "research.dossier.save_refused_oversize",
+      payload: {
+        venue_name: input.venue_name.trim(),
+        region: input.region,
+        model: input.model,
+        bytes: byteLen,
+        max_bytes: DOSSIER_MAX_BYTES,
+      },
+    });
+    throw new Error(`Dossier exceeds the ${Math.round(DOSSIER_MAX_BYTES / 1024)} KB on-device cap (${Math.round(byteLen / 1024)} KB). The run wasn't saved; the audit chain recorded the refusal.`);
+  }
   const row: ResearchDossierRow = {
     id,
     investigation_id: input.investigation_id,
@@ -298,7 +322,7 @@ export async function saveDossier(input: DossierInput): Promise<ResearchDossierR
     region: input.region,
     created_at: ts,
     model: input.model,
-    result_json: JSON.stringify(input.result),
+    result_json,
   };
   await exec(
     `INSERT INTO research_dossiers
@@ -306,6 +330,17 @@ export async function saveDossier(input: DossierInput): Promise<ResearchDossierR
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [row.id, row.investigation_id, row.venue_name, row.location_hint, row.region, row.created_at, row.model, row.result_json],
   );
+  // Soft-warn on bigger-than-typical writes so a reviewer's chain
+  // shows when the model was generating unusually large payloads even
+  // though they were within the hard limit.
+  const SOFT_WARN_BYTES = 200_000;
+  if (byteLen >= SOFT_WARN_BYTES) {
+    await appendAuditEntry({
+      actor: ACTOR_DEFAULT,
+      kind: "research.dossier.size_warning",
+      payload: { id, bytes: byteLen, threshold_bytes: SOFT_WARN_BYTES },
+    });
+  }
   await appendAuditEntry({
     actor: ACTOR_DEFAULT,
     kind: "research.dossier.save",
