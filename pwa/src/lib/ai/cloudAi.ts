@@ -109,6 +109,15 @@ async function callProxy(opts: { system: string; user: string; maxTokens?: numbe
     if (resp.status === 429) {
       throw new Error("OpenRouter rate-limited the request. Wait a moment and try again.");
     }
+    if (resp.status === 404) {
+      // The route file isn't on the live build — typically a stale Cloudflare
+      // Pages deploy that predates this endpoint. The error message has to be
+      // specific or the operator stares at "AI proxy 404:" wondering what to
+      // touch.
+      throw new CloudGuardError(
+        "AI Assist isn't on this build — the /api/ai/chat route 404'd. Likely a stale Cloudflare Pages deployment that predates this feature. Re-deploy with `npx wrangler pages deploy dist --project-name=southern-signal` (or push to the connected git remote so Cloudflare auto-builds).",
+      );
+    }
     if (!resp.ok) {
       const detail = await resp.text().catch(() => "");
       throw new Error(`AI proxy ${resp.status}: ${detail.slice(0, 240)}`);

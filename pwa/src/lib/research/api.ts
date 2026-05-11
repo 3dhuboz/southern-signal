@@ -159,6 +159,15 @@ export async function runResearch(req: ResearchRequest): Promise<ResearchResult>
       );
     }
 
+    // 404 = the route isn't on the build. Typically a stale Cloudflare
+    // Pages deploy that predates this endpoint — point operators at the
+    // re-deploy command instead of a cryptic "Research 404:".
+    if (res.status === 404) {
+      throw new Error(
+        "AI Investigator isn't on this build — the /api/ai/research route 404'd. The Cloudflare Pages deploy is older than this feature. Re-deploy with `npx wrangler pages deploy dist --project-name=southern-signal` or push to the connected git remote so Cloudflare auto-builds.",
+      );
+    }
+
     const msg = parsed?.error ? `${parsed.error}${parsed.detail ? `: ${parsed.detail}` : ""}` : `Research ${res.status}: ${detail.slice(0, 200)}`;
     throw new Error(msg);
   }
