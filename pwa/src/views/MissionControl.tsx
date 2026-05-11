@@ -458,6 +458,17 @@ export function MissionControl() {
         emfMagnitude={sensors.snapshot.magnetometer?.magnitude ?? sensors.emf?.value ?? null}
         sessionRunning={running}
         onComplete={handleBaselineComplete}
+        ensureInvestigation={async () => {
+          // Lazy investigation creation when the operator captures a
+          // baseline before formally beginning a session. Same helper
+          // handleBegin uses — idempotent: returns today's existing
+          // investigation if one exists, otherwise creates a fresh one
+          // with an auto-name. The baseline ends up correctly anchored
+          // to whichever case the operator runs the session under.
+          const inv = await ensureTodayInvestigation();
+          setCurrent(inv);
+          return inv.id;
+        }}
       />
 
       {!isPro && (

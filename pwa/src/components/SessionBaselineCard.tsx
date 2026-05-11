@@ -27,7 +27,9 @@ import {
 import s from "./SessionBaselineCard.module.css";
 
 interface SessionBaselineCardProps {
-  /** Investigation this baseline applies to. Null disables the capture button. */
+  /** Investigation this baseline applies to. When null, the button calls
+   *  `ensureInvestigation` on click (if supplied) so the operator can
+   *  capture the baseline before formally beginning a session. */
   investigationId: string | null;
   /** Existing baseline (loaded from localStorage by the parent), or null. */
   baseline: BaselineSummary | null;
@@ -39,6 +41,13 @@ interface SessionBaselineCardProps {
   sessionRunning: boolean;
   /** Called once with the finalized summary when capture completes. Persistence is the parent's job. */
   onComplete: (summary: BaselineSummary) => void;
+  /**
+   * Optional: provide an investigation to attach the baseline to, called
+   * lazily when the operator taps capture without an active session.
+   * Resolves to the investigation id. When omitted, the button stays
+   * disabled until the parent supplies investigationId directly.
+   */
+  ensureInvestigation?: () => Promise<string>;
 }
 
 const SAMPLE_INTERVAL_MS = 200; // 5 Hz — comfortably inside the 4–8 Hz target
@@ -74,7 +83,7 @@ function formatTimestamp(iso: string): string {
 }
 
 export function SessionBaselineCard(props: SessionBaselineCardProps) {
-  const { investigationId, baseline, audioRms, emfMagnitude, sessionRunning, onComplete } = props;
+  const { investigationId, baseline, audioRms, emfMagnitude, sessionRunning, onComplete, ensureInvestigation } = props;
 
   const [captureState, setCaptureState] = useState<BaselineState>("idle");
   const [selectedDuration, setSelectedDuration] = useState<BaselineDurationKey>("quick");
@@ -102,9 +111,18 @@ export function SessionBaselineCard(props: SessionBaselineCardProps) {
     };
   }, []);
 
-  const beginCapture = () => {
-    if (!investigationId) return;
+  const beginCapture = async () => {
     if (captureState === "capturing") return;
+    // If the operator hasn't started a session yet, lazily create one so
+    // the baseline has somewhere to attach. The parent supplies the
+    // creator via `ensureInvestigation` so this component doesn't have
+    // to know about DB plumbing.
+    if (!investigationId && ensureInvestigation) {
+      try { await ensureInvestigation(); }
+      catch (err) { console.warn("[baseline] ensureInvestigation failed", err); return; }
+    } else if (!investigationId) {
+      return;
+    }
     const controller = createBaselineCapture();
     controllerRef.current = controller;
     setSampleCount(0);
@@ -223,8 +241,8 @@ export function SessionBaselineCard(props: SessionBaselineCardProps) {
           <button
             type="button"
             className={s.captureBtn}
-            onClick={beginCapture}
-            disabled={!investigationId}
+            onClick={() => { void beginCapture(); }}
+            disabled={!investigationId && !ensureInvestigation}
           >
             Capture room baseline ({DURATION_OPTIONS.find((o) => o.key === selectedDuration)?.label})
           </button>
