@@ -65,8 +65,8 @@ const items: NavItem[] = [
     icon: (
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" strokeWidth="1.6" />
-        <path d="M3 12h6M9 12v9M9 12h6M15 12V3M15 12h6" stroke="currentColor" strokeWidth="1.4" />
-        <circle cx="6" cy="17" r="1.6" fill="currentColor" />
+        <path d="M3 12h6M9 12v9M9 12h6M15 12V3M15 12h6" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+        <circle cx="6" cy="17" r="1.4" fill="currentColor" />
       </svg>
     ),
   },
@@ -77,10 +77,10 @@ const researchItem: NavItem = {
   label: "Research",
   icon: (
     <svg viewBox="0 0 24 24" aria-hidden="true">
-      <rect x="3" y="6" width="14" height="13" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
-      <path d="M3 6 L9 6 L11 4 L17 4 L17 8" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-      <circle cx="18" cy="18" r="3" fill="none" stroke="currentColor" strokeWidth="1.4" />
-      <line x1="20" y1="20" x2="22" y2="22" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <rect x="3" y="6" width="14" height="13" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M3 6 L9 6 L11 4 L17 4 L17 8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx="18" cy="18" r="3" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      <line x1="20" y1="20" x2="22" y2="22" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   ),
 };

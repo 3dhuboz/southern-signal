@@ -1,12 +1,17 @@
+/* Each Setup section is a panel with a tinted left edge so the page
+   reads as a stack of equipment modules rather than a long form. */
 .panel {
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--border-default);
   border-radius: var(--r-lg);
   padding: var(--s-16);
   display: flex;
   flex-direction: column;
   gap: var(--s-12);
+  transition: border-left-color 160ms ease;
 }
+.panel:hover { border-left-color: var(--signal-dim); }
 
 .panelHeader {
   display: flex;
@@ -16,21 +21,23 @@
 }
 
 .panelTitle {
-  font-size: 11px;
-  letter-spacing: 1.6px;
+  font-family: "Orbitron", var(--font-display), sans-serif;
+  font-size: 14px;
+  letter-spacing: 2px;
   text-transform: uppercase;
-  color: var(--text-muted);
-  font-weight: 600;
+  color: var(--text-primary);
+  font-weight: 700;
   margin: 0;
 }
 
 .panelBadge {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--text-muted);
-  letter-spacing: 0.4px;
-  background: var(--bg-inset);
-  border: 1px solid var(--border-subtle);
+  font-family: "VT323", var(--font-mono), monospace;
+  font-size: 13px;
+  color: var(--signal);
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  background: color-mix(in srgb, var(--signal) 8%, var(--bg-inset));
+  border: 1px solid color-mix(in srgb, var(--signal) 30%, var(--border-subtle));
   border-radius: var(--r-full);
   padding: var(--s-4) 10px;
 }
