@@ -13,7 +13,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { Link, useParams, useNavigate } from "react-router-dom";
+import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { buildEvidenceBrief, findMostRecentInvestigationId, type EvidenceBrief } from "../lib/forensic/evidenceBrief";
 import { describeChannel, describeSector, plainEnglishReason } from "../lib/posterior/plainEnglish";
 import type { ResearchTier } from "../lib/research/api";
@@ -69,8 +69,10 @@ function formatDuration(seconds: number | null): string {
 export function EvidenceBrief() {
   const { investigationId: paramId } = useParams<{ investigationId?: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [brief, setBrief] = useState<EvidenceBrief | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const autoPrint = searchParams.get("print") === "1";
 
   useEffect(() => {
     void (async () => {
@@ -91,6 +93,18 @@ export function EvidenceBrief() {
       }
     })();
   }, [paramId]);
+
+  // Auto-print: when ?print=1 is in the URL, fire window.print() once
+  // the brief has rendered. The setTimeout lets the layout settle so
+  // the print dialog sees the final pixel layout, not the mid-mount
+  // state. Only fires once per mount, even if React re-renders.
+  useEffect(() => {
+    if (!autoPrint || !brief) return;
+    const id = window.setTimeout(() => {
+      try { window.print(); } catch { /* some browsers throw when no printer; harmless */ }
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [autoPrint, brief]);
 
   if (error) {
     return (

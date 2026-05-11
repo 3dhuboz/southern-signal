@@ -16,7 +16,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { Link, useParams, useNavigate } from "react-router-dom";
+import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { getDossier, listFindingNotesForDossier, findingKeyFor } from "../lib/db/repo";
 import type { ResearchTier, ResearchFinding, ResearchResult } from "../lib/research/api";
 import type { ResearchFindingNoteRow } from "../lib/db/schema";
@@ -64,8 +64,20 @@ function formatDate(iso: string): string {
 export function DossierPrint() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const autoPrint = searchParams.get("print") === "1";
+
+  // Auto-print when ?print=1 in the URL. Same pattern as the
+  // EvidenceBrief — useful for "share this URL to print".
+  useEffect(() => {
+    if (!autoPrint || !loaded) return;
+    const t = window.setTimeout(() => {
+      try { window.print(); } catch { /* */ }
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [autoPrint, loaded]);
 
   useEffect(() => {
     if (!id) {
