@@ -19,6 +19,7 @@ const EvpReview = lazy(() => import("./views/EvpReview").then((m) => ({ default:
 const Estes = lazy(() => import("./views/Estes").then((m) => ({ default: m.Estes })));
 const EvidenceBrief = lazy(() => import("./views/EvidenceBrief").then((m) => ({ default: m.EvidenceBrief })));
 const Research = lazy(() => import("./views/Research").then((m) => ({ default: m.Research })));
+const DossierPrint = lazy(() => import("./views/DossierPrint").then((m) => ({ default: m.DossierPrint })));
 const About = lazy(() => import("./views/About").then((m) => ({ default: m.About })));
 
 function RouteFallback() {
@@ -89,6 +90,7 @@ export default function App() {
             <Route path="/brief" element={<EvidenceBrief />} />
             <Route path="/brief/:investigationId" element={<EvidenceBrief />} />
             <Route path="/research" element={<Research />} />
+            <Route path="/dossier/:id" element={<DossierPrint />} />
             <Route path="/about" element={<About />} />
           </Routes>
         </Suspense>
