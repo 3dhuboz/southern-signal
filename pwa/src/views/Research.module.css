@@ -541,6 +541,95 @@
   font-weight: 600;
 }
 
+/* AoC-from-dossier capture — only on CULTURAL_SIGNIFICANCE findings.
+   Quiet text button until clicked, then expands into a textarea with
+   Save / Cancel. Warning-toned because culture context isn't a casual
+   action — the operator is committing to an acknowledgement that lands
+   in every export. */
+.aocBlock {
+  margin-top: var(--s-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-8);
+}
+.aocOpen {
+  appearance: none;
+  background: transparent;
+  border: 1px dashed var(--warning);
+  border-radius: var(--r-sm);
+  color: var(--warning);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  align-self: flex-start;
+  transition: background 120ms;
+}
+.aocOpen:hover {
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+}
+.aocReplaces {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 10px;
+  margin-left: 4px;
+}
+.aocLabel {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--warning);
+}
+.aocInput {
+  width: 100%;
+  resize: vertical;
+  min-height: 64px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--warning) 4%, var(--bg-inset));
+  border: 1px solid var(--warning);
+  border-radius: var(--r-sm);
+  padding: 8px var(--s-12);
+}
+.aocInput:focus-visible {
+  outline: 2px solid var(--warning);
+  outline-offset: 1px;
+}
+.aocActions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+  flex-wrap: wrap;
+}
+.aocSave {
+  padding: 6px var(--s-12);
+  font-size: 12px;
+  min-height: 34px;
+  background: var(--warning);
+}
+.aocCancel {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-sm);
+  padding: 6px var(--s-12);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.aocCancel:hover { background: var(--bg-surface); color: var(--text-primary); }
+.aocHint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
 /* Reviewer note — sits at the bottom of each finding, anchored to the
    finding's content hash so it persists across re-renders. Compact
    default; auto-expands as the operator writes. Saved on blur. */
@@ -561,9 +650,37 @@
   text-transform: uppercase;
   color: var(--text-muted);
   font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 .noteSaved { color: var(--signal); font-weight: 700; }
 .noteDirty { color: var(--warning); font-weight: 700; }
+.noteSeed {
+  margin-left: auto;
+  appearance: none;
+  background: transparent;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--r-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+.noteSeed:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--signal) 8%, transparent);
+  color: var(--signal);
+  border-color: color-mix(in srgb, var(--signal) 50%, var(--border-default));
+}
+.noteSeed:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 .noteInput {
   width: 100%;
   resize: vertical;

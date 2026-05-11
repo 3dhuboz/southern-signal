@@ -22,7 +22,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useSession } from "../lib/session";
-import { usePreferences } from "../lib/preferences";
+import { usePreferences, setPreferences } from "../lib/preferences";
 import {
   runResearch,
   getResearchRateState,
@@ -92,6 +92,35 @@ function formatResetIn(ms: number | null): string {
   const mins = Math.max(1, Math.round(ms / 60_000));
   return `Resets in ~${mins}m`;
 }
+
+/**
+ * Tier-aware verification-angle templates that seed the reviewer note
+ * input on demand. Local-only — no AI call, no rate-limit impact —
+ * these are scaffolds the operator edits in place. The point is to
+ * lower the activation energy for actually writing a note: an empty
+ * textarea gets ignored, a templated starting point gets refined.
+ */
+const NOTE_TEMPLATES: Record<ResearchTier, (f: ResearchFinding) => string> = {
+  HERITAGE: (f) => {
+    const url = f.sources[0]?.url ?? "(citation URL)";
+    return `Verify against the heritage register entry: ${url}\n` +
+      `Confirm: listing date, listing number, current status. Note any caveats on the citation.`;
+  },
+  DOCUMENTED_INCIDENT: (f) => {
+    const url = f.sources[0]?.url ?? "(citation URL)";
+    return `Pull the primary source (${url}) and confirm: date, named parties, jurisdiction.\n` +
+      `Watch for secondary republications looping back to the same original — if all citations trace to one source, weight accordingly.`;
+  },
+  CULTURAL_SIGNIFICANCE: () =>
+    `Before any on-site activity, contact the relevant Local Aboriginal Land Council (or equivalent custodial body) and confirm protocols.\n` +
+    `Note who you spoke with, when, and what permissions were granted. Do NOT proceed on assumption.`,
+  FOLKLORE: () =>
+    `Folklore tier — verify with caution. Look for conflicting versions, dates that drift between retellings, and identifiable original sources.\n` +
+    `Never present this on camera as documented fact; frame it as "what locals say".`,
+  SYNTHESIS: () =>
+    `AI-inferred only — no primary source. Either: (a) find a primary source and re-research, OR (b) drop from the on-camera read.\n` +
+    `Do not repeat synthesis-tier claims as fact. Recommendation: do not use without independent verification.`,
+};
 
 /**
  * Progress labels rotated while a run is in flight. These are
@@ -172,6 +201,14 @@ export function Research() {
   const [diff, setDiff] = useState<DossierDiff | null>(null);
   const [diffPriorAt, setDiffPriorAt] = useState<string | null>(null);
   const [diffExpanded, setDiffExpanded] = useState(false);
+
+  /** v5: AoC-from-dossier capture. Keyed by finding_key — clicking the
+   *  "Use as Acknowledgement of Country" button on a CULTURAL_SIGNIFICANCE
+   *  finding opens an inline editor pre-filled with the body. Save
+   *  updates prefs.acknowledgementOfCountry + fires an audit entry
+   *  tagged so the chain reflects "this came from research". */
+  const [aocDraftFor, setAocDraftFor] = useState<string | null>(null);
+  const [aocDraftText, setAocDraftText] = useState<string>("");
 
   // Prefill priority: URL params (deep link from CaseManager) → active
   // investigation. URL takes precedence so a "Research this case"
@@ -268,6 +305,36 @@ export function Research() {
       },
     }));
   }, []);
+
+  const handleOpenAocDraft = useCallback((findingKey: string, body: string) => {
+    setAocDraftFor(findingKey);
+    setAocDraftText(body);
+  }, []);
+
+  const handleSaveAocDraft = useCallback(async () => {
+    const text = aocDraftText.trim();
+    if (!text || !aocDraftFor) return;
+    const ts = new Date().toISOString();
+    setPreferences({
+      acknowledgementOfCountry: {
+        accepted: true,
+        acceptedAt: ts,
+        statement: text,
+      },
+    });
+    void appendAuditEntry({
+      actor: "user",
+      kind: "acknowledgement.country.from_dossier",
+      payload: {
+        finding_key: aocDraftFor,
+        dossier_id: activeDossierId,
+        statement_length: text.length,
+        ts,
+      },
+    }).catch(() => { /* */ });
+    setAocDraftFor(null);
+    setAocDraftText("");
+  }, [aocDraftFor, aocDraftText, activeDossierId]);
 
   const handleNoteSave = useCallback(async (findingKey: string) => {
     if (!activeDossierId) return;
@@ -898,6 +965,64 @@ export function Research() {
                               ))}
                             </ul>
                           )}
+                          {/* AoC capture from CULTURAL_SIGNIFICANCE findings.
+                              Surfaces a quiet "Use as Acknowledgement of
+                              Country" button that opens an inline editor
+                              pre-filled with the finding body. Saves to
+                              preferences with an audit entry tagged
+                              acknowledgement.country.from_dossier so the
+                              chain shows the provenance. */}
+                          {f.tier === "CULTURAL_SIGNIFICANCE" && fKey && (
+                            <div className={r.aocBlock}>
+                              {aocDraftFor === fKey ? (
+                                <>
+                                  <span className={r.aocLabel}>Use as Acknowledgement of Country</span>
+                                  <textarea
+                                    className={r.aocInput}
+                                    rows={3}
+                                    value={aocDraftText}
+                                    onChange={(e) => setAocDraftText(e.target.value)}
+                                    placeholder="Acknowledge the Traditional Custodians of this Country. Edit before saving."
+                                  />
+                                  <div className={r.aocActions}>
+                                    <button
+                                      type="button"
+                                      className={`btn btn-primary ${r.aocSave}`}
+                                      onClick={handleSaveAocDraft}
+                                      disabled={!aocDraftText.trim()}
+                                    >
+                                      Save as Acknowledgement
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className={r.aocCancel}
+                                      onClick={() => { setAocDraftFor(null); setAocDraftText(""); }}
+                                    >
+                                      Cancel
+                                    </button>
+                                    <span className={r.aocHint}>
+                                      Appears on every exported case report. You can edit it any time in Setup.
+                                    </span>
+                                  </div>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className={r.aocOpen}
+                                  onClick={() => handleOpenAocDraft(fKey, f.body)}
+                                  title={prefs.acknowledgementOfCountry.accepted
+                                    ? "Replace your existing Acknowledgement of Country with this finding's text."
+                                    : "Use this finding's text as your Acknowledgement of Country."}
+                                >
+                                  ↑ Use as Acknowledgement of Country
+                                  {prefs.acknowledgementOfCountry.accepted && (
+                                    <span className={r.aocReplaces}> (replaces current)</span>
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                          )}
+
                           {/* Reviewer note — anchored to a stable content
                               key so it survives the findings array being
                               re-ordered. Disabled (with a hint) until the
@@ -911,6 +1036,23 @@ export function Research() {
                                   <span className={r.noteSaved}> · saved</span>
                                 )}
                                 {noteDirty && <span className={r.noteDirty}> · unsaved</span>}
+                                {/* Tier-aware seed template — fills the
+                                    textarea with a verification scaffold the
+                                    operator can edit. No AI call, no rate
+                                    limit impact. Disabled when there's
+                                    already user content to avoid blowing it
+                                    away accidentally. */}
+                                <button
+                                  type="button"
+                                  className={r.noteSeed}
+                                  onClick={() => handleNoteChange(fKey, NOTE_TEMPLATES[f.tier](f))}
+                                  disabled={(note?.text ?? "").trim().length > 0}
+                                  title={(note?.text ?? "").trim().length > 0
+                                    ? "Clear the note first if you want to seed a fresh template."
+                                    : "Seed a tier-appropriate verification scaffold you can edit."}
+                                >
+                                  Seed template
+                                </button>
                               </label>
                               <textarea
                                 className={r.noteInput}
