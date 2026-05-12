@@ -160,7 +160,11 @@ export const onRequestPost: PagesFn<SharedEnv> = async ({ request, env }) => {
             ],
             temperature: 0.2,
             max_tokens: 2400,
-            response_format: { type: "json_object" },
+            // Perplexity Sonar via OpenRouter only accepts `text` or
+            // `json_schema` for response_format — `json_object` (the
+            // OpenAI dialect) trips a 400 at the provider. The system
+            // prompt already constrains output to JSON, and the SSE
+            // parser tolerates code-fenced wrappers.
             stream: true,
           }),
         });

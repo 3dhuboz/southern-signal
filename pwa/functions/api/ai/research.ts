@@ -3,9 +3,10 @@
  * lives in ./research/stream.ts; both endpoints share validation,
  * rate-limit, cultural-block, and prompt logic via ./_research-shared.
  *
- * Provider: OpenRouter with Perplexity Sonar models. Response format
- * forced to json_object; citations come back in the upstream's
- * top-level `citations` array.
+ * Provider: OpenRouter with Perplexity Sonar models. JSON output is
+ * coerced via the system prompt (Sonar rejects OpenAI's `json_object`
+ * response_format); citations come back in the upstream's top-level
+ * `citations` array.
  */
 
 import {
@@ -123,7 +124,12 @@ export const onRequestPost: PagesFn<SharedEnv> = async ({ request, env }) => {
         ],
         temperature: 0.2,
         max_tokens: 2400,
-        response_format: { type: "json_object" },
+        // Perplexity Sonar via OpenRouter only accepts `text` or
+        // `json_schema` for response_format — sending `json_object` (which
+        // is what OpenAI accepts) trips a 400 at the provider. The system
+        // prompt already constrains output to JSON, and the strip-fence
+        // parser below handles the occasional ```json wrapper, so we
+        // leave response_format off and trust the prompt.
       }),
     });
   } catch (err) {
