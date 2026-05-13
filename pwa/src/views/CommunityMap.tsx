@@ -91,7 +91,14 @@ export function CommunityMap() {
   const markersRef = useRef<LeafletMarker[]>([]);
   const incidentMarkersRef = useRef<LeafletMarker[]>([]);
   const [loading, setLoading] = useState(true);
+  // loadError = Leaflet itself failed to load — the whole map view is unusable.
+  // This is the only failure that disables the incident-search button.
   const [loadError, setLoadError] = useState<string | null>(null);
+  // pinsError = /api/community/sites GET failed (e.g. COMMUNITY_DB not bound
+  // or transient network blip). Non-fatal: the map and the incident-search
+  // feature still work; we just can't show the community pin layer. Surfaced
+  // as a soft banner rather than a blocking overlay.
+  const [pinsError, setPinsError] = useState<string | null>(null);
   const [pins, setPins] = useState<CommunityPin[]>([]);
   const [incidents, setIncidents] = useState<AreaIncident[]>([]);
   const [incidentBusy, setIncidentBusy] = useState(false);
@@ -167,13 +174,17 @@ export function CommunityMap() {
     };
   }, []);
 
-  // Pull pins after map is ready.
+  // Pull pins after map is ready. Failure here is NON-fatal — the map
+  // itself still renders, the incident-search feature still works, only
+  // the community-pin layer is missing. Set pinsError so the UI can
+  // surface a soft banner instead of disabling everything.
   useEffect(() => {
     void (async () => {
       setLoading(true);
+      setPinsError(null);
       const res = await listCommunityPins({ limit: 500 });
       if ("error" in res) {
-        setLoadError(res.error);
+        setPinsError(res.error);
       } else {
         setPins(res.pins);
       }
@@ -384,19 +395,29 @@ export function CommunityMap() {
 
       <div className={m.mapShell}>
         <div ref={mapEl} className={m.mapEl} aria-label="World map of community pins" />
-        {loading && (
+        {loading && !loadError && (
           <div className={m.mapOverlay}>Loading pins…</div>
         )}
         {loadError && (
           <div className={`${m.mapOverlay} ${m.mapOverlayErr}`}>
-            Map unavailable: {loadError}
+            Map library failed to load: {loadError}
             <br />
             <span className={m.mapOverlayHint}>
-              The endpoint may not have a D1 binding configured on this deployment. Wire <code>COMMUNITY_DB</code> in Pages settings to enable.
+              The Leaflet CDN may be unreachable on this network. Check connectivity and reload.
             </span>
           </div>
         )}
       </div>
+
+      {pinsError && (
+        <p className={m.pinsErrorBanner}>
+          Community pin layer unavailable: {pinsError}
+          <br />
+          <span className={m.mapOverlayHint}>
+            Doesn't affect incident search — that endpoint is independent. To enable pinning, bind <code>COMMUNITY_DB</code> (D1) in Pages settings.
+          </span>
+        </p>
+      )}
 
       {canShare ? (
         <section className={m.shareSection}>
