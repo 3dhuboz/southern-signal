@@ -26,6 +26,8 @@ import { exec } from "../lib/db/db";
 import { sha256HexBytes } from "../lib/forensic/canonicalJson";
 import { transcribeAudio } from "../lib/ai/cloudTranscribe";
 import {
+  DEFAULT_LOCAL_MODEL,
+  loadLocalWhisperModel,
   transcribeOnDevice,
   useLocalTranscribeStatus,
 } from "../lib/audio/localTranscribe";
@@ -93,6 +95,12 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
   const [savingTrim, setSavingTrim] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [transcribingLocal, setTranscribingLocal] = useState(false);
+  // Cloud transcribe just failed — surface a one-tap recovery offer.
+  // Cleared when any new transcribe attempt starts (cloud or local).
+  const [cloudFailed, setCloudFailed] = useState(false);
+  // User clicked "Use on-device" while the model wasn't loaded — we
+  // kicked off the download and want to auto-retry once it's ready.
+  const [pendingLocalRetry, setPendingLocalRetry] = useState(false);
   const localStatus = useLocalTranscribeStatus();
   const [prefs] = usePreferences();
   // Per-case sensitivity flag (mirrors investigations.culturally_sensitive).
@@ -490,6 +498,8 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
     setTranscribing(true);
     setStatusMsg(null);
     setTranscript(null);
+    setCloudFailed(false);
+    setError(null);
     try {
       let samples: Float32Array;
       let startSec = 0;
@@ -562,6 +572,7 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
       setStatusMsg(`Transcribed (${result.model})`);
     } catch (err) {
       setError(`Transcribe failed: ${(err as Error).message}`);
+      setCloudFailed(true);
     } finally {
       setTranscribing(false);
     }
@@ -577,6 +588,7 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
     setStatusMsg(null);
     setTranscript(null);
     setError(null);
+    setCloudFailed(false);
     try {
       let samples: Float32Array;
       let startSec = 0;
@@ -653,6 +665,48 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
       setTranscribingLocal(false);
     }
   };
+
+  // One-tap recovery from a cloud-transcribe failure. If the on-device
+  // model is already loaded, fire it immediately. Otherwise kick off
+  // the download and set pendingLocalRetry so the effect below auto-
+  // retries once the model reports "ready".
+  const handleRecoverLocal = async () => {
+    if (!decoded || transcribingLocal) return;
+    if (localStatus.state === "ready") {
+      void handleTranscribeLocal();
+      return;
+    }
+    if (localStatus.state === "loading") {
+      // Already downloading — just queue the retry.
+      setPendingLocalRetry(true);
+      return;
+    }
+    // unloaded / error — start the download then queue the retry.
+    setError(null);
+    setStatusMsg("Downloading Whisper model — clip will transcribe automatically when ready…");
+    setPendingLocalRetry(true);
+    try {
+      await loadLocalWhisperModel(DEFAULT_LOCAL_MODEL);
+    } catch (err) {
+      setPendingLocalRetry(false);
+      setError(`Model download failed: ${(err as Error).message}`);
+      setStatusMsg(null);
+    }
+  };
+
+  // Auto-retry once the model becomes ready after a pending recovery
+  // request. Effect runs every time localStatus.state changes; the
+  // pendingLocalRetry guard makes sure it only fires for the operator's
+  // explicit recovery click, not for ambient state changes elsewhere.
+  useEffect(() => {
+    if (!pendingLocalRetry) return;
+    if (localStatus.state !== "ready") return;
+    setPendingLocalRetry(false);
+    void handleTranscribeLocal();
+    // handleTranscribeLocal closes over `decoded` + `selection`; we don't
+    // want the effect to re-fire when those change — only on state flips.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingLocalRetry, localStatus.state]);
 
   /**
    * Deep AI review — second pass against the venue dossier + Bayesian
@@ -786,6 +840,44 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
 
         {loading && <p className={s.loading}>Decoding…</p>}
         {error && <p className={s.error}>{error}</p>}
+        {cloudFailed && !cloudBlocked && (
+          <div className={s.recovery}>
+            {localStatus.state === "ready" && (
+              <button
+                type="button"
+                className={s.recoveryBtn}
+                onClick={handleRecoverLocal}
+                disabled={transcribingLocal}
+              >
+                {transcribingLocal ? "Transcribing on-device…" : "Retry on-device (no audio leaves this phone)"}
+              </button>
+            )}
+            {localStatus.state === "unloaded" && (
+              <button
+                type="button"
+                className={s.recoveryBtn}
+                onClick={handleRecoverLocal}
+                disabled={pendingLocalRetry || transcribingLocal}
+              >
+                Download Whisper model (~40&nbsp;MB) &amp; retry on-device
+              </button>
+            )}
+            {localStatus.state === "loading" && (
+              <span className={s.recoveryHint}>
+                Downloading Whisper model
+                {localStatus.progress?.total
+                  ? ` · ${Math.round((localStatus.progress.loaded / localStatus.progress.total) * 100)}%`
+                  : "…"}
+                {pendingLocalRetry ? " · will transcribe automatically when ready" : ""}
+              </span>
+            )}
+            {localStatus.state === "error" && (
+              <span className={s.recoveryHint}>
+                On-device model failed to load. Open Setup → On-device transcription for details.
+              </span>
+            )}
+          </div>
+        )}
 
         {decoded && (
           <>
