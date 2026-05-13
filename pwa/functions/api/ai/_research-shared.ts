@@ -151,6 +151,8 @@ HARD RULES:
 2. Folklore / ghost-tour / blog claims go in tier FOLKLORE. Never elevate them to HERITAGE or DOCUMENTED_INCIDENT.
 3. If the venue has First Nations / Indigenous significance, surface that as the FIRST finding under tier CULTURAL_SIGNIFICANCE.
 4. Be terse. 1-3 sentences per body. Operators read these on a phone in the field.
+5. SEARCH BROADLY for incidents. A residential street with no heritage listing may STILL have documented deaths, murders, fires, court cases, or coroner's findings. Before returning "no archival footprint", search news archives (regional Australian outlets like the Courier-Mail, ABC News, news.com.au, The Morning Bulletin for Central Queensland, local council mentions) for the SUBURB, STREET, and STREET+SUBURB combinations against terms like "death", "murder", "fatal", "fire", "arrest", "court", "inquest", "coroner". Surface these under DOCUMENTED_INCIDENT with the cited article.
+6. If the venue field looks like a SESSION TIMESTAMP (matches "Session — <weekday> <date>, <time>"), IGNORE it and search the location hint instead — that's the real target.
 
 ${sourcesBlock}
 
@@ -185,7 +187,15 @@ TIER GUIDE:
 
 If you find nothing supportable, return findings: [] with a single
 suggestion explaining that the venue has no archival footprint you
-could access. Do NOT pad with low-quality folklore to fill space.`;
+could access. Do NOT pad with low-quality folklore to fill space.
+
+BEFORE returning an empty result, you MUST have performed BOTH:
+  (a) a venue-level search ("<venue name>" + state)
+  (b) a street/suburb-level news search for incidents ("<street>" +
+      "<suburb>" + ["death" OR "murder" OR "fire" OR "court" OR
+      "inquest"]).
+Note in search_terms_used which queries you actually ran so the
+operator can verify the search was thorough.`;
 }
 
 export function buildUserPrompt(req: { venueName: string; locationHint?: string; region: "AU" | "GLOBAL"; followup?: ResearchRequestBody["followup"] }): string {

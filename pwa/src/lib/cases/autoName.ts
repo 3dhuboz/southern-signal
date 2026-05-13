@@ -26,3 +26,17 @@ const TIME_FMT = new Intl.DateTimeFormat(undefined, {
 export function autoName(now: Date = new Date()): string {
   return `Session — ${DATE_FMT.format(now)}, ${TIME_FMT.format(now)}`;
 }
+
+/**
+ * True when a string matches the auto-generated session-title pattern
+ * (`Session — Sat 11 May, 23:10`). The AI Investigator should treat
+ * auto-session titles as effectively empty — they're a timestamp, not a
+ * venue, and searching the archives for a timestamp returns nothing.
+ *
+ * Liberal pattern: matches any leading "Session" + dash variant so
+ * locales using en-dash or hyphen don't slip through.
+ */
+export function isAutoSessionTitle(s: string | null | undefined): boolean {
+  if (!s) return false;
+  return /^\s*Session\s*[—\-–]\s*/i.test(s);
+}

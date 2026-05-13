@@ -22,6 +22,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useSession } from "../lib/session";
+import { isAutoSessionTitle } from "../lib/cases/autoName";
 import { usePreferences, setPreferences } from "../lib/preferences";
 import {
   runResearch,
@@ -236,11 +237,17 @@ export function Research() {
 
   // Prefill venue from the active investigation when no URL prefill
   // has taken hold. Same one-shot-per-id pattern as before.
+  //
+  // Auto-generated session titles ("Session — Wed 13 May, 10:21") are
+  // useless as archive search targets — they're a timestamp, not a
+  // venue — so we skip them and leave the field empty. The operator
+  // can type a real venue / street, or hit "Find me & investigate" to
+  // let reverse-geocode fill it in.
   useEffect(() => {
     const inv = session.current;
     if (!inv) return;
     if (!venueName && inv.location_name) setVenueName(inv.location_name);
-    if (!venueName && inv.title) setVenueName(inv.title);
+    if (!venueName && inv.title && !isAutoSessionTitle(inv.title)) setVenueName(inv.title);
     // intentionally not depending on venueName so first-load prefill wins.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.current?.id]);
@@ -478,7 +485,10 @@ export function Research() {
       }
       const fallbackName = `Site near ${latitude.toFixed(3)}, ${longitude.toFixed(3)}`;
       const nextVenue = venueGuess || (venueName.trim() || fallbackName);
-      setVenueName((prev) => (prev.trim().length > 0 ? prev : nextVenue));
+      // Replace if empty OR if it's a worthless auto-session timestamp —
+      // those are the two cases where Find-me's geocoded venue is better
+      // than what's there. A genuine operator-typed venue still wins.
+      setVenueName((prev) => (prev.trim().length > 0 && !isAutoSessionTitle(prev) ? prev : nextVenue));
       setLocationHint(addressLabel);
       setGpsFoundLabel(addressLabel);
       // Queue an auto-run on the next render. The useEffect below picks
