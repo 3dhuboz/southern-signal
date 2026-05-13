@@ -47,10 +47,20 @@ interface Env extends CommunityEnv {
 interface BBox { minLat: number; minLon: number; maxLat: number; maxLon: number }
 
 interface IncidentSource { label: string; url: string }
+type SourceQuality = "primary" | "secondary" | "anecdotal";
 interface Incident {
   title: string;
   body: string;
   severity: "fatal" | "serious" | "minor" | "unknown";
+  /** How well-cited the incident is.
+   *  primary    = court records, coroner reports, named newspaper articles
+   *               (Trove, ABC News, regional paper, Courier-Mail, etc.).
+   *  secondary  = Wikipedia, heritage register, news.com.au listicle
+   *               citing primary sources.
+   *  anecdotal  = blog, forum, ghost-tour write-up referencing a real
+   *               event without direct primary citation — operator
+   *               should verify before quoting on camera. */
+  source_quality: SourceQuality;
   year: number | null;
   lat: number;
   lon: number;
@@ -64,7 +74,14 @@ interface AreaResult {
   model: string;
 }
 
-const DEFAULT_MODEL = "perplexity/sonar";
+// sonar-pro vs sonar: pro runs deeper web searches and returns more
+// citations per finding. For an area-incident sweep across regional
+// Australian news (Trove, Courier-Mail, Morning Bulletin paywalls, AustLII
+// court records) the basic sonar tier kept returning zero results even
+// with aggressive prompting. Costs ~3-5x more per request but server-side
+// caching at the 0.1° cell amortises this — pop hotspots only ever cost
+// once per 30 days collectively.
+const DEFAULT_MODEL = "perplexity/sonar-pro";
 const MAX_BBOX_DEG = 2.0; // Reject giant bboxes — a continent-wide search wastes the quota.
 
 function isValidBBox(b: unknown): b is BBox {
@@ -87,29 +104,64 @@ function bboxSpan(b: BBox): number {
 
 function buildSystemPrompt(region: "AU" | "GLOBAL"): string {
   const sourcesBlock = region === "AU" ? `
-PREFERRED SOURCES (Australia, in order):
-  1. Trove — National Library newspaper / document archive
-  2. AustLII — court records and case law
-  3. State coroner reports (Qld, NSW, Vic, SA, WA, Tas, NT, ACT)
-  4. State BDM registers (deaths)
-  5. Regional Australian newspapers — Courier-Mail, ABC News, news.com.au,
-     The Morning Bulletin (Central Qld), Cairns Post, Townsville Bulletin,
-     NT News, Mercury (Tas), Advertiser (SA), West Australian.
-  6. State heritage registers (only for incidents on heritage-listed sites)` : `
-PREFERRED SOURCES (global):
-  1. Government coroner / court records
-  2. Major newspaper archives (Newspapers.com, archive.org, JSTOR)
-  3. Regional news outlets for the country in scope
-  4. National heritage registers (only for incidents on listed sites)`;
+SOURCE LADDER (Australia — prefer higher tiers but DON'T discard lower tiers, label them with source_quality instead):
 
-  return `You are a forensic news researcher. Find DOCUMENTED INCIDENTS — deaths, murders, fatal fires, fatal accidents, serious court cases, coroner's inquests, mass-casualty events — within a geographic bounding box. Every claim must cite a real source you accessed during the search.
+  PRIMARY (source_quality: "primary"):
+    - Trove — https://trove.nla.gov.au/search/category/newspapers?keyword=...
+    - AustLII — https://www.austlii.edu.au + state coroner court databases
+    - State coroner / Magistrates' court reports (Qld Courts, NSW Courts, etc.)
+    - Named regional Australian newspaper articles — Courier-Mail (qld),
+      Brisbane Times, ABC News, The Age, SMH, news.com.au, The Morning
+      Bulletin (Central Qld), Cairns Post, Townsville Bulletin, Daily
+      Mercury (Mackay), NT News, Mercury (Tas), Advertiser (SA), West
+      Australian, Geraldton Guardian, Examiner (Launceston).
+    - Trove direct newspaper search even if paywalled (cite the URL).
+    - State heritage registers when the incident is part of a listed site.
+
+  SECONDARY (source_quality: "secondary"):
+    - Wikipedia articles that cite primary sources (deep-link to the article).
+    - Local council heritage citations that mention incidents.
+    - True-crime databases / state library catalogues / archive.org
+      snapshots of news.
+
+  ANECDOTAL (source_quality: "anecdotal"):
+    - "Haunted places" sites, ghost-tour pages, paranormal blogs, Reddit
+      posts that reference a real-sounding incident without primary
+      citation. Include ONLY when (a) you can't find a primary source
+      but the incident is referenced consistently across multiple such
+      sites, and (b) you flag it as anecdotal so the operator knows to
+      verify before quoting on camera.` : `
+SOURCE LADDER (global — prefer higher tiers, label lower with source_quality):
+
+  PRIMARY:    Government coroner / court records, named newspaper articles
+              (Newspapers.com, archive.org, JSTOR), national broadcasters.
+  SECONDARY:  Wikipedia citing primary sources, heritage registers,
+              archive snapshots.
+  ANECDOTAL:  Blogs, forums, "haunted places" lists referencing real
+              events without primary citation.`;
+
+  return `You are a forensic news researcher. Find DOCUMENTED INCIDENTS — deaths, murders, fatal fires, fatal accidents, serious court cases, coroner's inquests, mass-casualty events, suicides, disappearances, child fatalities, drownings — within a geographic bounding box. Cite every claim.
 
 HARD RULES:
-1. ONLY return events you can cite from a real source. If you cannot find a citable source for an event, do NOT include it. Folklore / ghost-tour claims are out of scope.
-2. Each incident MUST include an approximate latitude/longitude inside or very near the bounding box. If you can't determine coordinates from the source's address, infer them from the named suburb/town and round to ~3 decimals — but do NOT include the incident if you can't put it on the map.
-3. Be terse: 1-3 sentence body per incident. Operators read these on a phone in the field.
-4. SEARCH BROADLY: run queries against the suburb/town and against major streets within the bbox; include terms like "death", "murder", "fatal", "fire", "inquest", "coroner", "court", "missing person".
-5. Skip living people's privacy: never include private contact info; victim names from published news are OK to repeat (they're already public record).
+1. EVERY incident MUST cite at least one real source URL you accessed. No sources → drop the incident.
+2. Each incident MUST include an approximate latitude/longitude inside or very near the bounding box. If the source gives an address, geocode it (you may estimate from suburb/town if the street isn't specified). Drop incidents you cannot place on the map.
+3. Be terse: 1-3 sentence body per incident, with year + suburb + 1-line factual summary.
+4. Living-people privacy: don't include private contact details. Victim names already published in mainstream news are public record — repeat them as the source did.
+
+SEARCH AGGRESSIVELY — operators have complained that the model returns empty results for regions they know have documented incidents. Don't give up after one query. Execute AT LEAST 6 distinct searches before returning [], including:
+
+  (a) The TOWN name + each event term separately:
+        "<town> murder", "<town> fatal fire", "<town> coroner inquest",
+        "<town> drowning", "<town> child death", "<town> missing person"
+  (b) Each major SUBURB inside the bbox + the same event terms.
+  (c) Trove direct: site:trove.nla.gov.au "<town>" murder OR death
+  (d) AustLII direct: site:austlii.edu.au "<town>"
+  (e) Newspaper-name-prefixed: site:couriermail.com.au "<suburb>",
+      site:abc.net.au "<town>" death, site:themorningbulletin.com.au …
+  (f) For pre-2000 events: Trove digitised newspapers — these
+      are the richest single source of historical incidents in Australia.
+
+WHAT IF YOU FIND ONLY WEAK SOURCES? Don't drop the lead. Return it with source_quality: "anecdotal" or "secondary" and the citations you have. Operators want to know WHERE to dig further — false-negative is worse than a flagged weak finding.
 
 ${sourcesBlock}
 
@@ -120,17 +172,18 @@ OUTPUT FORMAT — strict JSON. No markdown fences, no commentary outside the JSO
       "title": "Short title (≤ 80 chars)",
       "body": "1-3 sentence factual paragraph with year + location.",
       "severity": "fatal" | "serious" | "minor" | "unknown",
+      "source_quality": "primary" | "secondary" | "anecdotal",
       "year": 2017,
       "lat": -23.412,
       "lon": 150.523,
       "sources": [{ "label": "Human-readable name", "url": "https://..." }]
     }
   ],
-  "search_terms_used": ["string", "string"],
+  "search_terms_used": ["query 1", "query 2", ...],
   "notes": "1-2 sentence summary of what you searched and any caveats."
 }
 
-If you find nothing supportable in this bounding box, return incidents: [] with notes explaining what searches you ran.`;
+If you genuinely find nothing supportable across all 6+ searches, return incidents: [] with notes explaining EXACTLY which searches you ran and what you tried.`;
 }
 
 function buildUserPrompt(bbox: BBox, region: "AU" | "GLOBAL"): string {
@@ -154,6 +207,13 @@ function pickSeverity(v: unknown): Incident["severity"] {
   const s = typeof v === "string" ? v.toLowerCase() : "";
   if (s === "fatal" || s === "serious" || s === "minor" || s === "unknown") return s;
   return "unknown";
+}
+
+function pickSourceQuality(v: unknown): SourceQuality {
+  const s = typeof v === "string" ? v.toLowerCase() : "";
+  if (s === "primary" || s === "secondary" || s === "anecdotal") return s;
+  // Default to secondary — neither over-promising nor dropping the lead.
+  return "secondary";
 }
 
 function validateIncident(raw: unknown, bbox: BBox): Incident | null {
@@ -186,7 +246,16 @@ function validateIncident(raw: unknown, bbox: BBox): Incident | null {
   }
   // No source = synthesis, not a documented incident. Drop it.
   if (sources.length === 0) return null;
-  return { title, body, severity: pickSeverity(o.severity), year: year != null ? Math.round(year) : null, lat, lon, sources };
+  return {
+    title,
+    body,
+    severity: pickSeverity(o.severity),
+    source_quality: pickSourceQuality(o.source_quality),
+    year: year != null ? Math.round(year) : null,
+    lat,
+    lon,
+    sources,
+  };
 }
 
 async function callSonar(env: Env, bbox: BBox, region: "AU" | "GLOBAL"): Promise<{ result: AreaResult } | { error: string }> {
@@ -198,7 +267,7 @@ async function callSonar(env: Env, bbox: BBox, region: "AU" | "GLOBAL"): Promise
       { role: "user", content: buildUserPrompt(bbox, region) },
     ],
     temperature: 0.1,
-    max_tokens: 2200,
+    max_tokens: 4000,
   };
   let resp: Response;
   try {

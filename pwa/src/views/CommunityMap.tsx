@@ -72,14 +72,24 @@ function incidentPopupHtml(inc: AreaIncident): string {
   const sourcesHtml = inc.sources.length
     ? `<ul class="${escapeHtml(m.popupSources)}">${inc.sources.slice(0, 4).map((s) => `<li><a href="${escapeHtml(s.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(s.label)}</a></li>`).join("")}</ul>`
     : `<p class="${escapeHtml(m.popupNote)}"><em>No citations returned by the model — treat with skepticism.</em></p>`;
+  const qualityLabel = inc.source_quality === "primary"
+    ? "PRIMARY SOURCE"
+    : inc.source_quality === "anecdotal"
+    ? "ANECDOTAL · VERIFY"
+    : "SECONDARY";
+  const qualityWarning = inc.source_quality !== "primary"
+    ? `<p class="${escapeHtml(m.popupQualityWarn)}">⚠ ${escapeHtml(qualityLabel === "ANECDOTAL · VERIFY" ? "Anecdotal — confirm against a primary source before quoting on camera." : "Secondary source — trace to a primary citation before reporting.")}</p>`
+    : "";
   return `
     <div class="${escapeHtml(m.popup)}">
       <div class="${escapeHtml(m.popupTitle)}">${escapeHtml(inc.title)}</div>
       <div class="${escapeHtml(m.popupMeta)}">
         <span class="${escapeHtml(m.popupBand)} ${escapeHtml(m[`severity_${severityKey}`] ?? "")}">${escapeHtml(severityKey.toUpperCase())} · ${escapeHtml(yearStr)}</span>
+        <span class="${escapeHtml(m.popupBand)} ${escapeHtml(m[`quality_${inc.source_quality}`] ?? "")}">${escapeHtml(qualityLabel)}</span>
       </div>
       <p class="${escapeHtml(m.popupNote)}">${escapeHtml(inc.body)}</p>
       ${sourcesHtml}
+      ${qualityWarning}
     </div>
   `;
 }

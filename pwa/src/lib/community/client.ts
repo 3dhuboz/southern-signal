@@ -82,10 +82,15 @@ export async function publishCommunityPin(input: PublishInput): Promise<{ ok: tr
 // ---------------------- AI-surfaced area incidents ----------------------
 
 export interface AreaIncidentSource { label: string; url: string }
+export type AreaIncidentSourceQuality = "primary" | "secondary" | "anecdotal";
+
 export interface AreaIncident {
   title: string;
   body: string;
   severity: "fatal" | "serious" | "minor" | "unknown";
+  /** Citation tier — see server schema. Defaults to "secondary" if the
+   *  model didn't say (the validator fills it in). */
+  source_quality: AreaIncidentSourceQuality;
   year: number | null;
   lat: number;
   lon: number;
