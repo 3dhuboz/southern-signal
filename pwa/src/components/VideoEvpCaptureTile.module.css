@@ -48,6 +48,29 @@
   background: #000;
 }
 
+/* Source video — hidden visually but kept in the DOM so iOS Safari keeps
+ * the stream flowing for the compositor. position:absolute + opacity:0
+ * is the trusted trick for "playing but not visible". */
+.hiddenSource {
+  position: absolute;
+  inset: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.previewIdleSub {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 10.5px;
+  letter-spacing: 0.2px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  line-height: 1.4;
+}
+
 .previewIdle {
   position: absolute;
   inset: 0;

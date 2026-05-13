@@ -674,11 +674,23 @@ export function MissionControl() {
         />
       )}
 
-      {/* VIDEO + EVP SESSION REEL — back-cam video w/ synced mic audio */}
+      {/* VIDEO + EVP SESSION REEL — back-cam video w/ synced mic audio,
+          overlays composited onto the recording (timestamp, REC, venue,
+          posterior, EMF µT, audio RMS, narrator caption). */}
       {isPro && prefs.rig.modules.videoEvpCapture && (
         <VideoEvpCaptureTile
           investigationId={session.current?.id ?? null}
           sessionRunning={running}
+          caseId={session.current?.id ?? null}
+          caseTitle={session.current?.title ?? null}
+          posterior={posterior}
+          audioRms={audioRms}
+          sector={sectorReading?.sector ?? null}
+          coherence={sectorReading?.coherence ?? 0}
+          caption={narratorCaption}
+          magnetometerUt={sensors.snapshot.magnetometer?.magnitude ?? sensors.emf?.value ?? undefined}
+          lightLux={sensors.snapshot.light?.lux ?? undefined}
+          motionMs2={sensors.snapshot.motion?.accelMagnitude ?? undefined}
         />
       )}
 
