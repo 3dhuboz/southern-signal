@@ -71,6 +71,11 @@ export function MissionControl() {
   const [running, setRunning] = useState(false);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [tick, setTick] = useState(0);
+  // On-camera mode — ephemeral. Toggling it scales up the hero / timer /
+  // primary controls and hides on-camera clutter (case id, calibration
+  // ritual once trustworthy). Operators tend to toggle on for the take
+  // and off for the rest, so we deliberately don't persist it.
+  const [liveTake, setLiveTake] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string>("Tap Begin to grant sensor permissions.");
   const [calibration, setCalibration] = useState<CalibrationState>(() => createCalibrationState());
   const [siteSession, setSiteSession] = useState<SiteSession>(() => createSiteSession());
@@ -510,7 +515,7 @@ export function MissionControl() {
 
       {isPro && (
       /* INSTRUMENT CLUSTER */
-      <div className={m.instrumentCluster}>
+      <div className={m.instrumentCluster} data-live-take={liveTake ? "on" : "off"}>
         <div className={m.heroRow}>
           <div className={m.hero}>
             <div className={m.heroTopRow}>
@@ -519,6 +524,16 @@ export function MissionControl() {
                 <span>{running ? "RECORDING" : "STANDBY"}</span>
               </span>
               <ScreenRecordButton investigationId={session.current?.id ?? null} />
+              <button
+                type="button"
+                className={`${m.takePill} ${liveTake ? m.takePillActive : ""}`.trim()}
+                onClick={() => setLiveTake((v) => !v)}
+                title={liveTake ? "Exit on-camera layout" : "Switch to on-camera layout — bigger primary controls, less clutter"}
+                aria-pressed={liveTake}
+              >
+                <span className={m.takePillDot} />
+                <span>{liveTake ? "ON-CAMERA · ON" : "ON-CAMERA · OFF"}</span>
+              </button>
               {session.current && (
                 <button
                   type="button"

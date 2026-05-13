@@ -84,7 +84,7 @@
   letter-spacing: 0.6px;
 }
 
-.sensitivePill {
+.sensitivePill, .takePill {
   appearance: none;
   display: inline-flex;
   align-items: center;
@@ -102,6 +102,32 @@
   border: 1px solid var(--border-default);
   min-height: 28px;
   white-space: nowrap;
+}
+.takePill:hover {
+  background: var(--bg-overlay);
+  color: var(--text-secondary);
+  border-color: var(--border-strong);
+}
+.takePillDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  box-shadow: none;
+}
+.takePillActive {
+  background: color-mix(in srgb, var(--signal) 18%, var(--bg-inset));
+  color: var(--signal);
+  border-color: var(--signal);
+}
+.takePillActive .takePillDot {
+  background: var(--signal);
+  box-shadow: 0 0 8px var(--signal);
+}
+.takePillActive:hover {
+  background: color-mix(in srgb, var(--signal) 26%, var(--bg-inset));
+  color: var(--signal);
+  border-color: var(--signal);
 }
 .sensitivePill:hover {
   background: var(--bg-overlay);
@@ -352,4 +378,45 @@
 .optionalSection > summary::-webkit-details-marker { display: none; }
 .optionalSection[open] > summary { border-bottom: 1px solid var(--border-subtle); color: var(--signal); }
 .optionalSection > *:not(summary) { padding: var(--s-12); }
+
+/* ON-CAMERA LAYOUT — applied when the operator flips the take pill on.
+ * Scales up the headline elements (hero title, timer, primary controls)
+ * so they read at a distance and under broadcast lighting; hides the
+ * case-id pill and the heroSub status line (both are operator-side
+ * clutter once the take is live); collapses the calibration card once
+ * it's already trustworthy (the ritual is a cold-open, not a live tool).
+ * No layout reflow — same DOM, just visual prioritisation. */
+.instrumentCluster[data-live-take="on"] .caseId { display: none; }
+.instrumentCluster[data-live-take="on"] .heroSub { display: none; }
+.instrumentCluster[data-live-take="on"] .heroTitle {
+  font-size: 22px;
+  letter-spacing: 0.4px;
+}
+.instrumentCluster[data-live-take="on"] .heroTimer {
+  font-size: 60px;
+  text-shadow: 0 0 18px color-mix(in srgb, var(--signal) 45%, transparent);
+}
+.instrumentCluster[data-live-take="on"] .heroTimerLabel {
+  font-size: 11px;
+  letter-spacing: 2px;
+}
+.instrumentCluster[data-live-take="on"] .primaryAction,
+.instrumentCluster[data-live-take="on"] .dangerAction,
+.instrumentCluster[data-live-take="on"] .secondaryAction {
+  min-height: 72px;
+  font-size: 18px;
+  letter-spacing: 0.6px;
+  padding: var(--s-16) 18px;
+}
+.instrumentCluster[data-live-take="on"] .primaryAction {
+  box-shadow: 0 0 18px color-mix(in srgb, var(--signal) 50%, transparent);
+}
+.instrumentCluster[data-live-take="on"] .dangerAction {
+  box-shadow: 0 0 18px color-mix(in srgb, var(--danger) 45%, transparent);
+}
+/* Hide the calibration ritual once it's already passed — the operator
+ * doesn't need to see the ritual UI during a take. Still visible if
+ * calibration is idle / running / degraded so a mid-take re-calibration
+ * is still possible. */
+.instrumentCluster[data-live-take="on"] .calibration:has(.calibrationPassed) { display: none; }
 
