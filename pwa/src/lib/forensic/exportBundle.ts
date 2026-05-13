@@ -24,6 +24,7 @@ import { query } from "../db/db";
 import { readFile, exists } from "../opfs";
 import { getPreferences } from "../preferences";
 import { buildManifest } from "./manifest";
+import { computeReadiness, type ReadinessCheck, type OverallStatus } from "./preAirReadiness";
 import { buildZip, jsonEntry, textEntry, type ZipEntry } from "./zip";
 import type { AuditLogEntry, EvidenceEvent, Investigation, MediaAsset, ReviewerSignoffRow, SensorSample } from "../db/schema";
 
@@ -77,6 +78,11 @@ App version: ${APP_VERSION}
   and in the \`reviewer.signoff.create\` / \`.update\` audit-chain entries —
   a forger would have to break the chain to alter them. Empty array if no
   sign-offs have been recorded.
+- \`readiness.json\` — snapshot of pre-air readiness at bundle build
+  time: overall status (\`ready\` / \`caveats\` / \`blocked\`) + per-check
+  pass/fail. The same data appears in human-readable form on the cover
+  sheet. Computed from the live state, not stored — running the build
+  again later may produce a different result if sign-offs were added.
 - \`README.md\` — this file.
 - \`verify.html\` — open in a browser to re-verify the chain locally, no network.
 - \`verify.js\` — \`node verify.js audit_log.jsonl\` for the same check.
@@ -159,6 +165,11 @@ interface CoverData {
   aocAccepted: boolean;
   aocStatement: string | null;
   reviewers: CoverReviewer[];
+  readiness: {
+    overall: OverallStatus;
+    summary: string;
+    checks: ReadinessCheck[];
+  };
 }
 
 function escapeHtml(s: string): string {
@@ -189,6 +200,18 @@ const COVER_HTML_TEMPLATE = (d: CoverData): string => {
   const aocBlock = d.aocAccepted && d.aocStatement
     ? `<blockquote>${escapeHtml(d.aocStatement)}</blockquote>`
     : `<p class="muted">No acknowledgement recorded.</p>`;
+  const readinessMark = d.readiness.overall === "ready" ? "✓" : d.readiness.overall === "caveats" ? "⚠" : "✗";
+  const readinessClass = d.readiness.overall === "ready" ? "ready" : d.readiness.overall === "caveats" ? "caveats" : "blocked";
+  const readinessBlock = `
+    <div class="readiness ${readinessClass}">
+      <div class="rbanner"><span class="rmark">${readinessMark}</span><span class="rsummary">${escapeHtml(d.readiness.summary)}</span></div>
+      <ul class="rchecks">${d.readiness.checks.map((c) => `
+        <li class="${c.status === "pass" ? "pass" : c.severity === "warn" ? "warn" : "fail"}">
+          <span class="cmark">${c.status === "pass" ? "✓" : "✗"}</span>
+          <span class="clabel">${escapeHtml(c.label)}</span>
+          ${c.detail ? `<div class="cdetail">${escapeHtml(c.detail)}</div>` : ""}
+        </li>`).join("")}</ul>
+    </div>`;
   const reviewersBlock = d.reviewers.length === 0
     ? `<p class="muted">No external reviewer sign-offs recorded.</p>`
     : `<ul class="reviewers">${d.reviewers.map((r) => `
@@ -236,6 +259,24 @@ const COVER_HTML_TEMPLATE = (d: CoverData): string => {
   ul.reviewers .rmeta { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 9pt; color: #666; margin-top: 4px; }
   ul.reviewers blockquote { margin-top: 8px; }
   ul.reviewers .rrefs { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 9pt; color: #666; margin-top: 6px; word-break: break-all; }
+  .readiness { display: flex; flex-direction: column; gap: 10px; }
+  .readiness .rbanner { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 4px; border: 1px solid #ccc; }
+  .readiness .rmark { font-size: 18pt; font-weight: 800; line-height: 1; }
+  .readiness .rsummary { font-size: 12pt; font-weight: 700; }
+  .readiness.ready    .rbanner { border-color: #0a7e3f; background: #ecf9f1; color: #0a7e3f; }
+  .readiness.caveats  .rbanner { border-color: #b87600; background: #fff5e0; color: #7a5000; }
+  .readiness.blocked  .rbanner { border-color: #b00020; background: #fceaec; color: #b00020; }
+  .readiness ul.rchecks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .readiness ul.rchecks li { padding: 8px 12px; border: 1px solid #e0e0e0; border-left: 3px solid #ccc; border-radius: 3px; background: #fafafa; }
+  .readiness ul.rchecks li.pass { border-left-color: #0a7e3f; }
+  .readiness ul.rchecks li.fail { border-left-color: #b00020; }
+  .readiness ul.rchecks li.warn { border-left-color: #b87600; }
+  .readiness ul.rchecks .cmark { display: inline-block; min-width: 18px; font-weight: 800; }
+  .readiness ul.rchecks li.pass .cmark { color: #0a7e3f; }
+  .readiness ul.rchecks li.fail .cmark { color: #b00020; }
+  .readiness ul.rchecks li.warn .cmark { color: #b87600; }
+  .readiness ul.rchecks .clabel { font-weight: 700; }
+  .readiness ul.rchecks .cdetail { margin-top: 4px; margin-left: 18px; font-size: 9.5pt; color: #555; line-height: 1.4; }
   footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid #ccc; font-size: 9pt; color: #666; }
   footer code { background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
   @media print { body { margin: 0; max-width: none; padding: 0; } }
@@ -261,6 +302,7 @@ const COVER_HTML_TEMPLATE = (d: CoverData): string => {
     <tr><td>Transcripts</td><td>${d.counts.transcripts}</td></tr>
   </table>
 </section>
+<section><h2>Pre-air readiness</h2>${readinessBlock}</section>
 <section><h2>External reviewer sign-off</h2>${reviewersBlock}</section>
 <section><h2>Acknowledgement of Country</h2>${aocBlock}</section>
 <footer>
@@ -550,6 +592,27 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
   } catch { /* pre-v6 — no table yet */ }
   entries.push(jsonEntry("reviewers.json", reviewerRows));
 
+  // Pre-air readiness — snapshot of the methodology gates at bundle
+  // build time. Re-runs may produce a different result if sign-offs
+  // were added or the chain was broken between builds; that's a
+  // feature, not a bug — the cover sheet always reflects the moment
+  // the bundle was created.
+  const aocAccepted = getPreferences().acknowledgementOfCountry.accepted;
+  const readiness = computeReadiness({
+    aocAccepted,
+    appVersion: APP_VERSION,
+    signoffs: reviewerRows,
+    chain: manifest.global_audit_chain.verification,
+  });
+  entries.push(jsonEntry("readiness.json", {
+    generated_at: new Date().toISOString(),
+    app_version: APP_VERSION,
+    overall: readiness.overall,
+    summary: readiness.summary,
+    checks: readiness.checks,
+    counts: readiness.counts,
+  }));
+
   // 4. Media binaries.
   let mediaIncluded = 0;
   let mediaMissing = 0;
@@ -621,6 +684,11 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
       identifier: r.identifier,
       sourceUrl: r.source_url,
     })),
+    readiness: {
+      overall: readiness.overall,
+      summary: readiness.summary,
+      checks: readiness.checks,
+    },
   });
   entries.push(textEntry("cover.html", coverHtml));
 
