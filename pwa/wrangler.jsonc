@@ -1,0 +1,34 @@
+{
+  // Cloudflare Pages config (wrangler 4+).
+  //
+  // What's in here vs. what's in the dashboard:
+  //
+  //   - Secrets (OPENROUTER_API_KEY, GROQ_API_KEY, OPENAI_API_KEY, SYNC_TOKEN,
+  //     FB_CONNECT_TOKEN, AI_RATE_LIMIT_SALT, etc.) live in the dashboard,
+  //     set via `wrangler pages secret put`. They merge with this config
+  //     at deploy time.
+  //
+  //   - Resource bindings that have to be reproducible from source (D1,
+  //     KV, R2 with specific IDs) are declared here so a fresh checkout
+  //     can deploy without re-pointing IDs by hand in the dashboard.
+  //
+  //   - SYNC_DB / MEDIA_BUCKET / AI_RATE_LIMIT historically lived only
+  //     in the dashboard. They keep working — wrangler.jsonc bindings
+  //     ADD to dashboard bindings, they don't replace them. If we ever
+  //     re-create this Pages project from scratch we'll want to migrate
+  //     those declarations in here too.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "southern-signal",
+  "compatibility_date": "2025-01-15",
+  "pages_build_output_dir": "./dist",
+  "d1_databases": [
+    {
+      // Drives /api/community/sites (operator-pinned haunts) + the
+      // /api/community/incidents-in-area cache (AI-surfaced Trove/news
+      // pins). Both endpoints 503 cleanly when this binding is missing.
+      "binding": "COMMUNITY_DB",
+      "database_name": "southern-signal-community",
+      "database_id": "e0881f5b-b158-4a75-bd16-683d816e531d"
+    }
+  ]
+}

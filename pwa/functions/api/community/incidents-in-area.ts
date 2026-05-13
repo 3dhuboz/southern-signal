@@ -328,7 +328,14 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
 
   const ai = await callSonar(env, bbox, region);
   if ("error" in ai) return jsonResponse({ error: ai.error }, 502);
-  await writeCache(env.COMMUNITY_DB, cellKey, region, bbox, ai.result);
+  // Don't poison the cache with empty results. Sonar's coverage of
+  // regional Australian news is patchy — a "no incidents" return today
+  // may become a hit tomorrow as the prompt or model improves. Caching
+  // empty responses would lock the operator out of fresh searches for
+  // 30 days for no benefit. Only persist findings worth re-serving.
+  if (ai.result.incidents.length > 0) {
+    await writeCache(env.COMMUNITY_DB, cellKey, region, bbox, ai.result);
+  }
   await recordRateLimitRun(env.AI_RATE_LIMIT, rl);
 
   return jsonResponse({
