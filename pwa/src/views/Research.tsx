@@ -36,6 +36,7 @@ import { diffResearchResults, type DossierDiff } from "../lib/research/diff";
 import { recordEvent, saveDossier, listDossiers, getDossier, deleteDossier, findingKeyFor, saveFindingNote, listFindingNotesForDossier } from "../lib/db/repo";
 import type { ResearchDossierRow } from "../lib/db/schema";
 import { appendAuditEntry } from "../lib/db/auditLog";
+import { getCurrentPoint } from "../lib/sensors/geolocation";
 import s from "./View.module.css";
 import r from "./Research.module.css";
 
@@ -208,6 +209,15 @@ export function Research() {
    *  CULTURAL_SIGNIFICANCE card has its own editor. */
   const [aocDraftFor, setAocDraftFor] = useState<string | null>(null);
   const [aocDraftText, setAocDraftText] = useState<string>("");
+
+  /** "Find me" GPS state. While `gpsBusy` we show a spinner on the button
+   *  and disable the run row so the user can't double-fire. When the
+   *  geocode completes we set `pendingAutoRun` so the effect below
+   *  triggers handleRun on the next render with the fresh fields. */
+  const [gpsBusy, setGpsBusy] = useState(false);
+  const [gpsError, setGpsError] = useState<string | null>(null);
+  const [gpsFoundLabel, setGpsFoundLabel] = useState<string | null>(null);
+  const [pendingAutoRun, setPendingAutoRun] = useState(false);
 
   // Prefill priority: URL params (deep link from CaseManager) → active
   // investigation. URL takes precedence so a "Research this case"
@@ -397,6 +407,91 @@ export function Research() {
     return labels[Math.min(progressIndex, labels.length - 1)] ?? labels[0];
   })();
 
+  /**
+   * "Find me" — grabs a one-shot GPS fix, reverse-geocodes via Nominatim
+   * (OpenStreetMap, free, no API key) to suggest a venue name + plain-
+   * English address, fills both fields, then queues an auto-run so the
+   * investigation kicks off from that point.
+   *
+   * Fail-soft: if the geocode fetch fails we still fill the location
+   * hint with raw "Lat, Lng (±Acc m)" so the AI can search on
+   * coordinates alone. If GPS itself fails (denied / no fix) we show
+   * an error and DON'T auto-run — burning a quota slot on an
+   * incomplete prefill is worse than asking the user to retry.
+   */
+  const handleFindMe = useCallback(async () => {
+    if (gpsBusy || busy || culturallyBlocked || researchDisabled || rateBlocked) return;
+    setGpsBusy(true);
+    setGpsError(null);
+    setGpsFoundLabel(null);
+    try {
+      const point = await getCurrentPoint(12_000);
+      if (!point) {
+        setGpsError("Couldn't get a location fix. Check that location permission is granted and the device sees the sky.");
+        return;
+      }
+      const { latitude, longitude, accuracy } = point;
+      const accuracyLabel = accuracy != null ? `±${Math.round(accuracy)} m` : "unknown accuracy";
+
+      // Reverse-geocode via Nominatim. Keep the request lightweight —
+      // language=en and zoom=18 (street level). Brief abort on the
+      // fetch so a hung geocoder doesn't block the auto-run forever.
+      let venueGuess = "";
+      let addressLabel = `Lat ${latitude.toFixed(5)}, Lng ${longitude.toFixed(5)} · ${accuracyLabel}`;
+      try {
+        const ctrl = new AbortController();
+        const timer = window.setTimeout(() => ctrl.abort(), 7_000);
+        const r = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&addressdetails=1&lat=${latitude}&lon=${longitude}`,
+          { headers: { "Accept-Language": "en" }, signal: ctrl.signal },
+        );
+        window.clearTimeout(timer);
+        if (r.ok) {
+          const data = await r.json() as {
+            display_name?: string;
+            name?: string;
+            address?: { amenity?: string; building?: string; tourism?: string; historic?: string; shop?: string; house_name?: string; road?: string; suburb?: string; town?: string; city?: string; state?: string; country?: string };
+          };
+          const a = data.address ?? {};
+          // Prefer a real named building / heritage hit; fall back to the
+          // street address; fall back to the locality.
+          venueGuess = (
+            a.historic
+            || a.tourism
+            || a.amenity
+            || a.house_name
+            || data.name
+            || a.building
+            || a.shop
+            || (a.road ? `${a.road}${a.suburb ? `, ${a.suburb}` : a.town ? `, ${a.town}` : a.city ? `, ${a.city}` : ""}` : "")
+            || a.suburb
+            || a.town
+            || a.city
+            || ""
+          ).trim();
+          if (data.display_name) addressLabel = data.display_name;
+        }
+      } catch {
+        // Geocode failed — coords-only fallback is fine. AI Investigator
+        // accepts a free-text location hint so the model can still
+        // search "near -23.42, 150.52".
+      }
+      const fallbackName = `Site near ${latitude.toFixed(3)}, ${longitude.toFixed(3)}`;
+      const nextVenue = venueGuess || (venueName.trim() || fallbackName);
+      setVenueName((prev) => (prev.trim().length > 0 ? prev : nextVenue));
+      setLocationHint(addressLabel);
+      setGpsFoundLabel(addressLabel);
+      // Queue an auto-run on the next render. The useEffect below picks
+      // it up once venueName / locationHint state have flushed so
+      // handleRun's closure sees the fresh values.
+      setPendingAutoRun(true);
+    } catch (err) {
+      setGpsError((err as Error).message || "Find-me failed.");
+    } finally {
+      setGpsBusy(false);
+    }
+  }, [gpsBusy, busy, culturallyBlocked, researchDisabled, rateBlocked, venueName]);
+
   const handleRun = useCallback(async () => {
     if (!canRun) return;
     setBusy(true);
@@ -564,6 +659,18 @@ export function Research() {
   // Keep the ref in sync with the state. Reading the ref inside the
   // run callback avoids re-allocating it on every dossier list change.
   useEffect(() => { pastDossiersRef.current = pastDossiers; }, [pastDossiers]);
+
+  // Find-me auto-run trigger. After handleFindMe sets venueName +
+  // locationHint, we wait for React to flush those values into the
+  // handleRun closure (via its useCallback deps), then fire the
+  // investigation exactly once. canRun gates the fire so we don't
+  // burn quota when the form is invalid for any reason.
+  useEffect(() => {
+    if (!pendingAutoRun) return;
+    if (!canRun) return;
+    setPendingAutoRun(false);
+    void handleRun();
+  }, [pendingAutoRun, canRun, handleRun]);
 
   // Abort any in-flight stream on unmount — keeps a navigated-away
   // fetch from setStating on a dead component and burning a rate-limit
@@ -822,16 +929,45 @@ export function Research() {
           />
         </label>
         <label className={r.field}>
-          <span className={r.fieldLabel}>Location hint (optional)</span>
+          <div className={r.fieldHeader}>
+            <span className={r.fieldLabel}>Location hint (optional)</span>
+            <button
+              type="button"
+              className={r.findMeBtn}
+              onClick={handleFindMe}
+              disabled={gpsBusy || busy || culturallyBlocked || researchDisabled || rateBlocked}
+              title="Use this device's GPS to fill the location and run the investigation from here. Counts against the daily quota."
+            >
+              {gpsBusy ? (
+                <>
+                  <span className={r.findMeSpinner} aria-hidden="true" />
+                  Locating…
+                </>
+              ) : (
+                <>
+                  <span className={r.findMePin} aria-hidden="true">◎</span>
+                  Find me & investigate
+                </>
+              )}
+            </button>
+          </div>
           <input
             type="text"
             className={r.input}
             value={locationHint}
             onChange={(e) => setLocationHint(e.target.value)}
             placeholder="e.g. Sydney, NSW · or full address"
-            disabled={busy || culturallyBlocked || researchDisabled}
+            disabled={busy || gpsBusy || culturallyBlocked || researchDisabled}
             maxLength={200}
           />
+          {gpsFoundLabel && !gpsError && (
+            <span className={r.findMeStatus} aria-live="polite">
+              <span aria-hidden="true">📍</span> {gpsFoundLabel}
+            </span>
+          )}
+          {gpsError && (
+            <span className={r.findMeError} aria-live="polite">{gpsError}</span>
+          )}
         </label>
         <div className={r.regionRow}>
           <span className={r.fieldLabel}>Region</span>

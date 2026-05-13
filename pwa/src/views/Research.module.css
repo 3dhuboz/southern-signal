@@ -991,3 +991,81 @@
   font-style: normal;
   font-weight: 700;
 }
+
+/* Find-me GPS row — sits inside the Location Hint field label, next to
+   the small caps "LOCATION HINT (OPTIONAL)" eyebrow. */
+.fieldHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s-8);
+}
+
+.findMeBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--signal-dim);
+  background: color-mix(in srgb, var(--signal) 10%, var(--bg-inset));
+  color: var(--signal);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+}
+.findMeBtn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--signal) 22%, var(--bg-inset));
+  box-shadow: 0 0 10px rgba(93, 242, 199, 0.25);
+}
+.findMeBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.findMePin {
+  display: inline-block;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.findMeSpinner {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--signal) 30%, transparent);
+  border-top-color: var(--signal);
+  animation: findMeSpin 0.8s linear infinite;
+}
+
+@keyframes findMeSpin {
+  to { transform: rotate(360deg); }
+}
+
+.findMeStatus {
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.findMeError {
+  margin-top: 4px;
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  background: var(--danger-wash);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+:global([data-theme="daylight"]) .findMeBtn {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--signal) 14%, #fff);
+}
