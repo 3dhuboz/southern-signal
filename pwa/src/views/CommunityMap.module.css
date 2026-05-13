@@ -98,6 +98,124 @@
   font-size: 11.5px;
 }
 
+/* Map controls bar — venue search + find-me + filter chips. Sits above
+ * the incident-search bar and the map shell so the operator can frame
+ * the view before deciding whether to fetch incident data. */
+.controlBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-8);
+  padding: var(--s-12) var(--s-16);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+}
+
+.controlSearchForm {
+  display: flex;
+  gap: 6px;
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.controlSearchInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  padding: 0 12px;
+  height: 38px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.controlSearchInput:focus { border-color: var(--signal-dim); background: var(--bg-elevated); }
+.controlSearchInput:disabled { opacity: 0.5; cursor: not-allowed; }
+.controlSearchInput::placeholder { color: var(--text-dim); }
+
+.controlBtn {
+  height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--bg-inset);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.controlBtn:hover { background: var(--bg-overlay); border-color: var(--signal-dim); }
+.controlBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.filterChipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1 1 auto;
+  justify-content: flex-end;
+}
+
+.filterChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--border-default);
+  background: var(--bg-inset);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.filterChip:hover { background: var(--bg-overlay); }
+.filterChip[data-active="true"] {
+  background: color-mix(in srgb, var(--signal) 12%, var(--bg-inset));
+  border-color: var(--signal-dim);
+  color: var(--text-primary);
+}
+.filterChip:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.filterChipGlyph {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.controlError {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
+  background: var(--danger-wash);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  font-size: 12px;
+  width: 100%;
+  flex: 1 1 100%;
+}
+
+.controlNotice {
+  margin: 0;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  width: 100%;
+  flex: 1 1 100%;
+}
+
 /* Marker icons — small dots with a colour ring keyed by posterior band */
 .markerIcon {
   display: flex;

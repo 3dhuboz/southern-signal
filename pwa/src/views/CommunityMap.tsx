@@ -66,6 +66,24 @@ function pinPopupHtml(pin: CommunityPin): string {
   `;
 }
 
+/**
+ * Geocode a place name via Nominatim (OSM). Returns the first hit's
+ * lat/lon, or null when nothing matches. Public free endpoint — no key,
+ * no auth. Used for the venue-search shortcut so an operator can jump
+ * the map to a suburb / venue without knowing the lat/lon.
+ */
+async function geocodeVenue(q: string): Promise<{ lat: number; lon: number; label: string } | null> {
+  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&addressdetails=0`;
+  const res = await fetch(url, { headers: { "Accept": "application/json" } });
+  if (!res.ok) throw new Error(`Geocoder HTTP ${res.status}`);
+  const arr = await res.json() as Array<{ lat: string; lon: string; display_name: string }>;
+  if (arr.length === 0) return null;
+  const lat = parseFloat(arr[0].lat);
+  const lon = parseFloat(arr[0].lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  return { lat, lon, label: arr[0].display_name };
+}
+
 function incidentPopupHtml(inc: AreaIncident): string {
   const isFolklore = inc.category === "folklore";
   const severityKey = inc.severity || "unknown";
@@ -135,6 +153,16 @@ export function CommunityMap() {
   const [pendingPosteriorStr, setPendingPosteriorStr] = useState("");
   const [gpsBusy, setGpsBusy] = useState(false);
   const [gpsPoint, setGpsPoint] = useState<{ lat: number; lon: number } | null>(null);
+  // Map control bar — venue search + jump-to-me. Errors share one banner.
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchBusy, setSearchBusy] = useState(false);
+  const [findMeBusy, setFindMeBusy] = useState(false);
+  const [controlError, setControlError] = useState<string | null>(null);
+  const [controlNotice, setControlNotice] = useState<string | null>(null);
+  // Filter chips — default all-on so the existing UX is preserved.
+  const [showCommunity, setShowCommunity] = useState(true);
+  const [showIncidents, setShowIncidents] = useState(true);
+  const [showFolklore, setShowFolklore] = useState(true);
 
   // Load Leaflet + create map on mount.
   useEffect(() => {
@@ -213,13 +241,16 @@ export function CommunityMap() {
     })();
   }, []);
 
-  // Re-render community pins when they change.
+  // Re-render community pins when they change OR the filter toggle flips.
+  // The cleanup runs first regardless of `showCommunity` so toggling off
+  // tears down existing markers; toggling on adds them back.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || typeof window.L === "undefined") return;
     const L = window.L;
     markersRef.current.forEach((mk) => mk.remove());
     markersRef.current = [];
+    if (!showCommunity) return;
     for (const pin of pins) {
       const band = describeBand(pin.posterior);
       const icon = L.divIcon({
@@ -232,12 +263,13 @@ export function CommunityMap() {
       marker.bindPopup(pinPopupHtml(pin), { className: m.popupWrap });
       markersRef.current.push(marker);
     }
-  }, [pins]);
+  }, [pins, showCommunity]);
 
-  // Re-render AI-surfaced incident markers when they change. Two marker
-  // styles: severity-coloured diamond for real events, violet ringed
-  // circle for folklore — distinct shapes so a reviewer can tell at a
-  // glance which findings are documented events vs local legends.
+  // Re-render AI-surfaced incident markers when they change OR the
+  // category filters flip. Two marker styles: severity-coloured diamond
+  // for real events, violet ringed circle for folklore — distinct shapes
+  // so a reviewer can tell at a glance which findings are documented
+  // events vs local legends.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || typeof window.L === "undefined") return;
@@ -246,6 +278,8 @@ export function CommunityMap() {
     incidentMarkersRef.current = [];
     for (const inc of incidents) {
       const isFolklore = inc.category === "folklore";
+      if (isFolklore && !showFolklore) continue;
+      if (!isFolklore && !showIncidents) continue;
       const icon = isFolklore
         ? L.divIcon({
             className: `${m.incidentIcon} ${m.folkloreIcon}`,
@@ -263,7 +297,46 @@ export function CommunityMap() {
       marker.bindPopup(incidentPopupHtml(inc), { className: m.popupWrap });
       incidentMarkersRef.current.push(marker);
     }
-  }, [incidents]);
+  }, [incidents, showIncidents, showFolklore]);
+
+  // Venue search via Nominatim. Pans + zooms the map to the first hit.
+  // Empty query is a no-op; errors land in the shared control banner.
+  const handleVenueSearch = useCallback(async () => {
+    const q = searchQuery.trim();
+    if (!q) return;
+    setSearchBusy(true);
+    setControlError(null);
+    setControlNotice(null);
+    try {
+      const hit = await geocodeVenue(q);
+      if (!hit) {
+        setControlError(`No match for "${q}".`);
+        return;
+      }
+      mapRef.current?.setView([hit.lat, hit.lon], 14);
+      setControlNotice(hit.label);
+    } catch (err) {
+      setControlError(err instanceof Error ? err.message : "Geocoder failed.");
+    } finally {
+      setSearchBusy(false);
+    }
+  }, [searchQuery]);
+
+  // Jump the map to the operator's current GPS fix. Reuses
+  // getCurrentPoint which is already wired for the publish flow.
+  const handleFindMe = useCallback(async () => {
+    setFindMeBusy(true);
+    setControlError(null);
+    setControlNotice(null);
+    const pt = await getCurrentPoint(8000);
+    setFindMeBusy(false);
+    if (!pt) {
+      setControlError("No GPS fix — allow location and try again.");
+      return;
+    }
+    mapRef.current?.setView([pt.latitude, pt.longitude], 14);
+    setControlNotice(`Centred on ${pt.latitude.toFixed(3)}, ${pt.longitude.toFixed(3)}`);
+  }, []);
 
   // Trigger an AI search for documented incidents inside the current
   // visible bounds. Cached server-side keyed by a 0.1°-rounded cell
@@ -365,6 +438,12 @@ export function CommunityMap() {
     return { total, strong, yours };
   }, [pins]);
 
+  const incidentCounts = useMemo(() => {
+    const inc = incidents.filter((i) => i.category !== "folklore").length;
+    const fl = incidents.filter((i) => i.category === "folklore").length;
+    return { incidents: inc, folklore: fl };
+  }, [incidents]);
+
   const sensitive = prefs.globalCulturalSensitivityFlag;
   const canShare = !sensitive && prefs.community.enabled;
 
@@ -402,6 +481,78 @@ export function CommunityMap() {
             {incidents.filter((i) => i.category === "folklore").length}
           </span>
         </div>
+      </section>
+
+      <section className={m.controlBar}>
+        <form
+          className={m.controlSearchForm}
+          onSubmit={(e) => { e.preventDefault(); void handleVenueSearch(); }}
+        >
+          <input
+            type="search"
+            className={m.controlSearchInput}
+            placeholder="Jump to a suburb, town, or venue…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            disabled={!!loadError}
+            aria-label="Search a place to centre the map"
+          />
+          <button
+            type="submit"
+            className={m.controlBtn}
+            disabled={!!loadError || searchBusy || !searchQuery.trim()}
+          >
+            {searchBusy ? "Searching…" : "Go"}
+          </button>
+        </form>
+        <button
+          type="button"
+          className={m.controlBtn}
+          onClick={handleFindMe}
+          disabled={!!loadError || findMeBusy}
+          aria-label="Centre map on my current location"
+        >
+          {findMeBusy ? "Locating…" : "📍 Find me"}
+        </button>
+        <div className={m.filterChipRow} role="group" aria-label="Map layer filters">
+          <button
+            type="button"
+            className={m.filterChip}
+            data-active={showCommunity}
+            onClick={() => setShowCommunity((v) => !v)}
+            aria-pressed={showCommunity}
+          >
+            <span className={m.filterChipGlyph} aria-hidden="true">●</span>
+            Community pins ({stats.total})
+          </button>
+          <button
+            type="button"
+            className={m.filterChip}
+            data-active={showIncidents}
+            onClick={() => setShowIncidents((v) => !v)}
+            aria-pressed={showIncidents}
+            disabled={incidentCounts.incidents === 0}
+          >
+            <span className={m.filterChipGlyph} aria-hidden="true">◆</span>
+            Incidents ({incidentCounts.incidents})
+          </button>
+          <button
+            type="button"
+            className={m.filterChip}
+            data-active={showFolklore}
+            onClick={() => setShowFolklore((v) => !v)}
+            aria-pressed={showFolklore}
+            disabled={incidentCounts.folklore === 0}
+          >
+            <span className={m.filterChipGlyph} aria-hidden="true">👻</span>
+            Folklore ({incidentCounts.folklore})
+          </button>
+        </div>
+        {(controlError || controlNotice) && (
+          <p className={controlError ? m.controlError : m.controlNotice}>
+            {controlError ?? controlNotice}
+          </p>
+        )}
       </section>
 
       <section className={m.incidentBar}>
