@@ -85,6 +85,18 @@ const researchItem: NavItem = {
   ),
 };
 
+const communityItem: NavItem = {
+  to: "/community",
+  label: "Map",
+  icon: (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 6 L9 4 L15 6 L20 4 L20 18 L15 20 L9 18 L4 20 Z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M9 4 L9 18 M15 6 L15 20" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <circle cx="12" cy="11" r="1.8" fill="currentColor" />
+    </svg>
+  ),
+};
+
 export function BottomNav() {
   const [prefs] = usePreferences();
   const session = useSession();
@@ -125,16 +137,30 @@ export function BottomNav() {
   }, [researchEnabled, session.current?.id, session.current?.title, session.current?.location_name]);
 
   const visibleItems = useMemo(() => {
-    if (!researchEnabled) return items;
-    // Insert Research between Review and Setup — it's the next-step-after-look.
-    const reviewIdx = items.findIndex((i) => i.to === "/review");
-    if (reviewIdx < 0) return [...items, { ...researchItem, badgeCount: dossierBadge }];
-    return [
-      ...items.slice(0, reviewIdx + 1),
-      { ...researchItem, badgeCount: dossierBadge },
-      ...items.slice(reviewIdx + 1),
-    ];
-  }, [researchEnabled, dossierBadge]);
+    let out: NavItem[] = items;
+    if (researchEnabled) {
+      // Insert Research between Review and Setup — it's the next-step-after-look.
+      const reviewIdx = items.findIndex((i) => i.to === "/review");
+      if (reviewIdx < 0) {
+        out = [...items, { ...researchItem, badgeCount: dossierBadge }];
+      } else {
+        out = [
+          ...items.slice(0, reviewIdx + 1),
+          { ...researchItem, badgeCount: dossierBadge },
+          ...items.slice(reviewIdx + 1),
+        ];
+      }
+    }
+    if (prefs.community.enabled) {
+      // Map slots after Floorplan (or appended if Floorplan isn't visible
+      // in some future config). Community is a "look at the wider field"
+      // entry, so it sits at the right edge of the nav.
+      const fpIdx = out.findIndex((i) => i.to === "/floorplan");
+      if (fpIdx < 0) out = [...out, communityItem];
+      else out = [...out.slice(0, fpIdx + 1), communityItem, ...out.slice(fpIdx + 1)];
+    }
+    return out;
+  }, [researchEnabled, dossierBadge, prefs.community.enabled]);
 
   return (
     <nav className={styles.nav} aria-label="Primary">

@@ -287,6 +287,7 @@ export function Setup() {
         {([
           { key: "emfSpikeLed", label: "EMF spike LEDs", hint: "K-II-style 5-segment bar that lights up when the magnetometer spikes above the live baseline. Visual companion to the EMF chart." },
           { key: "videoEvpCapture", label: "Video + EVP session reel", hint: "Records video from the back camera with synchronized mic audio while a session is running. Both files land in OPFS, audit-chained, paired by start timestamp." },
+          { key: "slsTracker", label: "SLS stick-figure tracker", hint: "Honest motion-shape SLS analogue. Camera-based — when person-shaped motion is detected a stick figure is drawn over the bounding box. Phone hardware has no IR depth sensor; this is heuristic, not a true Kinect-style skeleton." },
           { key: "spiritBox", label: "Spirit Box", hint: "Frequency-sweep ITC tool. Outputs synthesized phoneme audio you scrub through for perceived words." },
           { key: "ovilus", label: "Ovilus dictionary speech", hint: "Sensor-seeded word picker. Speaks one word per spike — analogous to Spirit Talker / Ovilus apps." },
           { key: "baitTone", label: "Bait tone", hint: "Sub-audible carrier tones. Optional probe — leave off if you want a clean acoustic baseline." },
@@ -307,6 +308,30 @@ export function Setup() {
             />
           </label>
         ))}
+      </section>
+
+      {/* Community map — opt-in public pinning */}
+      <section className={st.panel}>
+        <header className={st.panelHeader}>
+          <h2 className={st.panelTitle}>Community map</h2>
+        </header>
+        <label className={st.toggleRow}>
+          <span>
+            <strong>Enable public Community map</strong>
+            <span className={st.toggleHint}>
+              Adds the Map tab to the nav and the publish flow on a case.
+              Pin a haunt for other operators to see; coordinates are
+              coarsened to ~100 m server-side. Hard-blocked when the
+              cultural-sensitivity flag is on. Off here = nothing
+              published, nothing shown.
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            checked={prefs.community.enabled}
+            onChange={(e) => setPrefs({ community: { ...prefs.community, enabled: e.target.checked } })}
+          />
+        </label>
       </section>
 
       {/* Privacy */}

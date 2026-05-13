@@ -1,0 +1,396 @@
+/**
+ * CommunityMap — opt-in public map of haunt sites pinned by Southern
+ * Signal operators.
+ *
+ * Privacy posture:
+ *   - The map endpoint coarsens coordinates to ~100 m server-side.
+ *   - Publishing is per-case explicit; there's no auto-share.
+ *   - Pins are tied to a per-device anonymous UUID (localStorage). Lose
+ *     your device, lose the ability to delete your own pins — by design.
+ *   - Culturally-sensitive cases never publish; the action is hidden by
+ *     the global flag and the per-case flag.
+ *
+ * Rendering: Leaflet via CDN (see lib/community/leafletLoader.ts). Pins
+ * are colour-coded by the case's final posterior so the map doubles as
+ * a leaderboard.
+ */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { listInvestigations } from "../lib/db/repo";
+import type { Investigation } from "../lib/db/schema";
+import { deleteCommunityPin, listCommunityPins, publishCommunityPin, type CommunityPin } from "../lib/community/client";
+import { loadLeaflet, type LeafletMap, type LeafletMarker } from "../lib/community/leafletLoader";
+import { getCurrentPoint } from "../lib/sensors/geolocation";
+import { usePreferences } from "../lib/preferences";
+import s from "./View.module.css";
+import m from "./CommunityMap.module.css";
+
+interface SessionSummaryEntry {
+  investigation: Investigation;
+  peakPosterior?: number;
+}
+
+function describeBand(posterior: number | null): { label: string; key: string } {
+  if (posterior == null) return { label: "Unknown", key: "unknown" };
+  if (posterior < 0.15) return { label: "Calm", key: "calm" };
+  if (posterior < 0.35) return { label: "Light", key: "light" };
+  if (posterior < 0.60) return { label: "Possible", key: "possible" };
+  if (posterior < 0.80) return { label: "Notable", key: "notable" };
+  return { label: "Strong", key: "strong" };
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function pinPopupHtml(pin: CommunityPin): string {
+  const band = describeBand(pin.posterior);
+  const date = new Date(pin.created_at).toLocaleDateString();
+  const noteHtml = pin.note ? `<p class="${escapeHtml(m.popupNote)}">${escapeHtml(pin.note)}</p>` : "";
+  const postPct = pin.posterior == null ? "—" : `${Math.round(pin.posterior * 100)}%`;
+  return `
+    <div class="${escapeHtml(m.popup)}">
+      <div class="${escapeHtml(m.popupTitle)}">${escapeHtml(pin.venue_name)}</div>
+      <div class="${escapeHtml(m.popupMeta)}">
+        <span class="${escapeHtml(m.popupBand)} ${escapeHtml(m[`band_${band.key}`] ?? "")}">${escapeHtml(band.label)} · ${postPct}</span>
+        <span class="${escapeHtml(m.popupDate)}">${escapeHtml(date)}</span>
+      </div>
+      ${noteHtml}
+      ${pin.is_yours ? `<button type="button" data-pin-id="${escapeHtml(pin.id)}" class="${escapeHtml(m.popupDelete)}">Delete (yours)</button>` : ""}
+    </div>
+  `;
+}
+
+export function CommunityMap() {
+  const [prefs] = usePreferences();
+  const mapEl = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<LeafletMap | null>(null);
+  const markersRef = useRef<LeafletMarker[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [pins, setPins] = useState<CommunityPin[]>([]);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareError, setShareError] = useState<string | null>(null);
+  const [shareSuccess, setShareSuccess] = useState<string | null>(null);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [recentCases, setRecentCases] = useState<SessionSummaryEntry[]>([]);
+  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
+  const [pendingNote, setPendingNote] = useState("");
+  const [pendingPosteriorStr, setPendingPosteriorStr] = useState("");
+  const [gpsBusy, setGpsBusy] = useState(false);
+  const [gpsPoint, setGpsPoint] = useState<{ lat: number; lon: number } | null>(null);
+
+  // Load Leaflet + create map on mount.
+  useEffect(() => {
+    let cancelled = false;
+    let cleanupRef: (() => void) | null = null;
+    void (async () => {
+      try {
+        const L = await loadLeaflet();
+        if (cancelled || !mapEl.current) return;
+        const map = L.map(mapEl.current, { worldCopyJump: true }).setView([-25.3, 133.8], 4); // AU-centred default
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution: "&copy; OpenStreetMap contributors",
+          maxZoom: 19,
+        }).addTo(map);
+        mapRef.current = map;
+
+        // Try to centre on user GPS — opportunistic, no nag.
+        void (async () => {
+          const pt = await getCurrentPoint(6000);
+          if (pt && mapRef.current) {
+            mapRef.current.setView([pt.latitude, pt.longitude], 11);
+          }
+        })();
+
+        // Popup delete buttons piggyback on the document click — Leaflet
+        // popups render outside our React tree.
+        const onDocClick = (e: MouseEvent) => {
+          const t = e.target as HTMLElement | null;
+          if (!t) return;
+          const id = t.getAttribute("data-pin-id");
+          if (!id) return;
+          void (async () => {
+            const ok = window.confirm("Delete this pin from the community map?");
+            if (!ok) return;
+            const res = await deleteCommunityPin(id);
+            if ("ok" in res) {
+              setPins((cur) => cur.filter((p) => p.id !== id));
+            } else {
+              window.alert(`Delete failed: ${res.error}`);
+            }
+          })();
+        };
+        document.addEventListener("click", onDocClick);
+        cleanupRef = () => document.removeEventListener("click", onDocClick);
+      } catch (e) {
+        if (!cancelled) setLoadError((e as Error).message || "Failed to load map library.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (cleanupRef) cleanupRef();
+      markersRef.current.forEach((mk) => mk.remove());
+      markersRef.current = [];
+      mapRef.current?.remove();
+      mapRef.current = null;
+    };
+  }, []);
+
+  // Pull pins after map is ready.
+  useEffect(() => {
+    void (async () => {
+      setLoading(true);
+      const res = await listCommunityPins({ limit: 500 });
+      if ("error" in res) {
+        setLoadError(res.error);
+      } else {
+        setPins(res.pins);
+      }
+      setLoading(false);
+    })();
+  }, []);
+
+  // Re-render markers when pins change.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || typeof window.L === "undefined") return;
+    const L = window.L;
+    markersRef.current.forEach((mk) => mk.remove());
+    markersRef.current = [];
+    for (const pin of pins) {
+      const band = describeBand(pin.posterior);
+      const icon = L.divIcon({
+        className: `${m.markerIcon} ${m[`marker_${band.key}`] ?? ""}`,
+        html: `<span class="${escapeHtml(m.markerDot)}"></span>`,
+        iconSize: [18, 18],
+        iconAnchor: [9, 9],
+      });
+      const marker = L.marker([pin.lat, pin.lon], { icon }).addTo(map) as LeafletMarker;
+      marker.bindPopup(pinPopupHtml(pin), { className: m.popupWrap });
+      markersRef.current.push(marker);
+    }
+  }, [pins]);
+
+  // Pull recent cases for the publish picker.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const all = await listInvestigations();
+        // Last 12, most recent first.
+        const recent = all
+          .filter((inv) => !!inv.location_name || !!inv.title)
+          .slice(0, 12)
+          .map((inv) => ({ investigation: inv }));
+        setRecentCases(recent);
+      } catch {
+        setRecentCases([]);
+      }
+    })();
+  }, []);
+
+  const openShare = useCallback(async () => {
+    setShareOpen(true);
+    setShareError(null);
+    setShareSuccess(null);
+    setGpsPoint(null);
+    setGpsBusy(true);
+    const pt = await getCurrentPoint(8000);
+    setGpsBusy(false);
+    if (pt) setGpsPoint({ lat: pt.latitude, lon: pt.longitude });
+  }, []);
+
+  const handlePublish = useCallback(async () => {
+    setShareError(null);
+    setShareSuccess(null);
+    const inv = recentCases.find((r) => r.investigation.id === selectedCaseId)?.investigation;
+    if (!inv) { setShareError("Pick a case to publish."); return; }
+    if (!gpsPoint) { setShareError("GPS fix required. Allow location and try again."); return; }
+    let posterior: number | null = null;
+    if (pendingPosteriorStr.trim()) {
+      const p = parseFloat(pendingPosteriorStr.trim());
+      if (!Number.isFinite(p) || p < 0 || p > 1) { setShareError("Posterior must be a number between 0 and 1."); return; }
+      posterior = p;
+    }
+    const note = pendingNote.trim() || null;
+    const venueName = inv.location_name?.trim() || inv.title.trim();
+    setShareBusy(true);
+    const res = await publishCommunityPin({
+      venue_name: venueName,
+      lat: gpsPoint.lat,
+      lon: gpsPoint.lon,
+      region: "AU",
+      posterior,
+      note,
+    });
+    setShareBusy(false);
+    if ("error" in res) {
+      setShareError(res.error);
+      return;
+    }
+    setShareSuccess(`Pinned · ${venueName} at ${res.lat.toFixed(3)}, ${res.lon.toFixed(3)}`);
+    // Refresh pins so the new one appears.
+    const list = await listCommunityPins({ limit: 500 });
+    if (!("error" in list)) setPins(list.pins);
+  }, [recentCases, selectedCaseId, gpsPoint, pendingNote, pendingPosteriorStr]);
+
+  const stats = useMemo(() => {
+    const total = pins.length;
+    const strong = pins.filter((p) => (p.posterior ?? 0) >= 0.6).length;
+    const yours = pins.filter((p) => p.is_yours).length;
+    return { total, strong, yours };
+  }, [pins]);
+
+  const sensitive = prefs.globalCulturalSensitivityFlag;
+  const canShare = !sensitive && prefs.community.enabled;
+
+  return (
+    <section className={s.view}>
+      <div className={s.titleBlock}>
+        <span className={s.eyebrow}>Community map · Operator network</span>
+        <h1 className={s.title}>Pinned haunts</h1>
+        <p className={s.lede}>
+          Opt-in public map of sites Southern Signal operators have flagged.
+          Coordinates are coarsened server-side to ~100 m. No accounts —
+          your device owns its pins via a local anonymous id, so deleting
+          requires this device.
+        </p>
+      </div>
+
+      <section className={m.statRow}>
+        <div className={m.statCard}>
+          <span className={m.statLabel}>Total pinned</span>
+          <span className={m.statValue}>{stats.total}</span>
+        </div>
+        <div className={m.statCard}>
+          <span className={m.statLabel}>Strong (posterior ≥ 60%)</span>
+          <span className={m.statValue}>{stats.strong}</span>
+        </div>
+        <div className={m.statCard}>
+          <span className={m.statLabel}>Yours on this device</span>
+          <span className={m.statValue}>{stats.yours}</span>
+        </div>
+      </section>
+
+      <div className={m.mapShell}>
+        <div ref={mapEl} className={m.mapEl} aria-label="World map of community pins" />
+        {loading && (
+          <div className={m.mapOverlay}>Loading pins…</div>
+        )}
+        {loadError && (
+          <div className={`${m.mapOverlay} ${m.mapOverlayErr}`}>
+            Map unavailable: {loadError}
+            <br />
+            <span className={m.mapOverlayHint}>
+              The endpoint may not have a D1 binding configured on this deployment. Wire <code>COMMUNITY_DB</code> in Pages settings to enable.
+            </span>
+          </div>
+        )}
+      </div>
+
+      {canShare ? (
+        <section className={m.shareSection}>
+          {!shareOpen && (
+            <button type="button" className={`btn btn-primary ${m.shareBtn}`} onClick={openShare}>
+              Share a case to the community map
+            </button>
+          )}
+          {shareOpen && (
+            <div className={m.sharePanel}>
+              <header className={m.shareHeader}>
+                <h2 className={m.shareTitle}>Publish a pin</h2>
+                <button type="button" className={m.shareClose} onClick={() => setShareOpen(false)}>Close</button>
+              </header>
+              <p className={m.shareLede}>
+                Pick a case, confirm the GPS fix, and (optionally) tag the
+                final posterior + a short note. Your device's anonymous id
+                stays with the pin so you can delete it later.
+              </p>
+
+              <label className={m.shareField}>
+                <span className={m.shareFieldLabel}>Case</span>
+                <select
+                  value={selectedCaseId ?? ""}
+                  onChange={(e) => setSelectedCaseId(e.target.value || null)}
+                  className={m.shareInput}
+                >
+                  <option value="">— pick a case —</option>
+                  {recentCases.map((c) => (
+                    <option key={c.investigation.id} value={c.investigation.id}>
+                      {c.investigation.location_name?.trim() || c.investigation.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className={m.shareField}>
+                <span className={m.shareFieldLabel}>Final posterior (optional, 0–1)</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={pendingPosteriorStr}
+                  onChange={(e) => setPendingPosteriorStr(e.target.value)}
+                  placeholder="e.g. 0.42"
+                  className={m.shareInput}
+                />
+              </label>
+
+              <label className={m.shareField}>
+                <span className={m.shareFieldLabel}>Note (optional, ≤ 280 chars)</span>
+                <textarea
+                  value={pendingNote}
+                  onChange={(e) => setPendingNote(e.target.value.slice(0, 280))}
+                  rows={3}
+                  className={m.shareTextarea}
+                  placeholder="What stood out? Stay factual — this is public."
+                />
+              </label>
+
+              <div className={m.shareGps}>
+                {gpsBusy ? "Acquiring GPS fix…" : gpsPoint ? `GPS · ${gpsPoint.lat.toFixed(4)}, ${gpsPoint.lon.toFixed(4)} (coarsened on publish)` : "GPS unavailable — allow location and retry."}
+                <button
+                  type="button"
+                  className={m.shareGpsBtn}
+                  onClick={async () => { setGpsBusy(true); const pt = await getCurrentPoint(8000); setGpsBusy(false); setGpsPoint(pt ? { lat: pt.latitude, lon: pt.longitude } : null); }}
+                  disabled={gpsBusy}
+                >
+                  Retry GPS
+                </button>
+              </div>
+
+              <button
+                type="button"
+                className={`btn btn-primary ${m.sharePublishBtn}`}
+                disabled={shareBusy || !selectedCaseId || !gpsPoint}
+                onClick={handlePublish}
+              >
+                {shareBusy ? "Publishing…" : "Publish pin"}
+              </button>
+
+              {shareError && <p className={m.shareError}>{shareError}</p>}
+              {shareSuccess && <p className={m.shareSuccess}>{shareSuccess}</p>}
+            </div>
+          )}
+        </section>
+      ) : (
+        <section className={m.shareDisabled}>
+          {sensitive
+            ? "Publishing is hard-blocked while \"Treat all sites as culturally sensitive\" is on. Untoggle in Setup to publish."
+            : "Community map disabled in Setup."}
+        </section>
+      )}
+
+      <p className={m.privacyNote}>
+        Pins are public. Don't pin sites whose location is restricted (sacred,
+        private property without consent, working hospitals, etc.). Coords
+        are coarsened to ~100 m but the venue name and your note are stored
+        verbatim — review what you write before publishing.
+      </p>
+    </section>
+  );
+}

@@ -18,6 +18,7 @@ import { SimpleMissionView } from "../components/SimpleMissionView";
 import { SpiritBoxTool } from "../components/SpiritBoxTool";
 import { BaitToneTool } from "../components/BaitToneTool";
 import { EmfSpikeLed } from "../components/EmfSpikeLed";
+import { SlsPoseTracker } from "../components/SlsPoseTracker";
 import { VideoEvpCaptureTile } from "../components/VideoEvpCaptureTile";
 import { usePreferences } from "../lib/preferences";
 import {
@@ -691,6 +692,16 @@ export function MissionControl() {
           magnetometerUt={sensors.snapshot.magnetometer?.magnitude ?? sensors.emf?.value ?? undefined}
           lightLux={sensors.snapshot.light?.lux ?? undefined}
           motionMs2={sensors.snapshot.motion?.accelMagnitude ?? undefined}
+        />
+      )}
+
+      {/* SLS STICK-FIGURE TRACKER — motion-shape heuristic with audit
+          chain. Honestly framed (not depth-sensor) in the tile itself. */}
+      {isPro && prefs.rig.modules.slsTracker && (
+        <SlsPoseTracker
+          investigationId={session.current?.id ?? null}
+          running={running}
+          showDebug={isPro}
         />
       )}
 

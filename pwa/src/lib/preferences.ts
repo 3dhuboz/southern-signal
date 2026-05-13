@@ -94,7 +94,20 @@ export interface AppPreferences {
        *  clip with synchronized mic audio so both end up on the same
        *  evidence reel. */
       videoEvpCapture: boolean;
+      /** Honest stick-figure motion tracker (camera + frame-difference +
+       *  human-shape heuristic). Not a true SLS — no IR depth sensor — but
+       *  it surfaces "person-shaped motion" with stick-figure overlays. */
+      slsTracker: boolean;
     };
+  };
+  /** Community map — opt-in publish-and-browse of pinned haunt sites. */
+  community: {
+    /** Master switch for the Community map route + nav entry. Default ON
+     *  but every publish is still an explicit per-case action. */
+    enabled: boolean;
+    /** Auto-generated anonymous id used to tag pins this device created
+     *  (lets the operator delete their own pins without an account). */
+    anonymousId: string | null;
   };
 }
 
@@ -120,8 +133,10 @@ const DEFAULTS: AppPreferences = {
       sensorsPanel: true,
       estesTile: true,
       videoEvpCapture: true,
+      slsTracker: true,
     },
   },
+  community: { enabled: true, anonymousId: null },
 };
 
 const KEY = "ss-preferences-v1";
@@ -143,6 +158,7 @@ function read(): AppPreferences {
       rig: {
         modules: { ...DEFAULTS.rig.modules, ...(parsed.rig?.modules ?? {}) },
       },
+      community: { ...DEFAULTS.community, ...(parsed.community ?? {}) },
     };
   } catch {
     return DEFAULTS;
@@ -171,9 +187,20 @@ export function setPreferences(patch: Partial<AppPreferences>): AppPreferences {
     rig: {
       modules: { ...current.rig.modules, ...(patch.rig?.modules ?? {}) },
     },
+    community: { ...current.community, ...(patch.community ?? {}) },
   };
   write(next);
   return next;
+}
+
+/** Read or mint the anonymous community id. Survives across cases on this
+ *  device; lets the operator delete their own pins without an account. */
+export function getOrCreateAnonymousCommunityId(): string {
+  const prefs = read();
+  if (prefs.community.anonymousId) return prefs.community.anonymousId;
+  const id = crypto.randomUUID();
+  setPreferences({ community: { ...prefs.community, anonymousId: id } });
+  return id;
 }
 
 export function usePreferences(): [AppPreferences, (patch: Partial<AppPreferences>) => void] {
