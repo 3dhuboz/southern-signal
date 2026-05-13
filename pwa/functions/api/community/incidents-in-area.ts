@@ -55,18 +55,30 @@ interface BBox { minLat: number; minLon: number; maxLat: number; maxLon: number 
 
 interface IncidentSource { label: string; url: string }
 type SourceQuality = "primary" | "secondary" | "anecdotal";
+/** Category of finding — separates "this happened" from "people say this".
+ *
+ *   incident  = a real event with civil/criminal record, news report,
+ *               or coroner's finding. severity field is meaningful.
+ *   folklore  = local legend, ghost story, "haunted" property write-up,
+ *               bunyip / phantom / apparition lore — even when sourced
+ *               from a primary digitised newspaper (a 1923 article
+ *               reporting "the ghost of Smith Lane" is primary-sourced
+ *               folklore). severity is "unknown" for these.
+ *
+ * Operator UI renders them as distinct pin styles so the eye knows
+ * which is which at a glance — critical for not quoting folklore as
+ * documented fact on camera.
+ */
+type IncidentCategory = "incident" | "folklore";
 interface Incident {
   title: string;
   body: string;
   severity: "fatal" | "serious" | "minor" | "unknown";
-  /** How well-cited the incident is.
-   *  primary    = court records, coroner reports, named newspaper articles
-   *               (Trove, ABC News, regional paper, Courier-Mail, etc.).
-   *  secondary  = Wikipedia, heritage register, news.com.au listicle
-   *               citing primary sources.
-   *  anecdotal  = blog, forum, ghost-tour write-up referencing a real
-   *               event without direct primary citation — operator
-   *               should verify before quoting on camera. */
+  /** Subject-matter category — see IncidentCategory comment. */
+  category: IncidentCategory;
+  /** How well-cited the finding is. Note: a folklore claim can still
+   *  be source_quality:"primary" if the legend itself appeared in print
+   *  (the documentation tier and the truth tier are orthogonal). */
   source_quality: SourceQuality;
   year: number | null;
   lat: number;
@@ -147,16 +159,34 @@ SOURCE LADDER (global — prefer higher tiers, label lower with source_quality):
   ANECDOTAL:  Blogs, forums, "haunted places" lists referencing real
               events without primary citation.`;
 
-  return `You are a forensic news researcher. Find DOCUMENTED INCIDENTS — deaths, murders, fatal fires, fatal accidents, serious court cases, coroner's inquests, mass-casualty events, suicides, disappearances, child fatalities, drownings — within a geographic bounding box. Cite every claim.
+  return `You are a forensic researcher embedded in a paranormal-investigation app. Find TWO categories of geographic finding for the bounding box:
+
+  category: "incident"
+    Documented real events — deaths, murders, fatal fires, fatal
+    accidents, serious court cases, coroner's inquests, mass-casualty
+    events, suicides, disappearances, child fatalities, drownings.
+    severity field is meaningful here.
+
+  category: "folklore"
+    Local legends, ghost stories, "haunted" property write-ups,
+    bunyip / phantom / apparition lore, regional paranormal traditions,
+    First Nations storytelling references where appropriate. Includes
+    historical newspaper articles reporting hauntings or sightings
+    (1800s-1950s Australia has rich coverage of this in Trove).
+    severity is always "unknown" for folklore. source_quality applies
+    normally — a 1923 newspaper reporting "the phantom of Smith Lane"
+    is primary-sourced folklore.
 
 HARD RULES:
-1. EVERY incident MUST cite at least one real source URL you accessed. No sources → drop the incident.
-2. Each incident MUST include an approximate latitude/longitude inside or very near the bounding box. If the source gives an address, geocode it (you may estimate from suburb/town if the street isn't specified). Drop incidents you cannot place on the map.
-3. Be terse: 1-3 sentence body per incident, with year + suburb + 1-line factual summary.
+1. EVERY finding MUST cite at least one real source URL you accessed. No sources → drop the finding.
+2. Each finding MUST include an approximate latitude/longitude inside or very near the bounding box. If the source gives an address, geocode it (you may estimate from suburb/town if the street isn't specified). Drop findings you cannot place on the map.
+3. Be terse: 1-3 sentence body per finding, with year (or "undated" for old folklore) + suburb + 1-line summary.
 4. Living-people privacy: don't include private contact details. Victim names already published in mainstream news are public record — repeat them as the source did.
+5. Folklore is FAIR GAME, not filler. Don't pad with low-effort "the operator may want to investigate…" entries — only include folklore with an actual citation (Trove article, heritage register, named ghost-tour write-up, academic folklore journal).
 
-SEARCH AGGRESSIVELY — operators have complained that the model returns empty results for regions they know have documented incidents. Don't give up after one query. Execute AT LEAST 6 distinct searches before returning [], including:
+SEARCH AGGRESSIVELY — operators have complained that the model returns empty results for regions they know have documented incidents AND well-known local hauntings. Don't give up after one query. Execute AT LEAST 10 distinct searches before returning [], split across the two categories:
 
+  INCIDENT SEARCHES (≥ 6):
   (a) The TOWN name + each event term separately:
         "<town> murder", "<town> fatal fire", "<town> coroner inquest",
         "<town> drowning", "<town> child death", "<town> missing person"
@@ -165,8 +195,22 @@ SEARCH AGGRESSIVELY — operators have complained that the model returns empty r
   (d) AustLII direct: site:austlii.edu.au "<town>"
   (e) Newspaper-name-prefixed: site:couriermail.com.au "<suburb>",
       site:abc.net.au "<town>" death, site:themorningbulletin.com.au …
-  (f) For pre-2000 events: Trove digitised newspapers — these
-      are the richest single source of historical incidents in Australia.
+  (f) Pre-2000 Trove digitised newspapers — richest single source of
+      historical incidents in Australia.
+
+  FOLKLORE SEARCHES (≥ 4):
+  (g) "<town> haunted" OR "<town> ghost" OR "<town> phantom"
+  (h) "<town> bunyip" OR "<town> mysterious" OR "<town> apparition" OR
+      "<town> mystery house" OR "<town> mystery light"
+  (i) Trove: site:trove.nla.gov.au "<town>" (haunted OR ghost OR
+      phantom OR apparition OR mysterious) — Australian newspapers
+      1820s-1950s carried this material seriously.
+  (j) Heritage registers: site:environment.nsw.gov.au /
+      site:apps.des.qld.gov.au "<town>" — heritage citations sometimes
+      include hauntings of listed properties.
+  (k) "Haunted Australia" / "ghost tour <town>" / paranormal society
+      pages — these are usually source_quality:"anecdotal" but still
+      valuable as a lead.
 
 WHAT IF YOU FIND ONLY WEAK SOURCES? Don't drop the lead. Return it with source_quality: "anecdotal" or "secondary" and the citations you have. Operators want to know WHERE to dig further — false-negative is worse than a flagged weak finding.
 
@@ -179,6 +223,7 @@ OUTPUT FORMAT — strict JSON. No markdown fences, no commentary outside the JSO
       "title": "Short title (≤ 80 chars)",
       "body": "1-3 sentence factual paragraph with year + location.",
       "severity": "fatal" | "serious" | "minor" | "unknown",
+      "category": "incident" | "folklore",
       "source_quality": "primary" | "secondary" | "anecdotal",
       "year": 2017,
       "lat": -23.412,
@@ -190,7 +235,7 @@ OUTPUT FORMAT — strict JSON. No markdown fences, no commentary outside the JSO
   "notes": "1-2 sentence summary of what you searched and any caveats."
 }
 
-If you genuinely find nothing supportable across all 6+ searches, return incidents: [] with notes explaining EXACTLY which searches you ran and what you tried.`;
+If you genuinely find nothing supportable across all 10+ searches, return incidents: [] with notes explaining EXACTLY which searches you ran (incident vs folklore) and what you tried.`;
 }
 
 function buildUserPrompt(bbox: BBox, region: "AU" | "GLOBAL"): string {
@@ -221,6 +266,15 @@ function pickSourceQuality(v: unknown): SourceQuality {
   if (s === "primary" || s === "secondary" || s === "anecdotal") return s;
   // Default to secondary — neither over-promising nor dropping the lead.
   return "secondary";
+}
+
+function pickCategory(v: unknown): IncidentCategory {
+  const s = typeof v === "string" ? v.toLowerCase() : "";
+  if (s === "folklore" || s === "haunting" || s === "legend") return "folklore";
+  if (s === "incident") return "incident";
+  // Default to incident — the original use case; folklore is opt-in via
+  // explicit category tag in the model's output.
+  return "incident";
 }
 
 function validateIncident(raw: unknown, bbox: BBox): Incident | null {
@@ -257,6 +311,7 @@ function validateIncident(raw: unknown, bbox: BBox): Incident | null {
     title,
     body,
     severity: pickSeverity(o.severity),
+    category: pickCategory(o.category),
     source_quality: pickSourceQuality(o.source_quality),
     year: year != null ? Math.round(year) : null,
     lat,
@@ -404,36 +459,33 @@ function stripMarkup(s: string | undefined): string {
   return s.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
 }
 
-async function searchTrove(env: Env, bbox: BBox, town: string | null, _state: string | null): Promise<{ incidents: Incident[]; queries: string[]; notes: string }> {
-  if (!env.TROVE_API_KEY) return { incidents: [], queries: [], notes: "Trove disabled (TROVE_API_KEY not set on this deployment)." };
-  if (!town) return { incidents: [], queries: [], notes: "Trove skipped — couldn't reverse-geocode the bbox centre to a town name." };
-
-  // One broad query, scoped to newspapers. Trove's relevance ranking is
-  // strong enough that 25 results covers the high-signal hits.
-  const incidentTerms = '(murder OR death OR fatal OR fire OR drowned OR coroner OR inquest OR "missing person" OR stabbed OR shooting)';
-  const q = `"${town}" ${incidentTerms}`;
-  const url = `https://api.trove.nla.gov.au/v3/result?category=newspaper&encoding=json&n=25&q=${encodeURIComponent(q)}`;
-
+/** Run a single Trove query and shape results as Incident[] with the
+ *  given category tagging. Centralises the per-article transformation
+ *  so the incident-pass and folklore-pass share the same plumbing. */
+async function runTroveQuery(
+  env: Env,
+  bbox: BBox,
+  query: string,
+  category: IncidentCategory,
+  pinSeedOffset: number,
+): Promise<{ incidents: Incident[]; ok: boolean; statusNote: string }> {
+  const url = `https://api.trove.nla.gov.au/v3/result?category=newspaper&encoding=json&n=20&q=${encodeURIComponent(query)}`;
   let resp: Response;
   try {
     resp = await fetch(url, {
-      headers: { "X-API-KEY": env.TROVE_API_KEY, "Accept": "application/json" },
+      headers: { "X-API-KEY": env.TROVE_API_KEY!, "Accept": "application/json" },
     });
   } catch (err) {
-    return { incidents: [], queries: [q], notes: `Trove network error: ${(err as Error).message.slice(0, 120)}` };
+    return { incidents: [], ok: false, statusNote: `network error (${(err as Error).message.slice(0, 80)})` };
   }
-  if (!resp.ok) {
-    return { incidents: [], queries: [q], notes: `Trove HTTP ${resp.status}` };
-  }
+  if (!resp.ok) return { incidents: [], ok: false, statusNote: `HTTP ${resp.status}` };
   let data: TroveResponse;
-  try { data = await resp.json() as TroveResponse; } catch (err) {
-    return { incidents: [], queries: [q], notes: `Trove returned non-JSON: ${(err as Error).message.slice(0, 120)}` };
-  }
+  try { data = await resp.json() as TroveResponse; } catch { return { incidents: [], ok: false, statusNote: "non-JSON response" }; }
   const articles = data.category?.[0]?.records?.article ?? [];
 
-  // Anchor pins at the bbox centre + a small spiral jitter so they
-  // don't all stack on top of one another. Jitter is ~50-200 m at
-  // mid-latitudes — visibly separable, still inside the bbox.
+  // Anchor pins at the bbox centre + spiral jitter. The two Trove
+  // passes (incident vs folklore) get different pinSeedOffset values
+  // so they don't overlap visually when both fire on the same bbox.
   const cLat = (bbox.minLat + bbox.maxLat) / 2;
   const cLon = (bbox.minLon + bbox.maxLon) / 2;
 
@@ -447,14 +499,18 @@ async function searchTrove(env: Env, bbox: BBox, town: string | null, _state: st
     const paperName = art.title?.title ?? "Trove digitised newspapers";
     const sourceUrl = art.troveUrl ?? (art.id ? `https://trove.nla.gov.au/newspaper/article/${art.id}` : "");
     if (!sourceUrl) continue;
-    const angle = (i / Math.max(articles.length, 1)) * Math.PI * 2;
-    const radius = 0.002 + (i % 4) * 0.0015; // ~200 m + step
+    const seed = i + pinSeedOffset;
+    const angle = (seed / 30) * Math.PI * 2;
+    const radius = 0.002 + (seed % 5) * 0.0015;
     const lat = cLat + Math.sin(angle) * radius;
     const lon = cLon + Math.cos(angle) * radius;
     incidents.push({
-      title: (heading || `${paperName} · ${art.date ?? "unknown date"}`).slice(0, 120),
-      body: (snippet || `${paperName} · ${art.date ?? "unknown date"}`).slice(0, 320),
-      severity: inferTroveSeverity(`${heading} ${snippet}`),
+      title: (heading || `${paperName} · ${art.date ?? "undated"}`).slice(0, 120),
+      body: (snippet || `${paperName} · ${art.date ?? "undated"}`).slice(0, 320),
+      // Folklore is always severity:"unknown" — it's a category claim,
+      // not an injury count. Real-event passes use the keyword heuristic.
+      severity: category === "folklore" ? "unknown" : inferTroveSeverity(`${heading} ${snippet}`),
+      category,
       source_quality: "primary",
       year,
       lat,
@@ -465,14 +521,30 @@ async function searchTrove(env: Env, bbox: BBox, town: string | null, _state: st
       }],
     });
   }
+  return { incidents, ok: true, statusNote: `${incidents.length} hit${incidents.length === 1 ? "" : "s"}` };
+}
 
-  return {
-    incidents,
-    queries: [`Trove: ${q}`],
-    notes: incidents.length > 0
-      ? `Trove returned ${incidents.length} digitised-newspaper article${incidents.length === 1 ? "" : "s"} for "${town}". Pins anchored at the bbox centre + jitter (Trove articles don't ship street-level coords).`
-      : `Trove returned no articles for "${town}" with the incident-term query.`,
-  };
+async function searchTrove(env: Env, bbox: BBox, town: string | null, _state: string | null): Promise<{ incidents: Incident[]; queries: string[]; notes: string }> {
+  if (!env.TROVE_API_KEY) return { incidents: [], queries: [], notes: "Trove disabled (TROVE_API_KEY not set on this deployment)." };
+  if (!town) return { incidents: [], queries: [], notes: "Trove skipped — couldn't reverse-geocode the bbox centre to a town name." };
+
+  const incidentTerms = '(murder OR death OR fatal OR fire OR drowned OR coroner OR inquest OR "missing person" OR stabbed OR shooting)';
+  const folkloreTerms = '(haunted OR ghost OR phantom OR apparition OR bunyip OR mysterious OR "mystery light" OR "ghost story" OR spectre)';
+  const incidentQuery = `"${town}" ${incidentTerms}`;
+  const folkloreQuery = `"${town}" ${folkloreTerms}`;
+
+  // Two queries in parallel — Trove rate-limits per key but allows
+  // concurrent requests. pinSeedOffset:0 for incidents, :100 for
+  // folklore so the spirals don't overlap on the map.
+  const [incidentResult, folkloreResult] = await Promise.all([
+    runTroveQuery(env, bbox, incidentQuery, "incident", 0),
+    runTroveQuery(env, bbox, folkloreQuery, "folklore", 100),
+  ]);
+
+  const incidents = [...incidentResult.incidents, ...folkloreResult.incidents];
+  const queries = [`Trove (incident): ${incidentQuery}`, `Trove (folklore): ${folkloreQuery}`];
+  const notes = `Trove · "${town}" · incident=${incidentResult.statusNote}, folklore=${folkloreResult.statusNote}. Pins anchored at bbox centre + jitter (Trove articles don't ship street-level coords).`;
+  return { incidents, queries, notes };
 }
 
 async function readCache(db: D1Database, cellKey: string): Promise<{ result: AreaResult; created_at: string } | null> {

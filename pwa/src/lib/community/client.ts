@@ -83,11 +83,16 @@ export async function publishCommunityPin(input: PublishInput): Promise<{ ok: tr
 
 export interface AreaIncidentSource { label: string; url: string }
 export type AreaIncidentSourceQuality = "primary" | "secondary" | "anecdotal";
+/** Subject-matter category — incident (real event) vs folklore (legend,
+ *  ghost story, phantom lore). See server schema for full semantics. */
+export type AreaIncidentCategory = "incident" | "folklore";
 
 export interface AreaIncident {
   title: string;
   body: string;
   severity: "fatal" | "serious" | "minor" | "unknown";
+  /** What kind of finding this is — drives marker style + popup chip. */
+  category: AreaIncidentCategory;
   /** Citation tier — see server schema. Defaults to "secondary" if the
    *  model didn't say (the validator fills it in). */
   source_quality: AreaIncidentSourceQuality;

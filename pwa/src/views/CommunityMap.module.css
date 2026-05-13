@@ -30,6 +30,12 @@
   color: var(--signal);
 }
 
+.statSep {
+  color: var(--text-dim);
+  font-weight: 400;
+  margin: 0 4px;
+}
+
 .mapShell {
   position: relative;
   width: 100%;
@@ -449,6 +455,45 @@
 .severity_serious .incidentDiamond { background: #FFA64C; }
 .severity_minor   .incidentDiamond { background: #FFE08A; }
 .severity_unknown .incidentDiamond { background: #C7CDD6; }
+
+/* Folklore marker — violet ringed circle so it reads as "legend / claim",
+ * distinct from the orange/red severity diamonds used for real events. */
+.folkloreIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+}
+
+.folkloreGlyph {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #E8B6FF 0%, #B07CFF 55%, #6C3FBE 100%);
+  box-shadow:
+    0 0 0 2px rgba(231, 207, 255, 0.45),
+    0 0 12px rgba(176, 124, 255, 0.65);
+}
+
+/* Folklore category chip in the popup */
+.category_folklore {
+  background: rgba(176, 124, 255, 0.18);
+  color: #D7B8FF;
+}
+
+/* Folklore-specific reminder under the body — soft violet wash. */
+.popupFolkloreNote {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  background: rgba(176, 124, 255, 0.10);
+  border: 1px solid rgba(176, 124, 255, 0.35);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
 
 /* Severity badge inside the popup */
 .severity_fatal   { background: rgba(242, 93, 110, 0.20); color: #F25D6E; }

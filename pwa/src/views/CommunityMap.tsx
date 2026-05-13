@@ -67,8 +67,9 @@ function pinPopupHtml(pin: CommunityPin): string {
 }
 
 function incidentPopupHtml(inc: AreaIncident): string {
+  const isFolklore = inc.category === "folklore";
   const severityKey = inc.severity || "unknown";
-  const yearStr = inc.year ? String(inc.year) : "—";
+  const yearStr = inc.year ? String(inc.year) : (isFolklore ? "undated" : "—");
   const sourcesHtml = inc.sources.length
     ? `<ul class="${escapeHtml(m.popupSources)}">${inc.sources.slice(0, 4).map((s) => `<li><a href="${escapeHtml(s.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(s.label)}</a></li>`).join("")}</ul>`
     : `<p class="${escapeHtml(m.popupNote)}"><em>No citations returned by the model — treat with skepticism.</em></p>`;
@@ -80,15 +81,25 @@ function incidentPopupHtml(inc: AreaIncident): string {
   const qualityWarning = inc.source_quality !== "primary"
     ? `<p class="${escapeHtml(m.popupQualityWarn)}">⚠ ${escapeHtml(qualityLabel === "ANECDOTAL · VERIFY" ? "Anecdotal — confirm against a primary source before quoting on camera." : "Secondary source — trace to a primary citation before reporting.")}</p>`
     : "";
+  // Folklore-specific reminder: even primary-sourced folklore is still
+  // a claim, not a confirmed event. Operators on camera need to phrase
+  // it as "the newspaper reported a haunting" not "there was a haunting".
+  const folkloreReminder = isFolklore
+    ? `<p class="${escapeHtml(m.popupFolkloreNote)}">👻 Folklore / local legend — phrase as "the source reports…", not as confirmed event.</p>`
+    : "";
+  const categoryBadge = isFolklore
+    ? `<span class="${escapeHtml(m.popupBand)} ${escapeHtml(m.category_folklore ?? "")}">FOLKLORE · ${escapeHtml(yearStr)}</span>`
+    : `<span class="${escapeHtml(m.popupBand)} ${escapeHtml(m[`severity_${severityKey}`] ?? "")}">${escapeHtml(severityKey.toUpperCase())} · ${escapeHtml(yearStr)}</span>`;
   return `
     <div class="${escapeHtml(m.popup)}">
       <div class="${escapeHtml(m.popupTitle)}">${escapeHtml(inc.title)}</div>
       <div class="${escapeHtml(m.popupMeta)}">
-        <span class="${escapeHtml(m.popupBand)} ${escapeHtml(m[`severity_${severityKey}`] ?? "")}">${escapeHtml(severityKey.toUpperCase())} · ${escapeHtml(yearStr)}</span>
+        ${categoryBadge}
         <span class="${escapeHtml(m.popupBand)} ${escapeHtml(m[`quality_${inc.source_quality}`] ?? "")}">${escapeHtml(qualityLabel)}</span>
       </div>
       <p class="${escapeHtml(m.popupNote)}">${escapeHtml(inc.body)}</p>
       ${sourcesHtml}
+      ${folkloreReminder}
       ${qualityWarning}
     </div>
   `;
@@ -223,9 +234,10 @@ export function CommunityMap() {
     }
   }, [pins]);
 
-  // Re-render AI-surfaced incident markers when they change. Distinct
-  // shape (diamond) + colour from community pins so the layers don't
-  // get visually conflated.
+  // Re-render AI-surfaced incident markers when they change. Two marker
+  // styles: severity-coloured diamond for real events, violet ringed
+  // circle for folklore — distinct shapes so a reviewer can tell at a
+  // glance which findings are documented events vs local legends.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || typeof window.L === "undefined") return;
@@ -233,12 +245,20 @@ export function CommunityMap() {
     incidentMarkersRef.current.forEach((mk) => mk.remove());
     incidentMarkersRef.current = [];
     for (const inc of incidents) {
-      const icon = L.divIcon({
-        className: `${m.incidentIcon} ${m[`severity_${inc.severity}`] ?? ""}`,
-        html: `<span class="${escapeHtml(m.incidentDiamond)}"></span>`,
-        iconSize: [16, 16],
-        iconAnchor: [8, 8],
-      });
+      const isFolklore = inc.category === "folklore";
+      const icon = isFolklore
+        ? L.divIcon({
+            className: `${m.incidentIcon} ${m.folkloreIcon}`,
+            html: `<span class="${escapeHtml(m.folkloreGlyph)}"></span>`,
+            iconSize: [18, 18],
+            iconAnchor: [9, 9],
+          })
+        : L.divIcon({
+            className: `${m.incidentIcon} ${m[`severity_${inc.severity}`] ?? ""}`,
+            html: `<span class="${escapeHtml(m.incidentDiamond)}"></span>`,
+            iconSize: [16, 16],
+            iconAnchor: [8, 8],
+          });
       const marker = L.marker([inc.lat, inc.lon], { icon }).addTo(map) as LeafletMarker;
       marker.bindPopup(incidentPopupHtml(inc), { className: m.popupWrap });
       incidentMarkersRef.current.push(marker);
@@ -375,15 +395,25 @@ export function CommunityMap() {
           <span className={m.statValue}>{stats.yours}</span>
         </div>
         <div className={m.statCard}>
-          <span className={m.statLabel}>Documented incidents</span>
-          <span className={m.statValue}>{incidents.length}</span>
+          <span className={m.statLabel}>Incidents · Folklore</span>
+          <span className={m.statValue}>
+            {incidents.filter((i) => i.category === "incident").length}
+            <span className={m.statSep}> · </span>
+            {incidents.filter((i) => i.category === "folklore").length}
+          </span>
         </div>
       </section>
 
       <section className={m.incidentBar}>
         <div className={m.incidentBarText}>
-          <strong>AI-surfaced incidents:</strong>{" "}
-          Pan / zoom to the area you care about, then tap to search Trove, news archives, and court records for documented deaths, fires, and coroner's findings inside the visible bounds. Results are cached server-side (~10 km cells, 30-day TTL) so repeat views are free.
+          <strong>AI-surfaced incidents + folklore:</strong>{" "}
+          Pan / zoom to the area you care about, then tap to search Trove
+          digitised newspapers, court records, ABC News, regional papers,
+          and heritage registers. Two categories surface inside the
+          visible bounds: documented incidents (orange/red diamond) and
+          local folklore / hauntings (violet circle) — every finding ships
+          with citation links. Results cached server-side (~10 km cells,
+          30-day TTL) so repeat views are free.
         </div>
         <button
           type="button"
