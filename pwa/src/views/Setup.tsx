@@ -374,7 +374,7 @@ export function Setup() {
       </section>
 
       {/* Pre-air readiness — aggregate status across the methodology gates */}
-      <section className={st.panel}>
+      <section id="pre-air-readiness" className={st.panel}>
         <header className={st.panelHeader}>
           <h2 className={st.panelTitle}>Pre-air readiness</h2>
           <span className={st.panelBadge}>Forensic</span>

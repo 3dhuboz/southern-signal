@@ -11,6 +11,7 @@ import { useLiveNarrator } from "../lib/posterior/liveNarrator";
 import { EvidenceLedger, type LedgerStream } from "../components/EvidenceLedger";
 import { OvilusTool } from "../components/OvilusTool";
 import { PosteriorBar } from "../components/PosteriorBar";
+import { PreAirReadinessChip } from "../components/PreAirReadinessChip";
 import { ScreenRecordButton } from "../components/ScreenRecordButton";
 import { SessionBaselineCard } from "../components/SessionBaselineCard";
 import { SessionSummaryCard } from "../components/SessionSummaryCard";
@@ -532,6 +533,7 @@ export function MissionControl() {
               <span className={m.caseId}>
                 {session.current ? `CASE ${session.current.id.slice(0, 8).toUpperCase()}` : "NO CASE"}
               </span>
+              <PreAirReadinessChip />
             </div>
             <h1 className={m.heroTitle}>{session.current?.title ?? "Begin a session"}</h1>
             <p className={m.heroSub}>{statusMsg}</p>

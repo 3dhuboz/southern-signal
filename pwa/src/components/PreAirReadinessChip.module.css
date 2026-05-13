@@ -1,0 +1,44 @@
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-inset);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-decoration: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  cursor: pointer;
+}
+.chip:hover { background: var(--bg-overlay); }
+
+.chip[data-status="ready"] {
+  background: color-mix(in srgb, var(--signal) 14%, var(--bg-inset));
+  border-color: var(--signal-dim);
+  color: var(--signal);
+}
+.chip[data-status="caveats"] {
+  background: color-mix(in srgb, var(--warning) 14%, var(--bg-inset));
+  border-color: color-mix(in srgb, var(--warning) 50%, var(--border-strong));
+  color: var(--warning);
+}
+.chip[data-status="blocked"] {
+  background: color-mix(in srgb, var(--danger) 14%, var(--bg-inset));
+  border-color: color-mix(in srgb, var(--danger) 50%, var(--border-strong));
+  color: var(--danger);
+}
+
+.mark {
+  font-family: "Orbitron", var(--font-display), sans-serif;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.text {
+  white-space: nowrap;
+}
