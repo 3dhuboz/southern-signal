@@ -15,8 +15,11 @@
 const LEAFLET_VERSION = "1.9.4";
 const LEAFLET_JS = `https://unpkg.com/leaflet@${LEAFLET_VERSION}/dist/leaflet.js`;
 const LEAFLET_CSS = `https://unpkg.com/leaflet@${LEAFLET_VERSION}/dist/leaflet.css`;
-const LEAFLET_INTEGRITY_JS = "sha512-BB3hKbKWOc9Ez/TAwyWxNXeoV9c1v6FIeYiBieIWkpLjauysF18NzgR1MBNBXf8/KABdlkX68nAhlwcDFLGPCQ==";
-const LEAFLET_INTEGRITY_CSS = "sha512-h9FcoyWjHcOcmEVkxOfTLnmZFWIH0iZhZT1H2TbOq55xssQGEJHEaIm+PgoUaZbRvQTNTluNOEfb1ZRy6D3BOw==";
+// SRI hashes computed from the actual unpkg files (sha512). Recompute
+// with: `curl https://unpkg.com/leaflet@1.9.4/dist/leaflet.js | openssl
+// dgst -sha512 -binary | openssl base64 -A` if you bump the version.
+const LEAFLET_INTEGRITY_JS = "sha512-BwHfrr4c9kmRkLw6iXFdzcdWV/PGkVgiIyIWLLlTSXzWQzxuSg4DiQUCpauz/EWjgk5TYQqX/kvn9pG1NpYfqg==";
+const LEAFLET_INTEGRITY_CSS = "sha512-Zcn6bjR/8RZbLEpLIeOwNtzREBAJnUKESxces60Mpoj+2okopSAcSUIUOseddDm0cxnGQzxIR7vJgsLZbdLE3w==";
 
 interface LeafletGlobal {
   map(el: HTMLElement, options?: object): LeafletMap;
