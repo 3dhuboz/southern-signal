@@ -42,6 +42,13 @@ import {
 interface Env extends CommunityEnv {
   OPENROUTER_API_KEY?: string;
   OPENROUTER_RESEARCH_MODEL?: string;
+  /** Trove API v3 key — free at https://trove.nla.gov.au/about/create-something/using-api/api-keys
+   *  Set via `wrangler pages secret put TROVE_API_KEY`. When present,
+   *  every AU bbox search hits Trove (digitised newspapers, 1803-2010+)
+   *  in parallel with Sonar and merges the results — guarantees real
+   *  primary-source citations even when Sonar's web crawl can't reach
+   *  paywalled regional outlets. */
+  TROVE_API_KEY?: string;
 }
 
 interface BBox { minLat: number; minLon: number; maxLat: number; maxLon: number }
@@ -312,6 +319,162 @@ async function callSonar(env: Env, bbox: BBox, region: "AU" | "GLOBAL"): Promise
   return { result: { incidents, search_terms_used, notes, model } };
 }
 
+// ---------------------- Trove direct-API integration ----------------------
+//
+// Trove's REST API is the National Library of Australia's interface to its
+// fully digitised newspaper archive (~1803 → mid-2010s, depending on title)
+// plus government gazettes, books, manuscripts. For our purpose — primary-
+// source incident reporting in Australian towns — it is the single most
+// reliable substrate. Coverage is especially strong for regional papers
+// (Morning Bulletin, Cairns Post, Geraldton Guardian, etc.) that Sonar's
+// general web crawl can't paywall-bypass.
+//
+// Flow:
+//   bbox → Nominatim reverse-geocode the bbox centre → town name →
+//   Trove keyword query `<town> (murder OR death OR fatal OR ...)`
+//   → parse articles → place pins at the bbox centre with a small
+//   per-row jitter so they don't stack on the map.
+//
+// Trove articles don't ship with geocoordinates, so we anchor at the
+// bbox centre + jitter. The popup quotes the paper name + date so the
+// operator knows the geographic precision is approximate.
+
+interface TroveArticle {
+  id?: string;
+  heading?: string;
+  snippet?: string;
+  date?: string;
+  troveUrl?: string;
+  identifier?: string;
+  title?: { id?: number; title?: string };
+}
+
+interface TroveResponse {
+  category?: Array<{
+    code?: string;
+    records?: { total?: number; article?: TroveArticle[] };
+  }>;
+}
+
+interface NominatimResponse {
+  address?: { city?: string; town?: string; village?: string; suburb?: string; municipality?: string; state?: string };
+}
+
+/** Reverse-geocode the bbox centre via Nominatim (OSM, free, no key).
+ *  Returns null if the network call fails — we then skip Trove silently
+ *  rather than crashing the whole endpoint. */
+async function reverseGeocodeBboxCentre(bbox: BBox): Promise<{ town: string | null; state: string | null }> {
+  const lat = (bbox.minLat + bbox.maxLat) / 2;
+  const lon = (bbox.minLon + bbox.maxLon) / 2;
+  const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=12&accept-language=en`;
+  try {
+    const resp = await fetch(url, {
+      headers: {
+        // Nominatim asks for an identifying UA; their TOS requires it.
+        "User-Agent": "southern-signal/1.0 (https://southern-signal.pages.dev)",
+      },
+      cf: { cacheTtl: 86400 }, // edge-cache the same bbox geocode for a day
+    });
+    if (!resp.ok) return { town: null, state: null };
+    const data = await resp.json() as NominatimResponse;
+    const a = data.address ?? {};
+    return {
+      town: a.city ?? a.town ?? a.municipality ?? a.village ?? a.suburb ?? null,
+      state: a.state ?? null,
+    };
+  } catch {
+    return { town: null, state: null };
+  }
+}
+
+/** Heuristic severity inference from Trove article heading + snippet.
+ *  Conservative: matches on explicit fatality words only; everything
+ *  else defaults to "unknown" so we don't over-promise. */
+function inferTroveSeverity(text: string): Incident["severity"] {
+  const t = text.toLowerCase();
+  if (/\b(murder|killed|fatal|drowned|deceased|coroner|inquest|stabbed|shot dead|shooting death)\b/.test(t)) return "fatal";
+  if (/\b(serious|injured|crash|fire|robbery|assault|hospitalised|gravely)\b/.test(t)) return "serious";
+  return "unknown";
+}
+
+/** Strip Trove's <font>...</font> highlighting markup from snippets so
+ *  the popup body stays plain text. */
+function stripMarkup(s: string | undefined): string {
+  if (!s) return "";
+  return s.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+}
+
+async function searchTrove(env: Env, bbox: BBox, town: string | null, _state: string | null): Promise<{ incidents: Incident[]; queries: string[]; notes: string }> {
+  if (!env.TROVE_API_KEY) return { incidents: [], queries: [], notes: "Trove disabled (TROVE_API_KEY not set on this deployment)." };
+  if (!town) return { incidents: [], queries: [], notes: "Trove skipped — couldn't reverse-geocode the bbox centre to a town name." };
+
+  // One broad query, scoped to newspapers. Trove's relevance ranking is
+  // strong enough that 25 results covers the high-signal hits.
+  const incidentTerms = '(murder OR death OR fatal OR fire OR drowned OR coroner OR inquest OR "missing person" OR stabbed OR shooting)';
+  const q = `"${town}" ${incidentTerms}`;
+  const url = `https://api.trove.nla.gov.au/v3/result?category=newspaper&encoding=json&n=25&q=${encodeURIComponent(q)}`;
+
+  let resp: Response;
+  try {
+    resp = await fetch(url, {
+      headers: { "X-API-KEY": env.TROVE_API_KEY, "Accept": "application/json" },
+    });
+  } catch (err) {
+    return { incidents: [], queries: [q], notes: `Trove network error: ${(err as Error).message.slice(0, 120)}` };
+  }
+  if (!resp.ok) {
+    return { incidents: [], queries: [q], notes: `Trove HTTP ${resp.status}` };
+  }
+  let data: TroveResponse;
+  try { data = await resp.json() as TroveResponse; } catch (err) {
+    return { incidents: [], queries: [q], notes: `Trove returned non-JSON: ${(err as Error).message.slice(0, 120)}` };
+  }
+  const articles = data.category?.[0]?.records?.article ?? [];
+
+  // Anchor pins at the bbox centre + a small spiral jitter so they
+  // don't all stack on top of one another. Jitter is ~50-200 m at
+  // mid-latitudes — visibly separable, still inside the bbox.
+  const cLat = (bbox.minLat + bbox.maxLat) / 2;
+  const cLon = (bbox.minLon + bbox.maxLon) / 2;
+
+  const incidents: Incident[] = [];
+  for (let i = 0; i < articles.length; i++) {
+    const art = articles[i];
+    const heading = stripMarkup(art.heading);
+    const snippet = stripMarkup(art.snippet);
+    if (!heading && !snippet) continue;
+    const year = art.date ? parseInt(art.date.slice(0, 4), 10) || null : null;
+    const paperName = art.title?.title ?? "Trove digitised newspapers";
+    const sourceUrl = art.troveUrl ?? (art.id ? `https://trove.nla.gov.au/newspaper/article/${art.id}` : "");
+    if (!sourceUrl) continue;
+    const angle = (i / Math.max(articles.length, 1)) * Math.PI * 2;
+    const radius = 0.002 + (i % 4) * 0.0015; // ~200 m + step
+    const lat = cLat + Math.sin(angle) * radius;
+    const lon = cLon + Math.cos(angle) * radius;
+    incidents.push({
+      title: (heading || `${paperName} · ${art.date ?? "unknown date"}`).slice(0, 120),
+      body: (snippet || `${paperName} · ${art.date ?? "unknown date"}`).slice(0, 320),
+      severity: inferTroveSeverity(`${heading} ${snippet}`),
+      source_quality: "primary",
+      year,
+      lat,
+      lon,
+      sources: [{
+        label: `${paperName}${art.date ? ` · ${art.date}` : ""}`,
+        url: sourceUrl,
+      }],
+    });
+  }
+
+  return {
+    incidents,
+    queries: [`Trove: ${q}`],
+    notes: incidents.length > 0
+      ? `Trove returned ${incidents.length} digitised-newspaper article${incidents.length === 1 ? "" : "s"} for "${town}". Pins anchored at the bbox centre + jitter (Trove articles don't ship street-level coords).`
+      : `Trove returned no articles for "${town}" with the incident-term query.`,
+  };
+}
+
 async function readCache(db: D1Database, cellKey: string): Promise<{ result: AreaResult; created_at: string } | null> {
   try {
     const row = await db.prepare(
@@ -395,23 +558,72 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
     );
   }
 
-  const ai = await callSonar(env, bbox, region);
-  if ("error" in ai) return jsonResponse({ error: ai.error }, 502);
+  // Run Sonar + Trove in parallel. Trove only fires for region=AU and
+  // when TROVE_API_KEY is configured; otherwise it returns empty fast.
+  // Both can fail independently; we merge whatever succeeded.
+  const geocodePromise = region === "AU" ? reverseGeocodeBboxCentre(bbox) : Promise.resolve({ town: null, state: null });
+  const [sonar, geo] = await Promise.all([callSonar(env, bbox, region), geocodePromise]);
+  const trove = await searchTrove(env, bbox, geo.town, geo.state);
+
+  // Decide what to return. If Sonar errored AND Trove returned zero
+  // results, the request is a hard fail — surface the Sonar error.
+  // If Sonar errored but Trove found things, return those + a note.
+  // If Sonar succeeded, merge.
+  let incidents: Incident[] = [];
+  const search_terms: string[] = [];
+  const notes_parts: string[] = [];
+  let model = DEFAULT_MODEL;
+
+  if ("error" in sonar) {
+    if (trove.incidents.length === 0) {
+      return jsonResponse({ error: `Sonar failed: ${sonar.error}. Trove ${trove.notes}` }, 502);
+    }
+    notes_parts.push(`Sonar failed (${sonar.error.slice(0, 120)}); results are Trove-only.`);
+  } else {
+    incidents.push(...sonar.result.incidents);
+    search_terms.push(...sonar.result.search_terms_used);
+    notes_parts.push(sonar.result.notes);
+    model = sonar.result.model;
+  }
+
+  incidents.push(...trove.incidents);
+  search_terms.push(...trove.queries);
+  if (trove.notes) notes_parts.push(trove.notes);
+
+  // Dedupe by URL — Sonar and Trove sometimes both surface the same
+  // canonical newspaper article (e.g. when an SMH piece is mirrored on
+  // Trove). Trove's URL wins because it's the original digitisation.
+  const seen = new Set<string>();
+  incidents = incidents.filter((inc) => {
+    const key = inc.sources[0]?.url;
+    if (!key) return true;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  const merged: AreaResult = {
+    incidents,
+    search_terms_used: search_terms,
+    notes: notes_parts.filter(Boolean).join(" · "),
+    model: trove.incidents.length > 0 ? `${model} + trove` : model,
+  };
+
   // Don't poison the cache with empty results. Sonar's coverage of
   // regional Australian news is patchy — a "no incidents" return today
   // may become a hit tomorrow as the prompt or model improves. Caching
   // empty responses would lock the operator out of fresh searches for
   // 30 days for no benefit. Only persist findings worth re-serving.
-  if (ai.result.incidents.length > 0) {
-    await writeCache(env.COMMUNITY_DB, cellKey, region, bbox, ai.result);
+  if (merged.incidents.length > 0) {
+    await writeCache(env.COMMUNITY_DB, cellKey, region, bbox, merged);
   }
   await recordRateLimitRun(env.AI_RATE_LIMIT, rl);
 
   return jsonResponse({
-    incidents: ai.result.incidents,
-    search_terms_used: ai.result.search_terms_used,
-    notes: ai.result.notes,
-    model: ai.result.model,
+    incidents: merged.incidents,
+    search_terms_used: merged.search_terms_used,
+    notes: merged.notes,
+    model: merged.model,
     cached: false,
     cache_age_seconds: 0,
     cell_key: cellKey,

@@ -170,6 +170,18 @@ Required Pages environment variables:
 | `CF_ACCOUNT_ID`       | `/api/live/fb/connect`                       | Facebook Live one-click setup is used.    |
 | `CF_STREAM_API_TOKEN` | `/api/live/fb/connect`                       | Same.                                     |
 | `FB_CONNECT_TOKEN`    | `/api/live/fb/connect`                       | Same.                                     |
+| `TROVE_API_KEY`       | `/api/community/incidents-in-area`           | Community-map area incident search uses Trove (NLA digitised newspapers) in parallel with Sonar. Free key at https://trove.nla.gov.au/about/create-something/using-api/api-keys (instant signup). Optional — Sonar-only path still works without it. |
+
+Required Pages bindings (D1, KV, R2 — set in `wrangler.jsonc` or the
+dashboard):
+
+| Binding            | Type | Where it's used                                       |
+|--------------------|------|-------------------------------------------------------|
+| `SYNC_DB`          | D1   | `/api/sync/upload` mirror tables                      |
+| `MEDIA_BUCKET`     | R2   | `/api/sync/upload` blob storage                       |
+| `AI_RATE_LIMIT`    | KV   | Per-IP soft cap shared across AI Investigator + community/incidents-in-area |
+| `AI_RATE_LIMIT_SALT` | secret | KV-key IP-hash salt (set via `wrangler pages secret put`) |
+| `COMMUNITY_DB`     | D1   | `/api/community/sites` (pins) + `area_incident_cache` (AI-surfaced incidents) |
 
 Local dev needs none of those — the operator surface degrades cleanly when
 they're unset (e.g. AI assist shows a "proxy not configured" error).
