@@ -69,6 +69,33 @@ export interface AppPreferences {
      */
     enabled: boolean;
   };
+  /**
+   * Rig loadout — which Pro-tier instrument tiles render in Mission
+   * Control. Lets the operator compose a venue-specific kit
+   * (outdoor-cemetery vs. indoor-house vs. minimal-record) instead of
+   * scrolling past tools they don't need.
+   *
+   * Simple-mode tiles are always shown. The rig only gates the Pro tools:
+   * spirit box, Ovilus, bait tone, camera, contamination markers, Estes
+   * tile, sensor inventory panel, and the new EMF spike LEDs +
+   * simultaneous video+EVP capture.
+   */
+  rig: {
+    modules: {
+      emfSpikeLed: boolean;
+      spiritBox: boolean;
+      ovilus: boolean;
+      baitTone: boolean;
+      camera: boolean;
+      contaminationMarkers: boolean;
+      sensorsPanel: boolean;
+      estesTile: boolean;
+      /** When ON, the in-session "Record video+EVP" tile records a video
+       *  clip with synchronized mic audio so both end up on the same
+       *  evidence reel. */
+      videoEvpCapture: boolean;
+    };
+  };
 }
 
 const DEFAULTS: AppPreferences = {
@@ -82,6 +109,19 @@ const DEFAULTS: AppPreferences = {
   sync: { enabled: false, endpoint: "", token: null },
   evp: { autoTranscribe: false },
   research: { enabled: true },
+  rig: {
+    modules: {
+      emfSpikeLed: true,
+      spiritBox: true,
+      ovilus: true,
+      baitTone: true,
+      camera: true,
+      contaminationMarkers: true,
+      sensorsPanel: true,
+      estesTile: true,
+      videoEvpCapture: true,
+    },
+  },
 };
 
 const KEY = "ss-preferences-v1";
@@ -100,6 +140,9 @@ function read(): AppPreferences {
       sync: { ...DEFAULTS.sync, ...(parsed.sync ?? {}) },
       evp: { ...DEFAULTS.evp, ...(parsed.evp ?? {}) },
       research: { ...DEFAULTS.research, ...(parsed.research ?? {}) },
+      rig: {
+        modules: { ...DEFAULTS.rig.modules, ...(parsed.rig?.modules ?? {}) },
+      },
     };
   } catch {
     return DEFAULTS;
@@ -125,6 +168,9 @@ export function setPreferences(patch: Partial<AppPreferences>): AppPreferences {
     sync: { ...current.sync, ...(patch.sync ?? {}) },
     evp: { ...current.evp, ...(patch.evp ?? {}) },
     research: { ...current.research, ...(patch.research ?? {}) },
+    rig: {
+      modules: { ...current.rig.modules, ...(patch.rig?.modules ?? {}) },
+    },
   };
   write(next);
   return next;

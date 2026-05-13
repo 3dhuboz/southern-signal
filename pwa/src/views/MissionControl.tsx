@@ -17,6 +17,8 @@ import { SessionSummaryCard } from "../components/SessionSummaryCard";
 import { SimpleMissionView } from "../components/SimpleMissionView";
 import { SpiritBoxTool } from "../components/SpiritBoxTool";
 import { BaitToneTool } from "../components/BaitToneTool";
+import { EmfSpikeLed } from "../components/EmfSpikeLed";
+import { VideoEvpCaptureTile } from "../components/VideoEvpCaptureTile";
 import { usePreferences } from "../lib/preferences";
 import {
   createCalibrationState,
@@ -662,13 +664,31 @@ export function MissionControl() {
         </details>
       )}
 
+      {/* EMF SPIKE LEDS — K-II-style 5-LED bar driven by magnetometer z-score */}
+      {prefs.rig.modules.emfSpikeLed && (
+        <EmfSpikeLed
+          z={sensors.emf?.z ?? sensors.compassAnomaly?.z ?? null}
+          magnitude={sensors.snapshot.magnetometer?.magnitude ?? sensors.emf?.value ?? null}
+          running={running}
+          audible={isPro}
+        />
+      )}
+
+      {/* VIDEO + EVP SESSION REEL — back-cam video w/ synced mic audio */}
+      {isPro && prefs.rig.modules.videoEvpCapture && (
+        <VideoEvpCaptureTile
+          investigationId={session.current?.id ?? null}
+          sessionRunning={running}
+        />
+      )}
+
       {/* CAMERA — scene snapshots (Pro plain tile) */}
-      {isPro && (
+      {isPro && prefs.rig.modules.camera && (
         <CameraCapture investigationId={session.current?.id ?? null} running={running} />
       )}
 
       {/* CONTAMINATION MARKERS — Pro grid (Simple mode uses an in-place sheet) */}
-      {isPro && (
+      {isPro && prefs.rig.modules.contaminationMarkers && (
         <ContaminationMarker
           investigationId={session.current?.id ?? null}
           running={running}
@@ -687,18 +707,22 @@ export function MissionControl() {
         />
       </div>
 
-      {/* ITC TOOLS */}
-      <SpiritBoxTool
-        entropy={sensors.snapshot.magnetometer?.magnitude ?? sensors.snapshot.motion?.accelMagnitude ?? 0}
-        investigationId={session.current?.id ?? null}
-      />
-      <OvilusTool entropy={sensors.snapshot.magnetometer?.magnitude ?? sensors.snapshot.orientation?.heading ?? 0} investigationId={session.current?.id ?? null} />
+      {/* ITC TOOLS — rig-gated */}
+      {prefs.rig.modules.spiritBox && (
+        <SpiritBoxTool
+          entropy={sensors.snapshot.magnetometer?.magnitude ?? sensors.snapshot.motion?.accelMagnitude ?? 0}
+          investigationId={session.current?.id ?? null}
+        />
+      )}
+      {prefs.rig.modules.ovilus && (
+        <OvilusTool entropy={sensors.snapshot.magnetometer?.magnitude ?? sensors.snapshot.orientation?.heading ?? 0} investigationId={session.current?.id ?? null} />
+      )}
 
       {/* BAIT TOOLS — sub-audible carrier */}
-      {isPro && <BaitToneTool investigationId={session.current?.id ?? null} />}
+      {isPro && prefs.rig.modules.baitTone && <BaitToneTool investigationId={session.current?.id ?? null} />}
 
       {/* ESTES MODE — dual-phone sensory-deprivation rig */}
-      {isPro && (
+      {isPro && prefs.rig.modules.estesTile && (
         <a href="/estes" className={m.estesTile}>
           <span className={m.estesEyebrow}>ESTES METHOD · DUAL-PHONE</span>
           <span className={m.estesTitle}>Pair two phones for a sensory-deprivation session</span>
@@ -707,7 +731,7 @@ export function MissionControl() {
       )}
 
       {/* SENSOR INVENTORY — what this phone exposes */}
-      <SensorsPanel />
+      {prefs.rig.modules.sensorsPanel && <SensorsPanel />}
 
       {isPro && (
         <p className={m.disclaimer}>

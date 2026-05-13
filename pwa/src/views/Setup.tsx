@@ -275,6 +275,40 @@ export function Setup() {
         </label>
       </section>
 
+      {/* Rig loadout — compose the toolkit per venue type */}
+      <section className={st.panel}>
+        <header className={st.panelHeader}>
+          <h2 className={st.panelTitle}>Rig loadout</h2>
+          <span className={st.panelBadge}>PRO</span>
+        </header>
+        <p className={st.panelLede}>
+          Toggle Pro-mode instrument tiles on or off. Different venues need different rigs — outdoor cemetery doesn't need a spirit box; a forensic indoor sweep wants every channel. Simple-mode tiles stay visible regardless.
+        </p>
+        {([
+          { key: "emfSpikeLed", label: "EMF spike LEDs", hint: "K-II-style 5-segment bar that lights up when the magnetometer spikes above the live baseline. Visual companion to the EMF chart." },
+          { key: "videoEvpCapture", label: "Video + EVP session reel", hint: "Records video from the back camera with synchronized mic audio while a session is running. Both files land in OPFS, audit-chained, paired by start timestamp." },
+          { key: "spiritBox", label: "Spirit Box", hint: "Frequency-sweep ITC tool. Outputs synthesized phoneme audio you scrub through for perceived words." },
+          { key: "ovilus", label: "Ovilus dictionary speech", hint: "Sensor-seeded word picker. Speaks one word per spike — analogous to Spirit Talker / Ovilus apps." },
+          { key: "baitTone", label: "Bait tone", hint: "Sub-audible carrier tones. Optional probe — leave off if you want a clean acoustic baseline." },
+          { key: "camera", label: "Camera scene snapshots", hint: "Audit-chained still capture from the live preview. Off by default if you broadcast video instead." },
+          { key: "contaminationMarkers", label: "Contamination markers", hint: "One-tap grid for tagging known mundane causes (HVAC, train, plumbing) during a session." },
+          { key: "sensorsPanel", label: "Sensor inventory", hint: "Diagnostic list of every sensor this phone exposes. Useful for setup, less so mid-session." },
+          { key: "estesTile", label: "Estes Method tile", hint: "Quick link to the dual-phone sensory-deprivation rig. Hide if you only investigate solo." },
+        ] as const).map((opt) => (
+          <label key={opt.key} className={st.toggleRow}>
+            <span>
+              <strong>{opt.label}</strong>
+              <span className={st.toggleHint}>{opt.hint}</span>
+            </span>
+            <input
+              type="checkbox"
+              checked={prefs.rig.modules[opt.key]}
+              onChange={(e) => setPrefs({ rig: { modules: { ...prefs.rig.modules, [opt.key]: e.target.checked } } })}
+            />
+          </label>
+        ))}
+      </section>
+
       {/* Privacy */}
       <section className={st.panel}>
         <header className={st.panelHeader}>

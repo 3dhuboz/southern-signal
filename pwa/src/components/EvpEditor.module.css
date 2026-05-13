@@ -365,3 +365,186 @@
   font-style: italic;
   text-align: center;
 }
+
+/* Deep AI EVP review — second pass against the venue dossier + context */
+.deepReviewActionRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-8);
+  margin-top: var(--s-8);
+}
+.deepReviewBtn {
+  padding: var(--s-8) 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--signal-dim);
+  background: color-mix(in srgb, var(--signal) 12%, var(--bg-inset));
+  color: var(--signal);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+.deepReviewBtn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--signal) 24%, var(--bg-inset));
+  box-shadow: 0 0 10px rgba(93, 242, 199, 0.25);
+}
+.deepReviewBtn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.deepReviewHint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.deepReviewErr {
+  margin: var(--s-8) 0 0;
+  padding: var(--s-8) 10px;
+  border-radius: var(--r-sm);
+  background: var(--danger-wash);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.deepReviewCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-12);
+  padding: var(--s-16);
+  background: var(--bg-elevated);
+  border: 1px solid var(--signal-dim);
+  border-left: 3px solid var(--signal);
+  border-radius: var(--r-lg);
+  box-shadow: 0 0 18px rgba(93, 242, 199, 0.12);
+}
+.deepReviewHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+.deepReviewEyebrow {
+  font-family: "Orbitron", var(--font-display), sans-serif;
+  font-size: 11px;
+  letter-spacing: 2.4px;
+  text-transform: uppercase;
+  color: var(--signal);
+  font-weight: 700;
+}
+.deepReviewHeadline {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.deepReviewMeterRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-12);
+}
+.deepReviewMeter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.deepReviewMeterLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+.deepReviewMeterBar {
+  position: relative;
+  height: 8px;
+  border-radius: var(--r-full);
+  background: var(--bg-inset);
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+}
+.deepReviewMeterFill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--signal-dim), var(--signal));
+  transition: width 220ms ease;
+}
+.deepReviewMeterFillWarn {
+  background: linear-gradient(90deg, #F2A35D, #F2E15D);
+}
+.deepReviewMeterValue {
+  font-family: "VT323", var(--font-mono), monospace;
+  font-size: 14px;
+  color: var(--text-primary);
+  align-self: flex-end;
+}
+
+.deepReviewNotes {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-primary);
+}
+
+.deepReviewBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-6);
+  padding: var(--s-10) var(--s-12);
+  background: var(--bg-inset);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-subtle);
+}
+.deepReviewBlockHead {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+.deepReviewList {
+  margin: 0;
+  padding-left: var(--s-16);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+.deepReviewList a {
+  color: var(--signal);
+  text-decoration: underline;
+}
+.deepReviewProbe {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-primary);
+}
+.deepReviewFoot {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+  text-align: right;
+}
+.deepReviewFoot code {
+  background: var(--bg-inset);
+  padding: 0 4px;
+  border-radius: 3px;
+}
+
+:global([data-theme="daylight"]) .deepReviewCard {
+  box-shadow: 0 1px 4px rgba(31, 143, 110, 0.18);
+}
+:global([data-theme="daylight"]) .deepReviewBtn {
+  color: var(--text-primary);
+}

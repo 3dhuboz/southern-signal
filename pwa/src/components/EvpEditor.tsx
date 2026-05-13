@@ -29,7 +29,7 @@ import {
   transcribeOnDevice,
   useLocalTranscribeStatus,
 } from "../lib/audio/localTranscribe";
-import { getInvestigation } from "../lib/db/repo";
+import { getInvestigation, listDossiers } from "../lib/db/repo";
 import { usePreferences } from "../lib/preferences";
 import { Link } from "react-router-dom";
 import type { MediaAsset } from "../lib/db/schema";
@@ -54,6 +54,21 @@ const REVIEWER_CLASSES = [
 ] as const;
 
 type ReviewerClass = (typeof REVIEWER_CLASSES)[number]["value"];
+
+/** Shape of the JSON returned by /api/ai/evp-review. Mirrors the
+ *  Functions endpoint's ReviewResponse — duplicated here so the
+ *  component doesn't need to import a server-side type. */
+interface DeepReview {
+  headline: string;
+  mundaneScore: number;
+  pareidoliaRisk: number;
+  contextNotes: string;
+  mundaneHypotheses: Array<{ label: string; reasoning: string }>;
+  dossierMatches: Array<{ findingTitle: string; matchReason: string }>;
+  falsificationProbe: string;
+  model: string;
+  citations?: string[];
+}
 
 function formatTime(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) sec = 0;
@@ -94,6 +109,12 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
   const cloudBlocked = caseSensitive || prefs.globalCulturalSensitivityFlag;
   const [transcript, setTranscript] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  // Deep AI EVP review (second pass, in-context against the venue dossier).
+  // Distinct from Whisper: Whisper writes down the words; this assesses
+  // them against the venue history + the operator's posterior + baseline z-scores.
+  const [deepReview, setDeepReview] = useState<DeepReview | null>(null);
+  const [deepReviewBusy, setDeepReviewBusy] = useState(false);
+  const [deepReviewErr, setDeepReviewErr] = useState<string | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -633,6 +654,94 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
     }
   };
 
+  /**
+   * Deep AI review — second pass against the venue dossier + Bayesian
+   * context. Calls /api/ai/evp-review with the current transcript,
+   * pulls the most-recent dossier for this case from local SQLite so
+   * the model sees what the operator already knows, and writes the
+   * returned review card to the audit chain as an evidence event.
+   *
+   * Blocked on culturally-sensitive cases regardless of the global
+   * cloud setting — same fail-closed contract as cloud transcribe.
+   */
+  const handleDeepAiReview = async () => {
+    if (!transcript || cloudBlocked) return;
+    setDeepReviewBusy(true);
+    setDeepReviewErr(null);
+    try {
+      const inv = await getInvestigation(asset.investigation_id);
+      const dossiers = await listDossiers(asset.investigation_id, 1).catch(() => []);
+      const latest = dossiers[0];
+      let findings: Array<{ tier?: string; title?: string; body?: string }> = [];
+      if (latest) {
+        try {
+          const parsed = JSON.parse(latest.result_json) as { findings?: Array<{ tier?: string; title?: string; body?: string }> };
+          if (Array.isArray(parsed.findings)) findings = parsed.findings.slice(0, 8);
+        } catch { /* keep findings empty if the dossier blob is malformed */ }
+      }
+      const durationSeconds = selection ? selection.endSec - selection.startSec : decoded?.durationSec ?? 0;
+      const body = {
+        transcriptText: transcript,
+        perceivedText: reviewerText.trim() || undefined,
+        durationSeconds,
+        reviewerClass,
+        culturallySensitive: caseSensitive || prefs.globalCulturalSensitivityFlag,
+        context: {
+          venueName: inv?.title ?? latest?.venue_name ?? undefined,
+          locationName: inv?.location_name ?? undefined,
+          region: (latest?.region as "AU" | "GLOBAL" | undefined) ?? "AU",
+          dossierFindings: findings,
+        },
+      };
+      const res = await fetch("/api/ai/evp-review", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const text = await res.text();
+      if (!res.ok) {
+        let detail = text;
+        try { detail = (JSON.parse(text) as { error?: string; detail?: string }).error ?? text; } catch { /* keep raw */ }
+        throw new Error(`HTTP ${res.status} · ${detail.slice(0, 200)}`);
+      }
+      const parsed = JSON.parse(text) as DeepReview;
+      setDeepReview(parsed);
+
+      await recordEvent({
+        investigation_id: asset.investigation_id,
+        source: "ai",
+        event_type: "audio.evp_deep_review",
+        title: "Deep AI EVP review",
+        description: parsed.headline.slice(0, 200),
+        linked_file: asset.file_path,
+        metadata: {
+          media_id: asset.id,
+          model: parsed.model,
+          mundane_score: parsed.mundaneScore,
+          pareidolia_risk: parsed.pareidoliaRisk,
+          dossier_matches: parsed.dossierMatches.length,
+          mundane_hypotheses: parsed.mundaneHypotheses.length,
+        },
+      });
+      await appendAuditEntry({
+        actor: "ai",
+        kind: "audio.evp.deep_review",
+        payload: {
+          investigation_id: asset.investigation_id,
+          media_id: asset.id,
+          model: parsed.model,
+          mundane_score: parsed.mundaneScore,
+          pareidolia_risk: parsed.pareidoliaRisk,
+          headline: parsed.headline.slice(0, 200),
+        },
+      });
+    } catch (err) {
+      setDeepReviewErr((err as Error).message || "Review failed");
+    } finally {
+      setDeepReviewBusy(false);
+    }
+  };
+
   const handleExportSelection = () => {
     if (!selection || !decoded) return;
     const startIdx = Math.floor(selection.startSec * decoded.sampleRate);
@@ -838,6 +947,102 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
               <div className={s.transcriptBox}>
                 <span className={s.transcriptLabel}>Transcript</span>
                 <p className={s.transcriptText}>{transcript}</p>
+                {!cloudBlocked && (
+                  <div className={s.deepReviewActionRow}>
+                    <button
+                      type="button"
+                      className={s.deepReviewBtn}
+                      onClick={handleDeepAiReview}
+                      disabled={deepReviewBusy}
+                      title="Second-pass AI review against the venue dossier + baseline context. Audit-chained."
+                    >
+                      {deepReviewBusy ? "Reviewing in context…" : "Deep AI review (in context)"}
+                    </button>
+                    {deepReview && (
+                      <span className={s.deepReviewHint}>
+                        Model: {deepReview.model}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {deepReviewErr && <p className={s.deepReviewErr}>{deepReviewErr}</p>}
+              </div>
+            )}
+
+            {deepReview && (
+              <div className={s.deepReviewCard}>
+                <header className={s.deepReviewHead}>
+                  <span className={s.deepReviewEyebrow}>DEEP AI REVIEW · IN CONTEXT</span>
+                  <h3 className={s.deepReviewHeadline}>{deepReview.headline}</h3>
+                </header>
+                <div className={s.deepReviewMeterRow}>
+                  <div className={s.deepReviewMeter}>
+                    <span className={s.deepReviewMeterLabel}>Mundane fit</span>
+                    <div className={s.deepReviewMeterBar}>
+                      <div
+                        className={s.deepReviewMeterFill}
+                        style={{ width: `${Math.round(deepReview.mundaneScore * 100)}%` }}
+                      />
+                    </div>
+                    <span className={s.deepReviewMeterValue}>{Math.round(deepReview.mundaneScore * 100)}%</span>
+                  </div>
+                  <div className={s.deepReviewMeter}>
+                    <span className={s.deepReviewMeterLabel}>Pareidolia risk</span>
+                    <div className={s.deepReviewMeterBar}>
+                      <div
+                        className={`${s.deepReviewMeterFill} ${s.deepReviewMeterFillWarn}`}
+                        style={{ width: `${Math.round(deepReview.pareidoliaRisk * 100)}%` }}
+                      />
+                    </div>
+                    <span className={s.deepReviewMeterValue}>{Math.round(deepReview.pareidoliaRisk * 100)}%</span>
+                  </div>
+                </div>
+                {deepReview.contextNotes && (
+                  <p className={s.deepReviewNotes}>{deepReview.contextNotes}</p>
+                )}
+                {deepReview.mundaneHypotheses.length > 0 && (
+                  <div className={s.deepReviewBlock}>
+                    <span className={s.deepReviewBlockHead}>Mundane hypotheses</span>
+                    <ul className={s.deepReviewList}>
+                      {deepReview.mundaneHypotheses.map((h, i) => (
+                        <li key={i}>
+                          <strong>{h.label}</strong> — {h.reasoning}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {deepReview.dossierMatches.length > 0 && (
+                  <div className={s.deepReviewBlock}>
+                    <span className={s.deepReviewBlockHead}>Dossier matches</span>
+                    <ul className={s.deepReviewList}>
+                      {deepReview.dossierMatches.map((m, i) => (
+                        <li key={i}>
+                          <strong>{m.findingTitle}</strong> — {m.matchReason}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {deepReview.falsificationProbe && (
+                  <div className={s.deepReviewBlock}>
+                    <span className={s.deepReviewBlockHead}>Falsification probe</span>
+                    <p className={s.deepReviewProbe}>{deepReview.falsificationProbe}</p>
+                  </div>
+                )}
+                {deepReview.citations && deepReview.citations.length > 0 && (
+                  <div className={s.deepReviewBlock}>
+                    <span className={s.deepReviewBlockHead}>Citations</span>
+                    <ul className={s.deepReviewList}>
+                      {deepReview.citations.map((c, i) => (
+                        <li key={i}><a href={c} target="_blank" rel="noreferrer noopener">{c}</a></li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                <p className={s.deepReviewFoot}>
+                  Audit-chained as <code>audio.evp.deep_review</code> · model {deepReview.model}
+                </p>
               </div>
             )}
 
