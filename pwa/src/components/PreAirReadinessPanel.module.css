@@ -1,0 +1,107 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-12);
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: var(--s-12);
+  padding: var(--s-12) var(--s-16);
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-default);
+  background: var(--bg-inset);
+}
+.banner[data-status="ready"] {
+  background: color-mix(in srgb, var(--signal) 12%, var(--bg-inset));
+  border-color: var(--signal-dim);
+  color: var(--signal);
+}
+.banner[data-status="caveats"] {
+  background: color-mix(in srgb, var(--warning) 12%, var(--bg-inset));
+  border-color: color-mix(in srgb, var(--warning) 40%, var(--border-strong));
+  color: var(--warning);
+}
+.banner[data-status="blocked"] {
+  background: color-mix(in srgb, var(--danger) 12%, var(--bg-inset));
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--border-strong));
+  color: var(--danger);
+}
+
+.bannerMark {
+  font-family: "Orbitron", var(--font-display), sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.bannerText {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.item {
+  padding: 10px var(--s-12);
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+}
+.item[data-status="pass"]                     { border-left-color: var(--signal-dim); }
+.item[data-status="fail"][data-severity="block"] { border-left-color: var(--danger); }
+.item[data-status="fail"][data-severity="warn"]  { border-left-color: var(--warning); }
+
+.itemHead {
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+}
+
+.itemMark {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 800;
+  min-width: 16px;
+  color: var(--text-muted);
+}
+.item[data-status="pass"] .itemMark { color: var(--signal); }
+.item[data-status="fail"][data-severity="block"] .itemMark { color: var(--danger); }
+.item[data-status="fail"][data-severity="warn"]  .itemMark { color: var(--warning); }
+
+.itemLabel {
+  flex: 1 1 auto;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.itemSeverity {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 2px 8px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-inset);
+}
+
+.itemDetail {
+  margin: 6px 0 0;
+  padding-left: 24px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}

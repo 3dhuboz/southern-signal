@@ -4,6 +4,7 @@ import { AuditLogInspector } from "../components/AuditLogInspector";
 import { CaseManager } from "../components/CaseManager";
 import { DeploymentHealth } from "../components/DeploymentHealth";
 import { ManifestVerifier } from "../components/ManifestVerifier";
+import { PreAirReadinessPanel } from "../components/PreAirReadinessPanel";
 import { ReviewerSignoffsPanel } from "../components/ReviewerSignoffsPanel";
 import { SyncPanel } from "../components/SyncPanel";
 import {
@@ -370,6 +371,15 @@ export function Setup() {
           <span className={st.panelBadge}>Forensic</span>
         </header>
         <ReviewerSignoffsPanel />
+      </section>
+
+      {/* Pre-air readiness — aggregate status across the methodology gates */}
+      <section className={st.panel}>
+        <header className={st.panelHeader}>
+          <h2 className={st.panelTitle}>Pre-air readiness</h2>
+          <span className={st.panelBadge}>Forensic</span>
+        </header>
+        <PreAirReadinessPanel />
       </section>
 
       {/* Manifest verifier — reviewer-side integrity check */}
