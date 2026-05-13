@@ -18,7 +18,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listInvestigations } from "../lib/db/repo";
 import type { Investigation } from "../lib/db/schema";
-import { deleteCommunityPin, listCommunityPins, publishCommunityPin, type CommunityPin } from "../lib/community/client";
+import { deleteCommunityPin, listCommunityPins, publishCommunityPin, searchAreaIncidents, type AreaIncident, type CommunityPin } from "../lib/community/client";
 import { loadLeaflet, type LeafletMap, type LeafletMarker } from "../lib/community/leafletLoader";
 import { getCurrentPoint } from "../lib/sensors/geolocation";
 import { usePreferences } from "../lib/preferences";
@@ -66,14 +66,37 @@ function pinPopupHtml(pin: CommunityPin): string {
   `;
 }
 
+function incidentPopupHtml(inc: AreaIncident): string {
+  const severityKey = inc.severity || "unknown";
+  const yearStr = inc.year ? String(inc.year) : "—";
+  const sourcesHtml = inc.sources.length
+    ? `<ul class="${escapeHtml(m.popupSources)}">${inc.sources.slice(0, 4).map((s) => `<li><a href="${escapeHtml(s.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(s.label)}</a></li>`).join("")}</ul>`
+    : `<p class="${escapeHtml(m.popupNote)}"><em>No citations returned by the model — treat with skepticism.</em></p>`;
+  return `
+    <div class="${escapeHtml(m.popup)}">
+      <div class="${escapeHtml(m.popupTitle)}">${escapeHtml(inc.title)}</div>
+      <div class="${escapeHtml(m.popupMeta)}">
+        <span class="${escapeHtml(m.popupBand)} ${escapeHtml(m[`severity_${severityKey}`] ?? "")}">${escapeHtml(severityKey.toUpperCase())} · ${escapeHtml(yearStr)}</span>
+      </div>
+      <p class="${escapeHtml(m.popupNote)}">${escapeHtml(inc.body)}</p>
+      ${sourcesHtml}
+    </div>
+  `;
+}
+
 export function CommunityMap() {
   const [prefs] = usePreferences();
   const mapEl = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const markersRef = useRef<LeafletMarker[]>([]);
+  const incidentMarkersRef = useRef<LeafletMarker[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pins, setPins] = useState<CommunityPin[]>([]);
+  const [incidents, setIncidents] = useState<AreaIncident[]>([]);
+  const [incidentBusy, setIncidentBusy] = useState(false);
+  const [incidentError, setIncidentError] = useState<string | null>(null);
+  const [incidentMeta, setIncidentMeta] = useState<{ count: number; cached: boolean; cacheAgeSeconds: number; notes: string } | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
   const [shareSuccess, setShareSuccess] = useState<string | null>(null);
@@ -137,6 +160,8 @@ export function CommunityMap() {
       if (cleanupRef) cleanupRef();
       markersRef.current.forEach((mk) => mk.remove());
       markersRef.current = [];
+      incidentMarkersRef.current.forEach((mk) => mk.remove());
+      incidentMarkersRef.current = [];
       mapRef.current?.remove();
       mapRef.current = null;
     };
@@ -156,7 +181,7 @@ export function CommunityMap() {
     })();
   }, []);
 
-  // Re-render markers when pins change.
+  // Re-render community pins when they change.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || typeof window.L === "undefined") return;
@@ -176,6 +201,59 @@ export function CommunityMap() {
       markersRef.current.push(marker);
     }
   }, [pins]);
+
+  // Re-render AI-surfaced incident markers when they change. Distinct
+  // shape (diamond) + colour from community pins so the layers don't
+  // get visually conflated.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || typeof window.L === "undefined") return;
+    const L = window.L;
+    incidentMarkersRef.current.forEach((mk) => mk.remove());
+    incidentMarkersRef.current = [];
+    for (const inc of incidents) {
+      const icon = L.divIcon({
+        className: `${m.incidentIcon} ${m[`severity_${inc.severity}`] ?? ""}`,
+        html: `<span class="${escapeHtml(m.incidentDiamond)}"></span>`,
+        iconSize: [16, 16],
+        iconAnchor: [8, 8],
+      });
+      const marker = L.marker([inc.lat, inc.lon], { icon }).addTo(map) as LeafletMarker;
+      marker.bindPopup(incidentPopupHtml(inc), { className: m.popupWrap });
+      incidentMarkersRef.current.push(marker);
+    }
+  }, [incidents]);
+
+  // Trigger an AI search for documented incidents inside the current
+  // visible bounds. Cached server-side keyed by a 0.1°-rounded cell
+  // so two operators panning the same region share the cache.
+  const handleSearchArea = useCallback(async () => {
+    const map = mapRef.current;
+    if (!map) return;
+    setIncidentBusy(true);
+    setIncidentError(null);
+    setIncidentMeta(null);
+    const b = map.getBounds();
+    const bbox = {
+      minLat: b.getSouth(),
+      minLon: b.getWest(),
+      maxLat: b.getNorth(),
+      maxLon: b.getEast(),
+    };
+    const res = await searchAreaIncidents(bbox, "AU");
+    setIncidentBusy(false);
+    if ("error" in res) {
+      setIncidentError(res.error);
+      return;
+    }
+    setIncidents(res.incidents);
+    setIncidentMeta({
+      count: res.incidents.length,
+      cached: res.cached,
+      cacheAgeSeconds: res.cache_age_seconds,
+      notes: res.notes,
+    });
+  }, []);
 
   // Pull recent cases for the publish picker.
   useEffect(() => {
@@ -275,6 +353,33 @@ export function CommunityMap() {
           <span className={m.statLabel}>Yours on this device</span>
           <span className={m.statValue}>{stats.yours}</span>
         </div>
+        <div className={m.statCard}>
+          <span className={m.statLabel}>Documented incidents</span>
+          <span className={m.statValue}>{incidents.length}</span>
+        </div>
+      </section>
+
+      <section className={m.incidentBar}>
+        <div className={m.incidentBarText}>
+          <strong>AI-surfaced incidents:</strong>{" "}
+          Pan / zoom to the area you care about, then tap to search Trove, news archives, and court records for documented deaths, fires, and coroner's findings inside the visible bounds. Results are cached server-side (~10 km cells, 30-day TTL) so repeat views are free.
+        </div>
+        <button
+          type="button"
+          className={`btn btn-primary ${m.incidentSearchBtn}`}
+          onClick={handleSearchArea}
+          disabled={incidentBusy || !!loadError}
+        >
+          {incidentBusy ? "Searching archives…" : "Search this area for incidents"}
+        </button>
+        {incidentMeta && (
+          <p className={m.incidentMeta}>
+            {incidentMeta.count} incident{incidentMeta.count === 1 ? "" : "s"} plotted ·{" "}
+            {incidentMeta.cached ? `cached ${Math.round(incidentMeta.cacheAgeSeconds / 3600)}h ago` : "fresh from Sonar"}
+            {incidentMeta.notes ? ` · ${incidentMeta.notes}` : ""}
+          </p>
+        )}
+        {incidentError && <p className={m.incidentError}>{incidentError}</p>}
       </section>
 
       <div className={m.mapShell}>

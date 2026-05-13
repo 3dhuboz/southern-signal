@@ -79,6 +79,43 @@ export async function publishCommunityPin(input: PublishInput): Promise<{ ok: tr
   return res.json() as Promise<{ ok: true; id: string; lat: number; lon: number }>;
 }
 
+// ---------------------- AI-surfaced area incidents ----------------------
+
+export interface AreaIncidentSource { label: string; url: string }
+export interface AreaIncident {
+  title: string;
+  body: string;
+  severity: "fatal" | "serious" | "minor" | "unknown";
+  year: number | null;
+  lat: number;
+  lon: number;
+  sources: AreaIncidentSource[];
+}
+
+export interface AreaIncidentResponse {
+  incidents: AreaIncident[];
+  search_terms_used: string[];
+  notes: string;
+  model: string;
+  cached: boolean;
+  cache_age_seconds: number;
+  cell_key: string;
+}
+
+export async function searchAreaIncidents(bbox: { minLat: number; minLon: number; maxLat: number; maxLon: number }, region: "AU" | "GLOBAL" = "AU"): Promise<AreaIncidentResponse | { error: string; status: number }> {
+  const res = await fetch("/api/community/incidents-in-area", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ bbox, region }),
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json() as { error?: string }).error ?? ""; } catch { /* non-JSON */ }
+    return { error: detail || `HTTP ${res.status}`, status: res.status };
+  }
+  return res.json() as Promise<AreaIncidentResponse>;
+}
+
 export async function deleteCommunityPin(id: string): Promise<{ ok: true } | { error: string; status: number }> {
   const anonId = getOrCreateAnonymousCommunityId();
   const res = await fetch("/api/community/sites", {

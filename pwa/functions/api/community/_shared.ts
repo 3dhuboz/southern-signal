@@ -125,7 +125,40 @@ export async function ensureCommunitySchema(db: D1Database): Promise<void> {
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_community_sites_geo ON community_sites(lat, lon);`);
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_community_sites_anon ON community_sites(anonymous_id);`);
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_community_sites_hidden ON community_sites(hidden);`);
+
+  // Area-incident cache: AI-surfaced documented incidents (deaths, fires,
+  // court cases, fatal accidents, coroner's findings) keyed by a coarse
+  // bounding-box cell. Sonar is expensive + rate-limited, so we cache for
+  // 30 days; the rolled-up cell means two operators panning the same
+  // region don't both burn the quota.
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS area_incident_cache (
+      cell_key TEXT PRIMARY KEY,
+      region TEXT NOT NULL,
+      bbox_min_lat REAL NOT NULL,
+      bbox_min_lon REAL NOT NULL,
+      bbox_max_lat REAL NOT NULL,
+      bbox_max_lon REAL NOT NULL,
+      payload_json TEXT NOT NULL,
+      model TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL
+    );
+  `.replace(/\n\s+/g, " "));
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_area_cache_expires ON area_incident_cache(expires_at);`);
 }
+
+/** Round a bbox to a coarse grid cell so two operators within the same
+ *  ~10km region share the cache. 0.1° ≈ 11km at the equator; finer near
+ *  the poles, but Australia/the bulk of population stays in usable range. */
+export function bboxCellKey(region: string, bbox: { minLat: number; minLon: number; maxLat: number; maxLon: number }): string {
+  const r = (v: number): string => (Math.round(v * 10) / 10).toFixed(1);
+  return `${region}:${r(bbox.minLat)},${r(bbox.minLon)}:${r(bbox.maxLat)},${r(bbox.maxLon)}`;
+}
+
+/** Area cache TTL — 30 days. Documented incidents don't change quickly;
+ *  this trades freshness for cost control. */
+export const AREA_CACHE_TTL_MS = 30 * 24 * 3600 * 1000;
 
 /** Coarsen coords to ~100 m so houses can't be pin-pointed by browsers. */
 export function coarsenCoord(v: number): number {

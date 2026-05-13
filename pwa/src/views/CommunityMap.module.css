@@ -331,6 +331,99 @@
   text-align: center;
 }
 
+/* AI-surfaced area-incident search */
+.incidentBar {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid #FFA64C;
+  border-radius: var(--r-lg);
+  padding: var(--s-12) var(--s-16);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-8);
+}
+
+.incidentBarText {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.incidentSearchBtn {
+  align-self: flex-start;
+  min-height: 44px;
+  padding: 0 18px;
+  font-size: 13px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.incidentMeta {
+  margin: 0;
+  padding: var(--s-8) var(--s-10);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, #FFA64C 8%, var(--bg-inset));
+  border: 1px solid color-mix(in srgb, #FFA64C 32%, var(--border-default));
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.incidentError {
+  margin: 0;
+  padding: var(--s-8) var(--s-10);
+  border-radius: var(--r-sm);
+  background: var(--danger-wash);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  font-size: 12px;
+}
+
+/* Incident pins — diamonds in red/orange, colour-keyed by severity */
+.incidentIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+}
+
+.incidentDiamond {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  background: #FF6B6B;
+  transform: rotate(45deg);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35), 0 0 8px rgba(255, 107, 107, 0.55);
+}
+
+.severity_fatal   .incidentDiamond { background: #F25D6E; box-shadow: 0 0 0 2px rgba(242, 93, 110, 0.35), 0 0 10px rgba(242, 93, 110, 0.65); }
+.severity_serious .incidentDiamond { background: #FFA64C; }
+.severity_minor   .incidentDiamond { background: #FFE08A; }
+.severity_unknown .incidentDiamond { background: #C7CDD6; }
+
+/* Severity badge inside the popup */
+.severity_fatal   { background: rgba(242, 93, 110, 0.20); color: #F25D6E; }
+.severity_serious { background: rgba(255, 166, 76, 0.20); color: #FFA64C; }
+.severity_minor   { background: rgba(255, 224, 138, 0.20); color: #FFE08A; }
+.severity_unknown { background: rgba(199, 205, 214, 0.16); color: var(--text-muted); }
+
+.popupSources {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.popupSources li { margin-bottom: 2px; }
+
+.popupSources a {
+  color: #58E1A6;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .privacyNote {
   margin: 0;
   padding: var(--s-12);
