@@ -37,7 +37,7 @@ function mkInvestigation(partial: Partial<ManifestInvestigationView>): ManifestI
 
 function mkManifest(partial: Partial<Manifest>): Manifest {
   return {
-    schema: "southern-signal.manifest.v2",
+    schema: "southern-signal.manifest.v3",
     app_version: "0.1.0",
     generated_at: "2026-05-01T22:00:00Z",
     investigations: [],
@@ -49,6 +49,7 @@ function mkManifest(partial: Partial<Manifest>): Manifest {
       last_seq: 0,
     },
     standalone_research_dossiers: [],
+    reviewer_signoffs: [],
     ...partial,
   };
 }

@@ -11,7 +11,7 @@ vi.mock("./db", () => ({ query: queryFn, exec: execFn }));
 vi.mock("../sync/queue", () => ({ enqueue: enqueueFn, clearSensitivityCache: vi.fn() }));
 vi.mock("./auditLog", () => ({ appendAuditEntry: appendAuditFn }));
 
-import { findingKeyFor, saveDossier, saveFindingNote } from "./repo";
+import { createSignoff, deleteSignoff, findingKeyFor, listSignoffs, saveDossier, saveFindingNote, updateSignoff } from "./repo";
 
 beforeEach(() => {
   queryFn.mockReset().mockResolvedValue([]);
@@ -159,5 +159,177 @@ describe("saveFindingNote — upsert behaviour", () => {
     // The full text is in the row, not the chain payload — chain payloads
     // can leak into wider archives, the row stays on-device.
     expect(JSON.stringify(payload)).not.toContain("Sensitive reviewer assertion");
+  });
+});
+
+describe("createSignoff — happy path + validation", () => {
+  it("inserts a row, hash-chains the statement, and returns the persisted shape", async () => {
+    const row = await createSignoff({
+      reviewer_name: "Prof. Example",
+      affiliation: "ANU",
+      identifier: "ORCID 0000-0000-0000-0000",
+      discipline: "bayesian",
+      signed_at: "2026-05-01",
+      app_version: "0.1.0",
+      statement: "Methodology approved.",
+      source_url: "https://orcid.org/0000-0000-0000-0000",
+    });
+    expect(row.reviewer_name).toBe("Prof. Example");
+    expect(row.discipline).toBe("bayesian");
+    expect(execFn).toHaveBeenCalledWith(
+      expect.stringMatching(/INSERT INTO reviewer_signoffs/),
+      expect.any(Array),
+    );
+    const audit = appendAuditFn.mock.calls[0][0] as { kind: string; payload: Record<string, unknown> };
+    expect(audit.kind).toBe("reviewer.signoff.create");
+    // The chain payload anchors the statement bytes via sha256 — the raw
+    // statement never appears in the chain (it stays on the row).
+    expect(audit.payload).toHaveProperty("statement_sha256");
+    expect(JSON.stringify(audit.payload)).not.toContain("Methodology approved.");
+  });
+
+  it("trims whitespace and strips control characters", async () => {
+    const row = await createSignoff({
+      reviewer_name: "  Dr. Spacey\x07  ",
+      discipline: "acoustician",
+      signed_at: "2026-05-01",
+      app_version: "0.1.0",
+      statement: "  ok\x00 ",
+    });
+    expect(row.reviewer_name).toBe("Dr. Spacey");
+    expect(row.statement).toBe("ok");
+  });
+
+  it("refuses an empty reviewer name", async () => {
+    await expect(createSignoff({
+      reviewer_name: "   ",
+      discipline: "bayesian",
+      signed_at: "2026-05-01",
+      app_version: "0.1.0",
+      statement: "ok",
+    })).rejects.toThrow(/name is required/i);
+    expect(execFn).not.toHaveBeenCalled();
+  });
+
+  it("refuses an empty statement", async () => {
+    await expect(createSignoff({
+      reviewer_name: "X",
+      discipline: "bayesian",
+      signed_at: "2026-05-01",
+      app_version: "0.1.0",
+      statement: "   ",
+    })).rejects.toThrow(/statement is required/i);
+  });
+
+  it("refuses statements over the 4 000-char cap", async () => {
+    await expect(createSignoff({
+      reviewer_name: "X",
+      discipline: "bayesian",
+      signed_at: "2026-05-01",
+      app_version: "0.1.0",
+      statement: "x".repeat(4001),
+    })).rejects.toThrow(/4 000/);
+  });
+
+  it("refuses a non-http(s) source URL", async () => {
+    await expect(createSignoff({
+      reviewer_name: "X",
+      discipline: "bayesian",
+      signed_at: "2026-05-01",
+      app_version: "0.1.0",
+      statement: "ok",
+      source_url: "javascript:alert(1)",
+    })).rejects.toThrow(/http/i);
+  });
+
+  it("refuses an unknown discipline", async () => {
+    await expect(createSignoff({
+      reviewer_name: "X",
+      // @ts-expect-error — testing runtime rejection of out-of-union value.
+      discipline: "wizard",
+      signed_at: "2026-05-01",
+      app_version: "0.1.0",
+      statement: "ok",
+    })).rejects.toThrow(/discipline/i);
+  });
+});
+
+describe("updateSignoff — preserves created_at and fires update audit", () => {
+  it("updates an existing row and keeps created_at", async () => {
+    const existing = {
+      id: "s1",
+      reviewer_name: "Old Name",
+      affiliation: null,
+      identifier: null,
+      discipline: "bayesian",
+      signed_at: "2026-05-01",
+      app_version: "0.1.0",
+      statement: "old",
+      source_url: null,
+      created_at: "2026-05-01T00:00:00Z",
+      updated_at: "2026-05-01T00:00:00Z",
+    };
+    queryFn.mockResolvedValueOnce([existing]);
+    const row = await updateSignoff("s1", {
+      reviewer_name: "New Name",
+      discipline: "acoustician",
+      signed_at: "2026-05-10",
+      app_version: "0.1.0",
+      statement: "new",
+    });
+    expect(row.id).toBe("s1");
+    expect(row.created_at).toBe("2026-05-01T00:00:00Z");
+    expect(row.reviewer_name).toBe("New Name");
+    expect(row.discipline).toBe("acoustician");
+    expect(appendAuditFn).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "reviewer.signoff.update",
+    }));
+  });
+
+  it("throws when the id does not exist", async () => {
+    queryFn.mockResolvedValueOnce([]);
+    await expect(updateSignoff("missing", {
+      reviewer_name: "X",
+      discipline: "bayesian",
+      signed_at: "2026-05-01",
+      app_version: "0.1.0",
+      statement: "ok",
+    })).rejects.toThrow(/not found/i);
+  });
+});
+
+describe("deleteSignoff", () => {
+  it("deletes the row and emits a delete audit entry", async () => {
+    queryFn.mockResolvedValueOnce([{ id: "s1", reviewer_name: "X", discipline: "bayesian" }]);
+    await deleteSignoff("s1");
+    expect(execFn).toHaveBeenCalledWith(
+      expect.stringMatching(/DELETE FROM reviewer_signoffs/),
+      ["s1"],
+    );
+    expect(appendAuditFn).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "reviewer.signoff.delete",
+    }));
+  });
+
+  it("silently no-ops when the row is already gone (idempotent)", async () => {
+    queryFn.mockResolvedValueOnce([]);
+    await deleteSignoff("missing");
+    expect(execFn).not.toHaveBeenCalled();
+    expect(appendAuditFn).not.toHaveBeenCalled();
+  });
+});
+
+describe("listSignoffs", () => {
+  it("returns an empty array on pre-v6 schemas where the table is missing", async () => {
+    queryFn.mockRejectedValueOnce(new Error("no such table: reviewer_signoffs"));
+    const rows = await listSignoffs();
+    expect(rows).toEqual([]);
+  });
+
+  it("returns the rows the query produces, in DB order", async () => {
+    const stub = [{ id: "s2" }, { id: "s1" }];
+    queryFn.mockResolvedValueOnce(stub);
+    const rows = await listSignoffs();
+    expect(rows.map((r) => r.id)).toEqual(["s2", "s1"]);
   });
 });

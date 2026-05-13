@@ -10,7 +10,7 @@
 
 import { query } from "../db/db";
 import { verifyAuditChain } from "../db/auditLog";
-import type { AuditLogEntry, EvidenceEvent, Investigation, MediaAsset, ResearchDossierRow } from "../db/schema";
+import type { AuditLogEntry, EvidenceEvent, Investigation, MediaAsset, ResearchDossierRow, ReviewerSignoffRow } from "../db/schema";
 import { leafFromExistingHashHex, merkleRoot } from "./merkle";
 import { sha256Hex } from "./canonicalJson";
 
@@ -32,6 +32,25 @@ export interface ManifestDossierView {
   finding_count: number;
   citation_count: number;
   result_sha256: string;
+}
+
+/**
+ * Per-reviewer view in the manifest. Statement bytes aren't repeated here
+ * — they're in `reviewers.json` and on the device row — but the SHA-256
+ * is included so a reviewer with the bundle can re-hash the on-bundle
+ * statement and confirm the manifest anchors the same text the audit
+ * chain anchors at `reviewer.signoff.create` / `.update`.
+ */
+export interface ManifestReviewerView {
+  id: string;
+  reviewer_name: string;
+  discipline: string;
+  signed_at: string;
+  app_version: string;
+  statement_sha256: string;
+  affiliation: string | null;
+  identifier: string | null;
+  source_url: string | null;
 }
 
 export interface ManifestInvestigationView {
@@ -56,7 +75,7 @@ export interface ManifestInvestigationView {
 }
 
 export interface Manifest {
-  schema: "southern-signal.manifest.v1" | "southern-signal.manifest.v2";
+  schema: "southern-signal.manifest.v1" | "southern-signal.manifest.v2" | "southern-signal.manifest.v3";
   app_version: string;
   generated_at: string;
   investigations: ManifestInvestigationView[];
@@ -73,6 +92,9 @@ export interface Manifest {
    *  hasn't been attached to a case (yet). Forensic artefacts in their
    *  own right; rolled up here so the Merkle anchor isn't a partial view. */
   standalone_research_dossiers: ManifestDossierView[];
+  /** v3: external reviewer sign-offs. Methodology-level, not case-scoped
+   *  — same list appears regardless of which case the bundle covers. */
+  reviewer_signoffs: ManifestReviewerView[];
 }
 
 const APP_VERSION = "0.1.0";
@@ -206,8 +228,33 @@ export async function buildManifest(): Promise<Manifest> {
   const standaloneDossierViews: ManifestDossierView[] = [];
   for (const d of standaloneDossiers) standaloneDossierViews.push(await toDossierView(d));
 
+  // Reviewer sign-offs (v6 schema). Same try/catch shape so the manifest
+  // builds on pre-v6 installs.
+  let reviewerRows: ReviewerSignoffRow[] = [];
+  try {
+    reviewerRows = await query<ReviewerSignoffRow>(
+      "SELECT * FROM reviewer_signoffs ORDER BY signed_at DESC, created_at DESC",
+    );
+  } catch {
+    /* pre-v6 install — no table yet */
+  }
+  const reviewerViews: ManifestReviewerView[] = [];
+  for (const r of reviewerRows) {
+    reviewerViews.push({
+      id: r.id,
+      reviewer_name: r.reviewer_name,
+      discipline: r.discipline,
+      signed_at: r.signed_at,
+      app_version: r.app_version,
+      statement_sha256: await sha256Hex(r.statement),
+      affiliation: r.affiliation,
+      identifier: r.identifier,
+      source_url: r.source_url,
+    });
+  }
+
   return {
-    schema: "southern-signal.manifest.v2",
+    schema: "southern-signal.manifest.v3",
     app_version: APP_VERSION,
     generated_at: new Date().toISOString(),
     investigations: investigationViews,
@@ -219,5 +266,6 @@ export async function buildManifest(): Promise<Manifest> {
       verification,
     },
     standalone_research_dossiers: standaloneDossierViews,
+    reviewer_signoffs: reviewerViews,
   };
 }

@@ -1,0 +1,207 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-12);
+}
+
+.empty {
+  margin: 0;
+  padding: var(--s-12);
+  background: var(--bg-inset);
+  border: 1px dashed var(--border-default);
+  border-radius: var(--r-md);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-8);
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--s-12);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--signal-dim);
+  border-radius: var(--r-md);
+}
+
+.itemHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--s-8);
+  flex-wrap: wrap;
+}
+
+.itemName {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-right: var(--s-8);
+}
+
+.itemDiscipline {
+  display: inline-block;
+  font-family: "VT323", var(--font-mono), monospace;
+  font-size: 12px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-inset);
+  color: var(--text-secondary);
+}
+.itemDiscipline[data-discipline="bayesian"]    { color: var(--signal); border-color: var(--signal-dim); }
+.itemDiscipline[data-discipline="acoustician"] { color: var(--posterior-elevated, #FFA64C); border-color: color-mix(in srgb, var(--posterior-elevated, #FFA64C) 50%, var(--border-strong)); }
+.itemDiscipline[data-discipline="cultural"]    { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 50%, var(--border-strong)); }
+.itemDiscipline[data-discipline="other"]       { color: var(--text-secondary); }
+
+.itemMeta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.itemSubline {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.itemStatement {
+  margin: var(--s-4) 0;
+  padding: var(--s-8) var(--s-12);
+  background: var(--bg-inset);
+  border-left: 2px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  font-style: italic;
+  white-space: pre-wrap;
+}
+
+.itemRefs {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+.itemRefs a {
+  color: var(--signal);
+  text-decoration: underline;
+}
+.itemRefs a:hover { color: var(--signal-bright, var(--signal)); }
+
+.itemActions {
+  display: flex;
+  gap: var(--s-8);
+  flex-wrap: wrap;
+  margin-top: var(--s-4);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-12);
+  padding: var(--s-16);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+}
+
+.formTitle {
+  font-family: "Orbitron", var(--font-display), sans-serif;
+  font-size: 12px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.disciplineRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-8);
+}
+@media (min-width: 600px) {
+  .disciplineRow { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+.disciplineOption {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--s-8) var(--s-12);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.disciplineOption[data-active="true"] {
+  border-color: var(--signal-dim);
+  background: var(--bg-elevated);
+  box-shadow: 0 0 8px rgba(93, 242, 199, 0.18);
+}
+.disciplineOption input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.disciplineLabel {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  color: var(--text-primary);
+}
+
+.disciplineHint {
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.gridTwo {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-12);
+}
+
+.statementInput {
+  font-family: inherit;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.formActions {
+  display: flex;
+  gap: var(--s-8);
+}
+
+.primary {
+  background: var(--signal);
+  color: var(--bg-primary, #07090C);
+  border-color: var(--signal);
+  font-weight: 800;
+}
+.primary:hover {
+  background: var(--signal-bright, var(--signal));
+}
+.primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

@@ -25,7 +25,7 @@ import { readFile, exists } from "../opfs";
 import { getPreferences } from "../preferences";
 import { buildManifest } from "./manifest";
 import { buildZip, jsonEntry, textEntry, type ZipEntry } from "./zip";
-import type { AuditLogEntry, EvidenceEvent, Investigation, MediaAsset, SensorSample } from "../db/schema";
+import type { AuditLogEntry, EvidenceEvent, Investigation, MediaAsset, ReviewerSignoffRow, SensorSample } from "../db/schema";
 
 interface TranscriptRow {
   id: string;
@@ -72,6 +72,11 @@ App version: ${APP_VERSION}
   the site" for reviewers. Omitted for investigations with no sensor data.
 - \`acknowledgement.txt\` — the user's Acknowledgement of Country statement, or a
   placeholder note if no acknowledgement has been recorded.
+- \`reviewers.json\` — external reviewer sign-offs recorded on the device.
+  Each row's \`statement\` is also anchored by SHA-256 in \`manifest.json\`
+  and in the \`reviewer.signoff.create\` / \`.update\` audit-chain entries —
+  a forger would have to break the chain to alter them. Empty array if no
+  sign-offs have been recorded.
 - \`README.md\` — this file.
 - \`verify.html\` — open in a browser to re-verify the chain locally, no network.
 - \`verify.js\` — \`node verify.js audit_log.jsonl\` for the same check.
@@ -126,6 +131,17 @@ On Windows:
   apply that gate before sharing the bundle externally.
 `;
 
+interface CoverReviewer {
+  reviewerName: string;
+  discipline: string;
+  affiliation: string | null;
+  signedAt: string;
+  appVersion: string;
+  statement: string;
+  identifier: string | null;
+  sourceUrl: string | null;
+}
+
 interface CoverData {
   generatedAt: string;
   scope: "all" | "single";
@@ -142,6 +158,7 @@ interface CoverData {
   counts: { investigations: number; events: number; media: number; transcripts: number };
   aocAccepted: boolean;
   aocStatement: string | null;
+  reviewers: CoverReviewer[];
 }
 
 function escapeHtml(s: string): string {
@@ -172,6 +189,16 @@ const COVER_HTML_TEMPLATE = (d: CoverData): string => {
   const aocBlock = d.aocAccepted && d.aocStatement
     ? `<blockquote>${escapeHtml(d.aocStatement)}</blockquote>`
     : `<p class="muted">No acknowledgement recorded.</p>`;
+  const reviewersBlock = d.reviewers.length === 0
+    ? `<p class="muted">No external reviewer sign-offs recorded.</p>`
+    : `<ul class="reviewers">${d.reviewers.map((r) => `
+      <li>
+        <div class="rhead"><span class="rname">${escapeHtml(r.reviewerName)}</span><span class="rdisc">${escapeHtml(r.discipline.toUpperCase())}</span></div>
+        ${r.affiliation ? `<div class="raff">${escapeHtml(r.affiliation)}</div>` : ""}
+        <div class="rmeta">Signed ${escapeHtml(r.signedAt)} · v${escapeHtml(r.appVersion)}</div>
+        <blockquote>${escapeHtml(r.statement)}</blockquote>
+        ${(r.identifier || r.sourceUrl) ? `<div class="rrefs">${[r.identifier ? `<code>${escapeHtml(r.identifier)}</code>` : "", r.sourceUrl ? `<code>${escapeHtml(r.sourceUrl)}</code>` : ""].filter(Boolean).join(" · ")}</div>` : ""}
+      </li>`).join("")}</ul>`;
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <title>Southern Signal · Case Bundle Cover</title>
@@ -200,6 +227,15 @@ const COVER_HTML_TEMPLATE = (d: CoverData): string => {
   .bad { color: #b00020; font-weight: 700; }
   blockquote { margin: 0; padding: 12px 16px; border-left: 4px solid #888; background: #f7f7f7; font-style: italic; }
   .muted { color: #777; font-style: italic; margin: 0; }
+  ul.reviewers { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 14px; }
+  ul.reviewers li { padding: 12px 14px; border: 1px solid #ddd; border-left: 3px solid #0a7e3f; border-radius: 4px; background: #fdfdfd; }
+  ul.reviewers .rhead { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  ul.reviewers .rname { font-weight: 700; font-size: 12pt; }
+  ul.reviewers .rdisc { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 9pt; letter-spacing: 1.2px; color: #555; padding: 1px 6px; border: 1px solid #ccc; border-radius: 999px; }
+  ul.reviewers .raff { font-size: 10pt; color: #555; margin-top: 2px; }
+  ul.reviewers .rmeta { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 9pt; color: #666; margin-top: 4px; }
+  ul.reviewers blockquote { margin-top: 8px; }
+  ul.reviewers .rrefs { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 9pt; color: #666; margin-top: 6px; word-break: break-all; }
   footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid #ccc; font-size: 9pt; color: #666; }
   footer code { background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
   @media print { body { margin: 0; max-width: none; padding: 0; } }
@@ -225,6 +261,7 @@ const COVER_HTML_TEMPLATE = (d: CoverData): string => {
     <tr><td>Transcripts</td><td>${d.counts.transcripts}</td></tr>
   </table>
 </section>
+<section><h2>External reviewer sign-off</h2>${reviewersBlock}</section>
 <section><h2>Acknowledgement of Country</h2>${aocBlock}</section>
 <footer>
   To re-verify the chain: open <code>verify.html</code> in this folder, or run <code>node verify.js audit_log.jsonl</code>.
@@ -501,6 +538,18 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
   const research = await loadResearchForBundle(investigationIds, investigations);
   for (const entry of buildResearchEntries(research)) entries.push(entry);
 
+  // External reviewer sign-offs (v6). Methodology-level — always
+  // included regardless of scope, even in single-case bundles, so any
+  // downstream reviewer can see who signed off and on which version.
+  // Pre-v6 schema skips silently and emits an empty array.
+  let reviewerRows: ReviewerSignoffRow[] = [];
+  try {
+    reviewerRows = await query<ReviewerSignoffRow>(
+      "SELECT * FROM reviewer_signoffs ORDER BY signed_at DESC, created_at DESC",
+    );
+  } catch { /* pre-v6 — no table yet */ }
+  entries.push(jsonEntry("reviewers.json", reviewerRows));
+
   // 4. Media binaries.
   let mediaIncluded = 0;
   let mediaMissing = 0;
@@ -562,6 +611,16 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
     },
     aocAccepted: aoc.accepted,
     aocStatement: aoc.statement,
+    reviewers: reviewerRows.map((r) => ({
+      reviewerName: r.reviewer_name,
+      discipline: r.discipline,
+      affiliation: r.affiliation,
+      signedAt: r.signed_at,
+      appVersion: r.app_version,
+      statement: r.statement,
+      identifier: r.identifier,
+      sourceUrl: r.source_url,
+    })),
   });
   entries.push(textEntry("cover.html", coverHtml));
 

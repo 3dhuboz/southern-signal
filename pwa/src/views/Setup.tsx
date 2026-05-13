@@ -4,6 +4,7 @@ import { AuditLogInspector } from "../components/AuditLogInspector";
 import { CaseManager } from "../components/CaseManager";
 import { DeploymentHealth } from "../components/DeploymentHealth";
 import { ManifestVerifier } from "../components/ManifestVerifier";
+import { ReviewerSignoffsPanel } from "../components/ReviewerSignoffsPanel";
 import { SyncPanel } from "../components/SyncPanel";
 import {
   DEFAULT_LOCAL_MODEL,
@@ -360,6 +361,15 @@ export function Setup() {
           <h2 className={st.panelTitle}>Deployment health</h2>
         </header>
         <DeploymentHealth />
+      </section>
+
+      {/* External reviewer sign-offs — methodology blessings logged for export */}
+      <section className={st.panel}>
+        <header className={st.panelHeader}>
+          <h2 className={st.panelTitle}>External reviewer sign-off</h2>
+          <span className={st.panelBadge}>Forensic</span>
+        </header>
+        <ReviewerSignoffsPanel />
       </section>
 
       {/* Manifest verifier — reviewer-side integrity check */}

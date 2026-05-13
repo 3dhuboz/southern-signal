@@ -7,7 +7,7 @@
 
 import { appendAuditEntry } from "./auditLog";
 import { exec, query } from "./db";
-import type { EvidenceEvent, Investigation, MediaAsset, ResearchDossierRow, ResearchFindingNoteRow, SensorSample } from "./schema";
+import type { EvidenceEvent, Investigation, MediaAsset, ResearchDossierRow, ResearchFindingNoteRow, ReviewerDiscipline, ReviewerSignoffRow, SensorSample } from "./schema";
 import { clearSensitivityCache, enqueue } from "../sync/queue";
 import { sha256Hex } from "../forensic/canonicalJson";
 
@@ -470,6 +470,182 @@ export async function listFindingNotesForDossier(dossierId: string): Promise<Res
     );
   } catch {
     // Pre-v5 schema — table doesn't exist yet.
+    return [];
+  }
+}
+
+// ---------------------- reviewer sign-offs (v6) ----------------------
+
+const REVIEWER_DISCIPLINES = ["bayesian", "acoustician", "cultural", "other"] as const;
+
+export interface SignoffInput {
+  reviewer_name: string;
+  affiliation?: string | null;
+  identifier?: string | null;
+  discipline: ReviewerDiscipline;
+  signed_at: string;
+  app_version: string;
+  statement: string;
+  source_url?: string | null;
+}
+
+/** Strip ASCII control characters that have no business in human-typed
+ *  fields (NUL, bell, etc.). Newlines and tabs are kept — they're legal
+ *  in `statement`. */
+function sanitiseText(s: string): string {
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "").trim();
+}
+
+function normaliseSignoff(input: SignoffInput): Required<Pick<SignoffInput, "reviewer_name" | "discipline" | "signed_at" | "app_version" | "statement">> & {
+  affiliation: string | null;
+  identifier: string | null;
+  source_url: string | null;
+} {
+  const name = sanitiseText(input.reviewer_name);
+  if (name.length === 0) throw new Error("Reviewer name is required.");
+  const statement = sanitiseText(input.statement);
+  if (statement.length === 0) throw new Error("Reviewer statement is required.");
+  if (statement.length > 4000) throw new Error("Statement exceeds 4 000 characters.");
+  if (!REVIEWER_DISCIPLINES.includes(input.discipline)) {
+    throw new Error(`Unknown discipline: ${input.discipline}`);
+  }
+  const signedAt = input.signed_at.trim();
+  if (!signedAt) throw new Error("Sign-off date is required.");
+  const appVersion = sanitiseText(input.app_version);
+  if (!appVersion) throw new Error("App version is required.");
+  const affiliation = input.affiliation ? sanitiseText(input.affiliation) || null : null;
+  const identifier = input.identifier ? sanitiseText(input.identifier) || null : null;
+  // URLs only accept http(s)://. The audit chain is public-facing so we
+  // refuse anything weirder (data:, javascript:, file:).
+  let sourceUrl: string | null = null;
+  if (input.source_url) {
+    const trimmed = sanitiseText(input.source_url);
+    if (trimmed) {
+      if (!/^https?:\/\//i.test(trimmed)) throw new Error("Source URL must start with http:// or https://.");
+      sourceUrl = trimmed;
+    }
+  }
+  return {
+    reviewer_name: name,
+    affiliation,
+    identifier,
+    discipline: input.discipline,
+    signed_at: signedAt,
+    app_version: appVersion,
+    statement,
+    source_url: sourceUrl,
+  };
+}
+
+export async function createSignoff(input: SignoffInput): Promise<ReviewerSignoffRow> {
+  const norm = normaliseSignoff(input);
+  const id = uuid();
+  const now = nowUtc();
+  const row: ReviewerSignoffRow = {
+    id,
+    reviewer_name: norm.reviewer_name,
+    affiliation: norm.affiliation,
+    identifier: norm.identifier,
+    discipline: norm.discipline,
+    signed_at: norm.signed_at,
+    app_version: norm.app_version,
+    statement: norm.statement,
+    source_url: norm.source_url,
+    created_at: now,
+    updated_at: now,
+  };
+  await exec(
+    `INSERT INTO reviewer_signoffs
+       (id, reviewer_name, affiliation, identifier, discipline, signed_at, app_version, statement, source_url, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [row.id, row.reviewer_name, row.affiliation, row.identifier, row.discipline, row.signed_at, row.app_version, row.statement, row.source_url, row.created_at, row.updated_at],
+  );
+  await appendAuditEntry({
+    actor: ACTOR_DEFAULT,
+    kind: "reviewer.signoff.create",
+    payload: {
+      id,
+      reviewer_name: row.reviewer_name,
+      discipline: row.discipline,
+      signed_at: row.signed_at,
+      app_version: row.app_version,
+      // The full statement gets hashed into the chain so forgery would
+      // visibly break verification, but we don't repeat it in the payload —
+      // it's already on the row.
+      statement_sha256: await sha256Hex(row.statement),
+    },
+  });
+  return row;
+}
+
+export async function updateSignoff(id: string, input: SignoffInput): Promise<ReviewerSignoffRow> {
+  const norm = normaliseSignoff(input);
+  const existing = await query<ReviewerSignoffRow>(
+    "SELECT * FROM reviewer_signoffs WHERE id = ?",
+    [id],
+  );
+  if (!existing[0]) throw new Error(`Sign-off ${id} not found.`);
+  const now = nowUtc();
+  await exec(
+    `UPDATE reviewer_signoffs
+       SET reviewer_name = ?, affiliation = ?, identifier = ?, discipline = ?,
+           signed_at = ?, app_version = ?, statement = ?, source_url = ?, updated_at = ?
+       WHERE id = ?`,
+    [norm.reviewer_name, norm.affiliation, norm.identifier, norm.discipline, norm.signed_at, norm.app_version, norm.statement, norm.source_url, now, id],
+  );
+  await appendAuditEntry({
+    actor: ACTOR_DEFAULT,
+    kind: "reviewer.signoff.update",
+    payload: {
+      id,
+      reviewer_name: norm.reviewer_name,
+      discipline: norm.discipline,
+      signed_at: norm.signed_at,
+      app_version: norm.app_version,
+      statement_sha256: await sha256Hex(norm.statement),
+    },
+  });
+  return {
+    id,
+    reviewer_name: norm.reviewer_name,
+    affiliation: norm.affiliation,
+    identifier: norm.identifier,
+    discipline: norm.discipline,
+    signed_at: norm.signed_at,
+    app_version: norm.app_version,
+    statement: norm.statement,
+    source_url: norm.source_url,
+    created_at: existing[0].created_at,
+    updated_at: now,
+  };
+}
+
+export async function deleteSignoff(id: string): Promise<void> {
+  const existing = await query<ReviewerSignoffRow>(
+    "SELECT * FROM reviewer_signoffs WHERE id = ?",
+    [id],
+  );
+  if (!existing[0]) return;
+  await exec("DELETE FROM reviewer_signoffs WHERE id = ?", [id]);
+  await appendAuditEntry({
+    actor: ACTOR_DEFAULT,
+    kind: "reviewer.signoff.delete",
+    payload: {
+      id,
+      reviewer_name: existing[0].reviewer_name,
+      discipline: existing[0].discipline,
+    },
+  });
+}
+
+export async function listSignoffs(): Promise<ReviewerSignoffRow[]> {
+  try {
+    return await query<ReviewerSignoffRow>(
+      "SELECT * FROM reviewer_signoffs ORDER BY signed_at DESC, created_at DESC",
+    );
+  } catch {
+    // Pre-v6 schema — table doesn't exist yet.
     return [];
   }
 }

@@ -6,7 +6,7 @@
  * via a `source` column so cross-device sync can union rows safely.
  */
 
-export const CURRENT_SCHEMA_VERSION = 5;
+export const CURRENT_SCHEMA_VERSION = 6;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -161,6 +161,30 @@ CREATE TABLE IF NOT EXISTS research_finding_notes (
 );
 CREATE INDEX IF NOT EXISTS idx_finding_notes_dossier ON research_finding_notes (dossier_id);
 
+-- v6: external reviewer sign-offs. The README commits to external Bayesian
+-- + acoustician sign-off before any TV-grade premiere; this table is where
+-- the operator records who signed, when, and on which version. Every row
+-- is also hash-chained via audit_log, so the export bundle can prove the
+-- sign-off existed at the time the bundle was built. Statement is the
+-- excerpt that backs the sign-off; source_url is the public link (ORCID
+-- page, blog post, statement on letterhead) when one exists.
+CREATE TABLE IF NOT EXISTS reviewer_signoffs (
+  id              TEXT PRIMARY KEY,
+  reviewer_name   TEXT NOT NULL,
+  affiliation     TEXT,
+  identifier      TEXT,
+  -- 'bayesian' / 'acoustician' / 'cultural' / 'other'
+  discipline      TEXT NOT NULL,
+  signed_at       TEXT NOT NULL,
+  app_version     TEXT NOT NULL,
+  statement       TEXT NOT NULL,
+  source_url      TEXT,
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_signoffs_discipline ON reviewer_signoffs (discipline);
+CREATE INDEX IF NOT EXISTS idx_signoffs_signed_at  ON reviewer_signoffs (signed_at DESC);
+
 -- Hash-chained event log (Tier 1 #5 — every state change is appended).
 -- 'edits' become new entries; never UPDATE this table.
 CREATE TABLE IF NOT EXISTS audit_log (
@@ -252,6 +276,22 @@ export interface ResearchFindingNoteRow {
   dossier_id: string;
   finding_key: string;
   text: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ReviewerDiscipline = "bayesian" | "acoustician" | "cultural" | "other";
+
+export interface ReviewerSignoffRow {
+  id: string;
+  reviewer_name: string;
+  affiliation: string | null;
+  identifier: string | null;
+  discipline: ReviewerDiscipline;
+  signed_at: string;
+  app_version: string;
+  statement: string;
+  source_url: string | null;
   created_at: string;
   updated_at: string;
 }

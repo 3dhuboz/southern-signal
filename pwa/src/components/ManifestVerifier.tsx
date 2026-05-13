@@ -32,8 +32,8 @@ export function ManifestVerifier() {
       if (!obj || typeof obj !== "object" || typeof obj.schema !== "string") {
         throw new Error("Not a Southern Signal manifest (missing schema field).");
       }
-      if (obj.schema !== "southern-signal.manifest.v1" && obj.schema !== "southern-signal.manifest.v2") {
-        throw new Error(`Unsupported manifest schema "${obj.schema}". Expected v1 or v2.`);
+      if (obj.schema !== "southern-signal.manifest.v1" && obj.schema !== "southern-signal.manifest.v2" && obj.schema !== "southern-signal.manifest.v3") {
+        throw new Error(`Unsupported manifest schema "${obj.schema}". Expected v1, v2, or v3.`);
       }
       parsed = obj as Manifest;
     } catch (err) {
@@ -105,7 +105,7 @@ export function ManifestVerifier() {
         rows={4}
         value={trustedText}
         onChange={(e) => setTrustedText(e.target.value)}
-        placeholder='Or paste JSON: { "schema": "southern-signal.manifest.v2", ... }'
+        placeholder='Or paste JSON: { "schema": "southern-signal.manifest.v3", ... }'
         spellCheck={false}
       />
 

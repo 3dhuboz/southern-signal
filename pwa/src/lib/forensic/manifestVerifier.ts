@@ -1,8 +1,8 @@
 /**
  * Manifest verifier — reviewer-side integrity check.
  *
- * Takes a previously-exported v1 or v2 manifest and verifies it against
- * the current device's data. The check surfaces:
+ * Takes a previously-exported v1, v2, or v3 manifest and verifies it
+ * against the current device's data. The check surfaces:
  *
  *   • Whether the global audit chain Merkle root matches the trusted
  *     manifest (full-chain integrity).
