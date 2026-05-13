@@ -349,13 +349,39 @@
   color: var(--text-secondary);
 }
 
+/* Override btn-primary's theme-token colours so the incident-search CTA
+ * stays legible regardless of theme and disabled-state opacity. Uses
+ * the same orange palette as the surrounding incident bar so the action
+ * reads as "the incident-search button" at a glance — distinct from the
+ * green community-pin CTAs below the map. */
 .incidentSearchBtn {
   align-self: flex-start;
   min-height: 44px;
-  padding: 0 18px;
+  padding: 0 20px;
   font-size: 13px;
-  letter-spacing: 0.6px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
   text-transform: uppercase;
+  background: #FFA64C !important;
+  color: #1A0E04 !important;
+  border: 1px solid #C97A1F !important;
+  box-shadow: 0 0 10px color-mix(in srgb, #FFA64C 35%, transparent);
+}
+
+.incidentSearchBtn:hover:not(:disabled) {
+  background: #FFB76A !important;
+  filter: brightness(1.04);
+}
+
+/* Disabled state — still readable, not a muddy ghost. We swap the fill
+ * for a muted tone rather than letting opacity kill the contrast. */
+.incidentSearchBtn:disabled {
+  background: #5C4226 !important;
+  color: #D4C2A8 !important;
+  border-color: #5C4226 !important;
+  box-shadow: none;
+  opacity: 1;
+  cursor: not-allowed;
 }
 
 .incidentMeta {
