@@ -20,6 +20,8 @@
  *   [ "Signature1", protected_header_bytes, aad: h'', payload ]
  */
 
+import { concat } from "./bytes";
+
 // ---------------------------------------------------------------------------
 // CBOR encoding primitives
 // ---------------------------------------------------------------------------
@@ -43,18 +45,6 @@ function encodeCborArgument(majorType: number, value: number): Uint8Array {
       value & 0xff,
     ]);
   }
-}
-
-/** Concatenate Uint8Arrays. */
-function concat(...parts: Uint8Array[]): Uint8Array {
-  const total = parts.reduce((s, p) => s + p.length, 0);
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const p of parts) {
-    out.set(p, offset);
-    offset += p.length;
-  }
-  return out;
 }
 
 /** CBOR unsigned integer (major type 0). */

@@ -25,7 +25,6 @@ import s from "./ControlSessionPanel.module.css";
 
 interface ControlSessionPanelProps {
   investigation: Investigation;
-  allInvestigations: Investigation[];
   onSelectInvestigation: (id: string) => void;
 }
 
@@ -45,11 +44,7 @@ function computeMeans(samples: SensorSample[]): SensorMeans {
   }
   const means: SensorMeans = {};
   for (const type of Object.keys(sums)) {
-    const count = counts[type];
-    // count is always > 0 here because we only populate sums when value !== null
-    if (count > 0) {
-      means[type] = (sums[type] ?? 0) / count;
-    }
+    means[type] = (sums[type] ?? 0) / counts[type];
   }
   return means;
 }

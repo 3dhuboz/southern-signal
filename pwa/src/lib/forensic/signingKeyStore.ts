@@ -53,11 +53,23 @@ async function withStore<T>(
   });
 }
 
+/** Module-level cache: resolved once, reused for the lifetime of the page. */
+let signingKeyPromise: Promise<{ privateKey: CryptoKey; publicKeyHex: string }> | null = null;
+
 /**
  * Generate an Ed25519 CryptoKeyPair via WebCrypto and store private key as JWK.
  * Returns existing key if already generated (singleton per device).
+ * Subsequent calls return the same Promise (no extra IndexedDB round-trips).
  */
-export async function getOrCreateSigningKey(): Promise<{
+export function getOrCreateSigningKey(): Promise<{
+  privateKey: CryptoKey;
+  publicKeyHex: string;
+}> {
+  if (!signingKeyPromise) signingKeyPromise = loadOrCreateKey();
+  return signingKeyPromise;
+}
+
+async function loadOrCreateKey(): Promise<{
   privateKey: CryptoKey;
   publicKeyHex: string;
 }> {

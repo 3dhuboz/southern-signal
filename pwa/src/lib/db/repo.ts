@@ -17,11 +17,11 @@ async function safeEnqueue(args: Parameters<typeof enqueue>[0]): Promise<void> {
 
 const ACTOR_DEFAULT = "user";
 
-function uuid(): string {
+export function uuid(): string {
   return crypto.randomUUID();
 }
 
-function nowUtc(): string {
+export function nowUtc(): string {
   return new Date().toISOString();
 }
 
@@ -726,16 +726,13 @@ export async function listControlSessions(activeInvestigationId: string): Promis
  */
 export async function getPairedInvestigation(controlSessionId: string): Promise<Investigation | null> {
   const rows = await query<Investigation>(
-    "SELECT * FROM investigations WHERE id = ?",
+    `SELECT * FROM investigations
+     WHERE id = (
+       SELECT paired_investigation_id FROM investigations WHERE id = ? LIMIT 1
+     )`,
     [controlSessionId],
   );
-  const ctrl = rows[0];
-  if (!ctrl || !ctrl.paired_investigation_id) return null;
-  const paired = await query<Investigation>(
-    "SELECT * FROM investigations WHERE id = ?",
-    [ctrl.paired_investigation_id],
-  );
-  return paired[0] ?? null;
+  return rows[0] ?? null;
 }
 
 // ---------------------- base-rate queries (Tier 1 #3) ----------------------

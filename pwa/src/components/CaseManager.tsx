@@ -725,7 +725,6 @@ export function CaseManager() {
                       switches its own view based on session_type. */}
                   <ControlSessionPanel
                     investigation={c}
-                    allInvestigations={cases}
                     onSelectInvestigation={(id) => {
                       setOpenCaseId(id);
                     }}

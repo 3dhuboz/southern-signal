@@ -73,11 +73,21 @@ function CheckModal({ obj, investigationId, onClose, onSaved }: CheckModalProps)
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const prevPhotoUrlRef = useRef<string | null>(null);
+
+  // Revoke object URL on unmount to avoid memory leaks.
+  useEffect(() => {
+    return () => {
+      if (prevPhotoUrlRef.current) URL.revokeObjectURL(prevPhotoUrlRef.current);
+    };
+  }, []);
 
   const handlePhotoChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (prevPhotoUrlRef.current) URL.revokeObjectURL(prevPhotoUrlRef.current);
     const url = URL.createObjectURL(file);
+    prevPhotoUrlRef.current = url;
     setPhotoPreviewUrl(url);
     setPendingBlob(file);
   }, []);
@@ -87,8 +97,9 @@ function CheckModal({ obj, investigationId, onClose, onSaved }: CheckModalProps)
     setError(null);
     try {
       let imageId: string | undefined;
+      let filePath: string | undefined;
       if (pendingBlob) {
-        const filePath = `trigger/${obj.id}/check_${Date.now()}.jpg`;
+        filePath = `trigger/${obj.id}/check_${Date.now()}.jpg`;
         await writeBytes(filePath, pendingBlob);
         const asset = await registerMedia({
           investigation_id: investigationId,
@@ -104,6 +115,7 @@ function CheckModal({ obj, investigationId, onClose, onSaved }: CheckModalProps)
         displaced,
         displacement_notes: notes.trim() || undefined,
       });
+      if (filePath) checkPathCache.set(check.id, filePath);
       onSaved(check);
       onClose();
     } catch (err) {
@@ -452,7 +464,7 @@ export function TriggerObjectTracker({ investigationId }: TriggerObjectTrackerPr
     setName("");
     setDescription("");
     setPhotoPreviewUrl(null);
-    setPendingBlob(void 0 ?? null);
+    setPendingBlob(null);
     setPendingObjectId(null);
     setError(null);
     setShowForm(false);
@@ -509,13 +521,8 @@ export function TriggerObjectTracker({ investigationId }: TriggerObjectTrackerPr
     setObjects((prev) => prev.filter((o) => o.id !== id));
   }, []);
 
-  const handleCheckSaved = useCallback((_objId: string, check: TriggerObjectCheck) => {
-    // If the check has an image_id, the path was written as trigger/<objId>/check_<ts>.jpg
-    // We need to reverse-engineer the path. Since we don't have the path here,
-    // we rely on the cache populated in CheckModal. CheckModal calls writeBytes
-    // with a deterministic pattern; we store it below via a module-level side-effect.
-    // (The cache is populated inside CheckModal's handleSave before calling onSaved.)
-    void check; // acknowledged — cache is populated from within CheckModal
+  const handleCheckSaved = useCallback((_objId: string, _check: TriggerObjectCheck) => {
+    // checkPathCache is populated by CheckModal.handleSave before onSaved fires.
   }, []);
 
   return (

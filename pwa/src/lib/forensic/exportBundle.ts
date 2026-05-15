@@ -792,7 +792,7 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
         tsaStatus = "anchored";
         tsaTokenB64 = toBase64(tsaResp);
         tsaAnchoredAt = new Date().toISOString();
-        entries.push({ path: "tsa_token.ts", data: tsaResp, mtime: new Date() });
+        entries.push({ path: "tsa_token.der", data: tsaResp, mtime: new Date() });
       } else {
         tsaStatus = "failed";
       }
@@ -808,7 +808,7 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
         built_at: builtAt,
         merkle_root: merkleRootValue,
         cose_signature_b64: coseSignatureB64,
-        ed25519_pubkey_b64: publicKeyHex,
+        ed25519_pubkey_hex: publicKeyHex,
         tsa_status: tsaStatus,
         tsa_token_b64: tsaTokenB64,
         tsa_requested_at: tsaRequestedAt,
@@ -818,10 +818,7 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
       console.warn("[export] Failed to persist bundle_signatures row:", err);
     }
 
-    // Add signing metadata to the manifest JSON entry (replace the one already
-    // pushed above by embedding the public key under a top-level 'signing' key).
-    // We do this by pushing a second manifest.json — the ZIP builder keeps last wins.
-    // Actually, replace the first manifest entry's data in-place is cleaner:
+    // Augment the manifest entry with signing metadata.
     const signingManifest = {
       ...scopedManifest,
       signing: {
@@ -831,8 +828,12 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
         tsa_status: tsaStatus,
       },
     };
-    // Replace the manifest entry (it was push()'d first — index 0).
-    entries[0] = jsonEntry("manifest.json", signingManifest);
+    const manifestIdx = entries.findIndex((e) => e.path === "manifest.json");
+    if (manifestIdx !== -1) {
+      entries[manifestIdx] = jsonEntry("manifest.json", signingManifest);
+    } else {
+      entries.push(jsonEntry("manifest.json", signingManifest));
+    }
 
   } catch (err) {
     console.warn("[export] Signing failed (non-fatal):", err);

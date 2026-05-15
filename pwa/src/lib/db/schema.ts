@@ -6,7 +6,7 @@
  * via a `source` column so cross-device sync can union rows safely.
  */
 
-export const CURRENT_SCHEMA_VERSION = 12;
+export const CURRENT_SCHEMA_VERSION = 13;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -282,7 +282,7 @@ CREATE TABLE IF NOT EXISTS bundle_signatures (
   built_at          TEXT NOT NULL,
   merkle_root       TEXT,
   cose_signature_b64 TEXT,           -- COSE_Sign1 envelope, base64-encoded
-  ed25519_pubkey_b64 TEXT,           -- hex public key for the signing key used
+  ed25519_pubkey_hex TEXT,           -- 64-char hex public key for the signing key used
   tsa_status        TEXT NOT NULL DEFAULT 'pending',
   tsa_token_b64     TEXT,            -- DER-encoded TimeStampResp, base64
   tsa_requested_at  TEXT,
@@ -379,7 +379,7 @@ export interface BundleSignatureRow {
   built_at: string;
   merkle_root: string | null;
   cose_signature_b64: string | null;
-  ed25519_pubkey_b64: string | null;
+  ed25519_pubkey_hex: string | null;
   tsa_status: TsaStatus;
   tsa_token_b64: string | null;
   tsa_requested_at: string | null;

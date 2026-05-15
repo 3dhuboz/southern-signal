@@ -146,6 +146,17 @@ async function init(): Promise<InitResult> {
 
   // v11 + v12 tables land via CREATE TABLE IF NOT EXISTS in SCHEMA_SQL.
 
+  // v13: rename misnamed column ed25519_pubkey_b64 → ed25519_pubkey_hex on bundle_signatures.
+  try {
+    await exec(
+      "ALTER TABLE bundle_signatures RENAME COLUMN ed25519_pubkey_b64 TO ed25519_pubkey_hex",
+      [],
+      false,
+    );
+  } catch {
+    /* column already renamed (v13+) or table was just created with new name */
+  }
+
   // Stamp schema version on fresh DBs.
   await exec(
     "INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('schema_version', ?)",

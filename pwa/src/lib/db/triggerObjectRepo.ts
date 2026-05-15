@@ -8,17 +8,10 @@
 
 import { appendAuditEntry } from "./auditLog";
 import { exec, query } from "./db";
+import { uuid, nowUtc } from "./repo";
 import type { TriggerDisplacement, TriggerObject, TriggerObjectCheck } from "./schema";
 
 const ACTOR_DEFAULT = "user";
-
-function uuid(): string {
-  return crypto.randomUUID();
-}
-
-function nowUtc(): string {
-  return new Date().toISOString();
-}
 
 // ── Trigger objects ───────────────────────────────────────────────────────────
 

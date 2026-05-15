@@ -5,6 +5,7 @@
  * no raw IndexedDB here.
  */
 
+import { appendAuditEntry } from "./auditLog";
 import { exec, query } from "./db";
 import type { BundleSignatureRow, TsaStatus } from "./schema";
 
@@ -16,7 +17,7 @@ export async function saveBundleSignature(row: BundleSignatureRow): Promise<void
   await exec(
     `INSERT INTO bundle_signatures
        (bundle_id, investigation_id, built_at, merkle_root,
-        cose_signature_b64, ed25519_pubkey_b64,
+        cose_signature_b64, ed25519_pubkey_hex,
         tsa_status, tsa_token_b64, tsa_requested_at, tsa_anchored_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
@@ -25,13 +26,22 @@ export async function saveBundleSignature(row: BundleSignatureRow): Promise<void
       row.built_at,
       row.merkle_root,
       row.cose_signature_b64,
-      row.ed25519_pubkey_b64,
+      row.ed25519_pubkey_hex,
       row.tsa_status,
       row.tsa_token_b64,
       row.tsa_requested_at,
       row.tsa_anchored_at,
     ],
   );
+  await appendAuditEntry({
+    actor: "user",
+    kind: "bundle_signature.save",
+    payload: {
+      bundle_id: row.bundle_id,
+      investigation_id: row.investigation_id,
+      tsa_status: row.tsa_status,
+    },
+  });
 }
 
 /**
@@ -50,6 +60,11 @@ export async function updateTsaResult(
      WHERE bundle_id = ?`,
     [tsa_status, tsa_token_b64, tsa_anchored_at, bundleId],
   );
+  await appendAuditEntry({
+    actor: "user",
+    kind: "bundle_signature.tsa_update",
+    payload: { bundle_id: bundleId, tsa_status },
+  });
 }
 
 /**

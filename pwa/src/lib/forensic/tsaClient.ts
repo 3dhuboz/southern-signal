@@ -11,23 +11,14 @@
  * = 'pending' in the bundle_signatures table).
  */
 
+import { concat } from "./bytes";
+
 const TSA_URL = "https://freetsa.org/tsr";
+const TSA_TIMEOUT_MS = 8_000;
 
 // ---------------------------------------------------------------------------
 // Minimal DER encoder
 // ---------------------------------------------------------------------------
-
-/** Concatenate Uint8Arrays. */
-function concat(...parts: Uint8Array[]): Uint8Array {
-  const total = parts.reduce((s, p) => s + p.length, 0);
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const p of parts) {
-    out.set(p, offset);
-    offset += p.length;
-  }
-  return out;
-}
 
 /** Encode a DER length field. */
 function derLength(n: number): Uint8Array {
@@ -157,18 +148,26 @@ export function buildTsaRequest(sha256Hash: Uint8Array): Uint8Array {
 export async function sendTsaRequest(sha256Hash: Uint8Array): Promise<Uint8Array> {
   const reqBytes = buildTsaRequest(sha256Hash);
 
-  const response = await fetch(TSA_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/timestamp-query" },
-    body: reqBytes,
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TSA_TIMEOUT_MS);
 
-  if (!response.ok) {
-    throw new Error(`TSA responded ${response.status} ${response.statusText}`);
+  try {
+    const response = await fetch(TSA_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/timestamp-query" },
+      body: reqBytes,
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`TSA responded ${response.status} ${response.statusText}`);
+    }
+
+    const buf = await response.arrayBuffer();
+    return new Uint8Array(buf);
+  } finally {
+    clearTimeout(timer);
   }
-
-  const buf = await response.arrayBuffer();
-  return new Uint8Array(buf);
 }
 
 // ---------------------------------------------------------------------------
