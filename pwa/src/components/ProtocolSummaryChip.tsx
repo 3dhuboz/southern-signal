@@ -7,7 +7,6 @@
  *  - Locked                → green "PRE-REGISTERED" chip with first-8-char hash
  */
 
-import type { InvestigationProtocol } from "../lib/db/schema";
 import chipStyles from "./ProtocolSummaryChip.module.css";
 
 export interface ProtocolSummaryChipProps {
@@ -31,17 +30,12 @@ export function ProtocolSummaryChip({ protocolJson, protocolHash }: ProtocolSumm
 
   // Draft written but not locked — amber chip
   if (protocolJson) {
-    let label = "DRAFT — not locked";
-    try {
-      const p = JSON.parse(protocolJson) as InvestigationProtocol;
-      if (p.hypothesis?.trim()) label = "DRAFT — not locked";
-    } catch { /* ignore */ }
     return (
       <span
         className={chipStyles.chip + " " + chipStyles.chipDraft}
         title="Protocol written but not yet locked — lock it before starting the session"
       >
-        ⚠ {label}
+        ⚠ DRAFT — not locked
       </span>
     );
   }

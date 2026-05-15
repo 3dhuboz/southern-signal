@@ -31,13 +31,11 @@ export function SensitiveSiteWarning({ matches, onAcknowledge, onCancel }: Props
   return (
     <div className={s.overlay} role="dialog" aria-modal="true" aria-labelledby="ssw-title">
       <div className={s.card}>
-        {/* Header */}
         <div className={s.header}>
           <span className={s.icon} aria-hidden="true">⚠</span>
           <h2 id="ssw-title" className={s.title}>Sensitive site nearby</h2>
         </div>
 
-        {/* Lead */}
         <p className={s.lead}>
           This investigation location is within 5 km of{" "}
           {matches.length === 1
@@ -45,7 +43,6 @@ export function SensitiveSiteWarning({ matches, onAcknowledge, onCancel }: Props
             : `${matches.length} documented Colonial Frontier Massacre sites.`}
         </p>
 
-        {/* Site list */}
         <ul className={s.siteList} aria-label="Nearby massacre sites">
           {matches.map(({ site, distanceKm }) => (
             <li key={site.id} className={s.siteRow}>
@@ -62,20 +59,17 @@ export function SensitiveSiteWarning({ matches, onAcknowledge, onCancel }: Props
           ))}
         </ul>
 
-        {/* Guidance */}
         <p className={s.guidance}>
           Please consider whether this investigation is appropriate for this location.
           If you proceed, ensure your work respects the cultural significance of the
           site and any communities connected to it.
         </p>
 
-        {/* Attribution */}
         <p className={s.attribution}>
           Data: Ryan et al. (2017–2024) — Colonial Frontier Massacres in Australia.
           University of Newcastle / ARC Discovery Project.
         </p>
 
-        {/* Typed acknowledgement */}
         <label className={s.ackLabel} htmlFor="ssw-ack">
           Type <strong>I acknowledge</strong> to continue
         </label>
@@ -95,7 +89,6 @@ export function SensitiveSiteWarning({ matches, onAcknowledge, onCancel }: Props
           </p>
         )}
 
-        {/* Actions */}
         <div className={s.actions}>
           <button
             type="button"

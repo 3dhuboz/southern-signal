@@ -27,6 +27,22 @@ interface AppleMotionEvent {
 /** Result of a permission request. "not-needed" on Android/desktop. */
 export type MotionPermissionResult = "granted" | "denied" | "not-needed" | "unavailable";
 
+/**
+ * Request DeviceMotion permission without needing a ShakeDetector instance.
+ * Must be called from a user-gesture handler on iOS 13+.
+ */
+export async function requestMotionPermission(): Promise<MotionPermissionResult> {
+  if (typeof DeviceMotionEvent === "undefined") return "unavailable";
+  const M = DeviceMotionEvent as unknown as AppleMotionEvent;
+  if (typeof M.requestPermission !== "function") return "not-needed";
+  try {
+    const result = await M.requestPermission();
+    return result === "granted" ? "granted" : "denied";
+  } catch {
+    return "denied";
+  }
+}
+
 export class ShakeDetector {
   private readonly threshold: number;
   private readonly windowMs: number;

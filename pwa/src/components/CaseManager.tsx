@@ -114,7 +114,7 @@ export function CaseManager() {
   // Sensitive site classifier: runs silently when new-case form opens.
   const [siteMatches, setSiteMatches] = useState<SiteMatch[]>([]);
   const [siteAcknowledged, setSiteAcknowledged] = useState(false);
-  const [showSiteWarning, setShowSiteWarning] = useState(false);
+  const [showSiteWarning, setShowSiteWarning] = useState(false); // true = modal open
 
   const refresh = useCallback(() => setReloadTick((t) => t + 1), []);
 
@@ -266,9 +266,9 @@ export function CaseManager() {
     setNewCaseOpen(true);
 
     // Silently check for nearby colonial massacre sites (no permission prompt).
-    void getCurrentLocationSilent().then((coords) => {
-      if (!coords) return;
-      const matches = findNearbySites(coords.latitude, coords.longitude);
+    void getCurrentLocationSilent().then((pt) => {
+      if (!pt) return;
+      const matches = findNearbySites(pt.latitude, pt.longitude);
       if (matches.length > 0) {
         setSiteMatches(matches);
         setShowSiteWarning(true);
@@ -312,7 +312,7 @@ export function CaseManager() {
   const handleSubmitNewCase = async () => {
     // If nearby massacre sites were found but not acknowledged, surface the
     // warning modal instead of proceeding.
-    if (siteMatches.length > 0 && !siteAcknowledged) {
+    if (awaitingAck) {
       setShowSiteWarning(true);
       return;
     }
@@ -492,6 +492,8 @@ export function CaseManager() {
     }
   };
 
+  const awaitingAck = awaitingAck;
+
   return (
     <div className={s.wrap}>
       <header className={s.head}>
@@ -507,7 +509,7 @@ export function CaseManager() {
       {newCaseOpen && (
         <div className={s.newCaseBlock}>
           {/* Sensitive site badge — shown after location check resolves */}
-          {siteMatches.length > 0 && !siteAcknowledged && (
+          {awaitingAck && (
             <div className={s.siteAlertBadge}>
               <span aria-hidden="true">⚠</span>{" "}
               Sensitive site nearby — acknowledgement required before creating.
@@ -542,7 +544,7 @@ export function CaseManager() {
               type="button"
               className={`btn btn-primary ${s.btnSize}`}
               onClick={handleSubmitNewCase}
-              disabled={siteMatches.length > 0 && !siteAcknowledged}
+              disabled={awaitingAck}
             >
               Create case
             </button>
@@ -706,7 +708,7 @@ export function CaseManager() {
                       onClick={() => handleOpenWizard(c.id)}
                       title={c.protocol_hash ? "View locked protocol" : c.protocol_json ? "Edit draft protocol" : "Write pre-registered hypothesis"}
                     >
-                      {c.protocol_hash ? "🔒 View protocol" : c.protocol_json ? "📋 Edit protocol" : "📋 Write protocol"}
+                      {c.protocol_hash ? "View protocol" : c.protocol_json ? "Edit protocol" : "Write protocol"}
                     </button>
                     <div className={s.dispoGroup}>
                       <span className={s.fieldLabel}>Disposition</span>

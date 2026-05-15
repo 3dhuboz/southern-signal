@@ -18,7 +18,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { appendAuditEntry } from "../lib/db/auditLog";
 import { recordEvent } from "../lib/db/repo";
 import { playChime } from "../lib/audio/chime";
-import { ShakeDetector, type MotionPermissionResult } from "../lib/sensors/shakeDetector";
+import { ShakeDetector, requestMotionPermission } from "../lib/sensors/shakeDetector";
 
 // ---- 16-point cardinal lookup ------------------------------------------
 
@@ -87,9 +87,11 @@ export function useTiltToWakeMarker(opts: TiltToWakeOptions): TiltToWakeReturn {
   const investigationIdRef = useRef<string | null>(investigationId);
   const enabledRef = useRef<boolean>(enabled);
   const onMarkerDroppedRef = useRef<typeof onMarkerDropped>(onMarkerDropped);
-  useEffect(() => { investigationIdRef.current = investigationId; }, [investigationId]);
-  useEffect(() => { enabledRef.current = enabled; }, [enabled]);
-  useEffect(() => { onMarkerDroppedRef.current = onMarkerDropped; }, [onMarkerDropped]);
+  useEffect(() => {
+    investigationIdRef.current = investigationId;
+    enabledRef.current = enabled;
+    onMarkerDroppedRef.current = onMarkerDropped;
+  }, [investigationId, enabled, onMarkerDropped]);
 
   // Detector is created once.
   const detectorRef = useRef<ShakeDetector | null>(null);
@@ -161,22 +163,11 @@ export function useTiltToWakeMarker(opts: TiltToWakeOptions): TiltToWakeReturn {
       return;
     }
 
-    // Build the detector.
     const detector = new ShakeDetector({ onShake: () => { void dropMarker(); } });
 
-    // On Android/desktop the permission is already considered granted from the
-    // constructor's perspective — we need to set the internal flag by calling
-    // requestPermission() (which returns "not-needed" immediately) OR by calling
-    // start() directly since the API is ungated. We call start() directly here;
-    // on iOS this path is only reached after requestPermission() granted above,
-    // at which point the detector's own internal permissionGranted flag is still
-    // false unless we re-call requestPermission on the instance. We handle this
-    // by calling the instance requestPermission on iOS inside requestPermission()
-    // below, which sets the flag before start() is reached. For the "granted"
-    // path reached on Android from the initial useState, we need to mark the
-    // instance as permitted. The cleanest way is to call the instance's own
-    // requestPermission (which returns "not-needed" for Android immediately with
-    // no user-gesture requirement) before starting.
+    // ShakeDetector.requestPermission() marks the internal flag on Android
+    // (returns "not-needed" immediately, no gesture needed) and respects the
+    // iOS grant already obtained by requestPermission() below.
     void detector.requestPermission().then(() => {
       detector.start();
     });
@@ -211,20 +202,10 @@ export function useTiltToWakeMarker(opts: TiltToWakeOptions): TiltToWakeReturn {
   // requestPermission — must be called from a user-gesture handler on iOS.
   const requestPermission = useCallback(async (): Promise<void> => {
     if (permissionState === "unavailable" || permissionState === "granted") return;
-
-    // Build a temporary detector just to call its requestPermission, which
-    // handles the iOS API correctly. Then update our hook state so the effect
-    // above starts the real detector.
-    const tempDetector = new ShakeDetector();
-    const result: MotionPermissionResult = await tempDetector.requestPermission();
-
-    if (result === "granted" || result === "not-needed") {
-      setPermissionState("granted");
-    } else if (result === "unavailable") {
-      setPermissionState("unavailable");
-    } else {
-      setPermissionState("denied");
-    }
+    const result = await requestMotionPermission();
+    if (result === "granted" || result === "not-needed") setPermissionState("granted");
+    else if (result === "unavailable") setPermissionState("unavailable");
+    else setPermissionState("denied");
   }, [permissionState]);
 
   return { lastDrop, permissionState, requestPermission };

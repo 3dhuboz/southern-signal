@@ -909,6 +909,18 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
     document.body.removeChild(a);
   };
 
+  const snrBlocked =
+    selectionStats?.snrDb != null &&
+    selectionStats.snrDb < 3 &&
+    (!snrOverrideActive || snrOverrideReason.trim() === "");
+  const loopBlocked = headphoneConfirmed && loopCount < 3;
+  const submitBlocked = snrBlocked || loopBlocked;
+  const submitTitle = snrBlocked
+    ? `SNR too low (${selectionStats!.snrDb!.toFixed(1)} dB) — instrument noise floor`
+    : loopBlocked
+    ? `Play ${3 - loopCount} more loop${3 - loopCount !== 1 ? "s" : ""} before submitting`
+    : undefined;
+
   return (
     <div className={s.modal} role="dialog" aria-modal="true" aria-labelledby="evp-editor-title">
       <div className={s.dialog}>
@@ -1115,15 +1127,11 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
                   <span>RMS: {selectionStats.dbfs.toFixed(1)} dBFS</span>
                 )}
                 {selectionStats?.snrDb != null && (
-                  <span
-                    className={
-                      selectionStats.snrDb >= 6
-                        ? s.snrChipGood
-                        : selectionStats.snrDb >= 3
-                        ? s.snrChipAmber
-                        : s.snrChipBad
-                    }
-                  >
+                  <span className={
+                    selectionStats.snrDb >= 6 ? s.snrChipGood
+                    : selectionStats.snrDb >= 3 ? s.snrChipAmber
+                    : s.snrChipBad
+                  }>
                     SNR: {selectionStats.snrDb.toFixed(1)} dB
                   </span>
                 )}
@@ -1214,45 +1222,24 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
             )}
 
             <div className={s.actionRow}>
-              {(() => {
-                // SNR gate: block submit if SNR < 3 dB and no override reason.
-                const snrBlocked =
-                  selectionStats?.snrDb != null &&
-                  selectionStats.snrDb < 3 &&
-                  (!snrOverrideActive || snrOverrideReason.trim() === "");
-                // Loop gate: block submit until 3 loops completed in headphone mode.
-                const loopBlocked = headphoneConfirmed && loopCount < 3;
-                const submitBlocked = snrBlocked || loopBlocked;
-
-                const tagTitle = snrBlocked
-                  ? `SNR too low (${selectionStats!.snrDb!.toFixed(1)} dB) — instrument noise floor`
-                  : loopBlocked
-                  ? `Play ${3 - loopCount} more loop${3 - loopCount !== 1 ? "s" : ""} before submitting`
-                  : undefined;
-
-                return (
-                  <>
-                    <button
-                      type="button"
-                      className={s.primaryBtn}
-                      onClick={handleSaveTag}
-                      disabled={!selection || savingTag || submitBlocked}
-                      title={tagTitle}
-                    >
-                      {savingTag ? "Saving…" : "Save tag"}
-                    </button>
-                    <button
-                      type="button"
-                      className={s.primaryBtn}
-                      onClick={handleSaveTrim}
-                      disabled={!selection || savingTrim || submitBlocked}
-                      title={tagTitle}
-                    >
-                      {savingTrim ? "Saving…" : "Save trim to case"}
-                    </button>
-                  </>
-                );
-              })()}
+              <button
+                type="button"
+                className={s.primaryBtn}
+                onClick={handleSaveTag}
+                disabled={!selection || savingTag || submitBlocked}
+                title={submitTitle}
+              >
+                {savingTag ? "Saving…" : "Save tag"}
+              </button>
+              <button
+                type="button"
+                className={s.primaryBtn}
+                onClick={handleSaveTrim}
+                disabled={!selection || savingTrim || submitBlocked}
+                title={submitTitle}
+              >
+                {savingTrim ? "Saving…" : "Save trim to case"}
+              </button>
               {!cloudBlocked && (
                 <button
                   type="button"

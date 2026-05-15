@@ -20,6 +20,7 @@
  */
 
 import SITES_RAW from "./colonialSites.json";
+export { getCurrentPointSilent as getCurrentLocationSilent } from "./geolocation";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -94,28 +95,3 @@ export function findNearbySites(
   return matches;
 }
 
-/**
- * Silently request the device's current location (no prompt — only works if
- * the user has previously granted geolocation). Resolves `null` on any error.
- *
- * Timeout is short (3 s) so the new-case form is never blocked waiting for GPS.
- */
-export async function getCurrentLocationSilent(): Promise<GeolocationCoordinates | null> {
-  if (!navigator.geolocation) return null;
-
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(null), 3000);
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        clearTimeout(timer);
-        resolve(pos.coords);
-      },
-      () => {
-        clearTimeout(timer);
-        resolve(null);
-      },
-      { timeout: 3000, maximumAge: 60_000, enableHighAccuracy: false },
-    );
-  });
-}

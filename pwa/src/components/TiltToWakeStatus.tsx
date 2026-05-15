@@ -65,7 +65,6 @@ export function TiltToWakeStatus({ investigationId, className }: TiltToWakeStatu
         </div>
       )}
 
-      {/* Main chip */}
       {permissionState === "unavailable" ? (
         <div
           className={chipClass}

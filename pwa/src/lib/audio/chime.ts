@@ -46,25 +46,23 @@ export function playChime(audioCtx?: AudioContext): void {
   osc.start(now);
   osc.stop(now + TOTAL_S);
 
-  // Clean up after playback. Give a small buffer so the release tail finishes.
+  // Clean up after playback. A `cleaned` flag prevents the "ended" event and
+  // the belt-and-suspenders timeout from both trying to close the context.
   const cleanupMs = (TOTAL_S + 0.02) * 1000;
-  osc.addEventListener("ended", () => {
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    clearTimeout(fallbackId);
     try { osc.disconnect(); } catch { /* ignore */ }
     try { gain.disconnect(); } catch { /* ignore */ }
     if (transient) {
-      // Allow a brief settling period before closing so the gain release
-      // isn't clipped by an immediate context suspend.
-      window.setTimeout(() => {
-        void ctx.close().catch(() => { /* ignore */ });
-      }, 50);
+      // Brief delay so the gain release tail isn't clipped by context suspend.
+      window.setTimeout(() => void ctx.close().catch(() => {}), 50);
     }
-  });
+  };
 
-  // Belt-and-suspenders: if the "ended" event never fires (some old WebKit
-  // builds), schedule cleanup anyway.
-  window.setTimeout(() => {
-    try { osc.disconnect(); } catch { /* ignore */ }
-    try { gain.disconnect(); } catch { /* ignore */ }
-    if (transient) void ctx.close().catch(() => { /* ignore */ });
-  }, cleanupMs + 100);
+  osc.addEventListener("ended", cleanup);
+  // Belt-and-suspenders: fires if the "ended" event never arrives (old WebKit).
+  const fallbackId = window.setTimeout(cleanup, cleanupMs + 100);
 }
