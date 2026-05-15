@@ -714,6 +714,39 @@
   letter-spacing: 0.6px;
 }
 
+/* ── Stereo analysis chips ───────────────────────────────────────────────── */
+.stereoChip {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  color: var(--accent);
+  border-radius: var(--r-sm);
+  padding: 1px 7px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+.stereoChipWarn {
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
+  border: 1px solid var(--warning);
+  color: var(--warning);
+  border-radius: var(--r-sm);
+  padding: 1px 7px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+.stereoChipConflict {
+  background: var(--danger-wash);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  border-radius: var(--r-sm);
+  padding: 1px 7px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
 /* ── SNR gate banner + override ─────────────────────────────────────────── */
 .snrGateBanner {
   display: flex;

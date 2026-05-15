@@ -14,16 +14,27 @@ export interface DecodedWav {
   samples: Float32Array;
 }
 
+// ── Internal header parser ────────────────────────────────────────────────────
+
 function readAscii(view: DataView, offset: number, len: number): string {
   let s = "";
   for (let i = 0; i < len; i++) s += String.fromCharCode(view.getUint8(offset + i));
   return s;
 }
 
-export function decodeWav(buffer: ArrayBuffer): DecodedWav {
+interface WavChunks {
+  audioFormat: number;
+  numChannels: number;
+  sampleRate: number;
+  bitsPerSample: number;
+  dataOffset: number;
+  dataSize: number;
+  framesPerChannel: number;
+}
+
+function parseWavChunks(buffer: ArrayBuffer): WavChunks {
   if (buffer.byteLength < 44) throw new Error("WAV too short");
   const view = new DataView(buffer);
-
   if (readAscii(view, 0, 4) !== "RIFF") throw new Error("Not a RIFF file");
   if (readAscii(view, 8, 4) !== "WAVE") throw new Error("Not a WAVE container");
 
@@ -36,11 +47,12 @@ export function decodeWav(buffer: ArrayBuffer): DecodedWav {
     const chunkId = readAscii(view, offset, 4);
     const chunkSize = view.getUint32(offset + 4, true);
     if (chunkId === "fmt ") {
-      const audioFormat = view.getUint16(offset + 8, true);
-      const numChannels = view.getUint16(offset + 10, true);
-      const sampleRate = view.getUint32(offset + 12, true);
-      const bitsPerSample = view.getUint16(offset + 22, true);
-      fmt = { audioFormat, numChannels, sampleRate, bitsPerSample };
+      fmt = {
+        audioFormat: view.getUint16(offset + 8, true),
+        numChannels: view.getUint16(offset + 10, true),
+        sampleRate: view.getUint32(offset + 12, true),
+        bitsPerSample: view.getUint16(offset + 22, true),
+      };
     } else if (chunkId === "data") {
       dataOffset = offset + 8;
       dataSize = chunkSize;
@@ -51,31 +63,32 @@ export function decodeWav(buffer: ArrayBuffer): DecodedWav {
 
   if (!fmt) throw new Error("Missing fmt chunk");
   if (dataOffset < 0) throw new Error("Missing data chunk");
+  const framesPerChannel = Math.floor((dataSize / (fmt.bitsPerSample / 8)) / fmt.numChannels);
+  return { ...fmt, dataOffset, dataSize, framesPerChannel };
+}
 
-  const { audioFormat, numChannels, sampleRate, bitsPerSample } = fmt;
-  const bytesPerSample = bitsPerSample / 8;
-  const totalSamples = Math.floor(dataSize / bytesPerSample);
-  const framesPerChannel = Math.floor(totalSamples / numChannels);
+// ── Public exports ────────────────────────────────────────────────────────────
+
+export function decodeWav(buffer: ArrayBuffer): DecodedWav {
+  const view = new DataView(buffer);
+  const { audioFormat, numChannels, sampleRate, bitsPerSample, dataOffset, framesPerChannel } =
+    parseWavChunks(buffer);
 
   const out = new Float32Array(framesPerChannel);
 
   if (audioFormat === 1 && bitsPerSample === 16) {
-    // PCM 16 — average channels to mono.
     for (let i = 0; i < framesPerChannel; i++) {
       let sum = 0;
       for (let c = 0; c < numChannels; c++) {
-        const sampleOffset = dataOffset + (i * numChannels + c) * 2;
-        sum += view.getInt16(sampleOffset, true) / 0x8000;
+        sum += view.getInt16(dataOffset + (i * numChannels + c) * 2, true) / 0x8000;
       }
       out[i] = sum / numChannels;
     }
   } else if (audioFormat === 3 && bitsPerSample === 32) {
-    // IEEE float 32.
     for (let i = 0; i < framesPerChannel; i++) {
       let sum = 0;
       for (let c = 0; c < numChannels; c++) {
-        const sampleOffset = dataOffset + (i * numChannels + c) * 4;
-        sum += view.getFloat32(sampleOffset, true);
+        sum += view.getFloat32(dataOffset + (i * numChannels + c) * 4, true);
       }
       out[i] = sum / numChannels;
     }
@@ -84,11 +97,8 @@ export function decodeWav(buffer: ArrayBuffer): DecodedWav {
       let sum = 0;
       for (let c = 0; c < numChannels; c++) {
         const o = dataOffset + (i * numChannels + c) * 3;
-        const lo = view.getUint8(o);
-        const mid = view.getUint8(o + 1);
-        const hi = view.getInt8(o + 2);
-        const value = (hi << 16) | (mid << 8) | lo;
-        sum += value / 0x800000;
+        const lo = view.getUint8(o), mid = view.getUint8(o + 1), hi = view.getInt8(o + 2);
+        sum += ((hi << 16) | (mid << 8) | lo) / 0x800000;
       }
       out[i] = sum / numChannels;
     }
@@ -96,13 +106,55 @@ export function decodeWav(buffer: ArrayBuffer): DecodedWav {
     throw new Error(`Unsupported WAV format: format=${audioFormat} bits=${bitsPerSample}`);
   }
 
-  return {
-    sampleRate,
-    numChannels,
-    bitsPerSample,
-    durationSeconds: framesPerChannel / sampleRate,
-    samples: out,
-  };
+  return { sampleRate, numChannels, bitsPerSample, durationSeconds: framesPerChannel / sampleRate, samples: out };
+}
+
+// ── Stereo decode ─────────────────────────────────────────────────────────────
+
+export interface StereoChannels {
+  left: Float32Array;
+  right: Float32Array;
+  sampleRate: number;
+  /** Total channel count in the source file (≥ 2). */
+  numChannels: number;
+}
+
+/**
+ * Decode a WAV and return the first two channels separately.
+ * Returns null if the file is mono or has an unsupported format.
+ */
+export function decodeStereoWav(buffer: ArrayBuffer): StereoChannels | null {
+  const view = new DataView(buffer);
+  let chunks: WavChunks;
+  try { chunks = parseWavChunks(buffer); } catch { return null; }
+  const { audioFormat, numChannels, sampleRate, bitsPerSample, dataOffset, framesPerChannel } = chunks;
+  if (numChannels < 2) return null;
+
+  const left = new Float32Array(framesPerChannel);
+  const right = new Float32Array(framesPerChannel);
+
+  if (audioFormat === 1 && bitsPerSample === 16) {
+    for (let i = 0; i < framesPerChannel; i++) {
+      left[i] = view.getInt16(dataOffset + (i * numChannels + 0) * 2, true) / 0x8000;
+      right[i] = view.getInt16(dataOffset + (i * numChannels + 1) * 2, true) / 0x8000;
+    }
+  } else if (audioFormat === 3 && bitsPerSample === 32) {
+    for (let i = 0; i < framesPerChannel; i++) {
+      left[i] = view.getFloat32(dataOffset + (i * numChannels + 0) * 4, true);
+      right[i] = view.getFloat32(dataOffset + (i * numChannels + 1) * 4, true);
+    }
+  } else if (audioFormat === 1 && bitsPerSample === 24) {
+    for (let i = 0; i < framesPerChannel; i++) {
+      const ol = dataOffset + (i * numChannels + 0) * 3;
+      left[i] = ((view.getInt8(ol + 2) << 16) | (view.getUint8(ol + 1) << 8) | view.getUint8(ol)) / 0x800000;
+      const or_ = dataOffset + (i * numChannels + 1) * 3;
+      right[i] = ((view.getInt8(or_ + 2) << 16) | (view.getUint8(or_ + 1) << 8) | view.getUint8(or_)) / 0x800000;
+    }
+  } else {
+    return null; // Unsupported format — caller falls back to mono-only analysis.
+  }
+
+  return { left, right, sampleRate, numChannels };
 }
 
 /**

@@ -18,7 +18,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { readFile, writeBytes } from "../lib/opfs";
-import { decodeWav, computeWaveformPeaks, computeRms } from "../lib/audio/wavDecoder";
+import { decodeWav, decodeStereoWav, computeWaveformPeaks, computeRms } from "../lib/audio/wavDecoder";
+import type { StereoChannels } from "../lib/audio/wavDecoder";
+import { analyzeStereoSegment } from "../lib/audio/stereoAnalysis";
+import type { StereoAnalysis } from "../lib/audio/stereoAnalysis";
 import { encodeWavFromFloat32 } from "../lib/wav";
 import { registerMedia, recordEvent } from "../lib/db/repo";
 import { appendAuditEntry } from "../lib/db/auditLog";
@@ -138,6 +141,9 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
   // --- Noise floor (computed once after decode) --------------------------
   const [noiseFloor, setNoiseFloor] = useState<{ p50dBFS: number; p95dBFS: number } | null>(null);
 
+  // --- Stereo channels (null for mono recordings) -----------------------
+  const [stereoChannels, setStereoChannels] = useState<StereoChannels | null>(null);
+
   // --- Auto-loop state for headphone review -----------------------------
   // loopCount tracks how many complete loops have played for the current selection.
   const [loopCount, setLoopCount]   = useState(0);
@@ -151,17 +157,20 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const dragStateRef = useRef<{ startX: number; startTime: number } | null>(null);
 
-  // Decode WAV on mount.
+  // Decode WAV on mount (mono mix + optional stereo channels).
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         setLoading(true);
+        setStereoChannels(null);
         const file = await readFile(asset.file_path);
         const buf = await file.arrayBuffer();
         const wav = decodeWav(buf);
         if (cancelled) return;
         setDecoded({ samples: wav.samples, sampleRate: wav.sampleRate, durationSec: wav.durationSeconds });
+        // Decode stereo channels separately when the file has ≥ 2 channels.
+        setStereoChannels(decodeStereoWav(buf));
         const blob = new Blob([buf], { type: "audio/wav" });
         const url = URL.createObjectURL(blob);
         setAudioUrl(url);
@@ -447,6 +456,16 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
     };
   }, [selection, decoded, noiseFloor]);
 
+  // Stereo differential analysis — null when mono or no selection.
+  const stereoAnalysis = useMemo((): StereoAnalysis | null => {
+    if (!selection || !stereoChannels) return null;
+    const sr = stereoChannels.sampleRate;
+    const startFrame = Math.floor(selection.startSec * sr);
+    const endFrame = Math.min(stereoChannels.left.length, Math.floor(selection.endSec * sr));
+    if (endFrame <= startFrame) return null;
+    return analyzeStereoSegment(stereoChannels.left, stereoChannels.right, sr, startFrame, endFrame);
+  }, [selection, stereoChannels]);
+
   const handleSaveTag = async () => {
     if (!selection || !decoded) return;
     setSavingTag(true);
@@ -478,6 +497,10 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
           snr_override_reason: snrOverrideActive && snrOverrideReason.trim() ? snrOverrideReason.trim() : null,
           noise_floor_p50: noiseFloor?.p50dBFS ?? null,
           noise_floor_p95: noiseFloor?.p95dBFS ?? null,
+          itd_ms: stereoAnalysis?.itdMs ?? null,
+          ild_db: stereoAnalysis?.ildDb ?? null,
+          stereo_conflict: stereoAnalysis?.conflictFlag ?? null,
+          stereo_impossible_itd: stereoAnalysis?.impossibleItd ?? null,
         },
       });
       setStatusMsg(`Tag saved — Class ${reviewerClass.toUpperCase()}`);
@@ -530,6 +553,10 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
           snr_override_reason: snrOverrideActive && snrOverrideReason.trim() ? snrOverrideReason.trim() : null,
           noise_floor_p50: noiseFloor?.p50dBFS ?? null,
           noise_floor_p95: noiseFloor?.p95dBFS ?? null,
+          itd_ms: stereoAnalysis?.itdMs ?? null,
+          ild_db: stereoAnalysis?.ildDb ?? null,
+          stereo_conflict: stereoAnalysis?.conflictFlag ?? null,
+          stereo_impossible_itd: stereoAnalysis?.impossibleItd ?? null,
         },
       });
       await recordEvent({
@@ -1140,6 +1167,33 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
                     Loop {Math.min(loopCount + 1, 3)}/3
                     {loopCount >= 3 && " ✓"}
                   </span>
+                )}
+                {stereoAnalysis && (
+                  <>
+                    <span
+                      className={stereoAnalysis.impossibleItd ? s.stereoChipWarn : s.stereoChip}
+                      title="Inter-Aural Time Difference — positive = right-leading"
+                    >
+                      ITD: {stereoAnalysis.itdMs > 0 ? "+" : ""}{stereoAnalysis.itdMs.toFixed(2)} ms
+                      {" · "}{Math.abs(stereoAnalysis.itdMs) <= 0.05 ? "centre" : stereoAnalysis.itdMs > 0 ? "→R" : "→L"}
+                    </span>
+                    <span
+                      className={s.stereoChip}
+                      title="Inter-Aural Level Difference — positive = left louder"
+                    >
+                      ILD: {stereoAnalysis.ildDb > 0 ? "+" : ""}{stereoAnalysis.ildDb.toFixed(1)} dB
+                    </span>
+                    {stereoAnalysis.conflictFlag && (
+                      <span className={s.stereoChipConflict} title="ITD and ILD disagree on source direction">
+                        ⚠ Direction conflict
+                      </span>
+                    )}
+                    {stereoAnalysis.impossibleItd && (
+                      <span className={s.stereoChipWarn} title="ITD exceeds human-head physical maximum — may reflect reverb or channel latency mismatch">
+                        ⚠ ITD &gt; head max
+                      </span>
+                    )}
+                  </>
                 )}
               </div>
             )}
