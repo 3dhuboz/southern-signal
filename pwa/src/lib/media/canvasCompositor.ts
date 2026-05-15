@@ -155,7 +155,10 @@ export function createCanvasCompositor(opts: CanvasCompositorOptions): CanvasCom
       lastFrameTs = now;
       sizeCanvas();
       const ctx = canvas.getContext("2d");
-      if (ctx) renderFrame(ctx, canvas, video, getOverlay());
+      // Guard: drawImage on readyState < HAVE_CURRENT_DATA throws
+      // InvalidStateError on Safari/iOS, which would escape this closure
+      // and kill the RAF loop permanently. Skip the frame instead.
+      if (ctx && video.readyState >= 2) renderFrame(ctx, canvas, video, getOverlay());
     }
     raf = requestAnimationFrame(draw);
   };
