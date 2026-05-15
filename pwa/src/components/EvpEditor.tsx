@@ -25,6 +25,7 @@ import { appendAuditEntry } from "../lib/db/auditLog";
 import { exec } from "../lib/db/db";
 import { sha256HexBytes } from "../lib/forensic/canonicalJson";
 import { transcribeAudio } from "../lib/ai/cloudTranscribe";
+import { setEvpEmission } from "../lib/itc/itcChannels";
 import {
   DEFAULT_LOCAL_MODEL,
   loadLocalWhisperModel,
@@ -523,6 +524,9 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
         prompt: reviewerText.trim() ? `Possible utterance: ${reviewerText.trim()}` : undefined,
       });
       setTranscript(result.text);
+      // Push to live overlay's EVP channel — disappears from the overlay after
+      // the channel's age window expires; permanent storage stays in the DB.
+      if (result.text.trim()) setEvpEmission(result.text);
 
       // Persist transcript segments to the transcripts table for downstream review.
       const transcriptId = crypto.randomUUID();
@@ -612,6 +616,7 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
         returnTimestamps: true,
       });
       setTranscript(result.text);
+      if (result.text.trim()) setEvpEmission(result.text);
 
       const transcriptId = crypto.randomUUID();
       await exec(

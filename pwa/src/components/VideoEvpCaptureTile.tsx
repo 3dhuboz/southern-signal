@@ -34,6 +34,7 @@ import { recordEvent, registerMedia } from "../lib/db/repo";
 import { writeBytes } from "../lib/opfs";
 import { sha256HexBytes } from "../lib/forensic/canonicalJson";
 import { createCanvasCompositor, type CanvasCompositor, type OverlayState } from "../lib/media/canvasCompositor";
+import { getItcChannels } from "../lib/itc/itcChannels";
 import { describeActivity } from "../lib/posterior/plainEnglish";
 import s from "./VideoEvpCaptureTile.module.css";
 
@@ -197,7 +198,22 @@ export function VideoEvpCaptureTile(props: Props) {
           video: sourceV,
           // Stamp the timestamp on every frame so it ticks during quiet
           // scenes too — never re-anchored to the watched-prop effect.
-          getOverlay: () => ({ ...overlayStateRef.current, isoTimestamp: new Date().toISOString() }),
+          getOverlay: () => {
+            // Read latest ITC emissions on every frame so age stamps tick
+            // smoothly even when the React props for this tile are static.
+            const now = Date.now();
+            const store = getItcChannels();
+            const itc: NonNullable<OverlayState["itc"]> = {};
+            if (store.spiritBox) itc.spiritBox = { text: store.spiritBox.text, ageMs: now - store.spiritBox.timestamp };
+            if (store.ovilus) itc.ovilus = { text: store.ovilus.text, ageMs: now - store.ovilus.timestamp };
+            if (store.evp) itc.evp = { text: store.evp.text, ageMs: now - store.evp.timestamp };
+            const hasAnyItc = Object.keys(itc).length > 0;
+            return {
+              ...overlayStateRef.current,
+              isoTimestamp: new Date(now).toISOString(),
+              itc: hasAnyItc ? itc : undefined,
+            };
+          },
           fps: 30,
         });
         compositorRef.current = compositor;

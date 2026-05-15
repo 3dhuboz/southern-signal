@@ -397,3 +397,142 @@
   margin-left: auto;
   color: var(--text-muted);
 }
+
+/* Overlay Channels panel — operator picks which baked-in overlay
+ * elements appear on the recorded / live composite stream. Collapsed by
+ * default so the standard operator flow stays uncluttered; expanded when
+ * someone wants to compartmentalise (e.g. hide EMF but show Spirit Box). */
+.channels {
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--bg-surface);
+  padding: 0;
+}
+.channelsSummary {
+  list-style: none;
+  cursor: pointer;
+  padding: var(--s-12) var(--s-12);
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+.channelsSummary::-webkit-details-marker { display: none; }
+.channelsSummary::before {
+  content: "▸";
+  display: inline-block;
+  font-size: 10px;
+  color: var(--text-muted);
+  transition: transform 120ms ease;
+}
+.channels[open] .channelsSummary::before { transform: rotate(90deg); }
+.channelsSummary:hover { color: var(--text-primary); }
+.channelsCount {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+  text-transform: none;
+}
+
+.channelsBody {
+  padding: 0 var(--s-12) var(--s-12);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-8);
+}
+
+.channelsHint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.45;
+  font-style: italic;
+}
+
+.channelsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.channelToggle {
+  appearance: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  padding: var(--s-8) 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border-default);
+  background: var(--bg-inset);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+  min-height: 38px;
+  transition: background 120ms, border-color 120ms, color 120ms;
+}
+.channelToggle:hover {
+  background: var(--bg-overlay);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+.channelToggle:focus-visible {
+  outline: 2px solid var(--signal-dim);
+  outline-offset: 1px;
+}
+
+.channelToggleOn {
+  background: var(--signal-wash);
+  color: var(--signal);
+  border-color: var(--signal-dim);
+}
+.channelToggleOn:hover {
+  background: color-mix(in srgb, var(--signal) 22%, var(--bg-inset));
+  border-color: var(--signal);
+  color: var(--signal);
+}
+
+.channelToggleDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+.channelToggleOn .channelToggleDot {
+  background: var(--signal);
+  box-shadow: 0 0 6px var(--signal);
+}
+
+.channelsActions {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+.channelsActionBtn {
+  appearance: none;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  background: transparent;
+  border: 1px solid var(--border-default);
+  color: var(--text-muted);
+  padding: var(--s-4) var(--s-12);
+  border-radius: var(--r-full);
+  cursor: pointer;
+  min-height: 30px;
+}
+.channelsActionBtn:hover {
+  background: var(--bg-overlay);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}

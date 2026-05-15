@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { recordEvent } from "../lib/db/repo";
 import { OVILUS_DICTIONARY, nextOvilusWord } from "../lib/itc/ovilusDictionary";
+import { setOvilusEmission } from "./../lib/itc/itcChannels";
 import s from "./Tool.module.css";
 
 interface OvilusToolProps {
@@ -29,6 +30,8 @@ export function OvilusTool({ entropy, investigationId }: OvilusToolProps) {
     seedRef.current = nextSeed;
     setCurrent(word);
     setHistory((h) => [word, ...h].slice(0, 16));
+    // Publish to the live overlay channel.
+    setOvilusEmission(word);
     try {
       const utterance = new SpeechSynthesisUtterance(word);
       utterance.rate = 0.95;

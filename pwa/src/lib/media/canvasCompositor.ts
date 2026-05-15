@@ -21,6 +21,47 @@
  *   compositor.stop();
  */
 
+/**
+ * Per-channel visibility toggles. Operator picks which channels show on
+ * the overlay from the "Overlay channels" panel on LiveStreamView — that
+ * panel persists to localStorage so preferences stick session-to-session.
+ * Missing on overlay state = all channels visible (back-compat with any
+ * caller that doesn't supply channels).
+ */
+export interface OverlayChannels {
+  activityPill: boolean;
+  posteriorPill: boolean;
+  edgeGlow: boolean;
+  sensors: boolean;
+  itc: boolean;
+  directionArrow: boolean;
+  caption: boolean;
+  timestamp: boolean;
+  statusPills: boolean;
+}
+
+export const DEFAULT_OVERLAY_CHANNELS: OverlayChannels = {
+  activityPill: true,
+  posteriorPill: true,
+  edgeGlow: true,
+  sensors: true,
+  itc: true,
+  directionArrow: true,
+  caption: true,
+  timestamp: true,
+  statusPills: true,
+};
+
+/**
+ * An ITC (Instrumental Trans-Communication) channel emission — a phoneme
+ * from Spirit Box, a word from Ovilus, or a transcript line from EVP.
+ * `ageMs` is computed at frame draw time so the readout fades smoothly.
+ */
+export interface ItcChannelView {
+  text: string;
+  ageMs: number;
+}
+
 export interface OverlayState {
   caseId?: string;
   caseTitle?: string;
@@ -40,7 +81,24 @@ export interface OverlayState {
     motion?: number;
     temperature?: number;
   };
+  itc?: {
+    spiritBox?: ItcChannelView;
+    ovilus?: ItcChannelView;
+    evp?: ItcChannelView;
+  };
+  /** Per-channel visibility. Undefined → all channels render (back-compat). */
+  channels?: OverlayChannels;
 }
+
+/** Internal helper — fall back to all-on if the caller didn't supply channels. */
+function resolveChannels(overlay: OverlayState): OverlayChannels {
+  return overlay.channels ?? DEFAULT_OVERLAY_CHANNELS;
+}
+
+/** ITC channel max age — after this many ms the overlay drops the readout. */
+const ITC_MAX_AGE_MS = 30_000;
+/** EVP transcripts get a longer window because they're rarer and meatier. */
+const ITC_EVP_MAX_AGE_MS = 120_000;
 
 export interface CanvasCompositorOptions {
   video: HTMLVideoElement;
@@ -131,44 +189,80 @@ function renderFrame(
 ): void {
   const W = canvas.width;
   const H = canvas.height;
+  const channels = resolveChannels(overlay);
 
-  // 1. Camera frame (cover-fit).
+  // 1. Camera frame (cover-fit). ALWAYS drawn — disabling this would just
+  // give the operator a black square and is never what they want.
   ctx.drawImage(video, 0, 0, W, H);
 
   const band = BAND_COLOR[overlay.activityBand] ?? BAND_COLOR.calm;
 
   // 2. Edge glow tied to posterior + audio RMS.
-  const edgeAlpha = Math.min(1, 0.18 + overlay.posterior * 0.5 + overlay.audioRms * 0.6);
-  const grad = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.7);
-  grad.addColorStop(0, "rgba(0,0,0,0)");
-  grad.addColorStop(1, band.glow.replace(/[\d.]+\)$/, `${edgeAlpha})`));
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, W, H);
+  if (channels.edgeGlow) {
+    const edgeAlpha = Math.min(1, 0.18 + overlay.posterior * 0.5 + overlay.audioRms * 0.6);
+    const grad = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.7);
+    grad.addColorStop(0, "rgba(0,0,0,0)");
+    grad.addColorStop(1, band.glow.replace(/[\d.]+\)$/, `${edgeAlpha})`));
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+  }
 
-  // 3. Top HUD strip.
-  drawTopHud(ctx, W, H, overlay, band);
+  // 3. Top HUD strip (Activity + Posterior pills). Each pill is gated
+  // individually inside drawTopHud so the operator can hide one without
+  // the other.
+  drawTopHud(ctx, W, H, overlay, band, channels);
 
   // 3b. Sensor mini-readout under the Activity pill (top-left).
-  drawSensorReadout(ctx, W, H, overlay, band);
+  // Y-offset depends on whether the Activity pill is drawn; pass the
+  // current top occupancy so the readout doesn't collide.
+  const topPillBottom = channels.activityPill ? sensorReadoutTopOffset(W, H) : Math.round(W * 0.018);
+  let leftStackY = topPillBottom;
+  if (channels.sensors) {
+    leftStackY = drawSensorReadout(ctx, W, H, overlay, band, leftStackY);
+  }
+
+  // 3c. ITC channels readout (Spirit Box / Ovilus / EVP) — stacks below
+  // the sensor block on the same left column.
+  if (channels.itc) {
+    drawItcReadout(ctx, W, H, overlay, band, leftStackY);
+  }
 
   // 4. Direction arrow (only if sector + coherence are valid).
-  if (overlay.sector && overlay.coherence >= 0.5) {
+  if (channels.directionArrow && overlay.sector && overlay.coherence >= 0.5) {
     drawDirectionArrow(ctx, W, H, overlay.sector, overlay.coherence, band);
   }
 
   // 5. Bottom caption strip (AI co-investigator).
-  if (overlay.caption) {
+  if (channels.caption && overlay.caption) {
     drawCaption(ctx, W, H, overlay.caption, band);
   }
 
   // 6. Bottom-right metadata block: timestamp + case ID.
-  drawMetadataStamp(ctx, W, H, overlay);
+  if (channels.timestamp) {
+    drawMetadataStamp(ctx, W, H, overlay);
+  }
 
   // 7. Recording / live indicators.
-  drawStatusPills(ctx, W, H, overlay);
+  if (channels.statusPills) {
+    drawStatusPills(ctx, W, H, overlay);
+  }
 }
 
-function drawTopHud(ctx: CanvasRenderingContext2D, W: number, H: number, overlay: OverlayState, band: { fill: string; stroke: string }) {
+/** Pixel-Y where the sensor block should start (matches drawTopHud math). */
+function sensorReadoutTopOffset(W: number, H: number): number {
+  const padding = Math.round(W * 0.018);
+  const pillH = Math.max(36, Math.round(H * 0.05));
+  return padding + pillH + 8;
+}
+
+function drawTopHud(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  H: number,
+  overlay: OverlayState,
+  band: { fill: string; stroke: string },
+  channels: OverlayChannels,
+) {
   const padding = Math.round(W * 0.018);
   const pillH = Math.max(36, Math.round(H * 0.05));
   const fontSize = Math.max(14, Math.round(H * 0.02));
@@ -178,31 +272,42 @@ function drawTopHud(ctx: CanvasRenderingContext2D, W: number, H: number, overlay
   ctx.textBaseline = "middle";
 
   // Activity label pill (left)
-  const label = overlay.activityLabel.toUpperCase();
-  const lblWidth = ctx.measureText(label).width + padding * 2;
-  drawPill(ctx, padding, padding, lblWidth, pillH, "rgba(0,0,0,0.55)", band.stroke);
-  ctx.fillStyle = "#fff";
-  ctx.fillText(label, padding + padding, padding + pillH / 2);
+  if (channels.activityPill) {
+    const label = overlay.activityLabel.toUpperCase();
+    const lblWidth = ctx.measureText(label).width + padding * 2;
+    drawPill(ctx, padding, padding, lblWidth, pillH, "rgba(0,0,0,0.55)", band.stroke);
+    ctx.fillStyle = "#fff";
+    ctx.fillText(label, padding + padding, padding + pillH / 2);
+  }
 
   // Posterior pill (right)
-  const pPct = `P ${(overlay.posterior * 100).toFixed(0)}%`;
-  const pWidth = ctx.measureText(pPct).width + padding * 2;
-  drawPill(ctx, W - padding - pWidth, padding, pWidth, pillH, "rgba(0,0,0,0.55)", band.stroke);
-  ctx.fillStyle = band.fill;
-  ctx.fillText(pPct, W - padding - pWidth + padding, padding + pillH / 2);
+  if (channels.posteriorPill) {
+    const pPct = `P ${(overlay.posterior * 100).toFixed(0)}%`;
+    const pWidth = ctx.measureText(pPct).width + padding * 2;
+    drawPill(ctx, W - padding - pWidth, padding, pWidth, pillH, "rgba(0,0,0,0.55)", band.stroke);
+    ctx.fillStyle = band.fill;
+    ctx.fillText(pPct, W - padding - pWidth + padding, padding + pillH / 2);
+  }
 
   ctx.restore();
 }
 
+/**
+ * Draws the sensor readout block. Returns the Y coordinate immediately
+ * below the rendered block so subsequent blocks (ITC channels) can stack
+ * vertically on the same left column. Returns the input `blockY` if no
+ * rows render (e.g. all sensor values are stale/undefined).
+ */
 function drawSensorReadout(
   ctx: CanvasRenderingContext2D,
   W: number,
   H: number,
   overlay: OverlayState,
   band: { stroke: string; fill: string },
-) {
+  blockY: number,
+): number {
   const sensors = overlay.sensors;
-  if (!sensors) return;
+  if (!sensors) return blockY;
 
   // Build the row list — only entries with finite numeric values.
   type Row = { label: string; value: string; unit: string };
@@ -219,14 +324,12 @@ function drawSensorReadout(
   if (typeof sensors.temperature === "number" && Number.isFinite(sensors.temperature)) {
     rows.push({ label: "TEMP", value: sensors.temperature.toFixed(1), unit: "°C" });
   }
-  if (rows.length === 0) return;
+  if (rows.length === 0) return blockY;
 
-  // Geometry — match drawTopHud's padding/pillH math so the block
-  // sits cleanly below the Activity pill.
+  // Geometry — left column matches drawTopHud's padding so the block
+  // sits cleanly below the Activity pill (or wherever the caller stacked us).
   const padding = Math.round(W * 0.018);
-  const pillH = Math.max(36, Math.round(H * 0.05));
   const blockX = padding;
-  const blockY = padding + pillH + 8;
 
   const labelFontPx = Math.max(9, Math.round(H * 0.012));
   const valueFontPx = Math.max(14, Math.round(H * 0.019));
@@ -301,6 +404,134 @@ function drawSensorReadout(
   }
 
   ctx.restore();
+  return blockY + blockH + 8;
+}
+
+/**
+ * ITC channels readout (Spirit Box / Ovilus / EVP). Stacks below the
+ * sensor block on the left column. Each channel is age-faded: when its
+ * emission gets stale enough (`ITC_MAX_AGE_MS`, longer for EVP) the row
+ * drops out entirely so the operator isn't staring at a phantom from 30
+ * minutes ago.
+ *
+ * Visual treatment differs from the sensor readout deliberately:
+ *   • Sensors are NUMBERS that update continuously — the operator scans
+ *     the column for the next value.
+ *   • ITC channels are WORDS that fire occasionally — readability of the
+ *     word itself matters more than aligned columns, so the word stretches
+ *     across the row and the age stamp tucks in beside it.
+ */
+function drawItcReadout(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  H: number,
+  overlay: OverlayState,
+  band: { stroke: string; fill: string },
+  blockY: number,
+): number {
+  const itc = overlay.itc;
+  if (!itc) return blockY;
+
+  type Row = { label: string; text: string; age: string };
+  const rows: Row[] = [];
+  const pushIfFresh = (label: string, view: ItcChannelView | undefined, maxAge: number) => {
+    if (!view) return;
+    if (view.ageMs > maxAge) return;
+    rows.push({ label, text: truncateForOverlay(view.text), age: formatAge(view.ageMs) });
+  };
+  pushIfFresh("SPIRIT BOX", itc.spiritBox, ITC_MAX_AGE_MS);
+  pushIfFresh("OVILUS", itc.ovilus, ITC_MAX_AGE_MS);
+  pushIfFresh("EVP", itc.evp, ITC_EVP_MAX_AGE_MS);
+  if (rows.length === 0) return blockY;
+
+  const padding = Math.round(W * 0.018);
+  const blockX = padding;
+
+  const labelFontPx = Math.max(9, Math.round(H * 0.012));
+  const textFontPx = Math.max(15, Math.round(H * 0.022));
+  const ageFontPx = Math.max(10, Math.round(H * 0.013));
+  const rowH = Math.max(textFontPx + 14, Math.round(H * 0.05));
+  const innerPadX = Math.round(padding * 0.9);
+  const innerPadY = Math.round(padding * 0.6);
+  const labelGap = Math.round(padding * 0.6);
+  const ageGap = Math.round(padding * 0.6);
+  const letterSpacingPx = 1.4;
+
+  ctx.save();
+
+  // Measure widths so the block self-sizes to its widest row.
+  const measureLabel = (s: string) => {
+    ctx.font = `700 ${labelFontPx}px "Space Grotesk", Inter, sans-serif`;
+    return ctx.measureText(s).width + Math.max(0, s.length - 1) * letterSpacingPx;
+  };
+  const measureText = (s: string) => {
+    ctx.font = `700 ${textFontPx}px "JetBrains Mono", monospace`;
+    return ctx.measureText(s).width;
+  };
+  const measureAge = (s: string) => {
+    ctx.font = `500 ${ageFontPx}px "Space Grotesk", Inter, sans-serif`;
+    return ctx.measureText(s).width;
+  };
+
+  let maxLabelW = 0;
+  let maxTextW = 0;
+  let maxAgeW = 0;
+  for (const r of rows) {
+    maxLabelW = Math.max(maxLabelW, measureLabel(r.label));
+    maxTextW = Math.max(maxTextW, measureText(r.text));
+    maxAgeW = Math.max(maxAgeW, measureAge(r.age));
+  }
+  const blockW = innerPadX * 2 + maxLabelW + labelGap + maxTextW + ageGap + maxAgeW;
+  const blockH = innerPadY * 2 + rows.length * rowH;
+
+  drawPill(ctx, blockX, blockY, blockW, blockH, "rgba(0,0,0,0.55)", band.stroke);
+
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "left";
+  let y = blockY + innerPadY + rowH / 2;
+  for (const r of rows) {
+    // Label column — small caps with letter-spacing.
+    ctx.font = `700 ${labelFontPx}px "Space Grotesk", Inter, sans-serif`;
+    ctx.fillStyle = "rgba(255,255,255,0.62)";
+    let lx = blockX + innerPadX;
+    for (let i = 0; i < r.label.length; i++) {
+      const ch = r.label[i];
+      ctx.fillText(ch, lx, y);
+      lx += ctx.measureText(ch).width + (i < r.label.length - 1 ? letterSpacingPx : 0);
+    }
+
+    // Emission text — bold mono, band-tinted so the eye lands on the word.
+    const textX = blockX + innerPadX + maxLabelW + labelGap;
+    ctx.font = `700 ${textFontPx}px "JetBrains Mono", monospace`;
+    ctx.fillStyle = band.fill;
+    ctx.fillText(r.text, textX, y);
+
+    // Age stamp — muted small.
+    const ageX = textX + maxTextW + ageGap;
+    ctx.font = `500 ${ageFontPx}px "Space Grotesk", Inter, sans-serif`;
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.fillText(r.age, ageX, y);
+
+    y += rowH;
+  }
+
+  ctx.restore();
+  return blockY + blockH + 8;
+}
+
+/** Format an age in ms as a compact "now" / "12s" / "3m" / "1h" string. */
+function formatAge(ms: number): string {
+  if (ms < 1000) return "now";
+  if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
+  if (ms < 3_600_000) return `${Math.round(ms / 60_000)}m`;
+  return `${Math.round(ms / 3_600_000)}h`;
+}
+
+/** Truncate ITC text to a length that won't blow the overlay width. */
+function truncateForOverlay(text: string): string {
+  const t = text.trim().replace(/\s+/g, " ");
+  if (t.length <= 32) return t;
+  return t.slice(0, 31) + "…";
 }
 
 function drawPill(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, fill: string, stroke: string) {

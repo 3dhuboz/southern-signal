@@ -18,11 +18,55 @@ import { writeBytes } from "../lib/opfs";
 import { registerMedia, recordEvent } from "../lib/db/repo";
 import { appendAuditEntry } from "../lib/db/auditLog";
 import { describeActivity } from "../lib/posterior/plainEnglish";
-import { createCanvasCompositor, type CanvasCompositor, type OverlayState } from "../lib/media/canvasCompositor";
+import {
+  createCanvasCompositor,
+  DEFAULT_OVERLAY_CHANNELS,
+  type CanvasCompositor,
+  type OverlayChannels,
+  type OverlayState,
+} from "../lib/media/canvasCompositor";
 import { startWhipSession, type WhipSession, type WhipState, type WhipOutboundStats } from "../lib/media/whip";
 import { setLiveBroadcastState } from "../lib/system/liveBroadcast";
 import { sha256HexBytes } from "../lib/forensic/canonicalJson";
+import { getItcChannels } from "../lib/itc/itcChannels";
 import s from "./LiveStreamView.module.css";
+
+/* Overlay-channels localStorage key + helpers. Stored under ss-* like the
+ * other LiveStreamView preferences. Merging against DEFAULT_OVERLAY_CHANNELS
+ * keeps old persisted values forward-compatible when new channels are added. */
+const OVERLAY_CHANNELS_LS_KEY = "ss-overlay-channels";
+
+function loadOverlayChannels(): OverlayChannels {
+  try {
+    const raw = localStorage.getItem(OVERLAY_CHANNELS_LS_KEY);
+    if (!raw) return DEFAULT_OVERLAY_CHANNELS;
+    const parsed = JSON.parse(raw) as Partial<OverlayChannels>;
+    return { ...DEFAULT_OVERLAY_CHANNELS, ...parsed };
+  } catch {
+    return DEFAULT_OVERLAY_CHANNELS;
+  }
+}
+
+function saveOverlayChannels(channels: OverlayChannels): void {
+  try { localStorage.setItem(OVERLAY_CHANNELS_LS_KEY, JSON.stringify(channels)); } catch { /* ignore */ }
+}
+
+/* User-facing labels + short descriptions for the channels panel.
+ * Kept here (next to the consumer) rather than in canvasCompositor so the
+ * compositor stays headless and copy stays edit-able by anyone in the file. */
+const CHANNEL_LABELS: Record<keyof OverlayChannels, { name: string; hint: string }> = {
+  activityPill:    { name: "Activity pill",      hint: "Top-left band label" },
+  posteriorPill:   { name: "Posterior",          hint: "Top-right P %" },
+  edgeGlow:        { name: "Edge glow",          hint: "Radial tint, posterior-driven" },
+  sensors:         { name: "Sensors",            hint: "LIGHT · MAG · MOTION · TEMP" },
+  itc:             { name: "ITC channels",       hint: "Spirit Box · Ovilus · EVP" },
+  directionArrow:  { name: "Direction arrow",    hint: "Acoustic sector when coherence ≥ 0.5" },
+  caption:         { name: "AI caption",         hint: "Bottom narration strip" },
+  timestamp:       { name: "Timestamp + case",   hint: "Bottom-right ISO + case ID (recommended)" },
+  statusPills:     { name: "REC / LIVE pills",   hint: "Centre-top status indicators" },
+};
+
+const CHANNEL_KEYS = Object.keys(CHANNEL_LABELS) as Array<keyof OverlayChannels>;
 
 type WhipProviderKey = "cloudflare" | "fb_live_via_cloudflare" | "fb_live_via_restream" | "mux" | "dolby" | "eyevinn" | "custom";
 
@@ -156,6 +200,23 @@ export function LiveStreamView(props: LiveStreamViewProps) {
   const [fbConnecting, setFbConnecting] = useState(false);
   const [fbConnectMsg, setFbConnectMsg] = useState<string | null>(null);
   const [whipStats, setWhipStats] = useState<WhipOutboundStats | null>(null);
+  // Compartmentalised overlay channels. Defaults all-on; operator hides the
+  // bits they don't want baked into the recording or live stream. Persists
+  // across sessions so a producer's choices stick.
+  const [channels, setChannels] = useState<OverlayChannels>(() => loadOverlayChannels());
+  useEffect(() => { saveOverlayChannels(channels); }, [channels]);
+
+  const setChannel = useCallback((key: keyof OverlayChannels, value: boolean) => {
+    setChannels((prev) => (prev[key] === value ? prev : { ...prev, [key]: value }));
+  }, []);
+  const setAllChannels = useCallback((value: boolean) => {
+    setChannels(() => {
+      const next = {} as OverlayChannels;
+      for (const k of CHANNEL_KEYS) next[k] = value;
+      return next;
+    });
+  }, []);
+  const enabledChannelCount = CHANNEL_KEYS.reduce((n, k) => n + (channels[k] ? 1 : 0), 0);
 
   // Keep the latest props in a ref so the compositor's getOverlay() always
   // returns fresh state without re-creating the compositor each render.
@@ -199,8 +260,9 @@ export function LiveStreamView(props: LiveStreamViewProps) {
       recording,
       liveStreaming: liveOn,
       sensors: hasAnySensor ? sensors : undefined,
+      channels,
     };
-  }, [posterior, audioRms, sector, coherence, caseId, caseTitle, caption, recording, liveOn, lightLux, magnetometerUt, motionMs2, temperatureC]);
+  }, [posterior, audioRms, sector, coherence, caseId, caseTitle, caption, recording, liveOn, lightLux, magnetometerUt, motionMs2, temperatureC, channels]);
 
   const openCamera = useCallback(async (mode: "environment" | "user"): Promise<MediaStream> => {
     try {
@@ -325,10 +387,24 @@ export function LiveStreamView(props: LiveStreamViewProps) {
 
     const compositor = createCanvasCompositor({
       video: sourceV,
-      // Always stamp the timestamp at draw time, not when overlay state was
-      // last assembled in the props effect — otherwise the time freezes
-      // whenever the watched props are stable (e.g. quiet scene).
-      getOverlay: () => ({ ...overlayStateRef.current, isoTimestamp: new Date().toISOString() }),
+      // Always stamp the timestamp + recompute ITC ages at draw time, not when
+      // overlay state was last assembled in the props effect — otherwise the
+      // time freezes whenever the watched props are stable (e.g. quiet scene)
+      // and the age stamps stop ticking.
+      getOverlay: () => {
+        const now = Date.now();
+        const store = getItcChannels();
+        const itc: NonNullable<OverlayState["itc"]> = {};
+        if (store.spiritBox) itc.spiritBox = { text: store.spiritBox.text, ageMs: now - store.spiritBox.timestamp };
+        if (store.ovilus) itc.ovilus = { text: store.ovilus.text, ageMs: now - store.ovilus.timestamp };
+        if (store.evp) itc.evp = { text: store.evp.text, ageMs: now - store.evp.timestamp };
+        const hasAnyItc = Object.keys(itc).length > 0;
+        return {
+          ...overlayStateRef.current,
+          isoTimestamp: new Date(now).toISOString(),
+          itc: hasAnyItc ? itc : undefined,
+        };
+      },
       fps: 30,
     });
     compositorRef.current = compositor;
@@ -648,6 +724,49 @@ export function LiveStreamView(props: LiveStreamViewProps) {
               </button>
             )}
           </div>
+
+          {/* Overlay channels — operator picks which baked-in elements
+              show on the composite. Collapsed by default; the count tells
+              them at a glance how many are on without opening it. */}
+          <details className={s.channels}>
+            <summary className={s.channelsSummary}>
+              <span>Overlay channels</span>
+              <span className={s.channelsCount}>{enabledChannelCount}/{CHANNEL_KEYS.length} on</span>
+            </summary>
+            <div className={s.channelsBody}>
+              <p className={s.channelsHint}>
+                Each toggle controls a piece of the on-camera overlay. Changes apply instantly to the recording and to live broadcasts; preferences persist on this device.
+              </p>
+              <div className={s.channelsGrid}>
+                {CHANNEL_KEYS.map((key) => {
+                  const def = CHANNEL_LABELS[key];
+                  const on = channels[key];
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      className={`${s.channelToggle} ${on ? s.channelToggleOn : ""}`.trim()}
+                      onClick={() => setChannel(key, !on)}
+                      aria-pressed={on}
+                      title={def.hint}
+                    >
+                      <span className={s.channelToggleDot} aria-hidden="true" />
+                      <span>
+                        <strong>{def.name}</strong>
+                        <br />
+                        <span style={{ fontSize: "10.5px", opacity: 0.7, fontWeight: 500 }}>{def.hint}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className={s.channelsActions}>
+                <button type="button" className={s.channelsActionBtn} onClick={() => setAllChannels(true)}>All on</button>
+                <button type="button" className={s.channelsActionBtn} onClick={() => setAllChannels(false)}>All off</button>
+                <button type="button" className={s.channelsActionBtn} onClick={() => setChannels(DEFAULT_OVERLAY_CHANNELS)}>Reset</button>
+              </div>
+            </div>
+          </details>
 
           <div className={s.controls}>
             <button

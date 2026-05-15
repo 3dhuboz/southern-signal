@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { nextPhoneme, PHONEME_CORPUS } from "../lib/itc/phonemes";
 import { recordEvent } from "../lib/db/repo";
 import { appendAuditEntry } from "../lib/db/auditLog";
+import { setSpiritBoxEmission } from "../lib/itc/itcChannels";
 import s from "./Tool.module.css";
 
 interface SpiritBoxToolProps {
@@ -56,6 +57,9 @@ export function SpiritBoxTool({ entropy, investigationId }: SpiritBoxToolProps) 
       seedRef.current = nextSeed;
       setCurrent(phoneme);
       setHistory((h) => [phoneme, ...h].slice(0, 24));
+      // Publish to the live overlay channel — LiveStreamView's compositor reads
+      // module-scope state every frame, so this is the only hop needed.
+      setSpiritBoxEmission(phoneme);
       try {
         // Cancel any in-flight utterance so cycle stays tight and audio
         // never piles up.
