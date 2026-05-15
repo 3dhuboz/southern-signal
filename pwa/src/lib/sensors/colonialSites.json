@@ -1,0 +1,482 @@
+[
+  {
+    "id": "myall-creek-1838",
+    "name": "Myall Creek Massacre",
+    "year": 1838,
+    "state": "NSW",
+    "lat": -29.73,
+    "lng": 150.58
+  },
+  {
+    "id": "waterloo-creek-1838",
+    "name": "Waterloo Creek (Slaughterhouse Creek)",
+    "year": 1838,
+    "state": "NSW",
+    "lat": -29.87,
+    "lng": 150.27
+  },
+  {
+    "id": "appin-1816",
+    "name": "Appin Massacre",
+    "year": 1816,
+    "state": "NSW",
+    "lat": -34.16,
+    "lng": 150.65
+  },
+  {
+    "id": "pumpenbil-1842",
+    "name": "Pumpenbil Massacre",
+    "year": 1842,
+    "state": "NSW",
+    "lat": -28.5,
+    "lng": 153.0
+  },
+  {
+    "id": "slaughterhouse-creek-1826",
+    "name": "Slaughterhouse Creek",
+    "year": 1826,
+    "state": "NSW",
+    "lat": -32.8,
+    "lng": 149.6
+  },
+  {
+    "id": "bathurst-wars-1824",
+    "name": "Bathurst Wars (multiple sites)",
+    "year": 1824,
+    "state": "NSW",
+    "lat": -33.42,
+    "lng": 149.58
+  },
+  {
+    "id": "bell-river-1824",
+    "name": "Bell River Massacre",
+    "year": 1824,
+    "state": "NSW",
+    "lat": -33.5,
+    "lng": 149.55
+  },
+  {
+    "id": "hornet-bank-1857",
+    "name": "Hornet Bank Station",
+    "year": 1857,
+    "state": "QLD",
+    "lat": -25.87,
+    "lng": 150.48
+  },
+  {
+    "id": "cullinla-ringo-1861",
+    "name": "Cullinla-ringo Station",
+    "year": 1861,
+    "state": "QLD",
+    "lat": -24.49,
+    "lng": 148.76
+  },
+  {
+    "id": "skull-hole-qld",
+    "name": "Skull Hole (Diamantina)",
+    "year": 1877,
+    "state": "QLD",
+    "lat": -24.42,
+    "lng": 141.08
+  },
+  {
+    "id": "whiteside-1879",
+    "name": "Whiteside Creek",
+    "year": 1879,
+    "state": "QLD",
+    "lat": -26.18,
+    "lng": 152.95
+  },
+  {
+    "id": "skull-camp-qld",
+    "name": "Skull Camp Creek",
+    "year": 1880,
+    "state": "QLD",
+    "lat": -22.4,
+    "lng": 144.2
+  },
+  {
+    "id": "the-leap-qld",
+    "name": "The Leap (Mackay region)",
+    "year": 1867,
+    "state": "QLD",
+    "lat": -21.12,
+    "lng": 149.15
+  },
+  {
+    "id": "convincing-ground-1833",
+    "name": "Convincing Ground",
+    "year": 1833,
+    "state": "VIC",
+    "lat": -38.4,
+    "lng": 142.07
+  },
+  {
+    "id": "warrigal-creek-1843",
+    "name": "Warrigal Creek Massacre",
+    "year": 1843,
+    "state": "VIC",
+    "lat": -38.3,
+    "lng": 147.4
+  },
+  {
+    "id": "mount-dispersion-1838",
+    "name": "Mount Dispersion",
+    "year": 1838,
+    "state": "VIC",
+    "lat": -34.6,
+    "lng": 142.7
+  },
+  {
+    "id": "broken-river-1839",
+    "name": "Broken River Massacre",
+    "year": 1839,
+    "state": "VIC",
+    "lat": -36.55,
+    "lng": 145.5
+  },
+  {
+    "id": "murdering-gully-1840",
+    "name": "Murdering Gully",
+    "year": 1840,
+    "state": "VIC",
+    "lat": -37.8,
+    "lng": 143.6
+  },
+  {
+    "id": "fall-creek-1843",
+    "name": "Fall Creek",
+    "year": 1843,
+    "state": "VIC",
+    "lat": -36.7,
+    "lng": 146.7
+  },
+  {
+    "id": "pinjarra-1834",
+    "name": "Battle of Pinjarra",
+    "year": 1834,
+    "state": "WA",
+    "lat": -32.63,
+    "lng": 115.87
+  },
+  {
+    "id": "flying-foam-passage-1868",
+    "name": "Flying Foam Passage Massacre",
+    "year": 1868,
+    "state": "WA",
+    "lat": -20.65,
+    "lng": 116.8
+  },
+  {
+    "id": "forrest-river-1926",
+    "name": "Forrest River Massacre",
+    "year": 1926,
+    "state": "WA",
+    "lat": -15.5,
+    "lng": 128.0
+  },
+  {
+    "id": "la-grange-1865",
+    "name": "La Grange Massacre",
+    "year": 1865,
+    "state": "WA",
+    "lat": -18.66,
+    "lng": 121.79
+  },
+  {
+    "id": "ord-river-1895",
+    "name": "Ord River Massacre",
+    "year": 1895,
+    "state": "WA",
+    "lat": -17.3,
+    "lng": 128.8
+  },
+  {
+    "id": "noonkanbah-wa",
+    "name": "Noonkanbah Station (multiple incidents)",
+    "year": 1887,
+    "state": "WA",
+    "lat": -18.25,
+    "lng": 124.77
+  },
+  {
+    "id": "skull-springs-wa",
+    "name": "Skull Springs (Murchison)",
+    "year": 1898,
+    "state": "WA",
+    "lat": -26.5,
+    "lng": 117.0
+  },
+  {
+    "id": "coniston-1928",
+    "name": "Coniston Station Massacre",
+    "year": 1928,
+    "state": "NT",
+    "lat": -22.0,
+    "lng": 131.8
+  },
+  {
+    "id": "flying-fox-creek-1874",
+    "name": "Flying Fox Creek Massacre",
+    "year": 1874,
+    "state": "NT",
+    "lat": -14.5,
+    "lng": 134.3
+  },
+  {
+    "id": "daly-river-1884",
+    "name": "Daly River Massacre",
+    "year": 1884,
+    "state": "NT",
+    "lat": -13.8,
+    "lng": 130.5
+  },
+  {
+    "id": "battle-creek-nt",
+    "name": "Battle Creek (Arnhem Land)",
+    "year": 1901,
+    "state": "NT",
+    "lat": -13.5,
+    "lng": 135.6
+  },
+  {
+    "id": "cape-grim-1828",
+    "name": "Cape Grim Massacre",
+    "year": 1828,
+    "state": "TAS",
+    "lat": -40.67,
+    "lng": 144.69
+  },
+  {
+    "id": "risdon-cove-1804",
+    "name": "Risdon Cove Massacre",
+    "year": 1804,
+    "state": "TAS",
+    "lat": -42.84,
+    "lng": 147.37
+  },
+  {
+    "id": "emu-bay-1828",
+    "name": "Emu Bay",
+    "year": 1828,
+    "state": "TAS",
+    "lat": -41.07,
+    "lng": 145.9
+  },
+  {
+    "id": "west-coast-tas",
+    "name": "West Coast (multiple sites)",
+    "year": 1826,
+    "state": "TAS",
+    "lat": -41.9,
+    "lng": 144.75
+  },
+  {
+    "id": "encounter-bay-1835",
+    "name": "Encounter Bay area",
+    "year": 1835,
+    "state": "SA",
+    "lat": -35.56,
+    "lng": 138.57
+  },
+  {
+    "id": "rufus-river-1841",
+    "name": "Battle of Rufus River",
+    "year": 1841,
+    "state": "SA",
+    "lat": -34.07,
+    "lng": 141.3
+  },
+  {
+    "id": "mount-gambier-sa",
+    "name": "Mount Gambier region",
+    "year": 1844,
+    "state": "SA",
+    "lat": -37.83,
+    "lng": 140.78
+  },
+  {
+    "id": "skull-creek-sa",
+    "name": "Skull Creek (Flinders Ranges)",
+    "year": 1849,
+    "state": "SA",
+    "lat": -31.4,
+    "lng": 138.7
+  },
+  {
+    "id": "waterhole-creek-sa",
+    "name": "Waterhole Creek (Yorke Peninsula)",
+    "year": 1840,
+    "state": "SA",
+    "lat": -34.3,
+    "lng": 137.7
+  },
+  {
+    "id": "kalkadoon-battle-qld",
+    "name": "Battle Mountain (Kalkadoon)",
+    "year": 1884,
+    "state": "QLD",
+    "lat": -20.28,
+    "lng": 139.51
+  },
+  {
+    "id": "wardong-qld",
+    "name": "Wardong / Gatton Massacre",
+    "year": 1843,
+    "state": "QLD",
+    "lat": -27.56,
+    "lng": 152.28
+  },
+  {
+    "id": "barrow-point-qld",
+    "name": "Barrow Point (Cape York)",
+    "year": 1920,
+    "state": "QLD",
+    "lat": -14.78,
+    "lng": 144.97
+  },
+  {
+    "id": "kenniff-cave-qld",
+    "name": "Carnarvon Gorge region",
+    "year": 1861,
+    "state": "QLD",
+    "lat": -25.09,
+    "lng": 148.19
+  },
+  {
+    "id": "skull-creek-vic",
+    "name": "Skull Creek (Wimmera)",
+    "year": 1840,
+    "state": "VIC",
+    "lat": -36.9,
+    "lng": 142.2
+  },
+  {
+    "id": "mount-emu-creek-vic",
+    "name": "Mount Emu Creek",
+    "year": 1840,
+    "state": "VIC",
+    "lat": -37.55,
+    "lng": 143.53
+  },
+  {
+    "id": "balmain-creek-nsw",
+    "name": "Balmain Creek Massacre",
+    "year": 1835,
+    "state": "NSW",
+    "lat": -30.1,
+    "lng": 151.6
+  },
+  {
+    "id": "namoi-river-nsw",
+    "name": "Namoi River Massacre",
+    "year": 1833,
+    "state": "NSW",
+    "lat": -30.5,
+    "lng": 150.0
+  },
+  {
+    "id": "murumbidgee-nsw",
+    "name": "Murrumbidgee River (multiple sites)",
+    "year": 1836,
+    "state": "NSW",
+    "lat": -35.6,
+    "lng": 147.2
+  },
+  {
+    "id": "gwydir-river-nsw",
+    "name": "Gwydir River Frontier War",
+    "year": 1840,
+    "state": "NSW",
+    "lat": -29.5,
+    "lng": 150.5
+  },
+  {
+    "id": "hall-creek-wa",
+    "name": "Hall's Creek area",
+    "year": 1890,
+    "state": "WA",
+    "lat": -18.23,
+    "lng": 127.67
+  },
+  {
+    "id": "poison-waterhole-qld",
+    "name": "Poison Waterhole Creek",
+    "year": 1878,
+    "state": "QLD",
+    "lat": -21.5,
+    "lng": 143.5
+  },
+  {
+    "id": "battle-waterhole-nt",
+    "name": "Battle Waterhole (Tanami)",
+    "year": 1910,
+    "state": "NT",
+    "lat": -20.8,
+    "lng": 130.1
+  },
+  {
+    "id": "victoria-river-nt",
+    "name": "Victoria River Downs (multiple incidents)",
+    "year": 1884,
+    "state": "NT",
+    "lat": -16.4,
+    "lng": 131.0
+  },
+  {
+    "id": "broken-hill-nsw",
+    "name": "Darling River (multiple frontier sites)",
+    "year": 1848,
+    "state": "NSW",
+    "lat": -31.95,
+    "lng": 141.45
+  },
+  {
+    "id": "wakefield-river-sa",
+    "name": "Wakefield River region",
+    "year": 1839,
+    "state": "SA",
+    "lat": -33.9,
+    "lng": 138.7
+  },
+  {
+    "id": "george-waterhole-qld",
+    "name": "George's Waterhole",
+    "year": 1875,
+    "state": "QLD",
+    "lat": -24.7,
+    "lng": 145.8
+  },
+  {
+    "id": "lake-condah-vic",
+    "name": "Lake Condah Mission area",
+    "year": 1842,
+    "state": "VIC",
+    "lat": -38.05,
+    "lng": 141.83
+  },
+  {
+    "id": "gippsland-vic",
+    "name": "Gippsland Frontier War (multiple sites)",
+    "year": 1840,
+    "state": "VIC",
+    "lat": -37.7,
+    "lng": 147.0
+  },
+  {
+    "id": "derwent-valley-tas",
+    "name": "Derwent Valley (Black War sites)",
+    "year": 1824,
+    "state": "TAS",
+    "lat": -42.5,
+    "lng": 146.5
+  },
+  {
+    "id": "north-esk-tas",
+    "name": "North Esk River (Black War)",
+    "year": 1827,
+    "state": "TAS",
+    "lat": -41.5,
+    "lng": 147.4
+  }
+]

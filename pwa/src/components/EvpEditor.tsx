@@ -36,6 +36,8 @@ import { getInvestigation, listDossiers } from "../lib/db/repo";
 import { usePreferences } from "../lib/preferences";
 import { Link } from "react-router-dom";
 import type { MediaAsset } from "../lib/db/schema";
+import { computeNoiseFloor } from "../lib/audio/spectrogram";
+import { SpectrogramViewer } from "./SpectrogramViewer";
 import s from "./EvpEditor.module.css";
 
 interface Props {
@@ -125,6 +127,26 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
   const [deepReviewBusy, setDeepReviewBusy] = useState(false);
   const [deepReviewErr, setDeepReviewErr] = useState<string | null>(null);
 
+  // --- Headphone gate (per session, not persisted) -----------------------
+  const [headphoneChecked, setHeadphoneChecked]   = useState(false);
+  const [headphoneConfirmed, setHeadphoneConfirmed] = useState(false);
+
+  // --- Spectrogram tab ---------------------------------------------------
+  type ActiveTab = "waveform" | "spectrogram";
+  const [activeTab, setActiveTab] = useState<ActiveTab>("waveform");
+
+  // --- Noise floor (computed once after decode) --------------------------
+  const [noiseFloor, setNoiseFloor] = useState<{ p50dBFS: number; p95dBFS: number } | null>(null);
+
+  // --- Auto-loop state for headphone review -----------------------------
+  // loopCount tracks how many complete loops have played for the current selection.
+  const [loopCount, setLoopCount]   = useState(0);
+  const loopCountRef = useRef(0);
+  const loopStartRef = useRef<number | null>(null);
+  // SNR override: maps selection key (startSec|endSec) → typed reason
+  const [snrOverrideReason, setSnrOverrideReason] = useState("");
+  const [snrOverrideActive, setSnrOverrideActive] = useState(false);
+
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const dragStateRef = useRef<{ startX: number; startTime: number } | null>(null);
@@ -154,6 +176,13 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
     };
   }, [asset.file_path]);
 
+  // Compute noise floor once decoded samples are available.
+  useEffect(() => {
+    if (!decoded) { setNoiseFloor(null); return; }
+    const nf = computeNoiseFloor(decoded.samples, decoded.sampleRate, 10);
+    setNoiseFloor(nf);
+  }, [decoded]);
+
   // Revoke audio blob URL on unmount.
   useEffect(() => {
     return () => {
@@ -173,6 +202,16 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
       if (loopSelection && selection && audio.currentTime >= selection.endSec) {
         audio.currentTime = selection.startSec;
       }
+      // Auto-loop [t-3, t+2] for headphone review. Track completed loops.
+      if (headphoneConfirmed && selection && loopStartRef.current !== null) {
+        const loopEnd = selection.endSec + 2;
+        if (audio.currentTime >= loopEnd) {
+          loopCountRef.current += 1;
+          setLoopCount(loopCountRef.current);
+          const loopStart = Math.max(0, selection.startSec - 3);
+          audio.currentTime = loopStart;
+        }
+      }
     };
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
@@ -187,7 +226,16 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
       audio.removeEventListener("pause", onPause);
       audio.removeEventListener("ended", onEnded);
     };
-  }, [loopSelection, selection, audioUrl]);
+  }, [loopSelection, selection, audioUrl, headphoneConfirmed]);
+
+  // Reset loop counter whenever the selection changes (headphone review mode).
+  useEffect(() => {
+    loopCountRef.current = 0;
+    setLoopCount(0);
+    loopStartRef.current = selection ? selection.startSec : null;
+    setSnrOverrideActive(false);
+    setSnrOverrideReason("");
+  }, [selection]);
 
   // Smooth the playhead between coarse `timeupdate` events (which fire
   // ~3-4Hz on most browsers) — drive currentTime off requestAnimationFrame
@@ -351,7 +399,16 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
   const handlePlaySelection = () => {
     const audio = audioRef.current;
     if (!audio || !selection) return;
-    audio.currentTime = selection.startSec;
+    if (headphoneConfirmed) {
+      // Auto-loop [t-3, t+2]: start 3 s before selection.
+      const loopStart = Math.max(0, selection.startSec - 3);
+      loopStartRef.current = selection.startSec;
+      loopCountRef.current = 0;
+      setLoopCount(0);
+      audio.currentTime = loopStart;
+    } else {
+      audio.currentTime = selection.startSec;
+    }
     audio.play().catch(() => { /* ignore */ });
   };
 
@@ -371,12 +428,24 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
     const endIdx = Math.min(decoded.samples.length, Math.floor(selection.endSec * decoded.sampleRate));
     const rms = computeRms(decoded.samples, startIdx, endIdx);
     const dbfs = rms > 0 ? 20 * Math.log10(rms) : -Infinity;
+    // Peak dBFS: max absolute sample in the selection, converted to dBFS.
+    let peakAbs = 0;
+    for (let i = startIdx; i < endIdx; i++) {
+      const a = Math.abs(decoded.samples[i]);
+      if (a > peakAbs) peakAbs = a;
+    }
+    const peakDbfs = peakAbs > 0 ? 20 * Math.log10(peakAbs) : -Infinity;
+    const snrDb = noiseFloor && Number.isFinite(peakDbfs)
+      ? peakDbfs - noiseFloor.p95dBFS
+      : null;
     return {
       durationSec: selection.endSec - selection.startSec,
       rms,
       dbfs,
+      peakDbfs,
+      snrDb,
     };
-  }, [selection, decoded]);
+  }, [selection, decoded, noiseFloor]);
 
   const handleSaveTag = async () => {
     if (!selection || !decoded) return;
@@ -405,6 +474,10 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
           end_iso: new Date(endMs).toISOString(),
           rms: selectionStats?.rms ?? null,
           dbfs: Number.isFinite(selectionStats?.dbfs ?? -Infinity) ? selectionStats!.dbfs : null,
+          snr_db: selectionStats?.snrDb ?? null,
+          snr_override_reason: snrOverrideActive && snrOverrideReason.trim() ? snrOverrideReason.trim() : null,
+          noise_floor_p50: noiseFloor?.p50dBFS ?? null,
+          noise_floor_p95: noiseFloor?.p95dBFS ?? null,
         },
       });
       setStatusMsg(`Tag saved — Class ${reviewerClass.toUpperCase()}`);
@@ -453,6 +526,10 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
           duration_s: slice.length / decoded.sampleRate,
           reviewer_class: reviewerClass,
           reviewer_text: reviewerText.trim() || null,
+          snr_db: selectionStats?.snrDb ?? null,
+          snr_override_reason: snrOverrideActive && snrOverrideReason.trim() ? snrOverrideReason.trim() : null,
+          noise_floor_p50: noiseFloor?.p50dBFS ?? null,
+          noise_floor_p95: noiseFloor?.p95dBFS ?? null,
         },
       });
       await recordEvent({
@@ -886,6 +963,52 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
 
         {decoded && (
           <>
+            {/* ── Headphone gate ─────────────────────────────────────────
+                One-time per session. The segment list + submit buttons
+                are not revealed until the reviewer confirms they have
+                headphones on. State lives in React only — never persisted. */}
+            {!headphoneConfirmed && (
+              <div className={s.headphoneGate}>
+                <span className={s.headphoneGateEyebrow}>Headphone review required</span>
+                <p className={s.headphoneGateBody}>
+                  For review accuracy, headphones must be worn. Each clip
+                  plays 3&times; automatically before you can submit.
+                </p>
+                <label className={s.headphoneGateCheck}>
+                  <input
+                    type="checkbox"
+                    checked={headphoneChecked}
+                    onChange={(e) => setHeadphoneChecked(e.target.checked)}
+                  />
+                  I&apos;m wearing headphones
+                </label>
+                <button
+                  type="button"
+                  className={s.primaryBtn}
+                  disabled={!headphoneChecked}
+                  onClick={() => setHeadphoneConfirmed(true)}
+                >
+                  Confirm
+                </button>
+              </div>
+            )}
+
+            {/* ── Noise floor banner ─────────────────────────────────────
+                Shown once the noise floor has been computed from the first
+                10 s of the recording. */}
+            {noiseFloor && (
+              <div className={s.noiseFloorBanner}>
+                <span className={s.noiseFloorLabel}>Noise floor</span>
+                <span className={s.noiseFloorStat}>
+                  p50: {noiseFloor.p50dBFS.toFixed(1)} dBFS
+                </span>
+                <span className={s.noiseFloorSep}>&middot;</span>
+                <span className={s.noiseFloorStat}>
+                  p95: {noiseFloor.p95dBFS.toFixed(1)} dBFS
+                </span>
+              </div>
+            )}
+
             {/* Forensic file chrome — mono readout of the underlying WAV's
                 technical properties. An external reviewer skimming the
                 editor immediately sees the source format without having
@@ -906,19 +1029,66 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
                 samples <code>{decoded.samples.length.toLocaleString()}</code>
               </span>
             </div>
-            <div className={s.canvasWrap}>
-              <canvas
-                ref={canvasRef}
-                className={s.canvas}
-                onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-              />
-              <div className={s.timeRail}>
-                <span>{formatTime(currentTime)}</span>
-                <span>{formatTime(decoded.durationSec)}</span>
-              </div>
+            {/* Tab bar — Waveform / Spectrogram */}
+            <div className={s.tabBar}>
+              <button
+                type="button"
+                className={`${s.tabBtn} ${activeTab === "waveform" ? s.tabBtnActive : ""}`}
+                onClick={() => setActiveTab("waveform")}
+              >
+                Waveform
+              </button>
+              <button
+                type="button"
+                className={`${s.tabBtn} ${activeTab === "spectrogram" ? s.tabBtnActive : ""}`}
+                onClick={() => setActiveTab("spectrogram")}
+              >
+                Spectrogram
+              </button>
             </div>
+
+            {activeTab === "waveform" && (
+              <div className={s.canvasWrap}>
+                <canvas
+                  ref={canvasRef}
+                  className={s.canvas}
+                  onPointerDown={handlePointerDown}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={handlePointerUp}
+                />
+                <div className={s.timeRail}>
+                  <span>{formatTime(currentTime)}</span>
+                  <span>{formatTime(decoded.durationSec)}</span>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "spectrogram" && (
+              <SpectrogramViewer
+                samples={decoded.samples}
+                sampleRate={decoded.sampleRate}
+                noiseFloor={noiseFloor ?? undefined}
+                playheadS={currentTime}
+                onSeek={(t) => {
+                  const audio = audioRef.current;
+                  if (audio) audio.currentTime = t;
+                }}
+                onMark={(t) => {
+                  // Record a quick event marker at the clicked time.
+                  const absMs = new Date(asset.timestamp_start).getTime() + Math.round(t * 1000);
+                  void recordEvent({
+                    investigation_id: asset.investigation_id,
+                    source: "user",
+                    event_type: "audio.spectrogram_mark",
+                    title: "Spectrogram mark",
+                    description: `Manual mark at ${t.toFixed(2)} s`,
+                    linked_file: asset.file_path,
+                    timestamp: new Date(absMs).toISOString(),
+                    metadata: { offset_s: t, source_media_id: asset.id },
+                  });
+                }}
+              />
+            )}
 
             <audio ref={audioRef} src={audioUrl ?? undefined} preload="auto" className={s.hiddenAudio} />
 
@@ -943,6 +1113,25 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
                 <span>Duration: {(selection.endSec - selection.startSec).toFixed(2)} s</span>
                 {selectionStats && Number.isFinite(selectionStats.dbfs) && (
                   <span>RMS: {selectionStats.dbfs.toFixed(1)} dBFS</span>
+                )}
+                {selectionStats?.snrDb != null && (
+                  <span
+                    className={
+                      selectionStats.snrDb >= 6
+                        ? s.snrChipGood
+                        : selectionStats.snrDb >= 3
+                        ? s.snrChipAmber
+                        : s.snrChipBad
+                    }
+                  >
+                    SNR: {selectionStats.snrDb.toFixed(1)} dB
+                  </span>
+                )}
+                {headphoneConfirmed && (
+                  <span className={s.loopCounter}>
+                    Loop {Math.min(loopCount + 1, 3)}/3
+                    {loopCount >= 3 && " ✓"}
+                  </span>
                 )}
               </div>
             )}
@@ -991,13 +1180,79 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
               </label>
             </div>
 
+            {/* SNR override input — shown when SNR is below 3 dB and
+                the reviewer explicitly wants to override the gate. */}
+            {selectionStats?.snrDb != null && selectionStats.snrDb < 3 && !snrOverrideActive && (
+              <div className={s.snrGateBanner}>
+                <span className={s.snrGateText}>
+                  SNR too low ({selectionStats.snrDb.toFixed(1)} dB) — instrument noise floor.
+                  Submit is disabled. You may override with a documented reason.
+                </span>
+                <button
+                  type="button"
+                  className={s.snrOverrideBtn}
+                  onClick={() => setSnrOverrideActive(true)}
+                >
+                  Override
+                </button>
+              </div>
+            )}
+            {snrOverrideActive && (
+              <div className={s.snrOverrideRow}>
+                <label className={s.field} style={{ flex: 1 }}>
+                  <span className={s.fieldLabel}>Override reason (required)</span>
+                  <input
+                    type="text"
+                    className={s.input}
+                    value={snrOverrideReason}
+                    onChange={(e) => setSnrOverrideReason(e.target.value)}
+                    placeholder="State why this clip warrants review despite low SNR…"
+                    maxLength={300}
+                  />
+                </label>
+              </div>
+            )}
+
             <div className={s.actionRow}>
-              <button type="button" className={s.primaryBtn} onClick={handleSaveTag} disabled={!selection || savingTag}>
-                {savingTag ? "Saving…" : "Save tag"}
-              </button>
-              <button type="button" className={s.primaryBtn} onClick={handleSaveTrim} disabled={!selection || savingTrim}>
-                {savingTrim ? "Saving…" : "Save trim to case"}
-              </button>
+              {(() => {
+                // SNR gate: block submit if SNR < 3 dB and no override reason.
+                const snrBlocked =
+                  selectionStats?.snrDb != null &&
+                  selectionStats.snrDb < 3 &&
+                  (!snrOverrideActive || snrOverrideReason.trim() === "");
+                // Loop gate: block submit until 3 loops completed in headphone mode.
+                const loopBlocked = headphoneConfirmed && loopCount < 3;
+                const submitBlocked = snrBlocked || loopBlocked;
+
+                const tagTitle = snrBlocked
+                  ? `SNR too low (${selectionStats!.snrDb!.toFixed(1)} dB) — instrument noise floor`
+                  : loopBlocked
+                  ? `Play ${3 - loopCount} more loop${3 - loopCount !== 1 ? "s" : ""} before submitting`
+                  : undefined;
+
+                return (
+                  <>
+                    <button
+                      type="button"
+                      className={s.primaryBtn}
+                      onClick={handleSaveTag}
+                      disabled={!selection || savingTag || submitBlocked}
+                      title={tagTitle}
+                    >
+                      {savingTag ? "Saving…" : "Save tag"}
+                    </button>
+                    <button
+                      type="button"
+                      className={s.primaryBtn}
+                      onClick={handleSaveTrim}
+                      disabled={!selection || savingTrim || submitBlocked}
+                      title={tagTitle}
+                    >
+                      {savingTrim ? "Saving…" : "Save trim to case"}
+                    </button>
+                  </>
+                );
+              })()}
               {!cloudBlocked && (
                 <button
                   type="button"

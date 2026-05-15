@@ -513,3 +513,41 @@
   font-size: 11px;
   color: var(--signal);
 }
+
+
+/* Sensitive site classifier badges */
+.siteAlertBadge {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  padding: var(--space-2, 8px) var(--space-3, 12px);
+  background: color-mix(in srgb, var(--warning, #d97706) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning, #d97706) 40%, transparent);
+  border-radius: var(--r-md, 6px);
+  font-size: 12px;
+  color: var(--warning, #d97706);
+}
+
+.siteAlertLink {
+  background: none;
+  border: none;
+  color: var(--warning, #d97706);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  font-family: inherit;
+}
+
+.siteAcknowledgedBadge {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  padding: var(--space-2, 8px) var(--space-3, 12px);
+  background: color-mix(in srgb, var(--success, #22c55e) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--success, #22c55e) 35%, transparent);
+  border-radius: var(--r-md, 6px);
+  font-size: 12px;
+  color: var(--success, #22c55e);
+}

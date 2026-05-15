@@ -15,13 +15,22 @@ import { exec, query } from "../lib/db/db";
 import { readFile, deletePath } from "../lib/opfs";
 import { appendAuditEntry } from "../lib/db/auditLog";
 import { createInvestigation, deleteDossier, setCulturallySensitive } from "../lib/db/repo";
+import { getProtocol } from "../lib/db/protocolRepo";
 import { usePreferences } from "../lib/preferences";
-import type { ResearchDossierRow } from "../lib/db/schema";
+import type { InvestigationProtocol, ResearchDossierRow } from "../lib/db/schema";
 import { clearBaseline } from "../lib/posterior/sessionBaseline";
 import { buildExportBundle, downloadBlob } from "../lib/forensic/exportBundle";
 import { autoName } from "../lib/cases/autoName";
 import type { EvidenceEvent, Investigation, MediaAsset } from "../lib/db/schema";
 import { EventDebunkPanel } from "./EventDebunkPanel";
+import { ProtocolWizard } from "./ProtocolWizard";
+import { ProtocolSummaryChip } from "./ProtocolSummaryChip";
+import { SensitiveSiteWarning } from "./SensitiveSiteWarning";
+import {
+  findNearbySites,
+  getCurrentLocationSilent,
+  type SiteMatch,
+} from "../lib/sensors/sensitiveSiteClassifier";
 import s from "./CaseManager.module.css";
 
 interface CaseSummary extends Investigation {
@@ -96,6 +105,16 @@ export function CaseManager() {
   // fresh auto-name from the useState initialiser.
   const [newCaseOpen, setNewCaseOpen] = useState(false);
   const [newCaseTitle, setNewCaseTitle] = useState<string>(() => autoName());
+
+  // Protocol wizard state
+  const [wizardCaseId, setWizardCaseId] = useState<string | null>(null);
+  const [wizardProtocol, setWizardProtocol] = useState<InvestigationProtocol | null>(null);
+  const [wizardLockedHash, setWizardLockedHash] = useState<string | null>(null);
+
+  // Sensitive site classifier: runs silently when new-case form opens.
+  const [siteMatches, setSiteMatches] = useState<SiteMatch[]>([]);
+  const [siteAcknowledged, setSiteAcknowledged] = useState(false);
+  const [showSiteWarning, setShowSiteWarning] = useState(false);
 
   const refresh = useCallback(() => setReloadTick((t) => t + 1), []);
 
@@ -242,14 +261,62 @@ export function CaseManager() {
     // Always re-seed the title on each "open" so the timestamp is current —
     // even if the form was previously closed with stale text in state.
     setNewCaseTitle(autoName());
+    setSiteAcknowledged(false);
+    setSiteMatches([]);
     setNewCaseOpen(true);
+
+    // Silently check for nearby colonial massacre sites (no permission prompt).
+    void getCurrentLocationSilent().then((coords) => {
+      if (!coords) return;
+      const matches = findNearbySites(coords.latitude, coords.longitude);
+      if (matches.length > 0) {
+        setSiteMatches(matches);
+        setShowSiteWarning(true);
+      }
+    });
   };
 
   const handleCancelNewCase = () => {
     setNewCaseOpen(false);
+    setShowSiteWarning(false);
+    setSiteMatches([]);
+    setSiteAcknowledged(false);
+  };
+
+  const handleOpenWizard = async (caseId: string) => {
+    const c = cases.find((x) => x.id === caseId);
+    if (!c) return;
+    const protocol = await getProtocol(caseId).catch(() => null);
+    setWizardProtocol(protocol);
+    setWizardLockedHash(c.protocol_hash ?? null);
+    setWizardCaseId(caseId);
+  };
+
+  const handleCloseWizard = () => {
+    setWizardCaseId(null);
+    setWizardProtocol(null);
+    setWizardLockedHash(null);
+  };
+
+  const handleWizardSave = (protocol: InvestigationProtocol) => {
+    setWizardProtocol(protocol);
+    // Refresh the case list so the chip updates
+    refresh();
+  };
+
+  const handleWizardLock = (hash: string) => {
+    setWizardLockedHash(hash);
+    refresh();
   };
 
   const handleSubmitNewCase = async () => {
+    // If nearby massacre sites were found but not acknowledged, surface the
+    // warning modal instead of proceeding.
+    if (siteMatches.length > 0 && !siteAcknowledged) {
+      setShowSiteWarning(true);
+      return;
+    }
+
     // If the operator cleared the field, fall back to a fresh auto-name —
     // never let an empty title hit the database.
     const trimmed = newCaseTitle.trim();
@@ -258,6 +325,8 @@ export function CaseManager() {
     try {
       await createInvestigation({ title: finalTitle });
       setNewCaseOpen(false);
+      setSiteMatches([]);
+      setSiteAcknowledged(false);
       setStatusMsg(`Created "${finalTitle}".`);
       refresh();
     } catch (err) {
@@ -437,6 +506,26 @@ export function CaseManager() {
 
       {newCaseOpen && (
         <div className={s.newCaseBlock}>
+          {/* Sensitive site badge — shown after location check resolves */}
+          {siteMatches.length > 0 && !siteAcknowledged && (
+            <div className={s.siteAlertBadge}>
+              <span aria-hidden="true">⚠</span>{" "}
+              Sensitive site nearby — acknowledgement required before creating.
+              <button
+                type="button"
+                className={s.siteAlertLink}
+                onClick={() => setShowSiteWarning(true)}
+              >
+                Review
+              </button>
+            </div>
+          )}
+          {siteMatches.length > 0 && siteAcknowledged && (
+            <div className={s.siteAcknowledgedBadge}>
+              <span aria-hidden="true">✓</span>{" "}
+              Sensitive site acknowledged
+            </div>
+          )}
           <label className={s.field}>
             <span className={s.fieldLabel}>Title</span>
             <input
@@ -449,7 +538,14 @@ export function CaseManager() {
             />
           </label>
           <div className={s.actions}>
-            <button type="button" className={`btn btn-primary ${s.btnSize}`} onClick={handleSubmitNewCase}>Create case</button>
+            <button
+              type="button"
+              className={`btn btn-primary ${s.btnSize}`}
+              onClick={handleSubmitNewCase}
+              disabled={siteMatches.length > 0 && !siteAcknowledged}
+            >
+              Create case
+            </button>
             <button type="button" className={`btn btn-ghost ${s.btnSize}`} onClick={handleCancelNewCase}>Cancel</button>
           </div>
         </div>
@@ -536,6 +632,11 @@ export function CaseManager() {
                       </>
                     )}
                     {c.disposition && <><span>·</span><span className={s.disposition}>{c.disposition}</span></>}
+                    <span>·</span>
+                    <ProtocolSummaryChip
+                      protocolJson={c.protocol_json ?? null}
+                      protocolHash={c.protocol_hash ?? null}
+                    />
                   </span>
                 </div>
                 <span className={s.rowChevron}>{openCaseId === c.id ? "▾" : "▸"}</span>
@@ -598,6 +699,15 @@ export function CaseManager() {
 
                   <div className={s.actions}>
                     <button type="button" className={`btn btn-primary ${s.btnSize}`} onClick={handleSaveEdits}>Save edits</button>
+                    {/* Protocol wizard — shows current lock state, always accessible */}
+                    <button
+                      type="button"
+                      className={`btn btn-ghost ${s.btnSize}`}
+                      onClick={() => handleOpenWizard(c.id)}
+                      title={c.protocol_hash ? "View locked protocol" : c.protocol_json ? "Edit draft protocol" : "Write pre-registered hypothesis"}
+                    >
+                      {c.protocol_hash ? "🔒 View protocol" : c.protocol_json ? "📋 Edit protocol" : "📋 Write protocol"}
+                    </button>
                     <div className={s.dispoGroup}>
                       <span className={s.fieldLabel}>Disposition</span>
                       <button type="button" className={s.dispo} onClick={() => handleSetDisposition("null")}>Null result</button>
@@ -759,6 +869,40 @@ export function CaseManager() {
             </li>
           ))}
         </ul>
+      )}
+
+      {/* Protocol wizard modal — rendered at CaseManager root so it
+          floats above the case list regardless of which row is open.
+          wizardCaseId is set when the operator clicks "Write protocol"
+          or "View protocol" on any row. */}
+      {wizardCaseId && (
+        <ProtocolWizard
+          investigationId={wizardCaseId}
+          initialProtocol={wizardProtocol}
+          lockedHash={wizardLockedHash}
+          onSave={handleWizardSave}
+          onLock={handleWizardLock}
+          onClose={handleCloseWizard}
+        />
+      )}
+
+      {/* Sensitive site acknowledgement modal — shown when nearby massacre
+          sites are found during new-case creation. Rendered above the
+          ProtocolWizard so z-order stacking is predictable. */}
+      {showSiteWarning && siteMatches.length > 0 && (
+        <SensitiveSiteWarning
+          matches={siteMatches}
+          onAcknowledge={() => {
+            setSiteAcknowledged(true);
+            setShowSiteWarning(false);
+          }}
+          onCancel={() => {
+            setShowSiteWarning(false);
+            setNewCaseOpen(false);
+            setSiteMatches([]);
+            setSiteAcknowledged(false);
+          }}
+        />
       )}
     </div>
   );

@@ -1,0 +1,104 @@
+/*
+ * TiltToWakeStatus — compact status chip for the shake-to-mark feature.
+ * Follows the field-ready button pattern from ContaminationMarker.module.css.
+ */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-8);
+  padding: var(--s-8) var(--s-12);
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--text-muted);
+  cursor: default;
+  user-select: none;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
+  white-space: nowrap;
+}
+
+/* Active (granted) — green tint, pulsing dot */
+.chipActive {
+  color: var(--success, #3ecf8e);
+  border-color: color-mix(in srgb, var(--success, #3ecf8e) 40%, transparent);
+  background: color-mix(in srgb, var(--success, #3ecf8e) 8%, var(--bg-surface));
+}
+
+/* Tappable (permission not yet requested) */
+.chipTappable {
+  cursor: pointer;
+}
+.chipTappable:hover {
+  background: var(--bg-overlay);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+.chipTappable:active {
+  transform: scale(0.97);
+}
+
+/* Unavailable — faded */
+.chipUnavailable {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Denied */
+.chipDenied {
+  color: var(--danger, #ef4444);
+  border-color: color-mix(in srgb, var(--danger, #ef4444) 40%, transparent);
+  opacity: 0.7;
+}
+
+/* Pulsing indicator dot */
+.dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.chipActive .dot {
+  animation: pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.45; transform: scale(0.75); }
+}
+
+/* "Marker dropped" confirmation flash */
+.confirm {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-6);
+  padding: var(--s-8) var(--s-12);
+  border-radius: var(--r-md);
+  border: 1px solid color-mix(in srgb, var(--success, #3ecf8e) 50%, transparent);
+  background: color-mix(in srgb, var(--success, #3ecf8e) 12%, var(--bg-surface));
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--success, #3ecf8e);
+  animation: flashFade 1.5s ease-out forwards;
+  white-space: nowrap;
+}
+
+@keyframes flashFade {
+  0%   { opacity: 1; }
+  70%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-6);
+}

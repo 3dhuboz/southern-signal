@@ -6,7 +6,7 @@
  * via a `source` column so cross-device sync can union rows safely.
  */
 
-export const CURRENT_SCHEMA_VERSION = 8;
+export const CURRENT_SCHEMA_VERSION = 9;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -261,6 +261,38 @@ export interface Investigation {
   source: string;
   /** v3: 0 or 1. SQLite has no native boolean. */
   culturally_sensitive: number;
+  /**
+   * v9: Pre-registered investigation protocol (Tier 2 #4). JSON-stringified
+   * `InvestigationProtocol`. Null until the wizard is completed. Once
+   * `protocol_hash` is set the protocol is locked — edits create a new
+   * investigation.
+   */
+  protocol_json: string | null;
+  /**
+   * v9: SHA-256 of `protocol_json` at the moment the session started. Set by
+   * the pre-session lock step; null on older sessions. Used to prove the
+   * hypothesis was written before any evidence was gathered.
+   */
+  protocol_hash: string | null;
+}
+
+/** Pre-registered investigation protocol (Tier 2 #4 — Pre-registered Hypothesis). */
+export interface InvestigationProtocol {
+  /** Plain-English hypothesis statement (≥ 20 chars). */
+  hypothesis: string;
+  /** Expected signal types, e.g. ["acoustic", "emf", "thermal"]. */
+  predicted_signals: string[];
+  /** Zones / rooms to monitor (free-text labels). */
+  zones: string[];
+  /** Time windows: ISO start + duration_min pairs. */
+  windows: Array<{ label: string; start_iso: string; duration_min: number }>;
+  /**
+   * Pre-commitment stop rule: if this condition is not met within the
+   * windows, the session ends and is recorded as null-result.
+   */
+  stop_condition: string;
+  /** ISO datetime when the protocol was written (before session start). */
+  authored_at: string;
 }
 
 export interface SensorSample {

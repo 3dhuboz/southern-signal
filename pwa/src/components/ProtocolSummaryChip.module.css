@@ -1,0 +1,51 @@
+/* ProtocolSummaryChip — small inline status badge for protocol state. */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: var(--r-full);
+  border: 1px solid currentColor;
+  white-space: nowrap;
+  vertical-align: middle;
+  line-height: 1.6;
+}
+
+/* Locked state — green */
+.chipLocked {
+  color: var(--signal);
+  background: var(--signal-wash);
+  border-color: var(--signal-dim);
+}
+
+/* Draft written but not yet locked — amber */
+.chipDraft {
+  color: var(--warning);
+  background: var(--warning-wash);
+  border-color: var(--warning);
+}
+
+/* No protocol at all — amber, slightly lighter */
+.chipNone {
+  color: var(--warning);
+  background: var(--warning-wash);
+  border-color: var(--warning);
+  opacity: 0.85;
+}
+
+/* Status dot shown inside the locked chip */
+.dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 5px currentColor;
+  flex-shrink: 0;
+}

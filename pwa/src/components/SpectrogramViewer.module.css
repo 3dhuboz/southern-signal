@@ -1,0 +1,92 @@
+/* SpectrogramViewer — canvas wrapper, computing overlay, playhead rail.
+   Inherits the same CSS custom properties as EvpEditor and
+   ContaminationMarker — all colours are token-sourced. */
+
+.wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+  background: var(--bg-inset);
+}
+
+/* Heat-map canvas — fills full width, fixed height.
+   touch-action: none prevents browser scroll hijacking during long-press. */
+.canvas {
+  display: block;
+  width: 100%;
+  height: 220px;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+
+/* "Computing spectrogram…" overlay — absolute on top of the canvas. */
+.overlay {
+  position: absolute;
+  inset: 0 0 28px 0; /* leave rail visible beneath */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 8, 12, 0.78);
+  z-index: 2;
+  border-radius: 12px 12px 0 0;
+}
+.overlayText {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--signal);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+/* Playhead drag rail beneath the canvas. */
+.rail {
+  height: 28px;
+  background: var(--bg-inset);
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--s-8);
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+}
+.railTrack {
+  position: relative;
+  width: 100%;
+  height: 4px;
+  border-radius: var(--r-full);
+  background: var(--border-default);
+}
+.railFill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  border-radius: var(--r-full);
+  background: var(--signal-dim);
+  pointer-events: none;
+  transition: width 40ms linear;
+}
+.railThumb {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--signal);
+  border: 2px solid var(--bg-inset);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  box-shadow: 0 0 6px rgba(93, 242, 199, 0.5);
+  transition: left 40ms linear;
+}

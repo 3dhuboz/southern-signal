@@ -35,6 +35,7 @@ import { type SectorReading } from "../lib/audio/sectorIndicator";
 import { ensureTodayInvestigation } from "../lib/bootstrap";
 import { requestPersistentStorage } from "../lib/opfs";
 import { getInvestigation, recordEvent, setCulturallySensitive, startInvestigation, stopInvestigation } from "../lib/db/repo";
+import { lockProtocol } from "../lib/db/protocolRepo";
 import {
   emitAcousticTransient,
   emitInfrasoundPulse,
@@ -375,6 +376,15 @@ export function MissionControl() {
       // on whatever baseline data exists for the investigation.
 
       setCurrent(inv);
+      // Auto-lock the pre-registered protocol at session start if it was
+      // written as a draft but not yet cryptographically locked. Best-effort —
+      // a lock failure must NOT block the session; the amber chip in CaseManager
+      // will continue to remind the operator.
+      if (inv.protocol_json && !inv.protocol_hash) {
+        await lockProtocol(inv.id).catch((err) => {
+          console.warn("[protocol] auto-lock at session start failed:", err);
+        });
+      }
       await startInvestigation(inv.id);
       await recordEvent({ investigation_id: inv.id, source: "system", event_type: "session_start", title: "Session started" });
       setSiteSession(createSiteSession());

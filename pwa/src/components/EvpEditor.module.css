@@ -583,3 +583,176 @@
 :global([data-theme="daylight"]) .deepReviewBtn {
   color: var(--text-primary);
 }
+
+/* ── Headphone gate ─────────────────────────────────────────────────────── */
+.headphoneGate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-10);
+  padding: var(--s-16) var(--s-16);
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--signal) 6%, var(--bg-elevated));
+  border: 1px solid var(--signal-dim);
+  box-shadow: 0 0 14px rgba(93, 242, 199, 0.08);
+}
+.headphoneGateEyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--signal);
+}
+.headphoneGateBody {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+.headphoneGateCheck {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-8);
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  user-select: none;
+}
+.headphoneGateCheck input { margin: 0; }
+
+/* ── Noise floor banner ──────────────────────────────────────────────────── */
+.noiseFloorBanner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-8);
+  padding: var(--s-6) var(--s-12);
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.noiseFloorLabel {
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  font-size: 10px;
+  margin-right: var(--s-4);
+}
+.noiseFloorStat { color: var(--text-primary); }
+.noiseFloorSep { color: var(--text-muted); }
+
+/* ── Tab bar (Waveform / Spectrogram) ────────────────────────────────────── */
+.tabBar {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 0;
+}
+.tabBtn {
+  appearance: none;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: var(--s-6) var(--s-12);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease;
+  margin-bottom: -1px; /* sit on the bottom border */
+}
+.tabBtn:hover { color: var(--text-secondary); }
+.tabBtnActive {
+  color: var(--signal);
+  border-bottom-color: var(--signal);
+}
+
+/* ── SNR chips in selectionStats ─────────────────────────────────────────── */
+.snrChipGood {
+  background: color-mix(in srgb, var(--signal) 15%, transparent);
+  border: 1px solid var(--signal-dim);
+  color: var(--signal);
+  border-radius: var(--r-sm);
+  padding: 1px 7px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+.snrChipAmber {
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
+  border: 1px solid var(--warning);
+  color: var(--warning);
+  border-radius: var(--r-sm);
+  padding: 1px 7px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+.snrChipBad {
+  background: var(--danger-wash);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  border-radius: var(--r-sm);
+  padding: 1px 7px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* Loop counter (headphone review) */
+.loopCounter {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--signal);
+  letter-spacing: 0.6px;
+}
+
+/* ── SNR gate banner + override ─────────────────────────────────────────── */
+.snrGateBanner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-10);
+  padding: var(--s-10) var(--s-12);
+  background: var(--danger-wash);
+  border: 1px solid var(--danger);
+  border-radius: var(--r-sm);
+}
+.snrGateText {
+  flex: 1;
+  font-size: 12.5px;
+  color: var(--danger);
+  line-height: 1.4;
+}
+.snrOverrideBtn {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--danger);
+  border-radius: var(--r-sm);
+  color: var(--danger);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  padding: var(--s-6) var(--s-10);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.snrOverrideBtn:hover { background: var(--danger-wash); }
+.snrOverrideRow {
+  display: flex;
+  gap: var(--s-8);
+  align-items: flex-end;
+  background: var(--bg-inset);
+  padding: var(--s-8) var(--s-12);
+  border-radius: var(--r-sm);
+  border: 1px dashed var(--danger);
+}

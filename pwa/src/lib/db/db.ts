@@ -123,6 +123,15 @@ async function init(): Promise<InitResult> {
     /* column already exists (v3+ DB) — fine */
   }
 
+  // v9: pre-registered protocol columns on investigations.
+  for (const col of ["protocol_json TEXT", "protocol_hash TEXT"]) {
+    try {
+      await exec(`ALTER TABLE investigations ADD COLUMN ${col}`, [], false);
+    } catch {
+      /* column already exists on v9+ DBs */
+    }
+  }
+
   // Stamp schema version on fresh DBs.
   await exec(
     "INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('schema_version', ?)",

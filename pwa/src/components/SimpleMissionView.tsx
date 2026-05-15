@@ -18,6 +18,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ResearchSnapshot } from "./ResearchSnapshot";
 import { ScreenRecordButton } from "./ScreenRecordButton";
+import { TiltToWakeStatus } from "./TiltToWakeStatus";
 import { usePreferences } from "../lib/preferences";
 import type { LogIncrement } from "../lib/posterior/posterior";
 import type { BaselineSummary } from "../lib/posterior/sessionBaseline";
@@ -483,6 +484,9 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
             : "TV-grade timestamps"}
         </span>
       </button>
+
+      {/* SHAKE-TO-MARK — hands-free marker via double-shake gesture. */}
+      <TiltToWakeStatus investigationId={investigationId} />
 
       {/* QUICK ACTIONS — emoji icons → instrument-panel SVGs so the
           tiles read as tool symbols, not casual chat affordances. */}
