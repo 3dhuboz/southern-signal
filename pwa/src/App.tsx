@@ -4,6 +4,7 @@ import { AcknowledgementGate } from "./components/AcknowledgementGate";
 import { OnboardingTour } from "./components/OnboardingTour";
 import { AppHeader } from "./components/AppHeader";
 import { BottomNav } from "./components/BottomNav";
+import { CivilTwilightBanner } from "./components/CivilTwilightBanner";
 import { InterruptedSessionBanner } from "./components/InterruptedSessionBanner";
 import { ServiceWorkerUpdateBanner } from "./components/ServiceWorkerUpdateBanner";
 import { MissionControl } from "./views/MissionControl";
@@ -80,6 +81,7 @@ export default function App() {
     <BrowserRouter>
       <AppHeader />
       <ServiceWorkerUpdateBanner />
+      <CivilTwilightBanner />
       <InterruptedSessionBanner />
       <main>
         <Suspense fallback={<RouteFallback />}>

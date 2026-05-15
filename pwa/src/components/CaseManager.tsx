@@ -21,6 +21,7 @@ import { clearBaseline } from "../lib/posterior/sessionBaseline";
 import { buildExportBundle, downloadBlob } from "../lib/forensic/exportBundle";
 import { autoName } from "../lib/cases/autoName";
 import type { EvidenceEvent, Investigation, MediaAsset } from "../lib/db/schema";
+import { EventDebunkPanel } from "./EventDebunkPanel";
 import s from "./CaseManager.module.css";
 
 interface CaseSummary extends Investigation {
@@ -610,13 +611,31 @@ export function CaseManager() {
                     <div className={s.sessionsBlock}>
                       <span className={s.blockLabel}>Sessions ({sessions.length})</span>
                       <ul className={s.sessionsList}>
-                        {sessions.map((sg, i) => (
-                          <li key={i} className={s.sessionRow}>
-                            <span className={s.sessionTime}>{new Date(sg.startedAt).toLocaleTimeString()}</span>
-                            <span className={s.sessionDur}>{formatDuration(sg.startedAt, sg.endedAt)}</span>
-                            <span className={s.sessionEvents}>{sg.events.length} events</span>
-                          </li>
-                        ))}
+                        {sessions.map((sg, i) => {
+                          // Events within this session that need debunking review.
+                          const reviewableEvents = sg.events.filter(
+                            (ev) => ev.event_type === "marker" || ev.event_type === "anomaly",
+                          );
+                          return (
+                            <li key={i} className={s.sessionRow}>
+                              <span className={s.sessionTime}>{new Date(sg.startedAt).toLocaleTimeString()}</span>
+                              <span className={s.sessionDur}>{formatDuration(sg.startedAt, sg.endedAt)}</span>
+                              <span className={s.sessionEvents}>{sg.events.length} events</span>
+                              {reviewableEvents.length > 0 && (
+                                <div className={s.eventDebunkList}>
+                                  {reviewableEvents.map((ev) => (
+                                    <EventDebunkPanel
+                                      key={ev.id}
+                                      investigationId={openCaseId!}
+                                      event={ev}
+                                      required={true}
+                                    />
+                                  ))}
+                                </div>
+                              )}
+                            </li>
+                          );
+                        })}
                       </ul>
                     </div>
                   )}

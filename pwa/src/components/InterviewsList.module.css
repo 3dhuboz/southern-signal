@@ -1,0 +1,250 @@
+/* InterviewsList — manages witness interviews for an investigation. */
+
+/* ---- Container ---- */
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-16);
+}
+
+/* ---- Header row ---- */
+
+.listHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-12);
+  flex-wrap: wrap;
+}
+
+.eyebrow {
+  font-size: 11px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--signal);
+  font-weight: 800;
+  font-family: var(--font-mono);
+}
+
+.btnAdd {
+  background: transparent;
+  color: var(--signal);
+  border: 1px solid var(--signal-dim);
+  border-radius: var(--r-md);
+  padding: var(--s-8) var(--s-14);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  letter-spacing: 0.4px;
+  transition: background 120ms, color 120ms;
+}
+.btnAdd:hover { background: var(--signal-wash); }
+
+/* ---- Empty state ---- */
+
+.empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ---- Inline form wrapper ---- */
+
+.formWrap {
+  /* Slight left border to visually separate the inline form from the list */
+  border-left: 2px solid var(--signal-dim);
+  padding-left: var(--s-12);
+}
+
+/* ---- Cards list ---- */
+
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-12);
+}
+
+/* ---- Individual card ---- */
+
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-lg);
+  padding: var(--s-14) var(--s-16);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-10);
+}
+
+/* Card header: name + badge + timestamp */
+.cardHead {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-8);
+  flex-wrap: wrap;
+}
+
+.cardName {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  flex: 1 1 auto;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-full);
+  padding: 2px 10px;
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.cardTs {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  align-self: center;
+}
+
+/* Statement (clamped) */
+.statement {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+  /* Clamp to 3 lines by default; .expanded removes this */
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.statement.expanded {
+  -webkit-line-clamp: unset;
+  display: block;
+}
+
+.showMore {
+  font-size: 11px;
+  color: var(--signal-dim);
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  letter-spacing: 0.4px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.showMore:hover { color: var(--signal); }
+
+/* Notable claims */
+.claimsBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+
+.claimsLabel {
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+.claimsList {
+  margin: 0;
+  padding-left: var(--s-16);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.claimsList li {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* Linked event chips */
+.chipsBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+
+.chipsLabel {
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-4);
+}
+
+.chip {
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-full);
+  padding: 2px 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+/* Card action buttons */
+.cardActions {
+  display: flex;
+  gap: var(--s-8);
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.btnEdit,
+.btnDelete {
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  padding: var(--s-6) var(--s-12);
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 120ms, border-color 120ms, background 120ms;
+}
+
+.btnEdit {
+  color: var(--text-secondary);
+}
+.btnEdit:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.btnDelete {
+  color: var(--danger);
+  border-color: transparent;
+  margin-left: auto;
+}
+.btnDelete:hover {
+  background: var(--danger-wash);
+  border-color: var(--danger);
+}

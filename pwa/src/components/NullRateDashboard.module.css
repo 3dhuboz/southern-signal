@@ -1,0 +1,257 @@
+/* NullRateDashboard — Negative Results Base-Rate Dashboard.
+   Dense mono labels, subtle borders. Null% amber >60%, green <30%.
+   Follows the same visual idiom as SessionSummaryCard / EvidenceLedger. */
+
+.wrap {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+
+/* ---- Summary (details toggle) ---- */
+
+.summary {
+  list-style: none;
+  cursor: pointer;
+  padding: var(--s-12) var(--s-12);
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  font-weight: 700;
+  user-select: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 120ms;
+}
+
+.summary::-webkit-details-marker { display: none; }
+.summary::before {
+  content: "▸";
+  display: inline-block;
+  font-size: 9px;
+  color: var(--text-muted);
+  transition: transform 120ms ease;
+}
+.wrap[open] .summary::before { transform: rotate(90deg); }
+.wrap[open] .summary { border-color: var(--border-subtle); }
+.summary:hover { color: var(--text-primary); }
+
+.summaryEyebrow {
+  color: var(--signal);
+}
+
+.summaryMeta {
+  margin-left: auto;
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+  text-transform: none;
+}
+
+/* ---- Body ---- */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-12);
+  padding: var(--s-12);
+}
+
+/* ---- Error ---- */
+
+.errorMsg {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--danger);
+  background: var(--danger-wash);
+  border: 1px solid var(--danger);
+  border-radius: var(--r-sm);
+  padding: var(--s-8) var(--s-12);
+}
+
+/* ---- Empty ---- */
+
+.empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+  padding: var(--s-12) 0;
+}
+
+/* ---- Loading skeleton ---- */
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-8);
+}
+
+.skeletonBanner,
+.skeletonRow {
+  border-radius: var(--r-sm);
+  background: var(--bg-inset);
+  animation: shimmer 1.4s infinite ease-in-out;
+}
+
+.skeletonBanner { height: 44px; }
+.skeletonRow    { height: 28px; }
+
+@keyframes shimmer {
+  0%   { opacity: 0.5; }
+  50%  { opacity: 0.8; }
+  100% { opacity: 0.5; }
+}
+
+/* ---- Lifetime banner ---- */
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: var(--s-12);
+  padding: var(--s-8) var(--s-12);
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  flex-wrap: wrap;
+}
+
+.bannerStat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.bannerValue {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.bannerLabel {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.bannerDivider {
+  color: var(--border-default);
+  font-size: 18px;
+  line-height: 1;
+  align-self: center;
+}
+
+/* ---- Null-rate color signals ---- */
+
+.nullHigh { color: var(--warning) !important; }
+.nullLow  { color: var(--signal)  !important; }
+
+/* ---- Table ---- */
+
+.tableWrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.thead tr {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.thLocation,
+.thNum {
+  padding: var(--s-4) var(--s-8);
+  font-size: 9px;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.thLocation { text-align: left; }
+.thNum      { text-align: right; }
+
+.trow {
+  border-bottom: 1px solid var(--border-subtle);
+}
+.trow:last-child { border-bottom: none; }
+.trow:hover { background: var(--bg-overlay); }
+
+.tdLocation {
+  padding: var(--s-8);
+  color: var(--text-primary);
+  font-size: 11px;
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tdNum {
+  padding: var(--s-8);
+  text-align: right;
+  color: var(--text-secondary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.tdBar {
+  padding: var(--s-4) var(--s-8);
+  min-width: 72px;
+}
+
+/* Bar cell: relative container so the fill bar can size by % width */
+
+.barCell {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  position: relative;
+  height: 18px;
+}
+
+.barFill {
+  display: block;
+  height: 6px;
+  border-radius: var(--r-full);
+  min-width: 2px;
+  max-width: 100%;
+  flex-shrink: 0;
+  transition: width 300ms ease;
+}
+
+.barNull        { background: var(--text-muted); }
+.barFlagged     { background: var(--danger); }
+.barInconclusive{ background: var(--warning); }
+.barMundane     { background: var(--signal); }
+
+/* Override bar fill color when the null rate is high/low */
+.nullHigh.barNull { background: var(--warning); }
+.nullLow.barNull  { background: var(--signal); }
+
+.barPct {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}

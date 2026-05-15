@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { AHT_H0_SUSPEND_THRESHOLD, computeH0Confidence } from "../lib/posterior/ahtVerdict";
 import { buildEvidenceBrief, findMostRecentInvestigationId, type EvidenceBrief } from "../lib/forensic/evidenceBrief";
-import { BaseRatePanel } from "../components/BaseRatePanel";
+import { NullRateDashboard } from "../components/NullRateDashboard";
 import { CaseManager } from "../components/CaseManager";
+import { InterviewsList } from "../components/InterviewsList";
 import { query } from "../lib/db/db";
 import { verifyAuditChain, appendAuditEntry } from "../lib/db/auditLog";
 import { buildManifest } from "../lib/forensic/manifest";
@@ -311,7 +312,7 @@ export function Review() {
       </div>
 
       {/* Base-rate dashboard — null results count too */}
-      <BaseRatePanel />
+      <NullRateDashboard />
 
       {/* AI sanity meta-card */}
       <div className={`${r.h0Card} ${postRollSuspended ? r.h0CardSuspended : ""}`.trim()}>
@@ -372,6 +373,19 @@ export function Review() {
               Full brief →
             </Link>
           </div>
+        </div>
+      )}
+
+      {/* Witness interviews — Section 2 of the report. Scoped to the
+          most-recent investigation so the operator can add/edit interviews
+          during or after a session without leaving the Review screen.
+          Evidence event linking is available on the EvidenceBrief print
+          view where events are fully loaded. */}
+      {latestBrief && (
+        <div className={r.section}>
+          <InterviewsList
+            investigationId={latestBrief.investigation.id}
+          />
         </div>
       )}
 

@@ -1,0 +1,290 @@
+/**
+ * DebunkChecklist — styling follows ContaminationMarker conventions.
+ * Same CSS variable names, same border-radius tokens, same button pattern.
+ * Extended for three-state verdict buttons and penalty summary.
+ */
+
+.wrap {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  padding: var(--s-12) var(--s-14);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-10);
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+
+.eyebrow {
+  font-size: 10px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--warning);
+  font-weight: 700;
+}
+
+.eventTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.2px;
+}
+
+.note {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-style: italic;
+  line-height: 1.5;
+}
+
+.loadingNote {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+  padding: var(--s-8) 0;
+}
+
+/* ── Item list ───────────────────────────────────────────────────────────── */
+
+.itemList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-8);
+}
+
+.itemRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-8);
+  flex-wrap: wrap;
+}
+
+.itemLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.2px;
+  flex: 1;
+  min-width: 140px;
+}
+
+.itemBtns {
+  display: flex;
+  gap: var(--s-4);
+  flex-shrink: 0;
+}
+
+/* ── Verdict buttons ─────────────────────────────────────────────────────── */
+
+.verdictBtn {
+  position: relative;
+  min-height: 36px;
+  padding: 6px 10px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.verdictBtn:hover:not(:disabled) {
+  background: var(--bg-overlay);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+.verdictBtn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.verdictBtn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* Ruled out — green tint (signal colour) */
+.verdictRuledOut {
+  background: color-mix(in srgb, var(--signal) 12%, transparent);
+  border-color: var(--signal);
+  color: var(--signal);
+}
+.verdictRuledOut:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--signal) 22%, transparent);
+}
+
+/* Cannot rule out — danger red */
+.verdictCannot {
+  background: var(--danger-wash);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.verdictCannot:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 22%, transparent);
+}
+
+/* N/A — muted */
+.verdictNa {
+  background: var(--bg-inset);
+  border-color: var(--border-strong);
+  color: var(--text-muted);
+}
+.verdictNa:hover:not(:disabled) {
+  background: var(--bg-overlay);
+}
+
+/* ── Notes ───────────────────────────────────────────────────────────────── */
+
+.notesBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+
+.notesLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.3px;
+}
+
+.notesHint {
+  font-weight: 400;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.notesArea {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12px;
+  padding: var(--s-8) var(--s-10);
+  resize: vertical;
+  line-height: 1.5;
+}
+.notesArea::placeholder {
+  color: var(--text-dim);
+  font-style: italic;
+}
+.notesArea:focus {
+  outline: none;
+  border-color: var(--signal-dim);
+}
+.notesArea:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* ── Penalty summary ─────────────────────────────────────────────────────── */
+
+.penaltySummary {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: var(--s-8) var(--s-10);
+  border-radius: var(--r-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+}
+
+.penaltyActive {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.penaltyClear {
+  color: var(--signal);
+  font-weight: 600;
+}
+
+.penaltyNeutral {
+  color: var(--text-muted);
+}
+
+/* ── Error note ──────────────────────────────────────────────────────────── */
+
+.errorNote {
+  font-size: 11px;
+  color: var(--danger);
+  background: var(--danger-wash);
+  border: 1px solid var(--danger);
+  border-radius: var(--r-sm);
+  padding: var(--s-8) var(--s-10);
+  margin: 0;
+}
+
+/* ── Save / read-only bar ────────────────────────────────────────────────── */
+
+.saveBtn {
+  align-self: flex-end;
+  min-height: 40px;
+  padding: var(--s-8) var(--s-16);
+  border-radius: var(--r-full);
+  border: 1px solid var(--signal-dim);
+  background: var(--signal-wash);
+  color: var(--signal);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.saveBtn:hover:not(:disabled) {
+  background: var(--signal);
+  color: var(--text-on-accent);
+}
+.saveBtn:disabled {
+  opacity: 0.40;
+  cursor: not-allowed;
+}
+
+.readOnlyBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-8);
+}
+
+.readOnlyNote {
+  font-size: 11px;
+  color: var(--signal);
+  font-weight: 600;
+  font-family: var(--font-mono);
+  letter-spacing: 0.4px;
+}
+
+.editBtn {
+  padding: 5px var(--s-12);
+  border-radius: var(--r-full);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.editBtn:hover {
+  background: var(--bg-overlay);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}

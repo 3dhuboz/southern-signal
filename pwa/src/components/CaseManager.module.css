@@ -364,12 +364,14 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--s-4);
+  gap: var(--s-8);
 }
 .sessionRow {
   display: grid;
   grid-template-columns: 90px 90px 1fr;
-  gap: var(--s-8);
+  grid-template-rows: auto;
+  row-gap: var(--s-8);
+  column-gap: var(--s-8);
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-secondary);
@@ -378,6 +380,15 @@
 .sessionTime { color: var(--signal); }
 .sessionDur { color: var(--text-primary); }
 .sessionEvents { text-align: right; }
+
+/* Debunking panels for marker/anomaly events within a session. Spans the
+   full width of the session row so the checklist has room to breathe. */
+.eventDebunkList {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-8);
+}
 
 .mediaList {
   list-style: none;

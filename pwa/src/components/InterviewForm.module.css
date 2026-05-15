@@ -1,0 +1,209 @@
+/* InterviewForm — add/edit witness interview. Matches DispositionPicker
+   styling conventions: bg-surface panels, border-default borders, signal
+   accent for the save CTA. */
+
+.wrap {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-lg);
+  padding: var(--s-16) var(--s-16) var(--s-20);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-16);
+}
+
+/* ---- Header ---- */
+
+.head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--s-8);
+  flex-wrap: wrap;
+}
+
+.eyebrow {
+  font-size: 11px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--signal);
+  font-weight: 800;
+  font-family: var(--font-mono);
+}
+
+/* ---- Field rows ---- */
+
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-14);
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+
+.label {
+  font-size: 11px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.required {
+  color: var(--signal);
+  margin-left: 2px;
+}
+
+.hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 2px;
+}
+
+/* Shared input / select / textarea appearance */
+.input,
+.select,
+.textarea {
+  background: var(--bg-inset);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  padding: var(--s-10) var(--s-12);
+  width: 100%;
+  transition: border-color 120ms;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus {
+  outline: none;
+  border-color: var(--signal-dim);
+  box-shadow: 0 0 0 2px var(--signal-wash);
+}
+
+.select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%235C6677' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+  cursor: pointer;
+}
+
+.textarea {
+  resize: vertical;
+  min-height: 90px;
+  line-height: 1.5;
+}
+
+.textarea.tall {
+  min-height: 120px;
+}
+
+/* Error state */
+.inputError {
+  border-color: var(--danger) !important;
+}
+
+.errorMsg {
+  font-size: 11px;
+  color: var(--danger);
+  margin-top: 2px;
+}
+
+/* ---- Linked events checkboxes ---- */
+
+.eventsGrid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-6);
+  max-height: 180px;
+  overflow-y: auto;
+  padding: var(--s-4) 0;
+}
+
+.eventsEmpty {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.eventCheck {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-8);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.eventCheck input[type="checkbox"] {
+  margin-top: 2px;
+  accent-color: var(--signal);
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.eventCheckLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.eventTs {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+/* ---- Footer buttons ---- */
+
+.footer {
+  display: flex;
+  gap: var(--s-8);
+  justify-content: flex-end;
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+}
+
+.btnSave {
+  background: var(--signal);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: var(--r-md);
+  padding: var(--s-10) var(--s-16);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.6px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: opacity 120ms, transform 80ms;
+}
+.btnSave:hover:not(:disabled) { opacity: 0.88; }
+.btnSave:active:not(:disabled) { transform: scale(0.97); }
+.btnSave:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.btnCancel {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  padding: var(--s-10) var(--s-16);
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 120ms, border-color 120ms;
+}
+.btnCancel:hover { color: var(--text-secondary); border-color: var(--border-strong); }

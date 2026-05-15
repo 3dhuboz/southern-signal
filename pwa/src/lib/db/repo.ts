@@ -649,3 +649,95 @@ export async function listSignoffs(): Promise<ReviewerSignoffRow[]> {
     return [];
   }
 }
+
+// ---------------------- base-rate queries (Tier 1 #3) ----------------------
+
+/** Per-location session statistics. Only completed sessions with a disposition count. */
+export interface LocationBaseRate {
+  location_name: string;       // "Unknown" if null
+  total: number;               // sessions with a disposition
+  null_count: number;          // disposition = 'null'
+  inconclusive_count: number;
+  flagged_count: number;
+  confirmed_mundane_count: number;
+  null_rate: number;           // 0..1
+}
+
+/** Lifetime investigator stats across ALL investigations. */
+export interface LifetimeBaseRate {
+  total: number;
+  null_count: number;
+  inconclusive_count: number;
+  flagged_count: number;
+  confirmed_mundane_count: number;
+  null_rate: number;
+  flagged_rate: number;
+}
+
+interface LocationBaseRateRaw {
+  location_name: string;
+  total: number;
+  null_count: number;
+  inconclusive_count: number;
+  flagged_count: number;
+  confirmed_mundane_count: number;
+}
+
+export async function getLocationBaseRates(): Promise<LocationBaseRate[]> {
+  const rows = await query<LocationBaseRateRaw>(
+    `SELECT
+       COALESCE(location_name, 'Unknown') as location_name,
+       COUNT(*) as total,
+       SUM(CASE WHEN disposition = 'null' THEN 1 ELSE 0 END) as null_count,
+       SUM(CASE WHEN disposition = 'inconclusive' THEN 1 ELSE 0 END) as inconclusive_count,
+       SUM(CASE WHEN disposition = 'flagged' THEN 1 ELSE 0 END) as flagged_count,
+       SUM(CASE WHEN disposition = 'confirmed_mundane' THEN 1 ELSE 0 END) as confirmed_mundane_count
+     FROM investigations
+     WHERE disposition IS NOT NULL
+     GROUP BY COALESCE(location_name, 'Unknown')
+     ORDER BY total DESC`,
+  );
+  return rows.map((r) => ({
+    ...r,
+    total: Number(r.total),
+    null_count: Number(r.null_count),
+    inconclusive_count: Number(r.inconclusive_count),
+    flagged_count: Number(r.flagged_count),
+    confirmed_mundane_count: Number(r.confirmed_mundane_count),
+    null_rate: Number(r.total) > 0 ? Number(r.null_count) / Number(r.total) : 0,
+  }));
+}
+
+export async function getLifetimeBaseRate(): Promise<LifetimeBaseRate> {
+  const rows = await query<{
+    total: number;
+    null_count: number;
+    inconclusive_count: number;
+    flagged_count: number;
+    confirmed_mundane_count: number;
+  }>(
+    `SELECT
+       COUNT(*) as total,
+       SUM(CASE WHEN disposition = 'null' THEN 1 ELSE 0 END) as null_count,
+       SUM(CASE WHEN disposition = 'inconclusive' THEN 1 ELSE 0 END) as inconclusive_count,
+       SUM(CASE WHEN disposition = 'flagged' THEN 1 ELSE 0 END) as flagged_count,
+       SUM(CASE WHEN disposition = 'confirmed_mundane' THEN 1 ELSE 0 END) as confirmed_mundane_count
+     FROM investigations
+     WHERE disposition IS NOT NULL`,
+  );
+  const r = rows[0] ?? { total: 0, null_count: 0, inconclusive_count: 0, flagged_count: 0, confirmed_mundane_count: 0 };
+  const total = Number(r.total);
+  const null_count = Number(r.null_count);
+  const flagged_count = Number(r.flagged_count);
+  const inconclusive_count = Number(r.inconclusive_count);
+  const confirmed_mundane_count = Number(r.confirmed_mundane_count);
+  return {
+    total,
+    null_count,
+    inconclusive_count,
+    flagged_count,
+    confirmed_mundane_count,
+    null_rate: total > 0 ? null_count / total : 0,
+    flagged_rate: total > 0 ? flagged_count / total : 0,
+  };
+}

@@ -6,7 +6,7 @@
  * via a `source` column so cross-device sync can union rows safely.
  */
 
-export const CURRENT_SCHEMA_VERSION = 6;
+export const CURRENT_SCHEMA_VERSION = 8;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -185,6 +185,55 @@ CREATE TABLE IF NOT EXISTS reviewer_signoffs (
 CREATE INDEX IF NOT EXISTS idx_signoffs_discipline ON reviewer_signoffs (discipline);
 CREATE INDEX IF NOT EXISTS idx_signoffs_signed_at  ON reviewer_signoffs (signed_at DESC);
 
+-- v7: Debunking-First Review (Tier 1 #7). One checklist per flagged
+-- evidence event. When the investigator cannot rule out a mundane source,
+-- the posterior engine applies -0.08 log-odds per unchecked item (roadmap
+-- spec: "-8 confidence per cannot_rule_out"). Item slugs are stable
+-- identifiers — do not rename them once data exists.
+CREATE TABLE IF NOT EXISTS debunk_checklist (
+  id                TEXT PRIMARY KEY,
+  investigation_id  TEXT NOT NULL,
+  event_id          TEXT NOT NULL,
+  item              TEXT NOT NULL,
+  -- slug: 'hvac' / 'infrasound' / 'vibration' / 'emf_interference' /
+  --       'acoustics' / 'investigator' / 'animal' / 'pareidolia' /
+  --       'temperature' / 'equipment' / 'priming' / 'other'
+  verdict           TEXT NOT NULL,
+  -- 'ruled_out' / 'cannot_rule_out' / 'na'
+  notes             TEXT,
+  logged_at         TEXT NOT NULL,
+  FOREIGN KEY (investigation_id) REFERENCES investigations (id) ON DELETE CASCADE,
+  FOREIGN KEY (event_id) REFERENCES evidence_events (id) ON DELETE CASCADE,
+  -- Uniqueness on (event_id, item) so INSERT OR REPLACE upserts cleanly —
+  -- a new UUID is generated each revision but the content key is stable.
+  UNIQUE (event_id, item)
+);
+CREATE INDEX IF NOT EXISTS idx_debunk_event ON debunk_checklist (event_id);
+CREATE INDEX IF NOT EXISTS idx_debunk_inv   ON debunk_checklist (investigation_id);
+
+-- v8: Witness interviews (Tier 2 #1). One per witness per investigation.
+-- linked_event_ids is a JSON array of evidence_events.id that support or
+-- relate to this witness account — renders as a claim cross-reference in
+-- the report's Section 2.
+CREATE TABLE IF NOT EXISTS interviews (
+  id                TEXT PRIMARY KEY,
+  investigation_id  TEXT NOT NULL,
+  witness_name      TEXT NOT NULL,
+  relationship      TEXT,
+  -- 'resident' / 'owner' / 'staff' / 'visitor' / 'co-investigator' / 'other'
+  statement         TEXT NOT NULL,
+  notable_claims    TEXT,
+  -- investigator notes; free-text bullets
+  linked_event_ids  TEXT,
+  -- JSON array of evidence_events.id
+  occurred_at       TEXT,
+  -- ISO — when the interview took place
+  created_at        TEXT NOT NULL,
+  updated_at        TEXT NOT NULL,
+  FOREIGN KEY (investigation_id) REFERENCES investigations (id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_interviews_inv ON interviews (investigation_id, created_at DESC);
+
 -- Hash-chained event log (Tier 1 #5 — every state change is appended).
 -- 'edits' become new entries; never UPDATE this table.
 CREATE TABLE IF NOT EXISTS audit_log (
@@ -276,6 +325,52 @@ export interface ResearchFindingNoteRow {
   dossier_id: string;
   finding_key: string;
   text: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type DebunkVerdict = "ruled_out" | "cannot_rule_out" | "na";
+
+/** Stable item slugs for the debunking checklist — never rename. */
+export const DEBUNK_ITEMS = [
+  { slug: "hvac",           label: "HVAC / air conditioning" },
+  { slug: "infrasound",     label: "Infrasound (< 20 Hz mechanical)" },
+  { slug: "vibration",      label: "Building vibration / traffic" },
+  { slug: "emf_interference", label: "EM interference (wiring, appliances)" },
+  { slug: "acoustics",      label: "Acoustics (echo, flutter, resonance)" },
+  { slug: "investigator",   label: "Investigator movement / voice" },
+  { slug: "animal",         label: "Animal / pest activity" },
+  { slug: "pareidolia",     label: "Pareidolia / audio matrixing" },
+  { slug: "temperature",    label: "Temperature differential / draught" },
+  { slug: "equipment",      label: "Equipment malfunction / artefact" },
+  { slug: "priming",        label: "Psychological priming / expectation" },
+  { slug: "other",          label: "Other (document in notes)" },
+] as const;
+
+export type DebunkItemSlug = (typeof DEBUNK_ITEMS)[number]["slug"];
+
+export interface DebunkChecklistRow {
+  id: string;
+  investigation_id: string;
+  event_id: string;
+  item: DebunkItemSlug;
+  verdict: DebunkVerdict;
+  notes: string | null;
+  logged_at: string;
+}
+
+export type WitnessRelationship = "resident" | "owner" | "staff" | "visitor" | "co-investigator" | "other";
+
+export interface InterviewRow {
+  id: string;
+  investigation_id: string;
+  witness_name: string;
+  relationship: WitnessRelationship | null;
+  statement: string;
+  notable_claims: string | null;
+  linked_event_ids: string | null;
+  /** ISO datetime — when the interview took place (may differ from created_at). */
+  occurred_at: string | null;
   created_at: string;
   updated_at: string;
 }

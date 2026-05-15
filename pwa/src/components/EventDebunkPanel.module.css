@@ -1,0 +1,123 @@
+/**
+ * EventDebunkPanel — follows ContaminationMarker styling conventions.
+ */
+
+.panel {
+  /* Visually subordinate — no background, just a tight border so it reads
+     as an appendix to its parent event card rather than a top-level panel. */
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
+/* ── Required mode ───────────────────────────────────────────────────────── */
+
+.panelRequired {
+  border-color: var(--warning);
+}
+
+.requiredBadge {
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+  width: 100%;
+  padding: var(--s-10) var(--s-12);
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+.requiredBadge:hover {
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
+}
+
+.requiredIcon {
+  font-size: 14px;
+  color: var(--warning);
+  flex-shrink: 0;
+}
+
+.requiredLabel {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--warning);
+  flex: 1;
+}
+
+.chevron {
+  font-size: 12px;
+  color: var(--warning);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* ── Optional mode (<details>) ───────────────────────────────────────────── */
+
+.details {
+  /* Native <details> styling. */
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+  list-style: none;
+  padding: var(--s-10) var(--s-12);
+  cursor: pointer;
+  background: var(--bg-elevated);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  user-select: none;
+}
+/* Hide the default disclosure triangle across browsers */
+.summary::-webkit-details-marker { display: none; }
+.summary::marker { content: ""; }
+.summary:hover {
+  background: var(--bg-overlay);
+  color: var(--text-primary);
+}
+
+.summaryLabel {
+  flex: 1;
+}
+
+/* ── Shared: status chips ────────────────────────────────────────────────── */
+
+.penaltyChip {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--danger);
+  background: var(--danger-wash);
+  border: 1px solid var(--danger);
+  border-radius: var(--r-full);
+  padding: 1px 7px;
+  letter-spacing: 0.4px;
+}
+
+.clearedChip {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--signal);
+  background: color-mix(in srgb, var(--signal) 10%, transparent);
+  border: 1px solid var(--signal-dim);
+  border-radius: var(--r-full);
+  padding: 1px 7px;
+  letter-spacing: 0.4px;
+}
+
+/* ── Checklist inner wrap ────────────────────────────────────────────────── */
+
+.checklistWrap {
+  /* Slight inset so the checklist reads as nested under the badge/summary. */
+  padding: var(--s-8);
+  background: var(--bg-inset, var(--bg-surface));
+  border-top: 1px solid var(--border-subtle);
+}

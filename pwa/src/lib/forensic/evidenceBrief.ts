@@ -17,7 +17,7 @@ import { query } from "../db/db";
 import { verifyAuditChain } from "../db/auditLog";
 import { getPreferences } from "../preferences";
 import { buildManifest } from "./manifest";
-import type { Investigation, ResearchDossierRow, ResearchFindingNoteRow } from "../db/schema";
+import type { Investigation, InterviewRow, ResearchDossierRow, ResearchFindingNoteRow } from "../db/schema";
 import { classifyPosterior, type PosteriorBand } from "../posterior/posterior";
 import { computeAhtVerdict, computeH0Confidence, type AhtVerdictResult } from "../posterior/ahtVerdict";
 import { findingKeyFor } from "../db/repo";
@@ -73,6 +73,18 @@ export interface BriefResearchDossier {
   raw: ResearchResult;
 }
 
+/** A witness interview as it appears in the brief — linked event titles are
+ *  resolved from the evidence_events table for readability. */
+export interface BriefInterview {
+  id: string;
+  witnessName: string;
+  relationship: string | null;
+  statement: string;
+  notableClaims: string | null;
+  occurredAt: string | null;
+  linkedEventIds: string[];
+}
+
 export interface EvidenceBrief {
   generatedAt: string;
   investigation: Investigation;
@@ -102,6 +114,8 @@ export interface EvidenceBrief {
   /** Saved AI-Investigator dossiers scoped to this case (newest first).
    *  Empty when the operator hasn't run the deep-dive for this venue. */
   researchDossiers: BriefResearchDossier[];
+  /** Section 2: witness interviews (v8). Empty on pre-v8 schema. */
+  interviews: BriefInterview[];
 }
 
 const TIER_DISPLAY_ORDER: ResearchTier[] = [
@@ -308,6 +322,30 @@ export async function buildEvidenceBrief(investigationId: string): Promise<Evide
     if (d) researchDossiers.push(d);
   }
 
+  // v8: witness interviews — Section 2 of the brief.
+  let interviews: BriefInterview[] = [];
+  try {
+    const interviewRows = await query<InterviewRow>(
+      "SELECT * FROM interviews WHERE investigation_id = ? ORDER BY occurred_at ASC, created_at ASC",
+      [investigationId],
+    );
+    interviews = interviewRows.map((r) => {
+      let linkedEventIds: string[] = [];
+      if (r.linked_event_ids) {
+        try { linkedEventIds = JSON.parse(r.linked_event_ids); } catch { /* ignore */ }
+      }
+      return {
+        id: r.id,
+        witnessName: r.witness_name,
+        relationship: r.relationship,
+        statement: r.statement,
+        notableClaims: r.notable_claims,
+        occurredAt: r.occurred_at,
+        linkedEventIds,
+      };
+    });
+  } catch { /* pre-v8 schema — no interviews table yet */ }
+
   // Chain + manifest are best-effort.
   const chainStatus = await verifyAuditChain();
   let merkleRoot: string | null = null;
@@ -341,6 +379,7 @@ export async function buildEvidenceBrief(investigationId: string): Promise<Evide
     h0SampleCount: h0.n,
     ahtVerdict,
     researchDossiers,
+    interviews,
   };
 }
 

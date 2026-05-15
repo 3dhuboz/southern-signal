@@ -308,6 +308,53 @@ export function EvidenceBrief() {
         </section>
       )}
 
+      {/* SECTION 2: WITNESS ACCOUNTS */}
+      {brief.interviews.length > 0 && (
+        <section className={s.section}>
+          <h2 className={s.sectionTitle}>
+            Section 2: Witness accounts
+            {" "}
+            <span className={s.sectionSub}>
+              {brief.interviews.length} interview{brief.interviews.length === 1 ? "" : "s"}
+            </span>
+          </h2>
+          {brief.interviews.map((iv) => (
+            <article key={iv.id} className={s.dossier}>
+              <header className={s.dossierHead}>
+                <span className={s.dossierVenue}>{iv.witnessName}</span>
+                <span className={s.dossierMeta}>
+                  {iv.relationship ? iv.relationship.replace(/-/g, "‑") : "witness"}
+                  {iv.occurredAt ? ` · ${formatDate(iv.occurredAt)}` : ""}
+                  {iv.linkedEventIds.length > 0
+                    ? ` · ${iv.linkedEventIds.length} linked event${iv.linkedEventIds.length === 1 ? "" : "s"}`
+                    : ""}
+                </span>
+              </header>
+              <p style={{ margin: "8px 0", fontSize: 13, lineHeight: 1.55 }}>{iv.statement}</p>
+              {iv.notableClaims && (
+                <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 12, lineHeight: 1.5 }}>
+                  {iv.notableClaims
+                    .split(/\n/)
+                    .map((l) => l.replace(/^[•\-*]\s*/, "").trim())
+                    .filter(Boolean)
+                    .map((line, i) => (
+                      <li key={i}>{line}</li>
+                    ))}
+                </ul>
+              )}
+              {iv.linkedEventIds.length > 0 && (
+                <p className={s.dossierMeta} style={{ marginTop: 6 }}>
+                  Linked event IDs:{" "}
+                  {iv.linkedEventIds.map((id) => (
+                    <code key={id} style={{ marginRight: 6 }}>{id.slice(0, 8)}…</code>
+                  ))}
+                </p>
+              )}
+            </article>
+          ))}
+        </section>
+      )}
+
       {/* MEDIA + EVENTS */}
       <section className={s.section}>
         <h2 className={s.sectionTitle}>Recordings &amp; events</h2>
