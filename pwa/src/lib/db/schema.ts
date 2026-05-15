@@ -6,7 +6,7 @@
  * via a `source` column so cross-device sync can union rows safely.
  */
 
-export const CURRENT_SCHEMA_VERSION = 9;
+export const CURRENT_SCHEMA_VERSION = 12;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -234,6 +234,64 @@ CREATE TABLE IF NOT EXISTS interviews (
 );
 CREATE INDEX IF NOT EXISTS idx_interviews_inv ON interviews (investigation_id, created_at DESC);
 
+-- v10: Sham/Control Sessions (Tier 3 #1). A control session mirrors the
+-- matched conditions of an active session but with intentional null stimuli.
+-- session_type: 'active' (default) or 'control'. paired_investigation_id
+-- points the control session back to the active investigation it shadows.
+-- The active investigation can discover its control sessions with a reverse
+-- lookup: SELECT * FROM investigations WHERE paired_investigation_id = <active_id>.
+
+-- v11: Trigger Object Tracker (Tier 3 #5). Named objects placed in the
+-- scene whose position is recorded before and after the session. The
+-- investigator logs checks (with optional camera photo) and records a
+-- displacement verdict. Pairs with media_assets for before/after images.
+CREATE TABLE IF NOT EXISTS trigger_objects (
+  id                TEXT PRIMARY KEY,
+  investigation_id  TEXT NOT NULL,
+  name              TEXT NOT NULL,
+  description       TEXT,
+  initial_image_id  TEXT,       -- media_assets.id of the "before" photo
+  created_at        TEXT NOT NULL,
+  updated_at        TEXT NOT NULL,
+  FOREIGN KEY (investigation_id) REFERENCES investigations (id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_trigger_objects_inv ON trigger_objects (investigation_id, created_at ASC);
+
+CREATE TABLE IF NOT EXISTS trigger_object_checks (
+  id                  TEXT PRIMARY KEY,
+  trigger_object_id   TEXT NOT NULL,
+  investigation_id    TEXT NOT NULL,
+  image_id            TEXT,           -- media_assets.id of the check photo
+  displaced           INTEGER,        -- 0 / 1 / NULL (not assessed yet)
+  displacement_notes  TEXT,
+  checked_at          TEXT NOT NULL,
+  FOREIGN KEY (trigger_object_id) REFERENCES trigger_objects (id) ON DELETE CASCADE,
+  FOREIGN KEY (investigation_id)  REFERENCES investigations (id)    ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_trigger_checks_obj ON trigger_object_checks (trigger_object_id, checked_at ASC);
+CREATE INDEX IF NOT EXISTS idx_trigger_checks_inv ON trigger_object_checks (investigation_id);
+
+-- v12: External Verifiability Pack (Tier 3 #2). Per-bundle Ed25519 signature
+-- and RFC 3161 TSA token status. Populated when the user exports a bundle.
+-- tsa_status: 'pending' | 'anchored' | 'failed'. tsa_token_b64 holds the
+-- DER-encoded TSA response, base64-encoded, once anchoring completes.
+CREATE TABLE IF NOT EXISTS bundle_signatures (
+  bundle_id         TEXT PRIMARY KEY,
+  -- opaque ID generated at export time; used as the sync queue ref_id
+  investigation_id  TEXT,             -- NULL = full-archive bundle
+  built_at          TEXT NOT NULL,
+  merkle_root       TEXT,
+  cose_signature_b64 TEXT,           -- COSE_Sign1 envelope, base64-encoded
+  ed25519_pubkey_b64 TEXT,           -- hex public key for the signing key used
+  tsa_status        TEXT NOT NULL DEFAULT 'pending',
+  tsa_token_b64     TEXT,            -- DER-encoded TimeStampResp, base64
+  tsa_requested_at  TEXT,
+  tsa_anchored_at   TEXT,
+  FOREIGN KEY (investigation_id) REFERENCES investigations (id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_bundle_sigs_inv ON bundle_signatures (investigation_id, built_at DESC);
+CREATE INDEX IF NOT EXISTS idx_bundle_sigs_tsa ON bundle_signatures (tsa_status);
+
 -- Hash-chained event log (Tier 1 #5 — every state change is appended).
 -- 'edits' become new entries; never UPDATE this table.
 CREATE TABLE IF NOT EXISTS audit_log (
@@ -274,6 +332,58 @@ export interface Investigation {
    * hypothesis was written before any evidence was gathered.
    */
   protocol_hash: string | null;
+  /**
+   * v10: 'active' (default) or 'control'. Control sessions are run under
+   * matched conditions but with intentional null stimuli, paired against an
+   * active investigation to establish the site's baseline signal distribution.
+   */
+  session_type: "active" | "control";
+  /**
+   * v10: For control sessions, the id of the active investigation this session
+   * shadows. Null on active investigations.
+   */
+  paired_investigation_id: string | null;
+}
+
+// ---- Trigger Object Tracker types (v11 / Tier 3 #5) --------------------
+
+export type TriggerDisplacement = 0 | 1 | null;
+
+export interface TriggerObject {
+  id: string;
+  investigation_id: string;
+  name: string;
+  description: string | null;
+  initial_image_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TriggerObjectCheck {
+  id: string;
+  trigger_object_id: string;
+  investigation_id: string;
+  image_id: string | null;
+  displaced: TriggerDisplacement;
+  displacement_notes: string | null;
+  checked_at: string;
+}
+
+// ---- Bundle signature types (v12 / Tier 3 #2) --------------------------
+
+export type TsaStatus = "pending" | "anchored" | "failed";
+
+export interface BundleSignatureRow {
+  bundle_id: string;
+  investigation_id: string | null;
+  built_at: string;
+  merkle_root: string | null;
+  cose_signature_b64: string | null;
+  ed25519_pubkey_b64: string | null;
+  tsa_status: TsaStatus;
+  tsa_token_b64: string | null;
+  tsa_requested_at: string | null;
+  tsa_anchored_at: string | null;
 }
 
 /** Pre-registered investigation protocol (Tier 2 #4 — Pre-registered Hypothesis). */

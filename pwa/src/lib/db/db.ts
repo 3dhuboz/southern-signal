@@ -132,6 +132,20 @@ async function init(): Promise<InitResult> {
     }
   }
 
+  // v10: sham/control session columns on investigations.
+  for (const col of [
+    "session_type TEXT NOT NULL DEFAULT 'active'",
+    "paired_investigation_id TEXT",
+  ]) {
+    try {
+      await exec(`ALTER TABLE investigations ADD COLUMN ${col}`, [], false);
+    } catch {
+      /* column already exists on v10+ DBs */
+    }
+  }
+
+  // v11 + v12 tables land via CREATE TABLE IF NOT EXISTS in SCHEMA_SQL.
+
   // Stamp schema version on fresh DBs.
   await exec(
     "INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('schema_version', ?)",

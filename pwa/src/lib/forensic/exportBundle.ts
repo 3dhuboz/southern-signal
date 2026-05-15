@@ -27,6 +27,12 @@ import { buildManifest } from "./manifest";
 import { computeReadiness, type ReadinessCheck, type OverallStatus } from "./preAirReadiness";
 import { buildZip, jsonEntry, textEntry, type ZipEntry } from "./zip";
 import type { AuditLogEntry, EvidenceEvent, Investigation, MediaAsset, ReviewerSignoffRow, SensorSample } from "../db/schema";
+import { getOrCreateSigningKey, signBytes } from "./signingKeyStore";
+import { buildCoseSign1, toBase64 } from "./coseSign1";
+import { sendTsaRequest, tsaResponseOk } from "./tsaClient";
+import { saveBundleSignature } from "../db/bundleSignatureRepo";
+import { VERIFY_DENO_SCRIPT } from "./verifyDeno";
+import type { TsaStatus } from "../db/schema";
 
 interface TranscriptRow {
   id: string;
@@ -83,6 +89,13 @@ App version: ${APP_VERSION}
   pass/fail. The same data appears in human-readable form on the cover
   sheet. Computed from the live state, not stored — running the build
   again later may produce a different result if sign-offs were added.
+- \`cose_signature.cbor\` — COSE_Sign1 Ed25519 signature over \`manifest.json\` bytes. Proves
+  the manifest was signed by this device's key at export time. The device public key is
+  embedded in \`manifest.json\` under \`signing.ed25519_pubkey_hex\`.
+- \`tsa_token.ts\` — RFC 3161 TimeStampResp from freetsa.org (present only when the device
+  had network access at export time; otherwise the TSA anchor is queued and applied later).
+- \`verifier.ts\` — \`deno run --allow-read --allow-net verifier.ts bundle.zip\` to re-verify
+  the chain, merkle root, and Ed25519 signature without trusting this app.
 - \`README.md\` — this file.
 - \`verify.html\` — open in a browser to re-verify the chain locally, no network.
 - \`verify.js\` — \`node verify.js audit_log.jsonl\` for the same check.
@@ -735,6 +748,98 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
       samples: baselineSamples,
     }));
   }
+
+  // ---- Tier 3 #2: COSE_Sign1 + RFC 3161 TSA anchoring ----
+  //
+  // 1. Generate (or reuse) the device Ed25519 keypair.
+  // 2. Sign the manifest JSON with COSE_Sign1.
+  // 3. Attempt TSA anchoring (non-fatal if offline — queued in DB).
+  // 4. Persist the signature record.
+  // 5. Embed the Deno verifier script.
+  //
+  // Failures here are fully non-fatal: the export proceeds even if signing
+  // or TSA fail. We log warnings but never throw.
+
+  const bundleId = crypto.randomUUID();
+  const builtAt = new Date().toISOString();
+  const merkleRootValue = scopedManifest.global_audit_chain.merkle_root;
+
+  let coseSignatureB64: string | null = null;
+  let publicKeyHex: string | null = null;
+
+  try {
+    const signingKey = await getOrCreateSigningKey();
+    publicKeyHex = signingKey.publicKeyHex;
+
+    // Sign the manifest JSON bytes.
+    const manifestBytes = new TextEncoder().encode(JSON.stringify(scopedManifest));
+    const coseEnvelope = await buildCoseSign1(manifestBytes, signBytes);
+    coseSignatureB64 = toBase64(coseEnvelope);
+
+    // Add the COSE envelope as a binary ZIP entry.
+    entries.push({ path: "cose_signature.cbor", data: coseEnvelope, mtime: new Date() });
+
+    // Attempt RFC 3161 TSA anchoring (may throw if offline).
+    let tsaStatus: TsaStatus = "pending";
+    let tsaTokenB64: string | null = null;
+    let tsaAnchoredAt: string | null = null;
+    const tsaRequestedAt = new Date().toISOString();
+
+    try {
+      const sha256 = new Uint8Array(await crypto.subtle.digest("SHA-256", coseEnvelope));
+      const tsaResp = await sendTsaRequest(sha256);
+      if (tsaResponseOk(tsaResp)) {
+        tsaStatus = "anchored";
+        tsaTokenB64 = toBase64(tsaResp);
+        tsaAnchoredAt = new Date().toISOString();
+        entries.push({ path: "tsa_token.ts", data: tsaResp, mtime: new Date() });
+      } else {
+        tsaStatus = "failed";
+      }
+    } catch {
+      // Offline or TSA unreachable — stays 'pending', anchored later.
+    }
+
+    // Persist the signature row — non-fatal on schema miss (pre-v12 installs).
+    try {
+      await saveBundleSignature({
+        bundle_id: bundleId,
+        investigation_id: investigationId ?? null,
+        built_at: builtAt,
+        merkle_root: merkleRootValue,
+        cose_signature_b64: coseSignatureB64,
+        ed25519_pubkey_b64: publicKeyHex,
+        tsa_status: tsaStatus,
+        tsa_token_b64: tsaTokenB64,
+        tsa_requested_at: tsaRequestedAt,
+        tsa_anchored_at: tsaAnchoredAt,
+      });
+    } catch (err) {
+      console.warn("[export] Failed to persist bundle_signatures row:", err);
+    }
+
+    // Add signing metadata to the manifest JSON entry (replace the one already
+    // pushed above by embedding the public key under a top-level 'signing' key).
+    // We do this by pushing a second manifest.json — the ZIP builder keeps last wins.
+    // Actually, replace the first manifest entry's data in-place is cleaner:
+    const signingManifest = {
+      ...scopedManifest,
+      signing: {
+        bundle_id: bundleId,
+        built_at: builtAt,
+        ed25519_pubkey_hex: publicKeyHex,
+        tsa_status: tsaStatus,
+      },
+    };
+    // Replace the manifest entry (it was push()'d first — index 0).
+    entries[0] = jsonEntry("manifest.json", signingManifest);
+
+  } catch (err) {
+    console.warn("[export] Signing failed (non-fatal):", err);
+  }
+
+  // Deno verifier — always included regardless of signing success.
+  entries.push(textEntry("verifier.ts", VERIFY_DENO_SCRIPT));
 
   const blob = buildZip(entries);
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");

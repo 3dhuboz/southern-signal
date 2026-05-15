@@ -18,6 +18,7 @@ import { SessionSummaryCard } from "../components/SessionSummaryCard";
 import { SimpleMissionView } from "../components/SimpleMissionView";
 import { SpiritBoxTool } from "../components/SpiritBoxTool";
 import { BaitToneTool } from "../components/BaitToneTool";
+import { TriggerObjectTracker } from "../components/TriggerObjectTracker";
 import { EmfSpikeLed } from "../components/EmfSpikeLed";
 import { SlsPoseTracker } from "../components/SlsPoseTracker";
 import { VideoEvpCaptureTile } from "../components/VideoEvpCaptureTile";
@@ -756,6 +757,11 @@ export function MissionControl() {
           culturallySensitive={culturallySensitive}
         />
       </div>
+
+      {/* TRIGGER OBJECT TRACKER — Tier 3 #5 */}
+      {session.current && (
+        <TriggerObjectTracker investigationId={session.current.id} />
+      )}
 
       {/* ITC TOOLS — rig-gated */}
       {prefs.rig.modules.spiritBox && (

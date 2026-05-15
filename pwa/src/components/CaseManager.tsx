@@ -22,6 +22,7 @@ import { clearBaseline } from "../lib/posterior/sessionBaseline";
 import { buildExportBundle, downloadBlob } from "../lib/forensic/exportBundle";
 import { autoName } from "../lib/cases/autoName";
 import type { EvidenceEvent, Investigation, MediaAsset } from "../lib/db/schema";
+import { ControlSessionPanel } from "./ControlSessionPanel";
 import { EventDebunkPanel } from "./EventDebunkPanel";
 import { ProtocolWizard } from "./ProtocolWizard";
 import { ProtocolSummaryChip } from "./ProtocolSummaryChip";
@@ -718,6 +719,17 @@ export function CaseManager() {
                       <button type="button" className={s.dispo} onClick={() => handleSetDisposition("confirmed_mundane")}>Mundane</button>
                     </div>
                   </div>
+
+                  {/* Sham/Control Sessions panel — Tier 3 #1. Rendered for
+                      both active and control sessions; the component
+                      switches its own view based on session_type. */}
+                  <ControlSessionPanel
+                    investigation={c}
+                    allInvestigations={cases}
+                    onSelectInvestigation={(id) => {
+                      setOpenCaseId(id);
+                    }}
+                  />
 
                   {sessions.length > 0 && (
                     <div className={s.sessionsBlock}>

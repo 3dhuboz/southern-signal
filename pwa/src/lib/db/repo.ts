@@ -650,6 +650,94 @@ export async function listSignoffs(): Promise<ReviewerSignoffRow[]> {
   }
 }
 
+// ---------------------- control sessions (Tier 3 #1) ----------------------
+
+/**
+ * Create a control session paired to an active investigation.
+ * The control session is run under matched conditions but with intentional
+ * null stimuli, to establish the site's baseline signal distribution.
+ */
+export async function createControlSession(
+  pairedInvestigationId: string,
+  input: { title: string; location_name?: string; notes?: string },
+): Promise<Investigation> {
+  const id = uuid();
+  const ts = nowUtc();
+  const investigation: Investigation = {
+    id,
+    title: input.title.trim(),
+    location_name: input.location_name?.trim() || null,
+    notes: input.notes?.trim() || null,
+    created_at: ts,
+    started_at: null,
+    ended_at: null,
+    status: "created",
+    disposition: null,
+    source: "pwa",
+    culturally_sensitive: 0,
+    protocol_json: null,
+    protocol_hash: null,
+    session_type: "control",
+    paired_investigation_id: pairedInvestigationId,
+  };
+  await exec(
+    `INSERT INTO investigations
+       (id, title, location_name, notes, created_at, status, source, session_type, paired_investigation_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      investigation.id,
+      investigation.title,
+      investigation.location_name,
+      investigation.notes,
+      investigation.created_at,
+      investigation.status,
+      investigation.source,
+      investigation.session_type,
+      investigation.paired_investigation_id,
+    ],
+  );
+  await appendAuditEntry({
+    actor: ACTOR_DEFAULT,
+    kind: "investigation.control_session.create",
+    payload: {
+      id,
+      title: investigation.title,
+      location_name: investigation.location_name,
+      paired_investigation_id: pairedInvestigationId,
+    },
+  });
+  await safeEnqueue({ kind: "investigation", ref_id: id, payload: investigation as unknown as Record<string, unknown> });
+  return investigation;
+}
+
+/**
+ * List all control sessions paired to a given active investigation.
+ */
+export async function listControlSessions(activeInvestigationId: string): Promise<Investigation[]> {
+  return query<Investigation>(
+    "SELECT * FROM investigations WHERE paired_investigation_id = ? AND session_type = 'control' ORDER BY created_at DESC",
+    [activeInvestigationId],
+  );
+}
+
+/**
+ * Get the active investigation a control session is paired to.
+ * Returns null if the investigation is not a control session or has no pair.
+ */
+export async function getPairedInvestigation(controlSessionId: string): Promise<Investigation | null> {
+  const rows = await query<Investigation>(
+    "SELECT * FROM investigations WHERE id = ?",
+    [controlSessionId],
+  );
+  const ctrl = rows[0];
+  if (!ctrl || !ctrl.paired_investigation_id) return null;
+  const paired = await query<Investigation>(
+    "SELECT * FROM investigations WHERE id = ?",
+    [ctrl.paired_investigation_id],
+  );
+  return paired[0] ?? null;
+}
+
 // ---------------------- base-rate queries (Tier 1 #3) ----------------------
 
 /** Per-location session statistics. Only completed sessions with a disposition count. */
