@@ -21,6 +21,8 @@
  *   compositor.stop();
  */
 
+import { OVERLAY_REGISTRY, type OverlayId } from "../overlays/registry";
+
 /**
  * Per-channel visibility toggles. Operator picks which channels show on
  * the overlay from the "Overlay channels" panel on LiveStreamView — that
@@ -146,9 +148,34 @@ export interface OverlayState {
   channels?: OverlayChannels;
 }
 
+/**
+ * Forensic-mandatory channel ids — computed once at module load from the
+ * overlay registry. Any plugin flagged `forensicMandatory: true` (currently
+ * `timestamp` + `statusPills`) is forced on by `resolveChannels` regardless
+ * of what the scene config or localStorage says. The Set is the source of
+ * truth — adding a `forensicMandatory: true` plugin to the registry auto-
+ * propagates here without further compositor edits.
+ */
+const MANDATORY_OVERLAY_IDS = new Set<OverlayId>(
+  OVERLAY_REGISTRY.filter((p) => p.forensicMandatory).map((p) => p.id),
+);
+
 /** Internal helper — fall back to all-on if the caller didn't supply channels. */
 function resolveChannels(overlay: OverlayState): OverlayChannels {
-  return overlay.channels ?? DEFAULT_OVERLAY_CHANNELS;
+  const base = overlay.channels ?? DEFAULT_OVERLAY_CHANNELS;
+  // Defense-in-depth: forensic-mandatory channels (timestamp, statusPills)
+  // are forced on regardless of scene config. A malformed scene or a bad
+  // localStorage write cannot hide the chain-of-custody strip.
+  let result = base;
+  for (const id of MANDATORY_OVERLAY_IDS) {
+    if (!result[id]) {
+      // Lazy-clone only when we actually have to flip a bit, so the hot
+      // path stays zero-alloc when channels are already correctly configured.
+      result = result === base ? { ...base } : result;
+      (result as Record<OverlayId, boolean>)[id] = true;
+    }
+  }
+  return result;
 }
 
 /** ITC channel max age — after this many ms the overlay drops the readout. */
