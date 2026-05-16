@@ -216,6 +216,74 @@
   flex: 0 0 auto;
 }
 
+/* ── Scene chip ─────────────────────────────────────────────────────────────
+   Replaces the 14-toggle channel scroll. Wider than a regular dock button;
+   tap navigates to /hunt-setup to change the active scene. */
+.sceneChip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex-shrink: 0;
+  flex-grow: 1;
+  min-width: 110px;
+  max-width: 180px;
+  height: 52px;
+  padding: 0 var(--s-6);
+  border-radius: var(--r-md);
+  border: 1.5px solid color-mix(in srgb, var(--signal) 35%, var(--border-subtle));
+  background: color-mix(in srgb, var(--signal) 8%, var(--bg-elevated));
+  cursor: pointer;
+  color: var(--signal);
+  transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+  text-decoration: none;
+}
+
+.sceneChip:active { transform: scale(0.97); }
+
+.sceneChipEyebrow {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  line-height: 1;
+}
+
+.sceneChipName {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--signal);
+  line-height: 1;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sceneChipChevron {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+:global([data-theme="daylight"]) .sceneChip {
+  background: color-mix(in srgb, var(--signal) 10%, white);
+  border-color: var(--signal-dim);
+  color: var(--signal-dim);
+}
+
+:global([data-theme="daylight"]) .sceneChipName {
+  color: var(--signal-dim);
+}
+
 /* Each channel toggle */
 .channelBtn {
   display: flex;
