@@ -174,3 +174,46 @@ export function hasPickedSceneEver(): boolean {
 export function markSceneEverPicked(): void {
   try { localStorage.setItem(HAS_PICKED_KEY, "1"); } catch { /* ignore */ }
 }
+
+// ── Per-scene overlay overrides ────────────────────────────────────────────
+//
+// HuntSetup → Customise lets the operator tweak individual overlay toggles
+// for any scene WITHOUT mutating the built-in scene definition. The result
+// is persisted as a sparse partial keyed by scene id. The Camera screen
+// reads it at mount and merges scene.overlays ∪ overrides before passing
+// the bundle through `resolveOverlaysFromScene` (forensicMandatory still
+// wins inside the registry resolver — overrides can't unhide the chain).
+
+const SCENE_OVERRIDES_KEY_PREFIX = "ss-scene-overrides:";
+
+export function loadSceneOverrides(sceneId: SceneId): Partial<Record<OverlayId, boolean>> {
+  try {
+    const raw = localStorage.getItem(SCENE_OVERRIDES_KEY_PREFIX + sceneId);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      // Coerce to the strict partial shape — drop any non-boolean entries
+      // so a corrupt payload can't poison the override stream.
+      const out: Partial<Record<OverlayId, boolean>> = {};
+      for (const [k, v] of Object.entries(parsed)) {
+        if (typeof v === "boolean") (out as Record<string, boolean>)[k] = v;
+      }
+      return out;
+    }
+  } catch { /* ignore */ }
+  return {};
+}
+
+export function saveSceneOverrides(
+  sceneId: SceneId,
+  overrides: Partial<Record<OverlayId, boolean>>,
+): void {
+  try {
+    // Empty overrides → remove the key so we don't accumulate dead entries.
+    if (!overrides || Object.keys(overrides).length === 0) {
+      localStorage.removeItem(SCENE_OVERRIDES_KEY_PREFIX + sceneId);
+      return;
+    }
+    localStorage.setItem(SCENE_OVERRIDES_KEY_PREFIX + sceneId, JSON.stringify(overrides));
+  } catch { /* ignore */ }
+}

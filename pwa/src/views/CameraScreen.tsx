@@ -38,7 +38,7 @@ import { useWakeLock } from "../lib/system/wakeLock";
 import type { OverlayChannels } from "../lib/media/canvasCompositor";
 import { resolveOverlaysFromScene } from "../lib/overlays/registry";
 import {
-  hasPickedSceneEver, loadActiveSceneId, getScene,
+  hasPickedSceneEver, loadActiveSceneId, getScene, loadSceneOverrides,
   type SceneId,
 } from "../lib/overlays/scenes";
 import { useSpiritBox } from "../lib/itc/useSpiritBox";
@@ -221,12 +221,12 @@ export function CameraScreen() {
   const [activeSceneId, setActiveSceneId] = useState<SceneId>(() => loadActiveSceneId());
   const activeScene = getScene(activeSceneId);
   const [channels, setChannels] = useState<OverlayChannels>(() =>
-    resolveOverlaysFromScene(activeScene?.overlays ?? {}),
+    resolveOverlaysFromScene({ ...(activeScene?.overlays ?? {}), ...loadSceneOverrides(activeSceneId) }),
   );
   // Whenever the active scene changes (operator picked a different one from
   // the dock chip or HuntSetup), reset channels to that scene's resolution.
   useEffect(() => {
-    setChannels(resolveOverlaysFromScene(activeScene?.overlays ?? {}));
+    setChannels(resolveOverlaysFromScene({ ...(activeScene?.overlays ?? {}), ...loadSceneOverrides(activeSceneId) }));
   }, [activeSceneId, activeScene]);
   const handleChannelChange = useCallback((key: keyof OverlayChannels, value: boolean) => {
     setChannels((prev) => prev[key] === value ? prev : { ...prev, [key]: value });

@@ -51,20 +51,32 @@
 .scene {
   display: flex;
   flex-direction: column;
-  gap: 6px;
   width: 100%;
-  padding: var(--s-12);
   border-radius: var(--r-md);
   border: 1.5px solid var(--border-subtle);
   background: var(--bg-elevated);
   text-align: left;
-  cursor: pointer;
   transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+  font: inherit;
+  color: inherit;
+  overflow: hidden;
+}
+
+.sceneButton {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding: var(--s-12);
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
   font: inherit;
   color: inherit;
 }
 
-.scene:active { transform: scale(0.995); }
+.sceneButton:active { transform: scale(0.995); }
 
 .sceneSelected {
   border-color: color-mix(in srgb, var(--signal) 55%, transparent);
@@ -220,4 +232,232 @@
 :global([data-theme="daylight"]) .scene {
   background: rgba(255, 255, 255, 0.9);
   border-color: var(--border-default);
+}
+
+/* ── Customise overlays expand/collapse ─────────────────────────────────── */
+
+.customiseToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-8);
+  width: 100%;
+  padding: 10px var(--s-12);
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.customiseToggle:hover { color: var(--text-primary); }
+
+.sceneSelected .customiseToggle {
+  border-top-color: color-mix(in srgb, var(--signal) 22%, transparent);
+  color: color-mix(in srgb, var(--signal) 80%, var(--text-secondary));
+}
+
+.customiseToggleLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.customiseCountBadge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--signal) 22%, transparent);
+  color: var(--signal);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.customiseChevron {
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-muted);
+}
+
+.customisePanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-12);
+  padding: var(--s-10) var(--s-12) var(--s-12);
+  background: color-mix(in srgb, var(--bg-inset) 60%, transparent);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.sceneSelected .customisePanel {
+  border-top-color: color-mix(in srgb, var(--signal) 18%, transparent);
+}
+
+.customiseGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.customiseGroupLabel {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding-bottom: 4px;
+  border-bottom: 1px dashed var(--border-subtle);
+}
+
+.customiseList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.customiseRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-10);
+  padding: 8px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 60%, transparent);
+}
+
+.customiseRow:last-child { border-bottom: none; }
+
+.customiseRowText {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.customiseRowHead {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.customiseRowName {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-primary);
+}
+
+.customiseRowDesc {
+  font-family: var(--font-body, "Inter", sans-serif);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  margin: 3px 0 0;
+}
+
+.alwaysOnChip {
+  display: inline-block;
+  padding: 1px 7px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--signal) 18%, transparent);
+  color: var(--signal);
+  border: 1px solid color-mix(in srgb, var(--signal) 40%, transparent);
+}
+
+.sensorWarnChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--warning, #f5b86e) 16%, transparent);
+  color: var(--warning, #f5b86e);
+  border: 1px solid color-mix(in srgb, var(--warning, #f5b86e) 40%, transparent);
+  cursor: help;
+}
+
+.customiseSwitch {
+  position: relative;
+  flex-shrink: 0;
+  display: inline-block;
+  width: 36px;
+  height: 22px;
+  margin-top: 2px;
+  cursor: pointer;
+}
+
+.customiseSwitch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.customiseSwitchTrack {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.customiseSwitchTrack::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  transition: transform 120ms ease, background 120ms ease, box-shadow 120ms ease;
+}
+
+.customiseSwitch input:checked + .customiseSwitchTrack {
+  background: var(--signal-wash);
+  border-color: var(--signal-dim);
+}
+
+.customiseSwitch input:checked + .customiseSwitchTrack::after {
+  transform: translateX(14px);
+  background: var(--signal);
+  box-shadow: 0 0 6px var(--signal);
+}
+
+.customiseSwitchDisabled { cursor: not-allowed; opacity: 0.6; }
+.customiseSwitchDisabled input { cursor: not-allowed; }
+
+.customiseFallbackWarn {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--warning, #f5b86e);
+  padding: 6px 8px;
+  border: 1px dashed color-mix(in srgb, var(--warning, #f5b86e) 40%, transparent);
+  border-radius: var(--r-sm);
 }
