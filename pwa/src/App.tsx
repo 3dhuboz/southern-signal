@@ -20,6 +20,7 @@ const MissionControl = lazy(() => import("./views/MissionControl").then((m) => (
 const Review = lazy(() => import("./views/Review").then((m) => ({ default: m.Review })));
 const Setup = lazy(() => import("./views/Setup").then((m) => ({ default: m.Setup })));
 const EvpReview = lazy(() => import("./views/EvpReview").then((m) => ({ default: m.EvpReview })));
+const HuntSetup = lazy(() => import("./views/HuntSetup").then((m) => ({ default: m.HuntSetup })));
 const Estes = lazy(() => import("./views/Estes").then((m) => ({ default: m.Estes })));
 const EvidenceBrief = lazy(() => import("./views/EvidenceBrief").then((m) => ({ default: m.EvidenceBrief })));
 const Research = lazy(() => import("./views/Research").then((m) => ({ default: m.Research })));
@@ -89,6 +90,7 @@ export default function App() {
         <Suspense fallback={<RouteFallback />}>
           <Routes>
             <Route path="/" element={<CameraScreen />} />
+            <Route path="/hunt-setup" element={<HuntSetup />} />
             {/* MissionControl now lives at /lab — Pro / Lab view, demoted from
                 primary nav so the Camera screen is the entire default surface. */}
             <Route path="/lab" element={<MissionControl />} />

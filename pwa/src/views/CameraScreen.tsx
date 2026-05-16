@@ -36,9 +36,14 @@ import { useSensors } from "../lib/sensors/useSensors";
 import { setCurrent, setPermissionsGranted, useSession } from "../lib/session";
 import { useWakeLock } from "../lib/system/wakeLock";
 import type { OverlayChannels } from "../lib/media/canvasCompositor";
-import { loadOverlayChannels, saveOverlayChannels } from "../lib/media/overlayChannelStorage";
+import { resolveOverlaysFromScene } from "../lib/overlays/registry";
+import {
+  hasPickedSceneEver, loadActiveSceneId, getScene,
+  type SceneId,
+} from "../lib/overlays/scenes";
 import { useSpiritBox } from "../lib/itc/useSpiritBox";
 import { useOvilus } from "../lib/itc/useOvilus";
+import { Navigate, useNavigate } from "react-router-dom";
 import s from "./CameraScreen.module.css";
 
 // ── Dock button definitions ─────────────────────────────────────────────────
@@ -392,12 +397,40 @@ export function CameraScreen() {
     captionMs: 7000,
   });
 
-  // Overlay channels — lifted here so the dock can control them
-  const [channels, setChannels] = useState<OverlayChannels>(() => loadOverlayChannels());
-  useEffect(() => { saveOverlayChannels(channels); }, [channels]);
+  // ── Scene-driven overlay channels ──────────────────────────────────────────
+  // The active scene (chosen in HuntSetup) is the source of truth for which
+  // overlays burn into the broadcast frame. We resolve the scene's sparse
+  // overlay map against the registry once at mount — operator can still
+  // toggle individual channels for the session, but the next session reload
+  // will re-resolve from whichever scene is active in localStorage.
+  const [activeSceneId, setActiveSceneId] = useState<SceneId>(() => loadActiveSceneId());
+  const activeScene = getScene(activeSceneId);
+  const [channels, setChannels] = useState<OverlayChannels>(() =>
+    resolveOverlaysFromScene(activeScene?.overlays ?? {}),
+  );
+  // Whenever the active scene changes (operator picked a different one from
+  // the dock chip or HuntSetup), reset channels to that scene's resolution.
+  useEffect(() => {
+    setChannels(resolveOverlaysFromScene(activeScene?.overlays ?? {}));
+  }, [activeSceneId, activeScene]);
   const handleChannelChange = useCallback((key: keyof OverlayChannels, value: boolean) => {
     setChannels((prev) => prev[key] === value ? prev : { ...prev, [key]: value });
   }, []);
+  void setActiveSceneId; // Reserved for the scene-chip switch in Phase 4.
+
+  // First-run redirect: if the operator has NEVER picked a scene, send them
+  // to HuntSetup before showing the camera surface. Once they pick once,
+  // the scene persists and this hook becomes a no-op on every subsequent boot.
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (!hasPickedSceneEver()) {
+      navigate("/hunt-setup", { replace: true });
+    }
+  }, [navigate]);
+  if (!hasPickedSceneEver()) {
+    // Avoid one frame of camera-screen render before the redirect fires.
+    return <Navigate to="/hunt-setup" replace />;
+  }
 
   // Keep screen awake during recording
   useWakeLock(running);
