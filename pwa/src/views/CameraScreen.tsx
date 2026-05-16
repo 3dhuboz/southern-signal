@@ -3,13 +3,16 @@
  *
  * The camera fills the full viewport. Sensor data, posterior probability,
  * and acoustic sector are composited directly onto the live video as
- * broadcast-grade overlays. A floating dock above the bottom nav lets the
- * operator toggle each overlay channel on/off with a single tap.
+ * broadcast-grade overlays. The chosen Scene (picked in HuntSetup before
+ * the hunt) is the single source of truth for which overlays burn into
+ * the frame; this screen exposes only the broadcast actions (Record /
+ * Go Live / Flip / Torch) plus ITC quick-toggles (Spirit Box / Ovilus).
  *
  * All sensor/posterior management that MissionControl does is reproduced
  * here in a leaner form: same hooks, same Bayesian engine, minimal UI.
- * Navigating to /investigate mounts MissionControl with its full panel
- * suite; navigating back to / mounts this screen with fresh hooks.
+ * Pro / Lab users get the full MissionControl review surface at /lab
+ * (gated behind prefs.proMode); the legacy /investigate path remains as
+ * a back-compat alias.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
