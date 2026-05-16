@@ -14,10 +14,11 @@ import "./styles/global.css";
 
 // Code-split secondary routes — CameraScreen is the entry screen (kept eager
 // for fast first paint). Everything else loads on demand over field connections.
+// MissionControl is demoted to `/lab` — kept available for pro users behind
+// a Setup toggle, but the CameraScreen is the entire product surface.
 const MissionControl = lazy(() => import("./views/MissionControl").then((m) => ({ default: m.MissionControl })));
 const Review = lazy(() => import("./views/Review").then((m) => ({ default: m.Review })));
 const Setup = lazy(() => import("./views/Setup").then((m) => ({ default: m.Setup })));
-const Floorplan = lazy(() => import("./views/Floorplan").then((m) => ({ default: m.Floorplan })));
 const EvpReview = lazy(() => import("./views/EvpReview").then((m) => ({ default: m.EvpReview })));
 const Estes = lazy(() => import("./views/Estes").then((m) => ({ default: m.Estes })));
 const EvidenceBrief = lazy(() => import("./views/EvidenceBrief").then((m) => ({ default: m.EvidenceBrief })));
@@ -88,12 +89,15 @@ export default function App() {
         <Suspense fallback={<RouteFallback />}>
           <Routes>
             <Route path="/" element={<CameraScreen />} />
+            {/* MissionControl now lives at /lab — Pro / Lab view, demoted from
+                primary nav so the Camera screen is the entire default surface. */}
+            <Route path="/lab" element={<MissionControl />} />
+            {/* Back-compat alias so older bookmarks and in-app links keep working. */}
             <Route path="/investigate" element={<MissionControl />} />
             <Route path="/review" element={<Review />} />
             <Route path="/evp" element={<EvpReview />} />
             <Route path="/estes" element={<Estes />} />
             <Route path="/setup" element={<Setup />} />
-            <Route path="/floorplan" element={<Floorplan />} />
             <Route path="/brief" element={<EvidenceBrief />} />
             <Route path="/brief/:investigationId" element={<EvidenceBrief />} />
             <Route path="/research" element={<Research />} />

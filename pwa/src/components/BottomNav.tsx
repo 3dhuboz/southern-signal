@@ -30,18 +30,8 @@ const items: NavItem[] = [
       </svg>
     ),
   },
-  {
-    to: "/investigate",
-    label: "Investigate",
-    icon: (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <rect x="4" y="9" width="2" height="6" rx="1" fill="currentColor" />
-        <rect x="9" y="5" width="2" height="14" rx="1" fill="currentColor" />
-        <rect x="14" y="7" width="2" height="10" rx="1" fill="currentColor" />
-        <rect x="19" y="3" width="2" height="18" rx="1" fill="currentColor" />
-      </svg>
-    ),
-  },
+  // Investigate / MissionControl is now `/lab` — Pro-only, surfaced via a Setup
+  // toggle. The default bottom nav stays focused on the broadcast-rig flow.
   {
     to: "/evp",
     label: "EVP",
@@ -72,17 +62,6 @@ const items: NavItem[] = [
         <line x1="12" y1="20" x2="12" y2="22" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
         <line x1="2" y1="12" x2="4" y2="12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
         <line x1="20" y1="12" x2="22" y2="12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-      </svg>
-    ),
-  },
-  {
-    to: "/floorplan",
-    label: "Floorplan",
-    icon: (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" strokeWidth="1.6" />
-        <path d="M3 12h6M9 12v9M9 12h6M15 12V3M15 12h6" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-        <circle cx="6" cy="17" r="1.4" fill="currentColor" />
       </svg>
     ),
   },
@@ -168,12 +147,10 @@ export function BottomNav() {
       }
     }
     if (prefs.community.enabled) {
-      // Map slots after Floorplan (or appended if Floorplan isn't visible
-      // in some future config). Community is a "look at the wider field"
-      // entry, so it sits at the right edge of the nav.
-      const fpIdx = out.findIndex((i) => i.to === "/floorplan");
-      if (fpIdx < 0) out = [...out, communityItem];
-      else out = [...out.slice(0, fpIdx + 1), communityItem, ...out.slice(fpIdx + 1)];
+      // Community sits at the right edge of the nav — the "look at the wider
+      // field" entry. Floorplan was previously its anchor; appended at the
+      // end now that Floorplan is gone.
+      out = [...out, communityItem];
     }
     return out;
   }, [researchEnabled, dossierBadge, prefs.community.enabled]);
