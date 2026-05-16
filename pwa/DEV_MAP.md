@@ -1,6 +1,6 @@
 # Southern Signal — Dev Map
 
-**Last updated:** 2026-05-16 (K-II + REM Pod use raw EMF z-score for instant response; OFFLINE pill in canvas status row when recording without connectivity; `useNetworkOnline` hook; audio level meter overlay channel; REC / LIVE pills show burnt-in elapsed-time `MM:SS`)  
+**Last updated:** 2026-05-16 (strategy pivot: streaming-first product. Floorplan cut, MissionControl demoted to `/lab`, overlay-plugin registry + Scenes architecture, HuntSetup pre-flight picker, dock collapsed to a single scene chip)  
 **Schema version:** 14  
 **Stack:** React 19 · Vite · TypeScript · SQLite-wasm (OPFS) · CSS Modules
 
@@ -44,19 +44,23 @@ so-i-ve-always-wanted-to/
 
 | Path | Component | Purpose |
 |------|-----------|---------|
-| `/` | `CameraScreen` | Primary screen — full-viewport camera + sensor overlay dock |
-| `/investigate` | `MissionControl` | Full investigation panel — all sensors, posterior, tools |
+| `/` | `CameraScreen` | Primary screen — full-viewport camera + scene-chip dock. First-run redirects to `/hunt-setup`. |
+| `/hunt-setup` | `HuntSetup` | Pre-flight scene picker. The PRIMARY configuration surface — operators pick a scene here BEFORE the hunt. |
+| `/lab` | `MissionControl` | **Pro / Lab view** — full investigation panel with Bayesian surfaces, sensors panel, tools. Demoted from primary nav; surface via Setup → Pro toggle. |
+| `/investigate` | `MissionControl` | Back-compat alias for `/lab` — older deep-links keep working. |
 | `/review` | `Review` | Case review — null-rate, case manager, chain status, export |
 | `/evp` | `EvpReview` | EVP playback, trimming, clip export |
 | `/estes` | `Estes` | Estes board — two-phone spirit-box session |
 | `/setup` | `Setup` | Device config — audio, cloud AI, audit log, pre-air readiness |
-| `/floorplan` | `Floorplan` | Site sketch and annotation |
 | `/brief` | `EvidenceBrief` | Auto-resolve most-recent investigation → printable one-pager |
 | `/brief/:investigationId` | `EvidenceBrief` | Specific case one-pager |
 | `/research` | `Research` | Cultural significance, heritage, incident browser |
 | `/dossier/:id` | `DossierPrint` | Printable AI Investigator research dossier |
 | `/community` | `CommunityMap` | Leaflet map of community investigation pins |
 | `/about` | `About` | App info, credits, team attribution |
+
+**Cut routes (2026-05-16 strategy pivot):**
+- `/floorplan` — deleted. Out of scope for the streaming-first product framing.
 
 **Root-level wrappers (always mounted):**  
 `AcknowledgementGate` → `OnboardingTour` → `AppHeader` + `BottomNav` + three banners (ServiceWorkerUpdate, CivilTwilight, InterruptedSession).
@@ -200,6 +204,24 @@ const emitEvidence = useCallback(async (input) => {
 
 **`OverlayChannels` interface** (14 toggles — 10 original + 3 virtual instruments + audio meter):
 `activityPill` · `posteriorPill` · `edgeGlow` · `sensors` · `itc` · `directionArrow` · `caption` · `timestamp` · `cornerBrackets` · `statusPills` · `kiiMeter` · `remPod` · `nightVision` · `audioMeter`
+
+**Overlay plugin registry** (`lib/overlays/registry.ts`) — the declarative source-of-truth for which channels exist + their metadata. Each entry: `id`, `name`, `description`, `group`, `defaultEnabled`, `forensicMandatory?`, `sensors[]`, `proOnly?`. Adding a new overlay is a 3-step contract:
+1. Add the boolean field to `OverlayChannels` (canvasCompositor.ts).
+2. Add the draw call to `renderFrame` (canvasCompositor.ts).
+3. Add the `OverlayPlugin` entry to `OVERLAY_REGISTRY` so it's discoverable to Scenes + HuntSetup.
+
+`resolveOverlaysFromScene()` merges a scene's sparse overlay map against registry defaults, forcing `forensicMandatory` channels always-on regardless of the scene.
+
+**Scenes** (`lib/overlays/scenes.ts`) — named bundles. The OBS-style preset pattern; pre-flight config instead of mid-hunt toggling. Five built-in scenes:
+- `walkthrough` (default for first-time users — moving, lights on, sensor data visible)
+- `spirit_box_session` (stationary, ITC running, selfie cam, NV on)
+- `vigil` (cinematic, minimal HUD — audio meter + timestamp only)
+- `calibration` (pre-session raw-data capture, no inference)
+- `pro_lab` (Bayesian surfaces visible — review-grade only; NOT recommended for general streaming)
+
+Each scene: sparse `overlays: Partial<Record<OverlayId, boolean>>` + tool config (Spirit Box / Ovilus auto-start) + camera defaults (torch, facing). Active scene + first-run-picked flag persisted via localStorage (`ss-active-scene`, `ss-has-picked-scene`).
+
+**Skeptical-panel rule** — `activityPill`, `posteriorPill`, `edgeGlow` are `proOnly: true` and `defaultEnabled: false`. They surface in the `pro_lab` scene only. The default broadcast frame shows raw sensor data, NOT "probability of haunting" Bayesian UI that a general audience could misread as a ghost detector.
 
 **Virtual instruments** (all off by default — operator enables per session):
 - `kiiMeter` → `drawKiiMeter()` — 5-LED bar drawn bottom-left, colour-mapped G·G·Y·O·R. Lit count from `kiiLedFromZScore(emfZScore)` when present (thresholds 1.5/2.5/3.5/5.0 → 1-5 LEDs) for instant EMF response; falls back to `activityBand` mapping otherwise.
