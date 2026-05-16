@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef } from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AcknowledgementGate } from "./components/AcknowledgementGate";
 import { OnboardingTour } from "./components/OnboardingTour";
 import { AppHeader } from "./components/AppHeader";
@@ -34,6 +34,19 @@ function RouteFallback() {
       Loading…
     </div>
   );
+}
+
+/**
+ * AppHeader is suppressed on the `/` camera route — the camera surface
+ * mimics the system camera (Snapchat / iPhone-camera) and floats its
+ * own corner pills directly over the live video. Every secondary route
+ * (Setup, EVP, Review, Lab, etc.) keeps the standard sticky header so
+ * navigation stays grounded outside the camera.
+ */
+function ChromeHeader() {
+  const location = useLocation();
+  if (location.pathname === "/") return null;
+  return <AppHeader />;
 }
 
 export default function App() {
@@ -82,7 +95,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <AppHeader />
+      <ChromeHeader />
       <ServiceWorkerUpdateBanner />
       <CivilTwilightBanner />
       <InterruptedSessionBanner />

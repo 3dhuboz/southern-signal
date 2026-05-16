@@ -1,14 +1,21 @@
 /**
- * CameraScreen — the camera-first primary route.
+ * CameraScreen — the camera-first primary route (Snapchat / iPhone-camera grade).
  *
- * The camera fills the full viewport. Sensor data, posterior probability,
- * and acoustic sector are composited directly onto the live video as
- * broadcast-grade overlays. The chosen Scene (picked in HuntSetup before
- * the hunt) is the single source of truth for which overlays burn into
- * the frame; this screen exposes only the broadcast actions (Record /
- * Go Live / Flip / Torch) plus ITC quick-toggles (Spirit Box / Ovilus).
+ * The camera fills ~96% of the viewport. The only persistent on-screen
+ * controls are:
+ *   - top-left floating pill — REC / LIVE indicator + elapsed time
+ *   - top-right floating pill — active scene name (tap → SceneSheet)
+ *   - bottom-center BIG SHUTTER — 88×88 single primary action (Begin / End)
+ *   - slim semi-transparent secondary dock — Scenes / Settings / Clip Rec
  *
- * All sensor/posterior management that MissionControl does is reproduced
+ * Removed from the dock: ScreenRecord (top-of-app feature), Flip (now a
+ * double-tap on the camera wrap), Torch (deferred to a long-press in a
+ * later commit), Spirit Box / Ovilus (scene-managed via tools.spiritBox
+ * / tools.ovilus autoStart — commit d133dae wired these). The 14-toggle
+ * channel grid was already excised; this commit removes the residual chip
+ * row that lingered around it.
+ *
+ * All sensor / posterior management that MissionControl does is reproduced
  * here in a leaner form: same hooks, same Bayesian engine, minimal UI.
  * Pro / Lab users get the full MissionControl review surface at /lab
  * (gated behind prefs.proMode); the legacy /investigate path remains as
@@ -18,7 +25,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LiveStreamView } from "../components/LiveStreamView";
 import { ScreenRecordButton } from "../components/ScreenRecordButton";
+import { SceneSheet } from "../components/SceneSheet";
 import { useLiveBroadcastState } from "../lib/system/liveBroadcast";
+import { usePushToTalk } from "../lib/audio/usePushToTalk";
+import { useLongPress, useDoubleTap } from "../lib/gestures";
 import { useLiveNarrator } from "../lib/posterior/liveNarrator";
 import { LiveAnalyzer } from "../lib/audio/liveAnalyzer";
 import { type SectorReading } from "../lib/audio/sectorIndicator";
@@ -42,7 +52,7 @@ import { useWakeLock } from "../lib/system/wakeLock";
 import type { OverlayChannels } from "../lib/media/canvasCompositor";
 import { resolveOverlaysFromScene } from "../lib/overlays/registry";
 import {
-  hasPickedSceneEver, loadActiveSceneId, getScene, loadSceneOverrides,
+  hasPickedSceneEver, loadActiveSceneId, saveActiveSceneId, getScene, loadSceneOverrides,
   type SceneId,
 } from "../lib/overlays/scenes";
 import { useSpiritBox } from "../lib/itc/useSpiritBox";
@@ -51,9 +61,11 @@ import { Navigate, useNavigate } from "react-router-dom";
 import s from "./CameraScreen.module.css";
 
 // ── Dock button icons ──────────────────────────────────────────────────────
-// The 14-toggle channel grid is gone — overlay configuration now happens in
-// HuntSetup via Scenes (see lib/overlays/scenes.ts). The dock keeps only the
-// broadcast action icons and the ITC tool toggles.
+// The chrome-heavy 14-toggle channel grid AND the secondary action grid
+// (Flip / Torch / SBX / OVL) are gone. Flip is a double-tap gesture on the
+// camera wrap; torch is reserved for a long-press gesture (post-V1); SBX/OVL
+// are scene-managed via tools.autoStart. The slim dock keeps just the icons
+// for Settings (gear) and the still-supported Clip-Record button.
 
 function IconRecord() {
   return (
@@ -62,71 +74,20 @@ function IconRecord() {
     </svg>
   );
 }
-function IconLive() {
+function IconSettings() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
-      <circle cx="12" cy="15" r="2.5" fill="currentColor" />
-      <path d="M8 11.5 A5.5 5.5 0 0 1 16 11.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-      <path d="M5 8.5 A8.5 8.5 0 0 1 19 8.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.5" />
-    </svg>
-  );
-}
-function IconFlip() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
-      {/* Camera body */}
-      <rect x="2" y="7" width="20" height="14" rx="2.5" stroke="currentColor" strokeWidth="1.5" />
-      {/* Lens */}
-      <circle cx="12" cy="14" r="4" stroke="currentColor" strokeWidth="1.4" />
-      {/* Flip-arrow arc above body */}
-      <path d="M9 4.5 Q12 2 15 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
-      <polyline points="13.5,3 15,4.5 13.5,6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-function IconTorch() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
-      {/* Beam cone */}
-      <path d="M9 2 H15 L20 21 H4 Z" fill="currentColor" opacity="0.2" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-      {/* Lens housing */}
-      <rect x="8.5" y="0.5" width="7" height="3.5" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
-      {/* Centre highlight */}
-      <circle cx="12" cy="2.25" r="1" fill="currentColor" />
-    </svg>
-  );
-}
-function IconSpiritBox() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
-      {/* Radio sweep arcs */}
-      <path d="M5.5 8 A8.5 8.5 0 0 1 18.5 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M8 10.5 A5.5 5.5 0 0 1 16 10.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" opacity="0.6" />
-      {/* Tuner dial */}
-      <circle cx="12" cy="16" r="3.5" stroke="currentColor" strokeWidth="1.5" />
-      <line x1="12" y1="12.5" x2="12" y2="9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      <circle cx="12" cy="16" r="1.3" fill="currentColor" />
-    </svg>
-  );
-}
-function IconOvilus() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
-      {/* Speech bubble */}
-      <path d="M3 4 H21 Q23 4 23 6 V14 Q23 16 21 16 H13.5 L9.5 20.5 L9.5 16 H3 Q1 16 1 14 V6 Q1 4 3 4 Z"
-        stroke="currentColor" strokeWidth="1.4" fill="none" />
-      {/* Three dots — word generation */}
-      <circle cx="8"  cy="10" r="1.4" fill="currentColor" />
-      <circle cx="12" cy="10" r="1.4" fill="currentColor" />
-      <circle cx="16" cy="10" r="1.4" fill="currentColor" />
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
   );
 }
 
+/** mm:ss formatter for the top-left REC pill. */
 function fmtSecs(total: number): string {
   const m = Math.floor(total / 60);
   const s = total % 60;
-  return `${m}:${String(s).padStart(2, "0")}`;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 
@@ -240,13 +201,31 @@ export function CameraScreen() {
   const handleChannelChange = useCallback((key: keyof OverlayChannels, value: boolean) => {
     setChannels((prev) => prev[key] === value ? prev : { ...prev, [key]: value });
   }, []);
-  void setActiveSceneId; // Reserved for the scene-chip switch in Phase 4.
+
+  // ── Scene sheet (bottom-of-screen scene picker) ──────────────────────────
+  // The top-right pill opens this — replaces the navigate("/hunt-setup") jump
+  // for in-session scene swaps so the operator never leaves the camera.
+  const [sceneSheetOpen, setSceneSheetOpen] = useState(false);
+
+  // ── Gesture handlers ─────────────────────────────────────────────────────
+  // Double-tap on the camera wrap flips between rear/front camera (replaces
+  // the old dock Flip button). Long-press primes Push-To-Talk for EVP capture
+  // (Worker A's audio module). usePushToTalk is the activation hook — it
+  // mounts the audio pipeline while `pttActive` is true and tears it down
+  // when released.
+  const [pttActive, setPttActive] = useState(false);
+  usePushToTalk(pttActive);
+  const longPressProps = useLongPress(setPttActive);
+  const doubleTapProps = useDoubleTap(() => { void flipCameraRef.current?.(); });
 
   // ITC hooks read the scene's tools config — Spirit Box Session auto-starts
   // the spirit box; Pro/Lab leaves Ovilus to manual. Hooks live after scene
   // resolution so the autoStart flag is always coherent with the active scene.
   const spiritBox = useSpiritBox(itcEntropy, running, activeScene?.tools.spiritBox === true);
   const ovilus    = useOvilus(itcEntropy, running, activeScene?.tools.ovilus === true);
+  // Spirit Box / Ovilus state is consumed via the live overlay compositor;
+  // the camera surface no longer renders chrome around them.
+  void spiritBox; void ovilus;
 
   // First-run redirect: if the operator has NEVER picked a scene, send them
   // to HuntSetup before showing the camera surface. Once they pick once,
@@ -415,25 +394,38 @@ export function CameraScreen() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
-  const sessionBtnLabel = busy ? "…" : running ? "End" : "Begin";
-  const sessionBtnClass = `${s.sessionBtn} ${running ? s.sessionBtnStop : s.sessionBtnBegin}`;
+  // Top-left status pill — REC > LIVE > READY > IDLE. The recording / live
+  // state from useLiveBroadcastState owns priority because they're billable
+  // capture; the session-running state is the lowest-priority indicator.
+  const topPillState = broadcastState.recording
+    ? "rec"
+    : broadcastState.broadcasting
+      ? "live"
+      : running
+        ? "ready"
+        : "idle";
+  const topPillClass =
+    topPillState === "rec"  ? `${s.cornerPillTopLeft} ${s.cornerPillRec}`  :
+    topPillState === "live" ? `${s.cornerPillTopLeft} ${s.cornerPillLive}` :
+    s.cornerPillTopLeft;
+  const topPillLabel =
+    topPillState === "rec"   ? `REC ${fmtSecs(sessionSecs)}` :
+    topPillState === "live"  ? `LIVE ${fmtSecs(sessionSecs)}` :
+    topPillState === "ready" ? `READY ${fmtSecs(sessionSecs)}` :
+    "STANDBY";
 
-  // Go Live disabled unless camera is open (can always stop an active broadcast)
-  const liveDisabled = broadcastState.broadcasting
-    ? false
-    : !cameraState.streamOn || !cameraState.whipConfigured;
-  const liveBtnTitle = broadcastState.broadcasting
-    ? "End live"
-    : !cameraState.streamOn
-      ? "Open camera first"
-      : !cameraState.whipConfigured
-        ? "Set WHIP URL in Setup → Broadcast first"
-        : "Go live";
+  const sceneName = activeScene?.name ?? "Walkthrough";
 
   return (
     <div className={s.screen}>
-      {/* Full-screen camera compositor */}
-      <div className={s.cameraWrap}>
+      {/* Full-bleed camera. Gesture wrap captures double-tap (flip) and
+          long-press (push-to-talk). Pointer/touch handlers spread on the
+          OUTER wrap so they fire above LiveStreamView's internal canvas. */}
+      <div
+        className={s.cameraWrap}
+        {...longPressProps}
+        {...doubleTapProps}
+      >
         <LiveStreamView
           investigationId={session.current?.id ?? null}
           running={running}
@@ -460,147 +452,110 @@ export function CameraScreen() {
           onCameraState={handleCameraState}
           fullscreen
         />
-      </div>
 
-      {/* Sensor dock — floats above the bottom nav */}
-      <div className={s.dock} role="toolbar" aria-label="Camera controls">
-        {/* Session control */}
+        {/* ── Top-left floating pill: REC / LIVE / READY indicator ────── */}
+        <div
+          className={topPillClass}
+          role="status"
+          aria-live="polite"
+          aria-label={`Session: ${topPillLabel}`}
+        >
+          <span className={s.cornerPillDot} aria-hidden="true" />
+          <span className={s.cornerPillText}>{topPillLabel}</span>
+        </div>
+
+        {/* ── Top-right floating pill: active scene name (opens SceneSheet) ── */}
         <button
           type="button"
-          className={sessionBtnClass}
+          className={s.cornerPillTopRight}
+          onClick={() => setSceneSheetOpen(true)}
+          aria-label={`Scene: ${sceneName}. Tap to change.`}
+          title="Change scene"
+        >
+          <span className={s.cornerPillText}>{sceneName}</span>
+          <span className={s.cornerPillChevron} aria-hidden="true">▾</span>
+        </button>
+
+        {/* ── BIG SHUTTER — primary action, Snapchat-grade. ─────────────
+             88×88 circular button anchored above the slim dock. Red when
+             idle (= "Begin"); white with red square when recording (= "End").
+             This is the ONE button that should dominate the bottom of the
+             viewport. Disabled while busy so the operator gets a "no-op
+             during transition" pulse rather than a double-fire. */}
+        <button
+          type="button"
+          className={`${s.shutter} ${running ? s.shutterRecording : ""}`.trim()}
           onClick={running ? handleStop : handleBegin}
           disabled={busy}
           aria-label={running ? "End session" : "Begin session"}
+          title={running ? "End session" : "Begin session"}
         >
-          <span className={s.sessionDot} aria-hidden="true" />
-          <span className={s.sessionLabel}>{sessionBtnLabel}</span>
-          {running && <span className={s.sessionTimer}>{fmtSecs(sessionSecs)}</span>}
+          <span className={s.shutterCore} aria-hidden="true" />
         </button>
 
-        {/* Record compositor clip */}
-        <button
-          type="button"
-          className={`${s.broadcastBtn} ${broadcastState.recording ? s.broadcastBtnRec : ""}`.trim()}
-          onClick={() => recordToggleRef.current?.()}
-          disabled={!cameraState.streamOn}
-          aria-pressed={broadcastState.recording}
-          aria-label={broadcastState.recording ? "Stop recording" : "Record clip"}
-          title={broadcastState.recording ? "Stop recording" : "Record clip"}
-        >
-          <span className={s.channelIcon} aria-hidden="true"><IconRecord /></span>
-          <span className={s.channelLabel}>{broadcastState.recording ? "Stop" : "Rec"}</span>
-        </button>
-
-        {/* Go Live via WHIP */}
-        <button
-          type="button"
-          className={`${s.broadcastBtn} ${broadcastState.broadcasting ? s.broadcastBtnLive : ""}`.trim()}
-          onClick={() => liveToggleRef.current?.()}
-          disabled={liveDisabled}
-          aria-pressed={broadcastState.broadcasting}
-          aria-label={broadcastState.broadcasting ? "End live broadcast" : "Go live"}
-          title={liveBtnTitle}
-        >
-          <span className={s.channelIcon} aria-hidden="true"><IconLive /></span>
-          <span className={s.channelLabel}>{broadcastState.broadcasting ? "End" : "Live"}</span>
-        </button>
-
-        {/* Screen recorder — captures raw device pixels (WebM on Android; iOS
-            native via Control Center with audit-chain timestamps). Uses the
-            dock's classNames so it matches the other 52×52 tile buttons. */}
-        <ScreenRecordButton
-          investigationId={session.current?.id ?? null}
-          classNames={{
-            idle:   s.broadcastBtn,
-            active: `${s.broadcastBtn} ${s.broadcastBtnRec}`,
-            icon:   s.channelIcon,
-            label:  s.channelLabel,
-          }}
-        />
-
-        {/* Camera flip — rear ↔ front. Label shows the current lens so the
-            operator can confirm at a glance which camera is live. */}
-        <button
-          type="button"
-          className={s.broadcastBtn}
-          onClick={() => flipCameraRef.current?.()}
-          disabled={!cameraState.streamOn}
-          aria-label={cameraState.facingMode === "environment" ? "Switch to front camera" : "Switch to rear camera"}
-          title="Flip camera"
-        >
-          <span className={s.channelIcon} aria-hidden="true"><IconFlip /></span>
-          <span className={s.channelLabel}>{cameraState.facingMode === "environment" ? "Rear" : "Front"}</span>
-        </button>
-
-        {/* Torch — only shown when the active camera reports torch support.
-            Hidden entirely on cameras that lack a torch rather than showing
-            a permanently-disabled tile. */}
-        {cameraState.torchSupported && (
+        {/* ── Slim secondary dock — Scenes · Settings · Clip Rec ────────
+             Sits BETWEEN the shutter and the BottomNav. Semi-transparent
+             gradient so the camera feed bleeds through. */}
+        <div className={s.dockSlim} role="toolbar" aria-label="Camera secondary controls">
           <button
             type="button"
-            className={`${s.broadcastBtn} ${cameraState.torchOn ? s.broadcastBtnRec : ""}`.trim()}
-            onClick={() => torchToggleRef.current?.()}
-            aria-pressed={cameraState.torchOn}
-            aria-label={cameraState.torchOn ? "Turn torch off" : "Turn torch on"}
-            title="Camera torch / flashlight"
+            className={s.dockSlimBtn}
+            onClick={() => setSceneSheetOpen(true)}
+            aria-label="Open scene picker"
+            title="Scenes"
           >
-            <span className={s.channelIcon} aria-hidden="true"><IconTorch /></span>
-            <span className={s.channelLabel}>Torch</span>
+            <span className={s.dockSlimLabel}>Scenes</span>
           </button>
-        )}
 
-        {/* Divider */}
-        <div className={s.dockDivider} aria-hidden="true" />
-
-        {/* Scene chip — replaces the 14-toggle overlay scroll. Shows the
-            active scene name; tap navigates to /hunt-setup where the
-            operator can pick a different scene. Single source of truth
-            for overlay configuration (the F1 cockpit principle —
-            drivers don't tune their dashboard at 200 mph). */}
-        <button
-          type="button"
-          className={s.sceneChip}
-          onClick={() => navigate("/hunt-setup")}
-          aria-label={`Scene: ${activeScene?.name ?? "Walkthrough"}. Tap to change.`}
-          title="Change scene"
-        >
-          <span className={s.sceneChipEyebrow}>Scene</span>
-          <span className={s.sceneChipName}>
-            {activeScene?.name ?? "Walkthrough"}
-            <span className={s.sceneChipChevron} aria-hidden="true">▾</span>
-          </span>
-        </button>
-
-        {/* ITC instruments — spirit box + ovilus quick-toggles.
-            When active the label shows the current phoneme / word so the
-            operator can glance at what's being burned into the overlay.
-            The `itc` channel above must also be on for output to appear. */}
-        <div className={s.dockDivider} aria-hidden="true" />
-        <div className={`${s.dockChannels} ${s.dockChannelsItc}`} role="group" aria-label="ITC instruments">
           <button
             type="button"
-            className={`${s.channelBtn} ${spiritBox.active ? s.channelBtnOn : ""}`.trim()}
-            onClick={spiritBox.toggle}
-            aria-pressed={spiritBox.active}
-            aria-label={spiritBox.active ? "Stop spirit box" : "Start spirit box"}
-            title="Spirit Box — cycles phonemes seeded by sensor entropy and burns them to the ITC overlay"
+            className={s.dockSlimBtn}
+            onClick={() => navigate("/setup")}
+            aria-label="Open settings"
+            title="Settings"
           >
-            <span className={s.channelIcon} aria-hidden="true"><IconSpiritBox /></span>
-            <span className={s.channelLabel}>{spiritBox.active ? spiritBox.current : "SBX"}</span>
+            <span className={s.dockSlimIcon} aria-hidden="true"><IconSettings /></span>
           </button>
+
+          <ScreenRecordButton
+            investigationId={session.current?.id ?? null}
+            classNames={{
+              idle:   s.dockSlimBtn,
+              active: `${s.dockSlimBtn} ${s.dockSlimBtnRec}`,
+              icon:   s.dockSlimIcon,
+              label:  s.dockSlimLabel,
+            }}
+          />
+
+          {/* Inline compositor clip-record — small (not the primary button).
+              Honours the same recordToggleRef the shutter would use if the
+              operator wanted a clip without ending the session. */}
           <button
             type="button"
-            className={`${s.channelBtn} ${ovilus.active ? s.channelBtnOn : ""}`.trim()}
-            onClick={ovilus.toggle}
-            aria-pressed={ovilus.active}
-            aria-label={ovilus.active ? "Stop ovilus" : "Start ovilus"}
-            title="Ovilus — generates words from a seeded dictionary and burns them to the ITC overlay"
+            className={`${s.dockSlimBtn} ${broadcastState.recording ? s.dockSlimBtnRec : ""}`.trim()}
+            onClick={() => recordToggleRef.current?.()}
+            disabled={!cameraState.streamOn}
+            aria-pressed={broadcastState.recording}
+            aria-label={broadcastState.recording ? "Stop clip recording" : "Record clip"}
+            title={broadcastState.recording ? "Stop clip" : "Clip Rec"}
           >
-            <span className={s.channelIcon} aria-hidden="true"><IconOvilus /></span>
-            <span className={s.channelLabel}>{ovilus.active ? ovilus.current : "OVL"}</span>
+            <span className={s.dockSlimIcon} aria-hidden="true"><IconRecord /></span>
+            <span className={s.dockSlimLabel}>{broadcastState.recording ? "Stop" : "Clip"}</span>
           </button>
         </div>
       </div>
+
+      {/* Bottom-sheet scene picker — owned by Worker C. Opens when the
+          top-right pill or the Scenes dock button is tapped. */}
+      <SceneSheet
+        open={sceneSheetOpen}
+        onClose={() => setSceneSheetOpen(false)}
+        activeSceneId={activeSceneId}
+        onSelect={(id) => {
+          saveActiveSceneId(id);
+          setActiveSceneId(id);
+        }}
+      />
     </div>
   );
 }

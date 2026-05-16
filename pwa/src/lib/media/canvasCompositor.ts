@@ -13,6 +13,21 @@
  * re-encoding. Timestamp + case ID are baked in for TV-production
  * record-keeping (defensible against editing-room drift).
  *
+ * BURN-IN LAYOUT (Apple Watch complication style — corner-mounted, small,
+ * translucent). Combined burn-in elements stay under ~20% of frame pixels:
+ *
+ *   ┌─[REC/LIVE]──────[Activity·Posterior]──────[ITC]─┐
+ *   │ A                                              K  │
+ *   │ U                                              -  │
+ *   │ D                                              I  │
+ *   │ I                                              I  │
+ *   │ O                                              R  │
+ *   │                                                E  │
+ *   │                                                M  │
+ *   │            [caption — bottom-center]              │
+ *   ├─[CASE ID]────────────────────────[TIMESTAMP]─────┤
+ *   └───────────────────────────────────────────────────┘
+ *
  * Use:
  *   const compositor = createCanvasCompositor({ video, getOverlay, fps: 30 });
  *   compositor.start();
@@ -216,6 +231,18 @@ const BAND_COLOR: Record<OverlayState["activityBand"], { stroke: string; glow: s
   strong:   { stroke: "rgba(255, 90, 90, 1.0)",    glow: "rgba(255, 90, 90, 0.75)",   fill: "#FF4A4A" },
 };
 
+/**
+ * Scale factor mapping a logical pixel size (designed against a 1080p frame)
+ * to the actual frame size. Lets us specify "14px font" in human-readable
+ * spec values and have it size sensibly on 4K canvases without exploding the
+ * burn-in to dashboard proportions. `min(W, H) / 720` keeps the burn-in
+ * legible on a vertical phone-capture (720×1280) too — there `W/720 ≈ 1` so
+ * sizes stay at the spec values.
+ */
+function scaleFactor(W: number, H: number): number {
+  return Math.max(0.7, Math.min(1.8, Math.min(W, H) / 720));
+}
+
 export function createCanvasCompositor(opts: CanvasCompositorOptions): CanvasCompositor {
   const { video, getOverlay, fps = 30 } = opts;
   const canvas = document.createElement("canvas");
@@ -275,6 +302,7 @@ function renderFrame(
 ): void {
   const W = canvas.width;
   const H = canvas.height;
+  const s = scaleFactor(W, H);
   const channels = resolveChannels(overlay);
 
   // 1. Camera frame (cover-fit). ALWAYS drawn — disabling this would just
@@ -291,9 +319,11 @@ function renderFrame(
 
   const band = BAND_COLOR[overlay.activityBand] ?? BAND_COLOR.calm;
 
-  // 2. Edge glow tied to posterior + audio RMS.
+  // 2. Edge glow tied to posterior + audio RMS. Halved intensity vs previous
+  //    revision — the corner-mounted overlays read better without a heavy
+  //    radial tint competing with them.
   if (channels.edgeGlow) {
-    const edgeAlpha = Math.min(1, 0.18 + overlay.posterior * 0.5 + overlay.audioRms * 0.6);
+    const edgeAlpha = Math.min(0.5, 0.09 + overlay.posterior * 0.25 + overlay.audioRms * 0.30);
     const grad = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.7);
     grad.addColorStop(0, "rgba(0,0,0,0)");
     grad.addColorStop(1, band.glow.replace(/[\d.]+\)$/, `${edgeAlpha})`));
@@ -307,126 +337,151 @@ function renderFrame(
     drawCornerBrackets(ctx, W, H, band);
   }
 
-  // 3. Top HUD strip (Activity + Posterior pills). Each pill is gated
-  // individually inside drawTopHud so the operator can hide one without
-  // the other.
-  drawTopHud(ctx, W, H, overlay, band, channels);
-
-  // 3b. Sensor mini-readout under the Activity pill (top-left).
-  // Y-offset depends on whether the Activity pill is drawn; pass the
-  // current top occupancy so the readout doesn't collide.
-  const topPillBottom = channels.activityPill ? sensorReadoutTopOffset(W, H) : Math.round(W * 0.018);
-  let leftStackY = topPillBottom;
-  if (channels.sensors) {
-    leftStackY = drawSensorReadout(ctx, W, H, overlay, band, leftStackY);
+  // 3. Status pills (REC / LIVE / OFFLINE) — top-left corner.
+  if (channels.statusPills) {
+    drawStatusPills(ctx, W, H, overlay, s);
   }
 
-  // 3c. ITC channels readout (Spirit Box / Ovilus / EVP) — stacks below
-  // the sensor block on the same left column.
+  // 3b. Posterior + Activity band pills — top-center, small. Pro/Lab only;
+  //     the proOnly gating happens upstream in resolveOverlaysFromScene.
+  drawTopCenterPills(ctx, W, H, overlay, band, channels, s);
+
+  // 3c. ITC readout — top-right corner, max 2 lines.
   if (channels.itc) {
-    drawItcReadout(ctx, W, H, overlay, band, leftStackY);
+    drawItcReadout(ctx, W, H, overlay, band, s);
   }
 
-  // 3d. Virtual instrument widgets — K-II EMF meter (bottom-left) and
-  //     REM pod (bottom-right). Positioned to sit above the caption/timestamp
-  //     zone and well clear of the sensor/ITC stack.
+  // 3d. Sensor mini-readout — tucked under the ITC block in the top-right
+  //     column so the data column stays unified on one edge.
+  if (channels.sensors) {
+    drawSensorReadout(ctx, W, H, overlay, band, s);
+  }
+
+  // 4. Right-edge vertical instrument stack — K-II on top, REM Pod below.
   if (channels.kiiMeter) {
-    drawKiiMeter(ctx, W, H, overlay.activityBand, overlay.emfZScore);
+    drawKiiMeter(ctx, W, H, overlay.activityBand, overlay.emfZScore, s);
   }
   if (channels.remPod) {
-    drawRemPod(ctx, W, H, overlay.activityBand, band, overlay.emfZScore);
+    drawRemPod(ctx, W, H, overlay.activityBand, overlay.emfZScore, s);
   }
 
-  // 4. Direction arrow (only if sector + coherence are valid).
+  // 5. Audio meter — left edge, vertical bar.
+  if (channels.audioMeter) {
+    drawAudioMeter(ctx, W, H, overlay.audioRms, s);
+  }
+
+  // 6. Direction arrow (only if sector + coherence are valid).
   if (channels.directionArrow && overlay.sector && overlay.coherence >= 0.5) {
     drawDirectionArrow(ctx, W, H, overlay.sector, overlay.coherence, band);
   }
 
-  // 5. Bottom caption strip (AI co-investigator).
+  // 7. Bottom caption strip (AI co-investigator) — above timestamp row.
   if (channels.caption && overlay.caption) {
-    drawCaption(ctx, W, H, overlay.caption, band);
+    drawCaption(ctx, W, H, overlay.caption, s);
   }
 
-  // 6. Bottom-right metadata block: timestamp + case ID.
+  // 8. Case ID — bottom-left.
   if (channels.timestamp) {
-    drawMetadataStamp(ctx, W, H, overlay);
+    drawCaseId(ctx, W, H, overlay, s);
   }
 
-  // 7. Recording / live indicators.
-  if (channels.statusPills) {
-    drawStatusPills(ctx, W, H, overlay);
-  }
-
-  // 8. Audio level meter — drawn beneath the status pills row so the
-  //    REC/LIVE indicators and the mic-level bar feel like a unified
-  //    broadcast status bar.
-  if (channels.audioMeter) {
-    drawAudioMeter(ctx, W, H, overlay.audioRms);
+  // 9. Timestamp — bottom-right (forensic mandatory). Drawn last so nothing
+  //    can occlude the chain-of-custody data.
+  if (channels.timestamp) {
+    drawTimestamp(ctx, W, H, overlay, s);
   }
 }
 
-/** Pixel-Y where the sensor block should start (matches drawTopHud math). */
-function sensorReadoutTopOffset(W: number, H: number): number {
-  const padding = Math.round(W * 0.018);
-  const pillH = Math.max(36, Math.round(H * 0.05));
-  return padding + pillH + 8;
-}
+// ─── Top-center pills (Activity + Posterior) ────────────────────────────────
 
-function drawTopHud(
+/**
+ * Activity band + Posterior pill, mounted top-center. Both are proOnly so they
+ * only render in Pro / Lab scenes — the registry guarantees they're off in the
+ * default broadcast frame. Trimmed to ~110×28 px so they don't dominate the
+ * top edge.
+ */
+function drawTopCenterPills(
   ctx: CanvasRenderingContext2D,
   W: number,
-  H: number,
+  _H: number,
   overlay: OverlayState,
   band: { fill: string; stroke: string },
   channels: OverlayChannels,
+  s: number,
 ) {
-  const padding = Math.round(W * 0.018);
-  const pillH = Math.max(36, Math.round(H * 0.05));
-  const fontSize = Math.max(14, Math.round(H * 0.02));
+  // Size constants — kept tight so the pills behave like complications, not banners.
+  const pillH = Math.round(28 * s);
+  const fontSize = Math.round(13 * s);
+  const padX = Math.round(10 * s);
+  const gap = Math.round(8 * s);
+  const topMargin = Math.round(12 * s);
 
   ctx.save();
   ctx.font = `700 ${fontSize}px "Space Grotesk", Inter, sans-serif`;
   ctx.textBaseline = "middle";
 
-  // Activity label pill (left)
+  type Pill = { text: string; bg: string; stroke: string; fg: string };
+  const pills: Pill[] = [];
+
   if (channels.activityPill) {
-    const label = overlay.activityLabel.toUpperCase();
-    const lblWidth = ctx.measureText(label).width + padding * 2;
-    drawPill(ctx, padding, padding, lblWidth, pillH, "rgba(0,0,0,0.55)", band.stroke);
-    ctx.fillStyle = "#fff";
-    ctx.fillText(label, padding + padding, padding + pillH / 2);
+    pills.push({
+      text: overlay.activityLabel.toUpperCase(),
+      bg: "rgba(0,0,0,0.55)",
+      stroke: band.stroke,
+      fg: "#fff",
+    });
   }
-
-  // Posterior pill (right)
   if (channels.posteriorPill) {
-    const pPct = `P ${(overlay.posterior * 100).toFixed(0)}%`;
-    const pWidth = ctx.measureText(pPct).width + padding * 2;
-    drawPill(ctx, W - padding - pWidth, padding, pWidth, pillH, "rgba(0,0,0,0.55)", band.stroke);
-    ctx.fillStyle = band.fill;
-    ctx.fillText(pPct, W - padding - pWidth + padding, padding + pillH / 2);
+    pills.push({
+      text: `P=${overlay.posterior.toFixed(2)}`,
+      bg: "rgba(0,0,0,0.55)",
+      stroke: band.stroke,
+      fg: band.fill,
+    });
   }
 
+  if (pills.length === 0) {
+    ctx.restore();
+    return;
+  }
+
+  const widths = pills.map((p) => Math.max(Math.round(70 * s), ctx.measureText(p.text).width + padX * 2));
+  const totalW = widths.reduce((a, w) => a + w, 0) + gap * Math.max(0, pills.length - 1);
+  let x = Math.round((W - totalW) / 2);
+  const y = topMargin;
+
+  for (let i = 0; i < pills.length; i++) {
+    const p = pills[i];
+    const w = widths[i];
+    drawPill(ctx, x, y, w, pillH, p.bg, p.stroke);
+    ctx.fillStyle = p.fg;
+    ctx.textAlign = "center";
+    ctx.fillText(p.text, x + w / 2, y + pillH / 2);
+    x += w + gap;
+  }
   ctx.restore();
 }
 
+// ─── Sensor readout ─────────────────────────────────────────────────────────
+
 /**
- * Draws the sensor readout block. Returns the Y coordinate immediately
- * below the rendered block so subsequent blocks (ITC channels) can stack
- * vertically on the same left column. Returns the input `blockY` if no
- * rows render (e.g. all sensor values are stale/undefined).
+ * Sensor readout — small column of LIGHT / MAG / MOTION / TEMP values
+ * stacked under the ITC readout on the right edge. Bumps down to clear the
+ * ITC block when present.
+ *
+ * Sizes (spec): row height ~18px, value font 12px, label font 9px, width ~150px.
  */
 function drawSensorReadout(
   ctx: CanvasRenderingContext2D,
   W: number,
-  H: number,
+  _H: number,
   overlay: OverlayState,
-  band: { stroke: string; fill: string },
-  blockY: number,
-): number {
+  band: { stroke: string },
+  s: number,
+): void {
   const sensors = overlay.sensors;
-  if (!sensors) return blockY;
+  if (!sensors) return;
 
-  // Build the row list — only entries with finite numeric values.
   type Row = { label: string; value: string; unit: string };
   const rows: Row[] = [];
   if (typeof sensors.light === "number" && Number.isFinite(sensors.light)) {
@@ -441,202 +496,214 @@ function drawSensorReadout(
   if (typeof sensors.temperature === "number" && Number.isFinite(sensors.temperature)) {
     rows.push({ label: "TEMP", value: sensors.temperature.toFixed(1), unit: "°C" });
   }
-  if (rows.length === 0) return blockY;
+  if (rows.length === 0) return;
 
-  // Geometry — left column matches drawTopHud's padding so the block
-  // sits cleanly below the Activity pill (or wherever the caller stacked us).
-  const padding = Math.round(W * 0.018);
-  const blockX = padding;
-
-  const labelFontPx = Math.max(9, Math.round(H * 0.012));
-  const valueFontPx = Math.max(14, Math.round(H * 0.019));
-  const unitFontPx = Math.max(10, Math.round(H * 0.013));
-  const rowH = Math.max(valueFontPx + 6, Math.round(H * 0.032));
-  const innerPadX = Math.round(padding * 0.9);
-  const innerPadY = Math.round(padding * 0.5);
-  const labelGap = Math.round(padding * 0.45);
-  const unitGap = Math.round(padding * 0.25);
-  const letterSpacingPx = 1.4;
+  // Size constants
+  const labelFontPx = Math.round(9 * s);
+  const valueFontPx = Math.round(12 * s);
+  const rowH = Math.round(16 * s);
+  const padX = Math.round(8 * s);
+  const padY = Math.round(6 * s);
+  const colGap = Math.round(6 * s);
+  const margin = Math.round(12 * s);
 
   ctx.save();
 
-  // Measure widths for each row to size the block.
-  const measureLabel = (s: string) => {
+  const measureLabel = (str: string) => {
     ctx.font = `700 ${labelFontPx}px "Space Grotesk", Inter, sans-serif`;
-    // letter-spacing adds (n - 1) * spacing across n characters.
-    return ctx.measureText(s).width + Math.max(0, s.length - 1) * letterSpacingPx;
+    return ctx.measureText(str).width;
   };
-  const measureValue = (s: string) => {
+  const measureValue = (str: string) => {
     ctx.font = `700 ${valueFontPx}px "JetBrains Mono", monospace`;
-    return ctx.measureText(s).width;
+    return ctx.measureText(str).width;
   };
-  const measureUnit = (s: string) => {
-    ctx.font = `500 ${unitFontPx}px "Space Grotesk", Inter, sans-serif`;
-    return ctx.measureText(s).width;
+  const measureUnit = (str: string) => {
+    ctx.font = `500 ${labelFontPx}px "Space Grotesk", Inter, sans-serif`;
+    return ctx.measureText(str).width;
   };
 
-  let maxLabelW = 0;
-  let maxValueW = 0;
-  let maxUnitW = 0;
+  let maxLabelW = 0, maxValueW = 0, maxUnitW = 0;
   for (const r of rows) {
     maxLabelW = Math.max(maxLabelW, measureLabel(r.label));
     maxValueW = Math.max(maxValueW, measureValue(r.value));
     maxUnitW = Math.max(maxUnitW, measureUnit(r.unit));
   }
-  const blockW = innerPadX * 2 + maxLabelW + labelGap + maxValueW + unitGap + maxUnitW;
-  const blockH = innerPadY * 2 + rows.length * rowH;
 
-  // Background pill — match Activity pill style.
-  drawPill(ctx, blockX, blockY, blockW, blockH, "rgba(0,0,0,0.55)", band.stroke);
+  const blockW = padX * 2 + maxLabelW + colGap + maxValueW + colGap + maxUnitW;
+  const blockH = padY * 2 + rows.length * rowH;
+  // Right-side column, anchored below the ITC area.
+  const itcReserved = Math.round(itcReservedHeight(s));
+  const blockX = W - margin - blockW;
+  const blockY = margin + itcReserved;
 
-  // Render each row.
+  drawSoftBox(ctx, blockX, blockY, blockW, blockH, "rgba(0,0,0,0.4)", band.stroke, 0.5);
+
   ctx.textBaseline = "middle";
   ctx.textAlign = "left";
-  let y = blockY + innerPadY + rowH / 2;
+  let y = blockY + padY + rowH / 2;
   for (const r of rows) {
-    // Label: small mono-style caps with letter-spacing — drawn char-by-char
-    // since canvas has no native letter-spacing in 2D context.
     ctx.font = `700 ${labelFontPx}px "Space Grotesk", Inter, sans-serif`;
     ctx.fillStyle = "rgba(255,255,255,0.62)";
-    let lx = blockX + innerPadX;
-    for (let i = 0; i < r.label.length; i++) {
-      const ch = r.label[i];
-      ctx.fillText(ch, lx, y);
-      lx += ctx.measureText(ch).width + (i < r.label.length - 1 ? letterSpacingPx : 0);
-    }
+    ctx.fillText(r.label, blockX + padX, y);
 
-    // Value: bold mono.
-    const valX = blockX + innerPadX + maxLabelW + labelGap;
+    const valX = blockX + padX + maxLabelW + colGap;
     ctx.font = `700 ${valueFontPx}px "JetBrains Mono", monospace`;
     ctx.fillStyle = "#fff";
     ctx.fillText(r.value, valX, y);
 
-    // Unit: muted small.
-    const unitX = valX + maxValueW + unitGap;
-    ctx.font = `500 ${unitFontPx}px "Space Grotesk", Inter, sans-serif`;
+    const unitX = valX + maxValueW + colGap;
+    ctx.font = `500 ${labelFontPx}px "Space Grotesk", Inter, sans-serif`;
     ctx.fillStyle = "rgba(255,255,255,0.55)";
     ctx.fillText(r.unit, unitX, y);
 
     y += rowH;
   }
-
   ctx.restore();
-  return blockY + blockH + 8;
 }
 
 /**
- * ITC channels readout (Spirit Box / Ovilus / EVP). Stacks below the
- * sensor block on the left column. Each channel is age-faded: when its
- * emission gets stale enough (`ITC_MAX_AGE_MS`, longer for EVP) the row
- * drops out entirely so the operator isn't staring at a phantom from 30
- * minutes ago.
+ * Approximate vertical space reserved for the ITC block at the top-right so
+ * the sensor stack can sit immediately below it. Returns 0 when ITC is hidden;
+ * the actual ITC draw call decides whether to render and uses identical numbers.
+ */
+function itcReservedHeight(s: number): number {
+  // Max block height = padY*2 + rowH * 2 (2 lines max) + outer margin gap.
+  const padY = Math.round(7 * s);
+  const rowH = Math.round(20 * s);
+  return padY * 2 + rowH * 2 + Math.round(8 * s);
+}
+
+// ─── ITC readout (top-right) ────────────────────────────────────────────────
+
+/**
+ * ITC channels readout. Max 2 lines tall and ~180px wide, mounted in the
+ * top-right corner. Each visible channel collapses to "LABEL · text · age"
+ * on its own line; if more than 2 channels are fresh we keep the two newest.
  *
- * Visual treatment differs from the sensor readout deliberately:
- *   • Sensors are NUMBERS that update continuously — the operator scans
- *     the column for the next value.
- *   • ITC channels are WORDS that fire occasionally — readability of the
- *     word itself matters more than aligned columns, so the word stretches
- *     across the row and the age stamp tucks in beside it.
+ * Sizes (spec): font 14-15px bold, age font 10px dim, width <=180px,
+ * padding 6×10px, background rgba(0,0,0,0.55).
  */
 function drawItcReadout(
   ctx: CanvasRenderingContext2D,
   W: number,
-  H: number,
+  _H: number,
   overlay: OverlayState,
   band: { stroke: string; fill: string; glow: string },
-  blockY: number,
-): number {
+  s: number,
+): void {
   const itc = overlay.itc;
-  if (!itc) return blockY;
+  if (!itc) return;
 
-  type Row = { label: string; text: string; age: string };
+  type Row = { label: string; text: string; age: string; ageMs: number };
   const rows: Row[] = [];
   const pushIfFresh = (label: string, view: ItcChannelView | undefined, maxAge: number) => {
     if (!view) return;
     if (view.ageMs > maxAge) return;
-    rows.push({ label, text: truncateForOverlay(view.text), age: formatAge(view.ageMs) });
+    rows.push({ label, text: truncateForOverlay(view.text), age: formatAge(view.ageMs), ageMs: view.ageMs });
   };
-  pushIfFresh("SPIRIT BOX", itc.spiritBox, ITC_MAX_AGE_MS);
-  pushIfFresh("OVILUS", itc.ovilus, ITC_MAX_AGE_MS);
-  pushIfFresh("EVP", itc.evp, ITC_EVP_MAX_AGE_MS);
-  if (rows.length === 0) return blockY;
+  pushIfFresh("SB",  itc.spiritBox, ITC_MAX_AGE_MS);
+  pushIfFresh("OV",  itc.ovilus,    ITC_MAX_AGE_MS);
+  pushIfFresh("EVP", itc.evp,       ITC_EVP_MAX_AGE_MS);
+  if (rows.length === 0) return;
 
-  const padding = Math.round(W * 0.018);
-  const blockX = padding;
+  // Keep the freshest two so the block stays max 2 lines.
+  rows.sort((a, b) => a.ageMs - b.ageMs);
+  const visible = rows.slice(0, 2);
 
-  const labelFontPx = Math.max(9, Math.round(H * 0.012));
-  const textFontPx = Math.max(15, Math.round(H * 0.022));
-  const ageFontPx = Math.max(10, Math.round(H * 0.013));
-  const rowH = Math.max(textFontPx + 14, Math.round(H * 0.05));
-  const innerPadX = Math.round(padding * 0.9);
-  const innerPadY = Math.round(padding * 0.6);
-  const labelGap = Math.round(padding * 0.6);
-  const ageGap = Math.round(padding * 0.6);
-  const letterSpacingPx = 1.4;
+  // Size constants
+  const labelFontPx = Math.round(10 * s);
+  const textFontPx = Math.round(14 * s);
+  const ageFontPx = Math.round(10 * s);
+  const padX = Math.round(10 * s);
+  const padY = Math.round(7 * s);
+  const rowH = Math.round(20 * s);
+  const labelGap = Math.round(6 * s);
+  const ageGap = Math.round(6 * s);
+  const margin = Math.round(12 * s);
+  const maxBlockW = Math.round(180 * s);
 
   ctx.save();
 
-  // Measure widths so the block self-sizes to its widest row.
-  const measureLabel = (s: string) => {
-    ctx.font = `700 ${labelFontPx}px "Space Grotesk", Inter, sans-serif`;
-    return ctx.measureText(s).width + Math.max(0, s.length - 1) * letterSpacingPx;
-  };
-  const measureText = (s: string) => {
+  // Measure each row to determine the actual width (capped at maxBlockW).
+  const measureText = (str: string) => {
     ctx.font = `700 ${textFontPx}px "JetBrains Mono", monospace`;
-    return ctx.measureText(s).width;
+    return ctx.measureText(str).width;
   };
-  const measureAge = (s: string) => {
+
+  let widest = 0;
+  for (const r of visible) {
+    ctx.font = `700 ${labelFontPx}px "Space Grotesk", Inter, sans-serif`;
+    const lw = ctx.measureText(r.label).width;
+    const tw = measureText(r.text);
     ctx.font = `500 ${ageFontPx}px "Space Grotesk", Inter, sans-serif`;
-    return ctx.measureText(s).width;
-  };
-
-  let maxLabelW = 0;
-  let maxTextW = 0;
-  let maxAgeW = 0;
-  for (const r of rows) {
-    maxLabelW = Math.max(maxLabelW, measureLabel(r.label));
-    maxTextW = Math.max(maxTextW, measureText(r.text));
-    maxAgeW = Math.max(maxAgeW, measureAge(r.age));
+    const aw = ctx.measureText(r.age).width;
+    const w = padX * 2 + lw + labelGap + tw + ageGap + aw;
+    if (w > widest) widest = w;
   }
-  const blockW = innerPadX * 2 + maxLabelW + labelGap + maxTextW + ageGap + maxAgeW;
-  const blockH = innerPadY * 2 + rows.length * rowH;
+  const blockW = Math.min(maxBlockW, widest);
+  const blockH = padY * 2 + visible.length * rowH;
+  const blockX = W - margin - blockW;
+  const blockY = margin;
 
-  drawPill(ctx, blockX, blockY, blockW, blockH, "rgba(0,0,0,0.55)", band.stroke);
+  drawSoftBox(ctx, blockX, blockY, blockW, blockH, "rgba(0,0,0,0.55)", band.stroke, 0.6);
 
   ctx.textBaseline = "middle";
   ctx.textAlign = "left";
-  let y = blockY + innerPadY + rowH / 2;
-  for (const r of rows) {
-    // Label column — small caps with letter-spacing.
+  let y = blockY + padY + rowH / 2;
+  for (const r of visible) {
+    // Label tag.
     ctx.font = `700 ${labelFontPx}px "Space Grotesk", Inter, sans-serif`;
     ctx.fillStyle = "rgba(255,255,255,0.62)";
-    let lx = blockX + innerPadX;
-    for (let i = 0; i < r.label.length; i++) {
-      const ch = r.label[i];
-      ctx.fillText(ch, lx, y);
-      lx += ctx.measureText(ch).width + (i < r.label.length - 1 ? letterSpacingPx : 0);
-    }
+    ctx.fillText(r.label, blockX + padX, y);
+    const labelW = ctx.measureText(r.label).width;
 
-    // Emission text — bold mono, band-tinted + glow so the word pops.
-    const textX = blockX + innerPadX + maxLabelW + labelGap;
-    ctx.font = `700 ${textFontPx}px "JetBrains Mono", monospace`;
-    ctx.shadowColor = band.glow;
-    ctx.shadowBlur  = Math.round(textFontPx * 0.55);
-    ctx.fillStyle   = band.fill;
-    ctx.fillText(r.text, textX, y);
-    ctx.shadowBlur  = 0;
-
-    // Age stamp — muted small.
-    const ageX = textX + maxTextW + ageGap;
+    // Right-anchor age so the text in the middle can flex.
     ctx.font = `500 ${ageFontPx}px "Space Grotesk", Inter, sans-serif`;
+    const ageW = ctx.measureText(r.age).width;
+    const ageX = blockX + blockW - padX - ageW;
     ctx.fillStyle = "rgba(255,255,255,0.55)";
     ctx.fillText(r.age, ageX, y);
 
+    // Emission text — clipped to the remaining width.
+    const textX = blockX + padX + labelW + labelGap;
+    const textMaxW = ageX - ageGap - textX;
+    const clippedText = truncateToWidth(ctx, r.text, textMaxW, `700 ${textFontPx}px "JetBrains Mono", monospace`);
+    ctx.font = `700 ${textFontPx}px "JetBrains Mono", monospace`;
+    ctx.shadowColor = band.glow;
+    ctx.shadowBlur = Math.round(textFontPx * 0.45);
+    ctx.fillStyle = band.fill;
+    ctx.fillText(clippedText, textX, y);
+    ctx.shadowBlur = 0;
+
     y += rowH;
   }
-
   ctx.restore();
-  return blockY + blockH + 8;
+}
+
+/** Truncate `text` to fit within `maxWidth` using ellipsis when needed. */
+function truncateToWidth(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  font: string,
+): string {
+  ctx.save();
+  ctx.font = font;
+  if (ctx.measureText(text).width <= maxWidth) {
+    ctx.restore();
+    return text;
+  }
+  // Trim from the end with an ellipsis until it fits.
+  const ellipsis = "…";
+  let lo = 0, hi = text.length;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    const candidate = text.slice(0, mid) + ellipsis;
+    if (ctx.measureText(candidate).width <= maxWidth) lo = mid;
+    else hi = mid - 1;
+  }
+  ctx.restore();
+  return lo > 0 ? text.slice(0, lo) + ellipsis : "";
 }
 
 /** Format an age in ms as a compact "now" / "12s" / "3m" / "1h" string. */
@@ -650,11 +717,21 @@ function formatAge(ms: number): string {
 /** Truncate ITC text to a length that won't blow the overlay width. */
 function truncateForOverlay(text: string): string {
   const t = text.trim().replace(/\s+/g, " ");
-  if (t.length <= 32) return t;
-  return t.slice(0, 31) + "…";
+  if (t.length <= 28) return t;
+  return t.slice(0, 27) + "…";
 }
 
-function drawPill(
+// ─── Soft rounded-rect background (the new minimal overlay container) ───────
+
+/**
+ * Lightweight rounded-rect with optional thin border. Used by all the new
+ * complication-style overlays — no inner shimmer, no outer glow. Cheaper to
+ * draw than `drawPill` and visually quieter, which is what the "small,
+ * transparent, corner-mounted" brief calls for.
+ *
+ * @param strokeAlpha Stroke alpha multiplier applied to `stroke` (0=no border).
+ */
+function drawSoftBox(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
@@ -662,14 +739,11 @@ function drawPill(
   h: number,
   fill: string,
   stroke: string,
+  strokeAlpha: number,
 ) {
-  const r = h / 2;
+  const r = Math.min(8, h / 2);
 
   ctx.save();
-
-  // Build the rounded-rect path ONCE. Canvas retains the current path across
-  // fill()/stroke() calls — only beginPath() clears it. Calling all four
-  // passes from the same path avoids 3x redundant path reconstruction at 30fps.
   ctx.beginPath();
   ctx.moveTo(x + r, y);
   ctx.lineTo(x + w - r, y);
@@ -682,37 +756,68 @@ function drawPill(
   ctx.arcTo(x, y, x + r, y, r);
   ctx.closePath();
 
-  // Pass 1 — flat fill + outer glow (shadowBlur expands outward).
+  ctx.fillStyle = fill;
+  ctx.fill();
+
+  if (strokeAlpha > 0) {
+    ctx.globalAlpha = strokeAlpha;
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/**
+ * Glass-style pill used by select overlays (caption, direction-arrow label).
+ * Keeps the polished depth gradient + shimmer + glow for the elements that
+ * still need to feel premium. New corner complications use drawSoftBox instead.
+ */
+function drawPill(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  fill: string,
+  stroke: string,
+) {
+  const r = h / 2;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+
   ctx.shadowColor = stroke;
-  ctx.shadowBlur = 12;
+  ctx.shadowBlur = 10;
   ctx.fillStyle = fill;
   ctx.fill();
   ctx.shadowBlur = 0;
 
-  // Pass 2 — depth gradient overlay (top-highlight → bottom-darken).
   const depth = ctx.createLinearGradient(x, y, x, y + h);
-  depth.addColorStop(0, "rgba(255,255,255,0.07)");
+  depth.addColorStop(0, "rgba(255,255,255,0.05)");
   depth.addColorStop(0.45, "rgba(0,0,0,0)");
-  depth.addColorStop(1, "rgba(0,0,0,0.14)");
+  depth.addColorStop(1, "rgba(0,0,0,0.10)");
   ctx.fillStyle = depth;
   ctx.fill();
 
-  // Pass 3 — inner top-edge shimmer (glass reflection).
-  const shimmer = ctx.createLinearGradient(x, y, x, y + h * 0.38);
-  shimmer.addColorStop(0, "rgba(255,255,255,0.18)");
-  shimmer.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.fillStyle = shimmer;
-  ctx.fill();
-
-  // Pass 4 — colored border (2 px for crispness on high-DPI output).
   ctx.strokeStyle = stroke;
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 1.5;
   ctx.stroke();
 
   ctx.restore();
 }
 
-// ─── Virtual instrument widgets ───────────────────────────────────────────────
+// ─── Virtual instrument widgets ─────────────────────────────────────────────
 
 /** Maps activityBand → number of K-II LEDs lit (1–5). Fallback when no z-score. */
 const KII_LIT: Record<OverlayState["activityBand"], number> = {
@@ -724,9 +829,6 @@ const KII_LIT: Record<OverlayState["activityBand"], number> = {
  * K-II (1–5 LEDs) and REM Pod (0–6 LEDs) virtual instruments. The first
  * matching `[minZ, leds]` pair from highest-z down is used; the floor (the
  * last entry, used when nothing matches) becomes the resting state.
- *
- * Thresholds align with statistical significance bands so the same z=2.5
- * (≈2σ) means "anomaly" everywhere in the app.
  */
 function zScoreToLeds(z: number, table: ReadonlyArray<readonly [number, number]>): number {
   for (let i = 0; i < table.length - 1; i++) {
@@ -736,9 +838,9 @@ function zScoreToLeds(z: number, table: ReadonlyArray<readonly [number, number]>
 }
 
 /**
- * Format an elapsed duration in milliseconds as broadcast-style `MM:SS` or
- * `H:MM:SS` once it crosses an hour. Used by the REC / LIVE status pills so
- * the burnt-in timer matches what editors expect on professional cameras.
+ * Format an elapsed duration in milliseconds as broadcast-style `HH:MM:SS`.
+ * Always hour-padded so the pill width stays constant during the first hour
+ * of a recording — no layout jitter when the timer rolls past 1:00:00.
  */
 function formatElapsed(ms: number): string {
   const totalSec = Math.max(0, Math.floor(ms / 1000));
@@ -746,7 +848,7 @@ function formatElapsed(ms: number): string {
   const m  = Math.floor((totalSec % 3600) / 60);
   const s  = totalSec % 60;
   const pad2 = (n: number) => n < 10 ? `0${n}` : `${n}`;
-  return h > 0 ? `${h}:${pad2(m)}:${pad2(s)}` : `${pad2(m)}:${pad2(s)}`;
+  return `${pad2(h)}:${pad2(m)}:${pad2(s)}`;
 }
 
 // K-II: 1 LED resting (calm), 5 LEDs at extreme spike (≥5σ).
@@ -759,73 +861,77 @@ const REM_Z_TABLE: ReadonlyArray<readonly [number, number]> = [
 ];
 
 /**
- * Virtual K-II EMF Meter — the five-LED bar that paranormal investigators
- * carry. Rendered bottom-left.
+ * Virtual K-II EMF Meter — five-LED stack mounted on the RIGHT EDGE.
  *
- * Primary input:  `emfZScore` — raw magnetometer z-score when available.
- *                 Reacts instantly to EMF spikes without Bayesian smoothing lag.
- * Fallback input: `activityBand` — used when no z-score is present
- *                 (e.g. compass-only iOS or Pi data).
- *
- * LED colour map (left → right): G G Y O R — exactly the physical device.
+ * Layout (spec):
+ *   width  ~40px
+ *   height ~120px (5 LEDs × ~18px stride + label + padding)
+ *   "K-II" label (10px) above the LEDs
+ *   background rgba(0,0,0,0.35) rounded box
+ *   LED colour ramp: green → green → yellow → orange → red (1=bottom, 5=top)
+ *   Lit count driven by emfZScore (primary) or activityBand (fallback)
  */
 function drawKiiMeter(
   ctx: CanvasRenderingContext2D,
   W: number,
   H: number,
   band: OverlayState["activityBand"],
-  emfZScore?: number,
+  emfZScore: number | undefined,
+  s: number,
 ): void {
   const litCount = (typeof emfZScore === "number" && Number.isFinite(emfZScore))
     ? zScoreToLeds(Math.abs(emfZScore), KII_Z_TABLE)
     : (KII_LIT[band] ?? 1);
-  const pad        = Math.round(W * 0.018);
-  const ledR       = Math.max(7,  Math.round(H * 0.011));
-  const ledGap     = ledR * 2.7;
-  const labelFontPx = Math.max(9, Math.round(H * 0.013));
-  const innerPadX  = Math.round(pad * 0.9);
-  const innerPadY  = Math.round(pad * 0.55);
-  // "K·II" label occupies ~4.5 chars of the monospaced font
-  const labelW     = Math.round(labelFontPx * 4.5);
-  const widgetW    = innerPadX * 2 + labelW + Math.round(pad * 0.6) + 5 * ledGap;
-  const widgetH    = innerPadY * 2 + ledR * 3;
-  const x          = pad;
-  // Sit 25% up from the bottom — above caption/timestamp but well below the
-  // sensor stack which stops at roughly 30% from the top.
-  const y          = H - Math.round(H * 0.25) - widgetH;
 
-  drawPill(ctx, x, y, widgetW, widgetH, "rgba(0,0,0,0.72)", "rgba(200,200,200,0.22)");
+  // Size constants
+  const widgetW = Math.round(40 * s);
+  const widgetH = Math.round(120 * s);
+  const labelFontPx = Math.round(10 * s);
+  const margin = Math.round(12 * s);
+  const padY = Math.round(6 * s);
+  // Anchored under the data column (sensor block); offset 30% from top to
+  // keep both K-II and REM Pod visible while staying clear of the data block.
+  const x = W - margin - widgetW;
+  const y = Math.round(H * 0.30);
+
+  drawSoftBox(ctx, x, y, widgetW, widgetH, "rgba(0,0,0,0.35)", "rgba(255,255,255,0.18)", 0.5);
 
   ctx.save();
-  ctx.textBaseline = "middle";
-  ctx.textAlign    = "left";
-  ctx.font         = `700 ${labelFontPx}px "JetBrains Mono", monospace`;
-  ctx.fillStyle    = "rgba(255,255,255,0.78)";
-  ctx.fillText("K·II", x + innerPadX, y + widgetH / 2);
+  // Label
+  ctx.font = `700 ${labelFontPx}px "JetBrains Mono", monospace`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.fillStyle = "rgba(255,255,255,0.78)";
+  ctx.fillText("K-II", x + widgetW / 2, y + padY);
 
+  // LEDs — stacked vertically. Bottom LED = LED index 0 (green); top = 4 (red).
+  const labelArea = padY + labelFontPx + Math.round(4 * s);
+  const ledArea = widgetH - labelArea - padY;
+  const ledStride = ledArea / 5;
+  const ledR = Math.min(ledStride * 0.35, widgetW * 0.30);
   const LED_COLORS = ["#33EE55", "#33EE55", "#FFDD00", "#FF8800", "#FF2222"] as const;
-  const ledsStartX = x + innerPadX + labelW + Math.round(pad * 0.6) + ledR;
-  const ledCY      = y + widgetH / 2;
 
   for (let i = 0; i < 5; i++) {
-    const cx   = ledsStartX + i * ledGap;
-    const lit  = i < litCount;
-    const col  = LED_COLORS[i];
+    const lit = i < litCount;
+    const col = LED_COLORS[i];
+    // Stack bottom-up: i=0 is the bottom-most LED.
+    const cy = y + labelArea + ledArea - ledStride * (i + 0.5);
+    const cx = x + widgetW / 2;
     ctx.beginPath();
-    ctx.arc(cx, ledCY, ledR, 0, Math.PI * 2);
+    ctx.arc(cx, cy, ledR, 0, Math.PI * 2);
     if (lit) {
       ctx.shadowColor = col;
-      ctx.shadowBlur  = ledR * 2.5;
-      ctx.fillStyle   = col;
+      ctx.shadowBlur = ledR * 2.2;
+      ctx.fillStyle = col;
     } else {
-      ctx.shadowBlur  = 0;
-      ctx.fillStyle   = "rgba(25,25,25,0.9)";
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = "rgba(25,25,25,0.85)";
     }
     ctx.fill();
+    ctx.shadowBlur = 0;
     ctx.strokeStyle = lit ? col : "rgba(70,70,70,0.6)";
-    ctx.lineWidth   = 1.4;
+    ctx.lineWidth = 1;
     ctx.stroke();
-    ctx.shadowBlur  = 0;
   }
   ctx.restore();
 }
@@ -834,135 +940,458 @@ function drawKiiMeter(
 const REM_LIT_BY_BAND: Record<OverlayState["activityBand"], number> = {
   calm: 0, light: 1, possible: 2, notable: 4, strong: 6,
 };
-/** Activity-band-driven ring pulse intensity. Used when no z-score is available. */
-const REM_INTENSITY_BY_BAND: Record<Exclude<OverlayState["activityBand"], "calm">, number> = {
-  light: 0.45, possible: 0.65, notable: 0.85, strong: 1.0,
-};
 
 /**
- * Virtual REM Pod — the oval EM-detection device with antenna and ring LEDs.
- * The physical REM pod lights up when its radiated EM field is disturbed.
+ * Virtual REM Pod — six-LED stack mounted on the RIGHT EDGE, BELOW K-II.
+ * Same form factor as the K-II so the right edge reads as a unified
+ * instrument strip. Distinct cyan/orange theme (vs K-II's green/red) so
+ * the operator can pick them apart at a glance.
  *
- * Primary input:  `emfZScore` — raw magnetometer z-score. Reacts instantly
- *                 to EMF spikes; intensity ramps with z-score magnitude.
- * Fallback input: `activityBand` — used when no z-score is present
- *                 (e.g. compass-only iOS).
+ * Layout (spec):
+ *   width  ~40px
+ *   height ~120px
+ *   "REM" label (10px) above the LEDs
+ *   background rgba(0,0,0,0.35) rounded box
+ *   LED colour ramp: cyan(low) → orange(high)
  */
 function drawRemPod(
   ctx: CanvasRenderingContext2D,
   W: number,
   H: number,
   activityBand: OverlayState["activityBand"],
-  band: { fill: string; glow: string; stroke: string },
-  emfZScore?: number,
+  emfZScore: number | undefined,
+  s: number,
 ): void {
   const hasZ = typeof emfZScore === "number" && Number.isFinite(emfZScore);
   const zAbs = hasZ ? Math.abs(emfZScore as number) : 0;
-  // Active when z-score (if supplied) signals deviation OR activity band escalated.
-  const active  = hasZ ? zAbs >= 1.0 : activityBand !== "calm";
   const litLeds = hasZ ? zScoreToLeds(zAbs, REM_Z_TABLE) : (REM_LIT_BY_BAND[activityBand] ?? 0);
-  const pad     = Math.round(W * 0.018);
-  const podRX   = Math.max(28, Math.round(Math.min(W, H) * 0.042));
-  const podRY   = Math.round(podRX * 0.72);
-  const cx      = W - pad * 2 - podRX;
-  const cy      = H - Math.round(H * 0.27);
-  const now     = Date.now();
+
+  // Size constants — match K-II so the two stacks visually pair.
+  const widgetW = Math.round(40 * s);
+  const widgetH = Math.round(120 * s);
+  const labelFontPx = Math.round(10 * s);
+  const margin = Math.round(12 * s);
+  const padY = Math.round(6 * s);
+  // Sit directly below the K-II meter (which lives at H*0.30) with an 8px gap.
+  const kiiBottom = Math.round(H * 0.30) + widgetH;
+  const x = W - margin - widgetW;
+  const y = kiiBottom + Math.round(8 * s);
+
+  drawSoftBox(ctx, x, y, widgetW, widgetH, "rgba(0,0,0,0.35)", "rgba(255,165,80,0.22)", 0.5);
 
   ctx.save();
+  ctx.font = `700 ${labelFontPx}px "JetBrains Mono", monospace`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.fillStyle = "rgba(255,200,140,0.85)";
+  ctx.fillText("REM", x + widgetW / 2, y + padY);
 
-  // Pulsing rings radiate outward from the pod body when active. With z-score
-  // the intensity ramps continuously with the spike magnitude; without it we
-  // bucket via activityBand.
-  if (active) {
-    const intensity = hasZ
-      ? Math.min(1, zAbs / 5.0)
-      : (activityBand === "calm" ? 0.45 : (REM_INTENSITY_BY_BAND[activityBand] ?? 0.45));
-    for (let i = 0; i < 3; i++) {
-      const phase  = ((now / 1100) + i / 3) % 1;
-      const ringRX = podRX * (1 + phase * 2.2);
-      const ringRY = podRY * (1 + phase * 2.2);
-      const alpha  = intensity * (1 - phase) * 0.55;
-      ctx.beginPath();
-      ctx.ellipse(cx, cy, ringRX, ringRY, 0, 0, Math.PI * 2);
-      ctx.strokeStyle = band.glow.replace(/[\d.]+\)$/, `${alpha})`);
-      ctx.lineWidth   = Math.max(1, podRX * 0.06);
-      ctx.stroke();
-    }
-  }
+  const labelArea = padY + labelFontPx + Math.round(4 * s);
+  const ledArea = widgetH - labelArea - padY;
+  const ledStride = ledArea / 6;
+  const ledR = Math.min(ledStride * 0.35, widgetW * 0.30);
+  // Cyan-to-orange ramp — distinct from K-II's green-to-red.
+  const REM_COLORS = ["#5DF2C7", "#5DF2C7", "#7FCFE8", "#FFC850", "#FFA040", "#FF7028"] as const;
 
-  // Oval body.
-  ctx.beginPath();
-  ctx.ellipse(cx, cy, podRX, podRY, 0, 0, Math.PI * 2);
-  const bodyGrad = ctx.createRadialGradient(cx, cy - podRY * 0.25, podRX * 0.1, cx, cy, podRX);
-  bodyGrad.addColorStop(0, active ? "rgba(38,38,38,0.92)" : "rgba(26,26,26,0.88)");
-  bodyGrad.addColorStop(1, "rgba(10,10,10,0.95)");
-  ctx.fillStyle   = bodyGrad;
-  ctx.shadowColor = active ? band.glow : "rgba(0,0,0,0.5)";
-  ctx.shadowBlur  = active ? podRX * 0.9 : 4;
-  ctx.fill();
-  ctx.shadowBlur  = 0;
-  ctx.strokeStyle = active ? band.stroke : "rgba(75,75,75,0.55)";
-  ctx.lineWidth   = Math.max(1.5, podRX * 0.04);
-  ctx.stroke();
-
-  // Antenna — vertical spike above body.
-  ctx.strokeStyle  = active ? band.fill : "rgba(110,110,110,0.7)";
-  ctx.lineWidth    = Math.max(1.5, podRX * 0.04);
-  ctx.beginPath();
-  ctx.moveTo(cx, cy - podRY);
-  ctx.lineTo(cx, cy - podRY - podRX * 1.1);
-  ctx.stroke();
-  // Antenna tip dot.
-  ctx.fillStyle   = active ? band.fill : "rgba(110,110,110,0.7)";
-  ctx.shadowColor = active ? band.glow : "transparent";
-  ctx.shadowBlur  = active ? 6 : 0;
-  ctx.beginPath();
-  ctx.arc(cx, cy - podRY - podRX * 1.1, Math.max(2.5, podRX * 0.07), 0, Math.PI * 2);
-  ctx.fill();
-  ctx.shadowBlur = 0;
-
-  // Six perimeter LEDs — light up as activity escalates.
-  const ledR   = Math.max(2.5, podRX * 0.09);
-  const numLeds = 6;
-  for (let i = 0; i < numLeds; i++) {
-    const angle = (i / numLeds) * Math.PI * 2 - Math.PI / 2;
-    const lx    = cx + podRX * 0.84 * Math.cos(angle);
-    const ly    = cy + podRY * 0.84 * Math.sin(angle);
-    const lit   = i < litLeds;
+  for (let i = 0; i < 6; i++) {
+    const lit = i < litLeds;
+    const col = REM_COLORS[i];
+    const cy = y + labelArea + ledArea - ledStride * (i + 0.5);
+    const cx = x + widgetW / 2;
     ctx.beginPath();
-    ctx.arc(lx, ly, ledR, 0, Math.PI * 2);
-    ctx.fillStyle   = lit ? band.fill : "rgba(28,28,28,0.9)";
-    ctx.shadowColor = lit ? band.glow : "transparent";
-    ctx.shadowBlur  = lit ? ledR * 2.5 : 0;
+    ctx.arc(cx, cy, ledR, 0, Math.PI * 2);
+    if (lit) {
+      ctx.shadowColor = col;
+      ctx.shadowBlur = ledR * 2.2;
+      ctx.fillStyle = col;
+    } else {
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = "rgba(25,25,25,0.85)";
+    }
     ctx.fill();
-    ctx.shadowBlur  = 0;
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = lit ? col : "rgba(70,70,70,0.6)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
   }
-
-  // "REM" label inside the oval.
-  const fontSize = Math.max(9, Math.round(podRX * 0.32));
-  ctx.font          = `700 ${fontSize}px "JetBrains Mono", monospace`;
-  ctx.textAlign     = "center";
-  ctx.textBaseline  = "middle";
-  ctx.fillStyle     = active ? band.fill : "rgba(160,160,160,0.85)";
-  ctx.shadowColor   = active ? band.glow : "transparent";
-  ctx.shadowBlur    = active ? fontSize * 0.6 : 0;
-  ctx.fillText("REM", cx, cy + podRY * 0.15);
-  ctx.shadowBlur    = 0;
-
   ctx.restore();
 }
+
+// ─── Audio meter (left edge, vertical) ──────────────────────────────────────
+
+/**
+ * Audio level meter — slim vertical bar mounted on the LEFT EDGE.
+ *
+ * Layout (spec):
+ *   width  ~12px (bar) + frame
+ *   height ~140px
+ *   Vertical gradient: green at bottom, yellow at 70%, red at peak
+ *   Background rgba(0,0,0,0.4) rounded box
+ *   Numeric dB indicator below the bar (small, optional read)
+ */
+function drawAudioMeter(
+  ctx: CanvasRenderingContext2D,
+  _W: number,
+  H: number,
+  audioRms: number,
+  s: number,
+): void {
+  // Size constants
+  const barW = Math.round(12 * s);
+  const barH = Math.round(140 * s);
+  const frameW = barW + Math.round(14 * s);
+  const dbFontPx = Math.round(9 * s);
+  const labelGap = Math.round(4 * s);
+  const frameH = barH + Math.round(12 * s) + dbFontPx + labelGap;
+  const margin = Math.round(12 * s);
+  // Align with the right-edge instrument stack so both bracket the camera frame.
+  const x = margin;
+  const y = Math.round(H * 0.30);
+
+  drawSoftBox(ctx, x, y, frameW, frameH, "rgba(0,0,0,0.4)", "rgba(255,255,255,0.18)", 0.5);
+
+  // Clamp + power-curve compression (log-ish feel without the cost of log).
+  const level = Math.min(1, Math.max(0, audioRms));
+  const visualLevel = Math.pow(level, 0.55);
+
+  // Bar geometry — centred horizontally in the frame box.
+  const barX = x + Math.round((frameW - barW) / 2);
+  const barY = y + Math.round(6 * s);
+
+  // Bar background slot.
+  ctx.save();
+  ctx.fillStyle = "rgba(20,20,20,0.85)";
+  ctx.beginPath();
+  const r = barW / 2;
+  ctx.moveTo(barX + r, barY);
+  ctx.arcTo(barX + barW, barY, barX + barW, barY + r, r);
+  ctx.lineTo(barX + barW, barY + barH - r);
+  ctx.arcTo(barX + barW, barY + barH, barX + barW - r, barY + barH, r);
+  ctx.lineTo(barX + r, barY + barH);
+  ctx.arcTo(barX, barY + barH, barX, barY + barH - r, r);
+  ctx.lineTo(barX, barY + r);
+  ctx.arcTo(barX, barY, barX + r, barY, r);
+  ctx.closePath();
+  ctx.fill();
+
+  // Fill (clipped to slot shape).
+  ctx.clip();
+  if (visualLevel > 0) {
+    const fillH = barH * visualLevel;
+    const fillTop = barY + barH - fillH;
+    const grad = ctx.createLinearGradient(0, barY + barH, 0, barY);
+    grad.addColorStop(0,    "#33EE55");
+    grad.addColorStop(0.6,  "#9FE83A");
+    grad.addColorStop(0.75, "#FFDD00");
+    grad.addColorStop(0.88, "#FF8800");
+    grad.addColorStop(1,    "#FF2222");
+    ctx.fillStyle = grad;
+    ctx.fillRect(barX, fillTop, barW, fillH);
+  }
+  ctx.restore();
+
+  // Threshold ticks at 70% / 85%.
+  ctx.save();
+  ctx.strokeStyle = "rgba(255,255,255,0.28)";
+  ctx.lineWidth = 1;
+  for (const frac of [0.7, 0.85]) {
+    const ty = barY + barH - barH * frac;
+    ctx.beginPath();
+    ctx.moveTo(barX - 1, ty);
+    ctx.lineTo(barX + barW + 1, ty);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // Numeric dB readout — convert RMS to dBFS-ish (20·log10), clamp to -60.
+  const dbValue = level > 0.001 ? 20 * Math.log10(level) : -60;
+  const dbLabel = `${dbValue >= 0 ? "+" : ""}${dbValue.toFixed(0)} dB`;
+  ctx.save();
+  ctx.font = `600 ${dbFontPx}px "JetBrains Mono", monospace`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.fillStyle = "rgba(255,255,255,0.78)";
+  ctx.fillText(dbLabel, x + frameW / 2, barY + barH + labelGap);
+  ctx.restore();
+}
+
+// ─── Status pills (top-left) ────────────────────────────────────────────────
+
+/**
+ * REC / LIVE / OFFLINE status pills, mounted in the TOP-LEFT corner.
+ *
+ * Layout (spec):
+ *   each pill ~24px tall, font 13px
+ *   red dot for REC, blue dot for LIVE — both 8px diameter
+ *   background rgba(0,0,0,0.5)
+ *   elapsed time HH:MM:SS appended (recordingStartedAt / liveStartedAt)
+ */
+function drawStatusPills(
+  ctx: CanvasRenderingContext2D,
+  // top-left anchored — W/H not needed but kept in the signature so all draw
+  // functions share the same shape and can be swapped in/out of the dispatch.
+  _W: number,
+  _H: number,
+  overlay: OverlayState,
+  s: number,
+): void {
+  const showOffline = overlay.recording && overlay.online === false;
+  if (!overlay.recording && !overlay.liveStreaming && !showOffline) return;
+
+  // Size constants
+  const pillH = Math.round(24 * s);
+  const fontSize = Math.round(13 * s);
+  const dotR = Math.round(4 * s);       // 8px diameter
+  const padX = Math.round(8 * s);
+  const dotGap = Math.round(6 * s);
+  const rowGap = Math.round(6 * s);
+  const margin = Math.round(12 * s);
+
+  ctx.save();
+  ctx.font = `700 ${fontSize}px "JetBrains Mono", monospace`;
+  ctx.textBaseline = "middle";
+
+  type Pill = { label: string; dot: string; fg: string; elapsedMs?: number };
+  const pills: Pill[] = [];
+  const now = Date.now();
+  if (overlay.recording) {
+    pills.push({
+      label: "REC",
+      dot: "#FF4A4A",
+      fg: "#FFE6E6",
+      elapsedMs: overlay.recordingStartedAt != null ? now - overlay.recordingStartedAt : undefined,
+    });
+  }
+  if (overlay.liveStreaming) {
+    pills.push({
+      label: "LIVE",
+      dot: "#4FB4FF", // Blue dot per spec (was cyan).
+      fg: "#E6F4FF",
+      elapsedMs: overlay.liveStartedAt != null ? now - overlay.liveStartedAt : undefined,
+    });
+  }
+  if (showOffline) {
+    pills.push({ label: "OFFLINE", dot: "#FFC850", fg: "#FFE6B0" });
+  }
+
+  let y = margin;
+  const x = margin;
+  for (const p of pills) {
+    const elapsed = p.elapsedMs != null ? `  ${formatElapsed(p.elapsedMs)}` : "";
+    const text = `${p.label}${elapsed}`;
+    const textW = ctx.measureText(text).width;
+    const pillW = padX + dotR * 2 + dotGap + textW + padX;
+
+    drawSoftBox(ctx, x, y, pillW, pillH, "rgba(0,0,0,0.5)", "rgba(255,255,255,0.14)", 0.6);
+
+    // Dot.
+    const dotCX = x + padX + dotR;
+    const dotCY = y + pillH / 2;
+    ctx.beginPath();
+    ctx.arc(dotCX, dotCY, dotR, 0, Math.PI * 2);
+    ctx.shadowColor = p.dot;
+    ctx.shadowBlur = dotR * 2;
+    ctx.fillStyle = p.dot;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Label + elapsed.
+    ctx.textAlign = "left";
+    ctx.fillStyle = p.fg;
+    ctx.fillText(text, dotCX + dotR + dotGap, dotCY);
+
+    y += pillH + rowGap;
+  }
+  ctx.restore();
+}
+
+// ─── Case ID (bottom-left) ──────────────────────────────────────────────────
+
+/**
+ * Case ID readout — bottom-left corner.
+ *
+ * Layout (spec):
+ *   font 12px
+ *   background rgba(0,0,0,0.4) rounded box, padding 4×8px
+ *   caseId truncated to last 8 chars when longer than 8
+ *   sits to the LEFT of the timestamp (which is bottom-right) so they don't collide
+ */
+function drawCaseId(
+  ctx: CanvasRenderingContext2D,
+  // bottom-left anchored — width isn't needed for positioning, but kept in
+  // the signature so all draw functions share the same shape.
+  _W: number,
+  H: number,
+  overlay: OverlayState,
+  s: number,
+): void {
+  const caseId = overlay.caseId;
+  // No case → render "NO CASE" so the operator immediately sees the chain
+  // hasn't been initialised. Still small, still corner-mounted.
+  const text = caseId
+    ? `CASE ${(caseId.length > 8 ? caseId.slice(-8) : caseId).toUpperCase()}`
+    : "NO CASE";
+
+  // Size constants
+  const fontSize = Math.round(12 * s);
+  const padX = Math.round(8 * s);
+  const padY = Math.round(4 * s);
+  const boxH = fontSize + padY * 2;
+  const margin = Math.round(12 * s);
+
+  ctx.save();
+  ctx.font = `600 ${fontSize}px "JetBrains Mono", monospace`;
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "left";
+  const textW = ctx.measureText(text).width;
+  const boxW = textW + padX * 2;
+  const x = margin;
+  const y = H - margin - boxH;
+
+  drawSoftBox(ctx, x, y, boxW, boxH, "rgba(0,0,0,0.4)", "rgba(255,255,255,0.16)", 0.5);
+
+  ctx.fillStyle = "#fff";
+  ctx.fillText(text, x + padX, y + boxH / 2);
+  ctx.restore();
+}
+
+// ─── Timestamp (bottom-right) ───────────────────────────────────────────────
+
+/**
+ * Forensic timestamp — bottom-right corner. ISO 8601 with a frame counter
+ * suffix (HH:MM:SS:FF) for editing-room frame-accurate referencing.
+ *
+ * Layout (spec):
+ *   font 15px
+ *   background rgba(0,0,0,0.45) rounded box, padding 6×10px
+ *   sits to the RIGHT of the case ID so the two never collide
+ */
+function drawTimestamp(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  H: number,
+  overlay: OverlayState,
+  s: number,
+): void {
+  // Size constants
+  const fontSize = Math.round(15 * s);
+  const padX = Math.round(10 * s);
+  const padY = Math.round(6 * s);
+  const boxH = fontSize + padY * 2;
+  const margin = Math.round(12 * s);
+
+  const date = new Date(overlay.isoTimestamp);
+  // ISO 8601 HH:MM:SS plus a 30fps frame counter (FF) — same convention as
+  // SMPTE non-drop time-code that editors expect on burn-in.
+  const baseTime = isNaN(date.getTime())
+    ? "00:00:00"
+    : date.toISOString().substring(11, 19);
+  const ms = isNaN(date.getTime()) ? 0 : date.getUTCMilliseconds();
+  const frame = Math.min(29, Math.floor((ms / 1000) * 30));
+  const ff = frame < 10 ? `0${frame}` : `${frame}`;
+  const text = `${baseTime}:${ff}`;
+
+  ctx.save();
+  ctx.font = `600 ${fontSize}px "JetBrains Mono", monospace`;
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "right";
+  const textW = ctx.measureText(text).width;
+  const boxW = textW + padX * 2;
+  const x = W - margin - boxW;
+  const y = H - margin - boxH;
+
+  drawSoftBox(ctx, x, y, boxW, boxH, "rgba(0,0,0,0.45)", "rgba(255,255,255,0.18)", 0.55);
+
+  ctx.fillStyle = "#fff";
+  ctx.fillText(text, x + boxW - padX, y + boxH / 2);
+  ctx.restore();
+}
+
+// ─── Caption (bottom-center) ────────────────────────────────────────────────
+
+/**
+ * AI narrator caption — bottom-center, ABOVE the timestamp/case-id row.
+ *
+ * Layout (spec):
+ *   max width 80% of frame width
+ *   font 17px white, with drop shadow for legibility
+ *   background rgba(0,0,0,0.65), padding 8×14px
+ *   positioned ~60px above the bottom margin so it never collides with the
+ *   bottom-right timestamp or bottom-left case ID
+ */
+function drawCaption(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  H: number,
+  caption: string,
+  s: number,
+): void {
+  // Size constants
+  const fontSize = Math.round(17 * s);
+  const padX = Math.round(14 * s);
+  const padY = Math.round(8 * s);
+  const lineHeight = Math.round(fontSize * 1.3);
+  const margin = Math.round(12 * s);
+  const bottomReserved = Math.round(48 * s); // space for the case-id/timestamp row
+  const maxWidth = Math.round(W * 0.8);
+
+  ctx.save();
+  ctx.font = `500 ${fontSize}px Inter, sans-serif`;
+  const lines = wrapText(ctx, caption, maxWidth - padX * 2);
+  const boxH = lines.length * lineHeight + padY * 2;
+  // Self-size width to the widest line so the caption hugs the text.
+  let widestLine = 0;
+  for (const line of lines) widestLine = Math.max(widestLine, ctx.measureText(line).width);
+  const boxW = Math.min(maxWidth, widestLine + padX * 2);
+  const x = Math.round((W - boxW) / 2);
+  const y = H - margin - bottomReserved - boxH;
+
+  drawSoftBox(ctx, x, y, boxW, boxH, "rgba(0,0,0,0.65)", "rgba(255,255,255,0.12)", 0.4);
+
+  ctx.fillStyle = "#fff";
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "center";
+  ctx.shadowColor = "rgba(0,0,0,0.85)";
+  ctx.shadowBlur = Math.round(3 * s);
+  ctx.shadowOffsetY = 1;
+  let cy = y + padY + lineHeight / 2;
+  for (const line of lines) {
+    ctx.fillText(line, x + boxW / 2, cy);
+    cy += lineHeight;
+  }
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
+  ctx.restore();
+}
+
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (ctx.measureText(candidate).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = candidate;
+    }
+  }
+  if (line) lines.push(line);
+  // Cap at 2 lines — keeps the caption tight at the bottom.
+  if (lines.length > 2) {
+    return [lines[0], lines.slice(1).join(" ")];
+  }
+  return lines;
+}
+
+// ─── Night-vision filter ────────────────────────────────────────────────────
 
 /**
  * Night-vision filter — applied BEFORE overlays are drawn over the camera
  * frame. Boosts the green channel and applies a dark-scene contrast lift so
  * under-lit footage looks like classic IR/NV footage. Not real infrared —
  * it's a colour-grade applied to the existing pixels.
- *
- * Algorithm:
- *   1. Extract pixel data from the already-drawn camera frame.
- *   2. For each pixel: R *= 0.05, G = clamp(luma * 2.2), B *= 0.05.
- *   3. Put pixels back. Result: monochrome green on the dark regions,
- *      bright green on reflective surfaces — the classic NV look.
  *
  * Performance: getImageData/putImageData is the expensive path. At 1920×1080
  * this touches ~8M values per frame. On modern mobile (V8 JIT, typed arrays)
@@ -977,20 +1406,20 @@ function applyNightVision(
   const d = imageData.data;
   for (let i = 0; i < d.length; i += 4) {
     const luma = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
-    // Lift shadows slightly, then map to green channel only.
     const boosted = Math.min(255, luma * 2.1 + 12);
     d[i]     = Math.round(boosted * 0.06); // R — near zero
     d[i + 1] = Math.round(boosted);         // G — full signal
     d[i + 2] = Math.round(boosted * 0.06); // B — near zero
-    // Alpha (d[i+3]) unchanged.
   }
   ctx.putImageData(imageData, 0, 0);
 }
 
+// ─── Corner brackets ────────────────────────────────────────────────────────
+
 /**
  * Camera-viewfinder corner brackets — four L-shaped tick marks in the
- * band colour. Classic broadcast / camera-finder framing cue. Drawn
- * last so they read over every other overlay element.
+ * band colour. Drawn over the edge glow so they always read against the
+ * background image.
  */
 function drawCornerBrackets(
   ctx: CanvasRenderingContext2D,
@@ -998,19 +1427,18 @@ function drawCornerBrackets(
   H: number,
   band: { fill: string; glow: string },
 ) {
-  const arm = Math.round(Math.min(W, H) * 0.055);
-  const mg  = Math.round(Math.min(W, H) * 0.022);
-  const lw  = Math.max(2, Math.round(Math.min(W, H) * 0.0028));
+  const arm = Math.round(Math.min(W, H) * 0.045);
+  const mg  = Math.round(Math.min(W, H) * 0.020);
+  const lw  = Math.max(2, Math.round(Math.min(W, H) * 0.0024));
 
   ctx.save();
   ctx.strokeStyle = band.fill;
   ctx.lineWidth   = lw;
   ctx.shadowColor = band.glow;
-  ctx.shadowBlur  = 9;
-  ctx.globalAlpha = 0.72;
+  ctx.shadowBlur  = 7;
+  ctx.globalAlpha = 0.55;
   ctx.lineCap     = "square";
 
-  // [corner-x, corner-y, x-direction, y-direction]
   const corners: [number, number, 1 | -1, 1 | -1][] = [
     [mg,        mg,        1,  1],
     [W - mg,    mg,       -1,  1],
@@ -1029,6 +1457,8 @@ function drawCornerBrackets(
   ctx.restore();
 }
 
+// ─── Direction arrow ────────────────────────────────────────────────────────
+
 function drawDirectionArrow(
   ctx: CanvasRenderingContext2D,
   W: number,
@@ -1041,16 +1471,15 @@ function drawDirectionArrow(
   if (angleDeg == null) return;
   const cx = W / 2;
   const cy = H / 2;
-  const orbitR = Math.min(W, H) * 0.32;
+  const orbitR = Math.min(W, H) * 0.30;
   const angleRad = (angleDeg - 90) * Math.PI / 180;
   const ax = cx + orbitR * Math.cos(angleRad);
   const ay = cy + orbitR * Math.sin(angleRad);
 
-  // Faint dashed orbit ring — gives the arrow a sense of tracking.
   ctx.save();
   ctx.strokeStyle = band.fill;
   ctx.lineWidth   = 1;
-  ctx.globalAlpha = 0.17;
+  ctx.globalAlpha = 0.14;
   ctx.setLineDash([4, 10]);
   ctx.beginPath();
   ctx.arc(cx, cy, orbitR, 0, Math.PI * 2);
@@ -1062,14 +1491,13 @@ function drawDirectionArrow(
   ctx.translate(ax, ay);
   ctx.rotate(angleRad + Math.PI / 2);
 
-  const arrowH = Math.min(W, H) * 0.07;
+  const arrowH = Math.min(W, H) * 0.055;
   const arrowW = arrowH * 0.6;
   ctx.shadowColor = band.glow;
-  ctx.shadowBlur = arrowH * 0.6;
+  ctx.shadowBlur = arrowH * 0.5;
   ctx.fillStyle = band.fill;
-  ctx.globalAlpha = 0.6 + coherence * 0.4;
+  ctx.globalAlpha = 0.55 + coherence * 0.35;
 
-  // Arrow shape pointing "up" (= outward).
   ctx.beginPath();
   ctx.moveTo(0, -arrowH * 0.5);
   ctx.lineTo(arrowW * 0.5, arrowH * 0.1);
@@ -1081,262 +1509,19 @@ function drawDirectionArrow(
   ctx.closePath();
   ctx.fill();
 
-  // Counter-rotated label
   ctx.rotate(-(angleRad + Math.PI / 2));
   ctx.shadowBlur = 0;
-  ctx.font = `700 ${Math.max(11, H * 0.014)}px "JetBrains Mono", monospace`;
+  ctx.font = `700 ${Math.max(10, H * 0.012)}px "JetBrains Mono", monospace`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillStyle = "#fff";
   const labelText = sector.replace("-", " ");
   const labW = ctx.measureText(labelText).width + 12;
-  const labH = Math.max(18, H * 0.022);
-  // Position label below the arrow tip, in the orbital direction.
-  const labX = orbitR < Math.min(W, H) * 0.4 ? 0 : 0;
+  const labH = Math.max(16, H * 0.020);
   const labY = arrowH * 0.7;
-  drawPill(ctx, labX - labW / 2, labY, labW, labH, "rgba(0,0,0,0.7)", band.stroke);
+  drawPill(ctx, -labW / 2, labY, labW, labH, "rgba(0,0,0,0.65)", band.stroke);
   ctx.fillStyle = "#fff";
-  ctx.fillText(labelText, labX, labY + labH / 2);
-
-  ctx.restore();
-}
-
-function drawCaption(ctx: CanvasRenderingContext2D, W: number, H: number, caption: string, band: { stroke: string; fill: string }) {
-  const pad = Math.round(W * 0.018);
-  const fontSize = Math.max(13, Math.round(H * 0.02));
-  ctx.save();
-  ctx.font = `500 ${fontSize}px Inter, sans-serif`;
-  ctx.textBaseline = "middle";
-
-  // Wrap text to fit width.
-  const maxWidth = W - pad * 4;
-  const lines = wrapText(ctx, caption, maxWidth);
-  const lineH = fontSize * 1.35;
-  const boxH = lines.length * lineH + pad * 1.4;
-  const boxY = H - pad - boxH;
-
-  drawPill(ctx, pad, boxY, W - pad * 2, boxH, "rgba(0,0,0,0.55)", band.stroke);
-
-  // Cyan dot on the left of the box.
-  const dotR = fontSize * 0.45;
-  ctx.fillStyle = band.fill;
-  ctx.shadowColor = band.fill;
-  ctx.shadowBlur = dotR * 2;
-  ctx.beginPath();
-  ctx.arc(pad + pad, boxY + boxH / 2, dotR, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.shadowBlur = 0;
-
-  // Lines.
-  ctx.fillStyle = "#fff";
-  let y = boxY + pad * 0.85 + lineH / 2;
-  for (const line of lines) {
-    ctx.fillText(line, pad + pad * 2 + dotR * 2, y);
-    y += lineH;
-  }
-  ctx.restore();
-}
-
-function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
-  const words = text.split(/\s+/);
-  const lines: string[] = [];
-  let line = "";
-  for (const word of words) {
-    const candidate = line ? `${line} ${word}` : word;
-    if (ctx.measureText(candidate).width > maxWidth && line) {
-      lines.push(line);
-      line = word;
-    } else {
-      line = candidate;
-    }
-  }
-  if (line) lines.push(line);
-  // Cap at 3 lines.
-  if (lines.length > 3) {
-    return [...lines.slice(0, 2), lines.slice(2).join(" ")];
-  }
-  return lines;
-}
-
-function drawMetadataStamp(ctx: CanvasRenderingContext2D, W: number, H: number, overlay: OverlayState) {
-  // Bottom-right block: ISO timestamp + case.
-  // Stack: [HH:MM:SS UTC]
-  //        [YYYY-MM-DD]
-  //        [CASE 1234ABCD]
-  const pad = Math.round(W * 0.018);
-  const fontSize = Math.max(11, Math.round(H * 0.014));
-  const lineH = fontSize * 1.35;
-
-  const date = new Date(overlay.isoTimestamp);
-  const tHHMM = date.toISOString().substring(11, 19) + " UTC";
-  const tYYYY = date.toISOString().substring(0, 10);
-  const caseShort = overlay.caseId ? `CASE ${overlay.caseId.slice(0, 8).toUpperCase()}` : "NO CASE";
-
-  const lines = [tHHMM, tYYYY, caseShort];
-  const boxW = Math.max(...lines.map((l) => measureMono(ctx, l, fontSize))) + pad * 1.6;
-  const boxH = lines.length * lineH + pad * 1.2;
-  const boxX = W - pad - boxW;
-  const boxY = H - pad - boxH - (overlay.caption ? Math.round(H * 0.12) : 0);
-
-  drawPill(ctx, boxX, boxY, boxW, boxH, "rgba(0,0,0,0.65)", "rgba(255,255,255,0.18)");
-
-  ctx.save();
-  ctx.font = `600 ${fontSize}px "JetBrains Mono", monospace`;
-  ctx.textAlign = "right";
-  ctx.textBaseline = "middle";
-  ctx.fillStyle = "#fff";
-  let y = boxY + pad * 0.7 + lineH / 2;
-  for (const line of lines) {
-    ctx.fillText(line, boxX + boxW - pad * 0.8, y);
-    y += lineH;
-  }
-  ctx.restore();
-}
-
-function measureMono(ctx: CanvasRenderingContext2D, text: string, fontSize: number): number {
-  ctx.save();
-  ctx.font = `600 ${fontSize}px "JetBrains Mono", monospace`;
-  const w = ctx.measureText(text).width;
-  ctx.restore();
-  return w;
-}
-
-function drawStatusPills(ctx: CanvasRenderingContext2D, W: number, H: number, overlay: OverlayState) {
-  // Center-top status pills: REC + LIVE + OFFLINE (only when relevant).
-  // OFFLINE only shows when recording locally — there's no point telling
-  // viewers a defunct LIVE pill is offline (LIVE can't be active without
-  // connectivity), but a local recording proves provenance "captured offline".
-  const showOffline = overlay.recording && overlay.online === false;
-  if (!overlay.recording && !overlay.liveStreaming) return;
-  const pad = Math.round(W * 0.018);
-  const pillH = Math.max(28, Math.round(H * 0.038));
-  const fontSize = Math.max(11, Math.round(H * 0.016));
-  const gap = 8;
-  ctx.save();
-  ctx.font = `700 ${fontSize}px "JetBrains Mono", monospace`;
-  ctx.textBaseline = "middle";
-
-  const now = Date.now();
-  // Build the pill list first so we can centre the whole row.
-  const pills: Array<{ text: string; bg: string; border: string; fg: string }> = [];
-  if (overlay.recording) {
-    const dur = overlay.recordingStartedAt ? ` ${formatElapsed(now - overlay.recordingStartedAt)}` : "";
-    pills.push({ text: `● REC${dur}`, bg: "rgba(50,0,0,0.85)", border: "rgba(255,90,90,0.95)", fg: "#FF4A4A" });
-  }
-  if (overlay.liveStreaming) {
-    const dur = overlay.liveStartedAt ? ` ${formatElapsed(now - overlay.liveStartedAt)}` : "";
-    pills.push({ text: `◉ LIVE${dur}`, bg: "rgba(0,30,40,0.85)", border: "rgba(127,252,215,0.95)", fg: "#7FFCD7" });
-  }
-  if (showOffline) {
-    pills.push({ text: "⚠ OFFLINE", bg: "rgba(40,30,0,0.85)", border: "rgba(255,200,80,0.95)", fg: "#FFC850" });
-  }
-
-  // Measure total row width including gaps between pills.
-  const widths = pills.map((p) => ctx.measureText(p.text).width + pad * 1.4);
-  const totalW = widths.reduce((a, w) => a + w, 0) + gap * Math.max(0, pills.length - 1);
-  let cursorX = W / 2 - totalW / 2;
-  const pillY = pad + pillH + 8;
-
-  for (let i = 0; i < pills.length; i++) {
-    const p = pills[i];
-    const w = widths[i];
-    drawPill(ctx, cursorX, pillY, w, pillH, p.bg, p.border);
-    ctx.fillStyle = p.fg;
-    ctx.textAlign = "center";
-    ctx.fillText(p.text, cursorX + w / 2, pillY + pillH / 2);
-    cursorX += w + gap;
-  }
-  ctx.restore();
-}
-
-/**
- * Audio level meter — gradient bar (green→yellow→red) centred below the
- * status pills row. Drives off `audioRms` from the LiveAnalyzer.
- *
- * Layout: centred horizontally, ~22% of frame width, ~14 px tall (scales
- * with H). Tick marks at 70% and 85% mark the safe / loud / clipping zones.
- * No label text — the dock icon identifies the channel; the burnt-in meter
- * stays clean for broadcast.
- */
-function drawAudioMeter(
-  ctx: CanvasRenderingContext2D,
-  W: number,
-  H: number,
-  audioRms: number,
-): void {
-  const pad      = Math.round(W * 0.018);
-  const pillH    = Math.max(28, Math.round(H * 0.038));
-  // Sit just below the status-pills row (status pills sit at pad + pillH + 8).
-  const y        = pad + pillH + 8 + pillH + 6;
-  const meterW   = Math.max(180, Math.round(W * 0.22));
-  const meterH   = Math.max(12, Math.round(H * 0.018));
-  const x        = Math.round((W - meterW) / 2);
-  const radius   = meterH * 0.45;
-
-  // Clamp + ease the level. The Audio RMS is already 0–1 but log-scale feels
-  // more like a real VU meter than linear.
-  const level = Math.min(1, Math.max(0, audioRms));
-  // 0.55 power compresses the low end so quiet audio still shows movement.
-  const visualLevel = Math.pow(level, 0.55);
-
-  ctx.save();
-
-  // Background pill.
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.arcTo(x + meterW, y, x + meterW, y + radius, radius);
-  ctx.arcTo(x + meterW, y + meterH, x + meterW - radius, y + meterH, radius);
-  ctx.arcTo(x, y + meterH, x, y + meterH - radius, radius);
-  ctx.arcTo(x, y, x + radius, y, radius);
-  ctx.closePath();
-  ctx.fillStyle = "rgba(0,0,0,0.72)";
-  ctx.fill();
-  // Subtle border so the meter reads on bright backgrounds.
-  ctx.strokeStyle = "rgba(255,255,255,0.12)";
-  ctx.lineWidth = 1;
-  ctx.stroke();
-
-  // Inner fill bar — clipped to the pill shape so the rounded edges follow.
-  const innerPad = 2;
-  const fillX = x + innerPad;
-  const fillY = y + innerPad;
-  const fillFullW = meterW - innerPad * 2;
-  const fillH = meterH - innerPad * 2;
-  const fillW = fillFullW * visualLevel;
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.arcTo(x + meterW, y, x + meterW, y + radius, radius);
-  ctx.arcTo(x + meterW, y + meterH, x + meterW - radius, y + meterH, radius);
-  ctx.arcTo(x, y + meterH, x, y + meterH - radius, radius);
-  ctx.arcTo(x, y, x + radius, y, radius);
-  ctx.closePath();
-  ctx.clip();
-
-  if (fillW > 0) {
-    const grad = ctx.createLinearGradient(fillX, 0, fillX + fillFullW, 0);
-    grad.addColorStop(0,    "#33EE55");
-    grad.addColorStop(0.6,  "#9FE83A");
-    grad.addColorStop(0.75, "#FFDD00");
-    grad.addColorStop(0.88, "#FF8800");
-    grad.addColorStop(1,    "#FF2222");
-    ctx.fillStyle = grad;
-    ctx.fillRect(fillX, fillY, fillW, fillH);
-  }
-  ctx.restore();
-
-  // Threshold ticks at 70% (loud) and 85% (clipping). Inside the pill so
-  // they overlay both the fill and the background.
-  ctx.strokeStyle = "rgba(255,255,255,0.32)";
-  ctx.lineWidth = 1;
-  for (const frac of [0.7, 0.85]) {
-    const tx = fillX + fillFullW * frac;
-    ctx.beginPath();
-    ctx.moveTo(tx, y + 1);
-    ctx.lineTo(tx, y + meterH - 1);
-    ctx.stroke();
-  }
+  ctx.fillText(labelText, 0, labY + labH / 2);
 
   ctx.restore();
 }

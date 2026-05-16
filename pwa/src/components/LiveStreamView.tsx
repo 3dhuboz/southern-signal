@@ -30,6 +30,7 @@ import { setLiveBroadcastState } from "../lib/system/liveBroadcast";
 import { useNetworkOnline } from "../lib/system/systemStatus";
 import { sha256HexBytes } from "../lib/forensic/canonicalJson";
 import { getItcChannels } from "../lib/itc/itcChannels";
+import { getItcMixer } from "../lib/audio/itcAudioMixer";
 import { loadOverlayChannels, saveOverlayChannels } from "../lib/media/overlayChannelStorage";
 import {
   WHIP_URL_KEY, WHIP_BEARER_KEY, WHIP_PROVIDER_KEY,
@@ -450,12 +451,30 @@ export function LiveStreamView(props: LiveStreamViewProps) {
     compositorRef.current = compositor;
     compositor.start();
 
-    // Build the OUTGOING stream: composited video + original audio track.
+    // Build the OUTGOING stream: composited video + mic audio + ITC mixer
+    // audio. The ITC mixer carries synthesised Spirit Box / Ovilus tones that
+    // used to play through device speakers (where the mic re-captured them
+    // as a feedback loop). Routing them through a MediaStream source instead
+    // means MediaRecorder + WHIP get a clean composite while the room mic
+    // only picks up the actual scene audio.
     const compositedVideoStream = compositor.captureStream();
     const audioTracks = stream.getAudioTracks();
+    let itcAudioTracks: MediaStreamTrack[] = [];
+    try {
+      itcAudioTracks = getItcMixer().getStream().getAudioTracks();
+    } catch {
+      // Web Audio unavailable / autoplay rejected before any tool ran —
+      // skip ITC audio tracks. Recording still works without them; the
+      // ITC tools will simply produce no audio this session.
+    }
+    // De-duplicate by track id so a second mount (e.g. after closing the
+    // camera and re-opening) doesn't add the same ITC track twice.
+    const audioById = new Map<string, MediaStreamTrack>();
+    for (const t of audioTracks) audioById.set(t.id, t);
+    for (const t of itcAudioTracks) audioById.set(t.id, t);
     const outgoing = new MediaStream([
       ...compositedVideoStream.getVideoTracks(),
-      ...audioTracks,
+      ...audioById.values(),
     ]);
     compositorStreamRef.current = outgoing;
 
