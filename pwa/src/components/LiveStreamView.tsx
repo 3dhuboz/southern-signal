@@ -34,7 +34,7 @@ import { loadOverlayChannels, saveOverlayChannels } from "../lib/media/overlayCh
 import {
   WHIP_URL_KEY, WHIP_BEARER_KEY, WHIP_PROVIDER_KEY,
   WHIP_PROVIDERS,
-  type WhipProviderKey, type WhipProviderTemplate,
+  type WhipProviderKey,
 } from "../lib/media/whipStorage";
 import s from "./LiveStreamView.module.css";
 

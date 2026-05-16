@@ -516,7 +516,7 @@ function drawItcReadout(
   W: number,
   H: number,
   overlay: OverlayState,
-  band: { stroke: string; fill: string },
+  band: { stroke: string; fill: string; glow: string },
   blockY: number,
 ): number {
   const itc = overlay.itc;

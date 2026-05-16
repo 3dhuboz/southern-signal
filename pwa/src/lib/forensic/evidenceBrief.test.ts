@@ -30,6 +30,12 @@ const FIXTURE_INV: Investigation = {
   disposition: "flagged",
   source: "pwa",
   culturally_sensitive: 0,
+  protocol_json: null,
+  protocol_hash: null,
+  session_type: "active",
+  paired_investigation_id: null,
+  to_consent_path: null,
+  commercial_use_approved: 0,
 };
 
 const PREFS_DEFAULT = {

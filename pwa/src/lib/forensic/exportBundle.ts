@@ -893,7 +893,7 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
     const tsaRequestedAt = new Date().toISOString();
 
     try {
-      const sha256 = new Uint8Array(await crypto.subtle.digest("SHA-256", coseEnvelope));
+      const sha256 = new Uint8Array(await crypto.subtle.digest("SHA-256", coseEnvelope as BufferSource));
       const tsaResp = await sendTsaRequest(sha256);
       if (tsaResponseOk(tsaResp)) {
         tsaStatus = "anchored";

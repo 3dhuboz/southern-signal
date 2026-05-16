@@ -42,6 +42,12 @@ export async function createInvestigation(input: { title: string; location_name?
     disposition: null,
     source: "pwa",
     culturally_sensitive: 0,
+    protocol_json: null,
+    protocol_hash: null,
+    session_type: "active",
+    paired_investigation_id: null,
+    to_consent_path: null,
+    commercial_use_approved: 0,
   };
   await exec(
     `INSERT INTO investigations (id, title, location_name, notes, created_at, status, source)
@@ -194,6 +200,7 @@ export async function recordEvent(input: EventInput): Promise<EvidenceEvent> {
     description: input.description ?? null,
     metadata_json: input.metadata ? JSON.stringify(input.metadata) : null,
     linked_file: input.linked_file ?? null,
+    restriction: "open",
   };
   await exec(
     `INSERT INTO evidence_events (id, investigation_id, timestamp, source, event_type, title, description, metadata_json, linked_file)
@@ -240,6 +247,7 @@ export async function registerMedia(input: MediaInput): Promise<MediaAsset> {
     timestamp_end: input.timestamp_end ?? null,
     checksum_sha256: input.checksum_sha256 ?? null,
     metadata_json: input.metadata ? JSON.stringify(input.metadata) : null,
+    restriction: "open",
   };
   await exec(
     `INSERT INTO media_assets (id, investigation_id, media_type, file_path, timestamp_start, timestamp_end, checksum_sha256, metadata_json)
@@ -674,6 +682,8 @@ export async function createControlSession(
     protocol_hash: null,
     session_type: "control",
     paired_investigation_id: pairedInvestigationId,
+    to_consent_path: null,
+    commercial_use_approved: 0,
   };
   await exec(
     `INSERT INTO investigations

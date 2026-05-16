@@ -155,7 +155,9 @@ export async function sendTsaRequest(sha256Hash: Uint8Array): Promise<Uint8Array
     const response = await fetch(TSA_URL, {
       method: "POST",
       headers: { "Content-Type": "application/timestamp-query" },
-      body: reqBytes,
+      // Cast: same TS 5.7+ Uint8Array<ArrayBufferLike> vs BodyInit issue
+      // as signingKeyStore — reqBytes is locally constructed so never shared.
+      body: reqBytes as BodyInit,
       signal: controller.signal,
     });
 

@@ -144,6 +144,10 @@ export async function getPublicKeyHex(): Promise<string | null> {
  */
 export async function signBytes(data: Uint8Array): Promise<Uint8Array> {
   const { privateKey } = await getOrCreateSigningKey();
-  const sigBuf = await crypto.subtle.sign("Ed25519", privateKey, data);
+  // TypeScript 5.7+ tightened Uint8Array generic — it can be backed by either
+  // ArrayBuffer or SharedArrayBuffer, but SubtleCrypto.sign rejects the latter.
+  // The cast narrows the type; the runtime value is always ArrayBuffer-backed
+  // because the caller paths construct it locally (not from shared memory).
+  const sigBuf = await crypto.subtle.sign("Ed25519", privateKey, data as BufferSource);
   return new Uint8Array(sigBuf);
 }

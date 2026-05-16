@@ -486,6 +486,10 @@ export function CameraScreen() {
         lastEmissionTsRef.current.acoustic = now;
         void emitEvidence({ channel: ev.channel, logLr: ev.logLr, reason: ev.reason, metadata: ev.metadata, nowMs: now });
       },
+      onInfrasound: () => { /* CameraScreen omits the dedicated infrasound
+        evidence channel — MissionControl handles it via the SensorsPanel.
+        Leaving this as a no-op keeps the AnalyzerEvents contract satisfied
+        without inflating the camera-first dock with rarely-fired evidence. */ },
       onError: (err) => console.warn("[CameraScreen] analyzer:", err.message),
     });
     try { await analyzer.start(); analyzerRef.current = analyzer; } catch { /**/ }
