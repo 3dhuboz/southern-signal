@@ -103,3 +103,31 @@ export function useSystemStatus(): SystemStatus {
 
   return { batteryPct, charging, storageFreeMB, storageUsedPct };
 }
+
+/**
+ * useNetworkOnline — minimal wrapper over `navigator.onLine` + online/offline
+ * window events. Returns the current online status and re-renders when it
+ * flips. Same-value functional guard avoids spurious re-renders when the
+ * event fires but the value hasn't actually changed.
+ *
+ * Used by AppHeader (the offline pill), LiveStreamView (canvas OFFLINE
+ * indicator), and any future component that needs to react to connectivity.
+ */
+export function useNetworkOnline(): boolean {
+  const [online, setOnline] = useState<boolean>(() =>
+    typeof navigator !== "undefined" ? navigator.onLine : true
+  );
+  useEffect(() => {
+    const sync = () => setOnline((prev) => {
+      const next = navigator.onLine;
+      return prev === next ? prev : next;
+    });
+    window.addEventListener("online", sync);
+    window.addEventListener("offline", sync);
+    return () => {
+      window.removeEventListener("online", sync);
+      window.removeEventListener("offline", sync);
+    };
+  }, []);
+  return online;
+}

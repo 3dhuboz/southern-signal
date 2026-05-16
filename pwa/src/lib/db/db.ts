@@ -157,6 +157,22 @@ async function init(): Promise<InitResult> {
     /* column already renamed (v13+) or table was just created with new name */
   }
 
+  // v14: ICIP restriction levels on media_assets and evidence_events;
+  // TO consent path + commercial-use flag on investigations. Default
+  // 'open' so all existing evidence rows are treated as unrestricted.
+  for (const stmt of [
+    "ALTER TABLE media_assets    ADD COLUMN restriction       TEXT    NOT NULL DEFAULT 'open'",
+    "ALTER TABLE evidence_events ADD COLUMN restriction       TEXT    NOT NULL DEFAULT 'open'",
+    "ALTER TABLE investigations  ADD COLUMN to_consent_path  TEXT",
+    "ALTER TABLE investigations  ADD COLUMN commercial_use_approved INTEGER NOT NULL DEFAULT 0",
+  ]) {
+    try {
+      await exec(stmt, [], false);
+    } catch {
+      /* column exists on v14+ DBs or new DB created with SCHEMA_SQL */
+    }
+  }
+
   // Stamp schema version on fresh DBs.
   await exec(
     "INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('schema_version', ?)",

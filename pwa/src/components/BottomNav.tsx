@@ -16,7 +16,23 @@ type NavItem = {
 const items: NavItem[] = [
   {
     to: "/",
-    label: "Mission",
+    label: "Camera",
+    icon: (
+      /* Viewfinder ring + record dot — unmistakably "camera-first" */
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
+        {/* Four L-corner brackets */}
+        <path d="M4.5 8 L4.5 4.5 L8 4.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M19.5 8 L19.5 4.5 L16 4.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M4.5 16 L4.5 19.5 L8 19.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M19.5 16 L19.5 19.5 L16 19.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx="12" cy="12" r="3" fill="currentColor" />
+      </svg>
+    ),
+  },
+  {
+    to: "/investigate",
+    label: "Investigate",
     icon: (
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <rect x="4" y="9" width="2" height="6" rx="1" fill="currentColor" />

@@ -12,12 +12,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { exec, query } from "../lib/db/db";
-import { readFile, deletePath } from "../lib/opfs";
+import { readFile, deletePath, writeBytes } from "../lib/opfs";
 import { appendAuditEntry } from "../lib/db/auditLog";
 import { createInvestigation, deleteDossier, setCulturallySensitive } from "../lib/db/repo";
 import { getProtocol } from "../lib/db/protocolRepo";
 import { usePreferences } from "../lib/preferences";
-import type { InvestigationProtocol, ResearchDossierRow } from "../lib/db/schema";
+import type { InvestigationProtocol, ResearchDossierRow, RestrictionLevel } from "../lib/db/schema";
 import { clearBaseline } from "../lib/posterior/sessionBaseline";
 import { buildExportBundle, downloadBlob } from "../lib/forensic/exportBundle";
 import { autoName } from "../lib/cases/autoName";
@@ -26,6 +26,7 @@ import { ControlSessionPanel } from "./ControlSessionPanel";
 import { EventDebunkPanel } from "./EventDebunkPanel";
 import { ProtocolWizard } from "./ProtocolWizard";
 import { ProtocolSummaryChip } from "./ProtocolSummaryChip";
+import { RestrictionPicker } from "./RestrictionPicker";
 import { SensitiveSiteWarning } from "./SensitiveSiteWarning";
 import {
   findNearbySites,
@@ -355,6 +356,48 @@ export function CaseManager() {
     }
   };
 
+  const handleConsentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!openCaseId) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const ext = file.name.split(".").pop() ?? "bin";
+    const path = `consent/${openCaseId}/to_consent.${ext}`;
+    try {
+      await writeBytes(path, file);
+      await exec("UPDATE investigations SET to_consent_path = ? WHERE id = ?", [path, openCaseId]);
+      await appendAuditEntry({
+        actor: "user",
+        kind: "investigation.consent_doc_uploaded",
+        payload: { id: openCaseId, path, filename: file.name, size: file.size },
+      });
+      setStatusMsg("Consent document saved.");
+      refresh();
+    } catch (err) {
+      setStatusMsg(`Consent upload failed: ${(err as Error).message}`);
+    }
+  };
+
+  const handleToggleCommercialApproved = async (next: boolean) => {
+    if (!openCaseId) return;
+    const c = cases.find((x) => x.id === openCaseId);
+    if (next && !c?.to_consent_path) {
+      setStatusMsg("Upload a TO consent document before marking commercial use approved.");
+      return;
+    }
+    try {
+      await exec("UPDATE investigations SET commercial_use_approved = ? WHERE id = ?", [next ? 1 : 0, openCaseId]);
+      await appendAuditEntry({
+        actor: "user",
+        kind: "investigation.commercial_use",
+        payload: { id: openCaseId, approved: next },
+      });
+      setStatusMsg(next ? "Commercial use approved." : "Commercial use approval cleared.");
+      refresh();
+    } catch (err) {
+      setStatusMsg(`Failed: ${(err as Error).message}`);
+    }
+  };
+
   const handleToggleCulturallySensitive = async (next: boolean) => {
     if (!openCaseId) return;
     setStatusMsg(null);
@@ -493,7 +536,30 @@ export function CaseManager() {
     }
   };
 
-  const awaitingAck = awaitingAck;
+  const awaitingAck = siteMatches.length > 0 && !siteAcknowledged;
+
+  const handleSetMediaRestriction = async (assetId: string, level: RestrictionLevel) => {
+    // Optimistic update so the picker responds instantly.
+    setOpenMedia((prev) => prev.map((m) => m.id === assetId ? { ...m, restriction: level } : m));
+    try {
+      await exec("UPDATE media_assets SET restriction = ? WHERE id = ?", [level, assetId]);
+      await appendAuditEntry({
+        actor: "user",
+        kind: "media.restriction",
+        payload: { id: assetId, restriction: level },
+      });
+    } catch (err) {
+      setStatusMsg(`Restriction update failed: ${(err as Error).message}`);
+      // Revert to DB state on failure.
+      if (openCaseId) {
+        const media = await query<MediaAsset>(
+          "SELECT * FROM media_assets WHERE investigation_id = ? ORDER BY timestamp_start DESC",
+          [openCaseId],
+        );
+        setOpenMedia(media);
+      }
+    }
+  };
 
   return (
     <div className={s.wrap}>
@@ -689,6 +755,43 @@ export function CaseManager() {
                     />
                   </label>
 
+                  {/* ICIP consent document — required before commercial export */}
+                  <div className={s.sensitiveRow}>
+                    <span className={s.sensitiveText}>
+                      <strong>Traditional Owners consent document</strong>
+                      <span className={s.sensitiveHint}>
+                        {c.to_consent_path
+                          ? `On file: ${c.to_consent_path.split("/").pop()}`
+                          : "Not uploaded — required before commercial use can be approved."}
+                      </span>
+                    </span>
+                    <label className={`btn btn-ghost ${s.btnSize}`}>
+                      {c.to_consent_path ? "Replace" : "Upload"}
+                      <input
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        style={{ display: "none" }}
+                        onChange={handleConsentUpload}
+                      />
+                    </label>
+                  </div>
+
+                  <label className={s.sensitiveRow}>
+                    <span className={s.sensitiveText}>
+                      <strong>Commercial use approved</strong>
+                      <span className={s.sensitiveHint}>
+                        TO consent on file and distribution rights confirmed.
+                        {!c.to_consent_path && " Upload consent doc first."}
+                      </span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={c.commercial_use_approved === 1}
+                      disabled={!c.to_consent_path}
+                      onChange={(e) => handleToggleCommercialApproved(e.target.checked)}
+                    />
+                  </label>
+
                   {showSuggestion && (
                     <div className={s.suggestion}>
                       <span className={s.suggestionText}>
@@ -859,6 +962,11 @@ export function CaseManager() {
                                   {m.checksum_sha256 && <> · <code>{m.checksum_sha256.slice(0, 10)}…</code></>}
                                 </span>
                               </div>
+                              <RestrictionPicker
+                                compact
+                                value={m.restriction ?? "open"}
+                                onChange={(level) => handleSetMediaRestriction(m.id, level)}
+                              />
                               <div className={s.mediaActions}>
                                 <button type="button" className={s.iconBtn} onClick={() => handleDownloadMedia(m)} title="Download">⬇</button>
                                 <button type="button" className={s.iconBtnDanger} onClick={() => handleDeleteMedia(m)} title="Delete">×</button>

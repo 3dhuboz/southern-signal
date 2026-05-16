@@ -38,6 +38,30 @@ export interface OverlayChannels {
   caption: boolean;
   timestamp: boolean;
   statusPills: boolean;
+  /** Corner viewfinder bracket marks. Defaults to on when unset. */
+  cornerBrackets?: boolean;
+  /**
+   * Virtual K-II EMF meter — 5-LED bar driven by activity band.
+   * Off by default; operator enables when they want the device widget visible.
+   */
+  kiiMeter?: boolean;
+  /**
+   * Virtual REM pod — animated EM proximity widget with pulsing rings.
+   * Off by default; operator enables per session.
+   */
+  remPod?: boolean;
+  /**
+   * Night-vision filter — applies green-channel boost + contrast to the
+   * camera feed so dark environments look like classic NV footage.
+   * Off by default.
+   */
+  nightVision?: boolean;
+  /**
+   * Horizontal audio level meter — gradient bar (green→yellow→red) driven
+   * by the audio RMS, drawn below the REC/LIVE status pills. Essential for
+   * confirming mic levels during a broadcast. Off by default.
+   */
+  audioMeter?: boolean;
 }
 
 export const DEFAULT_OVERLAY_CHANNELS: OverlayChannels = {
@@ -50,6 +74,11 @@ export const DEFAULT_OVERLAY_CHANNELS: OverlayChannels = {
   caption: true,
   timestamp: true,
   statusPills: true,
+  cornerBrackets: true,
+  kiiMeter: false,
+  remPod: false,
+  nightVision: false,
+  audioMeter: false,
 };
 
 /**
@@ -75,6 +104,33 @@ export interface OverlayState {
   audioRms: number;
   recording: boolean;
   liveStreaming: boolean;
+  /**
+   * Unix-ms timestamp captured when the recorder started. Lets the status
+   * pills render an elapsed-time readout per frame (Date.now() - this)
+   * without needing React state churn for the seconds tick. Undefined when
+   * not recording.
+   */
+  recordingStartedAt?: number;
+  /**
+   * Unix-ms timestamp captured when the WHIP session went live. Same role
+   * as recordingStartedAt for the LIVE pill.
+   */
+  liveStartedAt?: number;
+  /**
+   * Whether the device currently has internet connectivity. When false and
+   * `recording` is true, the status pills render an "OFFLINE" badge so the
+   * recorded frame proves the footage was captured local-only — important
+   * for forensic chain integrity ("this clip pre-dates any cloud upload").
+   * Undefined = treat as online (back-compat with callers that don't supply it).
+   */
+  online?: boolean;
+  /**
+   * Raw magnetometer z-score from the EMF sensor — used by the K-II virtual
+   * meter as a fast-path input so the LEDs respond directly to EMF spikes
+   * without waiting for the Bayesian smoother to catch up.
+   * When absent the K-II falls back to `activityBand`.
+   */
+  emfZScore?: number;
   sensors?: {
     light?: number;
     magnetometer?: number;
@@ -198,6 +254,14 @@ function renderFrame(
   // give the operator a black square and is never what they want.
   ctx.drawImage(video, 0, 0, W, H);
 
+  // 1b. Night-vision filter — applied immediately after the camera frame and
+  //     before any overlay is drawn, so the NV colour-grade sits under all
+  //     text/widgets. getImageData + putImageData are the expensive path but
+  //     run within budget at 30fps on modern mobile GPUs.
+  if (channels.nightVision) {
+    applyNightVision(ctx, W, H);
+  }
+
   const band = BAND_COLOR[overlay.activityBand] ?? BAND_COLOR.calm;
 
   // 2. Edge glow tied to posterior + audio RMS.
@@ -208,6 +272,12 @@ function renderFrame(
     grad.addColorStop(1, band.glow.replace(/[\d.]+\)$/, `${edgeAlpha})`));
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, W, H);
+  }
+
+  // 2b. Corner viewfinder brackets — broadcast framing cue drawn over
+  // the edge glow so they always read against the background image.
+  if (channels.cornerBrackets !== false) {
+    drawCornerBrackets(ctx, W, H, band);
   }
 
   // 3. Top HUD strip (Activity + Posterior pills). Each pill is gated
@@ -230,6 +300,16 @@ function renderFrame(
     drawItcReadout(ctx, W, H, overlay, band, leftStackY);
   }
 
+  // 3d. Virtual instrument widgets — K-II EMF meter (bottom-left) and
+  //     REM pod (bottom-right). Positioned to sit above the caption/timestamp
+  //     zone and well clear of the sensor/ITC stack.
+  if (channels.kiiMeter) {
+    drawKiiMeter(ctx, W, H, overlay.activityBand, overlay.emfZScore);
+  }
+  if (channels.remPod) {
+    drawRemPod(ctx, W, H, overlay.activityBand, band, overlay.emfZScore);
+  }
+
   // 4. Direction arrow (only if sector + coherence are valid).
   if (channels.directionArrow && overlay.sector && overlay.coherence >= 0.5) {
     drawDirectionArrow(ctx, W, H, overlay.sector, overlay.coherence, band);
@@ -248,6 +328,13 @@ function renderFrame(
   // 7. Recording / live indicators.
   if (channels.statusPills) {
     drawStatusPills(ctx, W, H, overlay);
+  }
+
+  // 8. Audio level meter — drawn beneath the status pills row so the
+  //    REC/LIVE indicators and the mic-level bar feel like a unified
+  //    broadcast status bar.
+  if (channels.audioMeter) {
+    drawAudioMeter(ctx, W, H, overlay.audioRms);
   }
 }
 
@@ -503,11 +590,14 @@ function drawItcReadout(
       lx += ctx.measureText(ch).width + (i < r.label.length - 1 ? letterSpacingPx : 0);
     }
 
-    // Emission text — bold mono, band-tinted so the eye lands on the word.
+    // Emission text — bold mono, band-tinted + glow so the word pops.
     const textX = blockX + innerPadX + maxLabelW + labelGap;
     ctx.font = `700 ${textFontPx}px "JetBrains Mono", monospace`;
-    ctx.fillStyle = band.fill;
+    ctx.shadowColor = band.glow;
+    ctx.shadowBlur  = Math.round(textFontPx * 0.55);
+    ctx.fillStyle   = band.fill;
     ctx.fillText(r.text, textX, y);
+    ctx.shadowBlur  = 0;
 
     // Age stamp — muted small.
     const ageX = textX + maxTextW + ageGap;
@@ -537,8 +627,22 @@ function truncateForOverlay(text: string): string {
   return t.slice(0, 31) + "…";
 }
 
-function drawPill(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, fill: string, stroke: string) {
+function drawPill(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  fill: string,
+  stroke: string,
+) {
   const r = h / 2;
+
+  ctx.save();
+
+  // Build the rounded-rect path ONCE. Canvas retains the current path across
+  // fill()/stroke() calls — only beginPath() clears it. Calling all four
+  // passes from the same path avoids 3x redundant path reconstruction at 30fps.
   ctx.beginPath();
   ctx.moveTo(x + r, y);
   ctx.lineTo(x + w - r, y);
@@ -550,11 +654,352 @@ function drawPill(ctx: CanvasRenderingContext2D, x: number, y: number, w: number
   ctx.lineTo(x, y + r);
   ctx.arcTo(x, y, x + r, y, r);
   ctx.closePath();
+
+  // Pass 1 — flat fill + outer glow (shadowBlur expands outward).
+  ctx.shadowColor = stroke;
+  ctx.shadowBlur = 12;
   ctx.fillStyle = fill;
   ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Pass 2 — depth gradient overlay (top-highlight → bottom-darken).
+  const depth = ctx.createLinearGradient(x, y, x, y + h);
+  depth.addColorStop(0, "rgba(255,255,255,0.07)");
+  depth.addColorStop(0.45, "rgba(0,0,0,0)");
+  depth.addColorStop(1, "rgba(0,0,0,0.14)");
+  ctx.fillStyle = depth;
+  ctx.fill();
+
+  // Pass 3 — inner top-edge shimmer (glass reflection).
+  const shimmer = ctx.createLinearGradient(x, y, x, y + h * 0.38);
+  shimmer.addColorStop(0, "rgba(255,255,255,0.18)");
+  shimmer.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = shimmer;
+  ctx.fill();
+
+  // Pass 4 — colored border (2 px for crispness on high-DPI output).
   ctx.strokeStyle = stroke;
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = 2;
   ctx.stroke();
+
+  ctx.restore();
+}
+
+// ─── Virtual instrument widgets ───────────────────────────────────────────────
+
+/** Maps activityBand → number of K-II LEDs lit (1–5). Fallback when no z-score. */
+const KII_LIT: Record<OverlayState["activityBand"], number> = {
+  calm: 1, light: 2, possible: 3, notable: 4, strong: 5,
+};
+
+/**
+ * Maps raw EMF z-score to LED count via a thresholds table. Used by both the
+ * K-II (1–5 LEDs) and REM Pod (0–6 LEDs) virtual instruments. The first
+ * matching `[minZ, leds]` pair from highest-z down is used; the floor (the
+ * last entry, used when nothing matches) becomes the resting state.
+ *
+ * Thresholds align with statistical significance bands so the same z=2.5
+ * (≈2σ) means "anomaly" everywhere in the app.
+ */
+function zScoreToLeds(z: number, table: ReadonlyArray<readonly [number, number]>): number {
+  for (let i = 0; i < table.length - 1; i++) {
+    if (z >= table[i][0]) return table[i][1];
+  }
+  return table[table.length - 1][1];
+}
+
+/**
+ * Format an elapsed duration in milliseconds as broadcast-style `MM:SS` or
+ * `H:MM:SS` once it crosses an hour. Used by the REC / LIVE status pills so
+ * the burnt-in timer matches what editors expect on professional cameras.
+ */
+function formatElapsed(ms: number): string {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const h  = Math.floor(totalSec / 3600);
+  const m  = Math.floor((totalSec % 3600) / 60);
+  const s  = totalSec % 60;
+  const pad2 = (n: number) => n < 10 ? `0${n}` : `${n}`;
+  return h > 0 ? `${h}:${pad2(m)}:${pad2(s)}` : `${pad2(m)}:${pad2(s)}`;
+}
+
+// K-II: 1 LED resting (calm), 5 LEDs at extreme spike (≥5σ).
+const KII_Z_TABLE: ReadonlyArray<readonly [number, number]> = [
+  [5.0, 5], [3.5, 4], [2.5, 3], [1.5, 2], [0, 1],
+];
+// REM Pod: 0 LEDs resting (truly idle), 6 LEDs at extreme spike (≥5σ).
+const REM_Z_TABLE: ReadonlyArray<readonly [number, number]> = [
+  [5.0, 6], [3.5, 5], [2.5, 4], [2.0, 3], [1.5, 2], [1.0, 1], [0, 0],
+];
+
+/**
+ * Virtual K-II EMF Meter — the five-LED bar that paranormal investigators
+ * carry. Rendered bottom-left.
+ *
+ * Primary input:  `emfZScore` — raw magnetometer z-score when available.
+ *                 Reacts instantly to EMF spikes without Bayesian smoothing lag.
+ * Fallback input: `activityBand` — used when no z-score is present
+ *                 (e.g. compass-only iOS or Pi data).
+ *
+ * LED colour map (left → right): G G Y O R — exactly the physical device.
+ */
+function drawKiiMeter(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  H: number,
+  band: OverlayState["activityBand"],
+  emfZScore?: number,
+): void {
+  const litCount = (typeof emfZScore === "number" && Number.isFinite(emfZScore))
+    ? zScoreToLeds(Math.abs(emfZScore), KII_Z_TABLE)
+    : (KII_LIT[band] ?? 1);
+  const pad        = Math.round(W * 0.018);
+  const ledR       = Math.max(7,  Math.round(H * 0.011));
+  const ledGap     = ledR * 2.7;
+  const labelFontPx = Math.max(9, Math.round(H * 0.013));
+  const innerPadX  = Math.round(pad * 0.9);
+  const innerPadY  = Math.round(pad * 0.55);
+  // "K·II" label occupies ~4.5 chars of the monospaced font
+  const labelW     = Math.round(labelFontPx * 4.5);
+  const widgetW    = innerPadX * 2 + labelW + Math.round(pad * 0.6) + 5 * ledGap;
+  const widgetH    = innerPadY * 2 + ledR * 3;
+  const x          = pad;
+  // Sit 25% up from the bottom — above caption/timestamp but well below the
+  // sensor stack which stops at roughly 30% from the top.
+  const y          = H - Math.round(H * 0.25) - widgetH;
+
+  drawPill(ctx, x, y, widgetW, widgetH, "rgba(0,0,0,0.72)", "rgba(200,200,200,0.22)");
+
+  ctx.save();
+  ctx.textBaseline = "middle";
+  ctx.textAlign    = "left";
+  ctx.font         = `700 ${labelFontPx}px "JetBrains Mono", monospace`;
+  ctx.fillStyle    = "rgba(255,255,255,0.78)";
+  ctx.fillText("K·II", x + innerPadX, y + widgetH / 2);
+
+  const LED_COLORS = ["#33EE55", "#33EE55", "#FFDD00", "#FF8800", "#FF2222"] as const;
+  const ledsStartX = x + innerPadX + labelW + Math.round(pad * 0.6) + ledR;
+  const ledCY      = y + widgetH / 2;
+
+  for (let i = 0; i < 5; i++) {
+    const cx   = ledsStartX + i * ledGap;
+    const lit  = i < litCount;
+    const col  = LED_COLORS[i];
+    ctx.beginPath();
+    ctx.arc(cx, ledCY, ledR, 0, Math.PI * 2);
+    if (lit) {
+      ctx.shadowColor = col;
+      ctx.shadowBlur  = ledR * 2.5;
+      ctx.fillStyle   = col;
+    } else {
+      ctx.shadowBlur  = 0;
+      ctx.fillStyle   = "rgba(25,25,25,0.9)";
+    }
+    ctx.fill();
+    ctx.strokeStyle = lit ? col : "rgba(70,70,70,0.6)";
+    ctx.lineWidth   = 1.4;
+    ctx.stroke();
+    ctx.shadowBlur  = 0;
+  }
+  ctx.restore();
+}
+
+/** Maps activityBand → number of REM pod LEDs lit (0–6). Fallback when no z-score. */
+const REM_LIT_BY_BAND: Record<OverlayState["activityBand"], number> = {
+  calm: 0, light: 1, possible: 2, notable: 4, strong: 6,
+};
+/** Activity-band-driven ring pulse intensity. Used when no z-score is available. */
+const REM_INTENSITY_BY_BAND: Record<Exclude<OverlayState["activityBand"], "calm">, number> = {
+  light: 0.45, possible: 0.65, notable: 0.85, strong: 1.0,
+};
+
+/**
+ * Virtual REM Pod — the oval EM-detection device with antenna and ring LEDs.
+ * The physical REM pod lights up when its radiated EM field is disturbed.
+ *
+ * Primary input:  `emfZScore` — raw magnetometer z-score. Reacts instantly
+ *                 to EMF spikes; intensity ramps with z-score magnitude.
+ * Fallback input: `activityBand` — used when no z-score is present
+ *                 (e.g. compass-only iOS).
+ */
+function drawRemPod(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  H: number,
+  activityBand: OverlayState["activityBand"],
+  band: { fill: string; glow: string; stroke: string },
+  emfZScore?: number,
+): void {
+  const hasZ = typeof emfZScore === "number" && Number.isFinite(emfZScore);
+  const zAbs = hasZ ? Math.abs(emfZScore as number) : 0;
+  // Active when z-score (if supplied) signals deviation OR activity band escalated.
+  const active  = hasZ ? zAbs >= 1.0 : activityBand !== "calm";
+  const litLeds = hasZ ? zScoreToLeds(zAbs, REM_Z_TABLE) : (REM_LIT_BY_BAND[activityBand] ?? 0);
+  const pad     = Math.round(W * 0.018);
+  const podRX   = Math.max(28, Math.round(Math.min(W, H) * 0.042));
+  const podRY   = Math.round(podRX * 0.72);
+  const cx      = W - pad * 2 - podRX;
+  const cy      = H - Math.round(H * 0.27);
+  const now     = Date.now();
+
+  ctx.save();
+
+  // Pulsing rings radiate outward from the pod body when active. With z-score
+  // the intensity ramps continuously with the spike magnitude; without it we
+  // bucket via activityBand.
+  if (active) {
+    const intensity = hasZ
+      ? Math.min(1, zAbs / 5.0)
+      : (activityBand === "calm" ? 0.45 : (REM_INTENSITY_BY_BAND[activityBand] ?? 0.45));
+    for (let i = 0; i < 3; i++) {
+      const phase  = ((now / 1100) + i / 3) % 1;
+      const ringRX = podRX * (1 + phase * 2.2);
+      const ringRY = podRY * (1 + phase * 2.2);
+      const alpha  = intensity * (1 - phase) * 0.55;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, ringRX, ringRY, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = band.glow.replace(/[\d.]+\)$/, `${alpha})`);
+      ctx.lineWidth   = Math.max(1, podRX * 0.06);
+      ctx.stroke();
+    }
+  }
+
+  // Oval body.
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, podRX, podRY, 0, 0, Math.PI * 2);
+  const bodyGrad = ctx.createRadialGradient(cx, cy - podRY * 0.25, podRX * 0.1, cx, cy, podRX);
+  bodyGrad.addColorStop(0, active ? "rgba(38,38,38,0.92)" : "rgba(26,26,26,0.88)");
+  bodyGrad.addColorStop(1, "rgba(10,10,10,0.95)");
+  ctx.fillStyle   = bodyGrad;
+  ctx.shadowColor = active ? band.glow : "rgba(0,0,0,0.5)";
+  ctx.shadowBlur  = active ? podRX * 0.9 : 4;
+  ctx.fill();
+  ctx.shadowBlur  = 0;
+  ctx.strokeStyle = active ? band.stroke : "rgba(75,75,75,0.55)";
+  ctx.lineWidth   = Math.max(1.5, podRX * 0.04);
+  ctx.stroke();
+
+  // Antenna — vertical spike above body.
+  ctx.strokeStyle  = active ? band.fill : "rgba(110,110,110,0.7)";
+  ctx.lineWidth    = Math.max(1.5, podRX * 0.04);
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - podRY);
+  ctx.lineTo(cx, cy - podRY - podRX * 1.1);
+  ctx.stroke();
+  // Antenna tip dot.
+  ctx.fillStyle   = active ? band.fill : "rgba(110,110,110,0.7)";
+  ctx.shadowColor = active ? band.glow : "transparent";
+  ctx.shadowBlur  = active ? 6 : 0;
+  ctx.beginPath();
+  ctx.arc(cx, cy - podRY - podRX * 1.1, Math.max(2.5, podRX * 0.07), 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Six perimeter LEDs — light up as activity escalates.
+  const ledR   = Math.max(2.5, podRX * 0.09);
+  const numLeds = 6;
+  for (let i = 0; i < numLeds; i++) {
+    const angle = (i / numLeds) * Math.PI * 2 - Math.PI / 2;
+    const lx    = cx + podRX * 0.84 * Math.cos(angle);
+    const ly    = cy + podRY * 0.84 * Math.sin(angle);
+    const lit   = i < litLeds;
+    ctx.beginPath();
+    ctx.arc(lx, ly, ledR, 0, Math.PI * 2);
+    ctx.fillStyle   = lit ? band.fill : "rgba(28,28,28,0.9)";
+    ctx.shadowColor = lit ? band.glow : "transparent";
+    ctx.shadowBlur  = lit ? ledR * 2.5 : 0;
+    ctx.fill();
+    ctx.shadowBlur  = 0;
+  }
+
+  // "REM" label inside the oval.
+  const fontSize = Math.max(9, Math.round(podRX * 0.32));
+  ctx.font          = `700 ${fontSize}px "JetBrains Mono", monospace`;
+  ctx.textAlign     = "center";
+  ctx.textBaseline  = "middle";
+  ctx.fillStyle     = active ? band.fill : "rgba(160,160,160,0.85)";
+  ctx.shadowColor   = active ? band.glow : "transparent";
+  ctx.shadowBlur    = active ? fontSize * 0.6 : 0;
+  ctx.fillText("REM", cx, cy + podRY * 0.15);
+  ctx.shadowBlur    = 0;
+
+  ctx.restore();
+}
+
+/**
+ * Night-vision filter — applied BEFORE overlays are drawn over the camera
+ * frame. Boosts the green channel and applies a dark-scene contrast lift so
+ * under-lit footage looks like classic IR/NV footage. Not real infrared —
+ * it's a colour-grade applied to the existing pixels.
+ *
+ * Algorithm:
+ *   1. Extract pixel data from the already-drawn camera frame.
+ *   2. For each pixel: R *= 0.05, G = clamp(luma * 2.2), B *= 0.05.
+ *   3. Put pixels back. Result: monochrome green on the dark regions,
+ *      bright green on reflective surfaces — the classic NV look.
+ *
+ * Performance: getImageData/putImageData is the expensive path. At 1920×1080
+ * this touches ~8M values per frame. On modern mobile (V8 JIT, typed arrays)
+ * it runs in ~4–8ms — within a 33ms budget. At 720p it's ~2–3ms.
+ */
+function applyNightVision(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  H: number,
+): void {
+  const imageData = ctx.getImageData(0, 0, W, H);
+  const d = imageData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const luma = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+    // Lift shadows slightly, then map to green channel only.
+    const boosted = Math.min(255, luma * 2.1 + 12);
+    d[i]     = Math.round(boosted * 0.06); // R — near zero
+    d[i + 1] = Math.round(boosted);         // G — full signal
+    d[i + 2] = Math.round(boosted * 0.06); // B — near zero
+    // Alpha (d[i+3]) unchanged.
+  }
+  ctx.putImageData(imageData, 0, 0);
+}
+
+/**
+ * Camera-viewfinder corner brackets — four L-shaped tick marks in the
+ * band colour. Classic broadcast / camera-finder framing cue. Drawn
+ * last so they read over every other overlay element.
+ */
+function drawCornerBrackets(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  H: number,
+  band: { fill: string; glow: string },
+) {
+  const arm = Math.round(Math.min(W, H) * 0.055);
+  const mg  = Math.round(Math.min(W, H) * 0.022);
+  const lw  = Math.max(2, Math.round(Math.min(W, H) * 0.0028));
+
+  ctx.save();
+  ctx.strokeStyle = band.fill;
+  ctx.lineWidth   = lw;
+  ctx.shadowColor = band.glow;
+  ctx.shadowBlur  = 9;
+  ctx.globalAlpha = 0.72;
+  ctx.lineCap     = "square";
+
+  // [corner-x, corner-y, x-direction, y-direction]
+  const corners: [number, number, 1 | -1, 1 | -1][] = [
+    [mg,        mg,        1,  1],
+    [W - mg,    mg,       -1,  1],
+    [mg,        H - mg,    1, -1],
+    [W - mg,    H - mg,   -1, -1],
+  ];
+
+  for (const [cx, cy, dx, dy] of corners) {
+    ctx.beginPath();
+    ctx.moveTo(cx + dx * arm, cy);
+    ctx.lineTo(cx, cy);
+    ctx.lineTo(cx, cy + dy * arm);
+    ctx.stroke();
+  }
+
+  ctx.restore();
 }
 
 function drawDirectionArrow(
@@ -573,6 +1018,18 @@ function drawDirectionArrow(
   const angleRad = (angleDeg - 90) * Math.PI / 180;
   const ax = cx + orbitR * Math.cos(angleRad);
   const ay = cy + orbitR * Math.sin(angleRad);
+
+  // Faint dashed orbit ring — gives the arrow a sense of tracking.
+  ctx.save();
+  ctx.strokeStyle = band.fill;
+  ctx.lineWidth   = 1;
+  ctx.globalAlpha = 0.17;
+  ctx.setLineDash([4, 10]);
+  ctx.beginPath();
+  ctx.arc(cx, cy, orbitR, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
 
   ctx.save();
   ctx.translate(ax, ay);
@@ -718,31 +1175,141 @@ function measureMono(ctx: CanvasRenderingContext2D, text: string, fontSize: numb
 }
 
 function drawStatusPills(ctx: CanvasRenderingContext2D, W: number, H: number, overlay: OverlayState) {
-  // Center-top status pills: REC + LIVE.
+  // Center-top status pills: REC + LIVE + OFFLINE (only when relevant).
+  // OFFLINE only shows when recording locally — there's no point telling
+  // viewers a defunct LIVE pill is offline (LIVE can't be active without
+  // connectivity), but a local recording proves provenance "captured offline".
+  const showOffline = overlay.recording && overlay.online === false;
   if (!overlay.recording && !overlay.liveStreaming) return;
   const pad = Math.round(W * 0.018);
   const pillH = Math.max(28, Math.round(H * 0.038));
   const fontSize = Math.max(11, Math.round(H * 0.016));
+  const gap = 8;
   ctx.save();
   ctx.font = `700 ${fontSize}px "JetBrains Mono", monospace`;
   ctx.textBaseline = "middle";
-  let cursorX = W / 2;
+
+  const now = Date.now();
+  // Build the pill list first so we can centre the whole row.
+  const pills: Array<{ text: string; bg: string; border: string; fg: string }> = [];
   if (overlay.recording) {
-    const text = "● REC";
-    const w = ctx.measureText(text).width + pad * 1.4;
-    drawPill(ctx, cursorX - w / 2, pad + pillH + 8, w, pillH, "rgba(50,0,0,0.85)", "rgba(255,90,90,0.95)");
-    ctx.fillStyle = "#FF4A4A";
-    ctx.textAlign = "center";
-    ctx.fillText(text, cursorX, pad + pillH + 8 + pillH / 2);
-    cursorX += w + 8;
+    const dur = overlay.recordingStartedAt ? ` ${formatElapsed(now - overlay.recordingStartedAt)}` : "";
+    pills.push({ text: `● REC${dur}`, bg: "rgba(50,0,0,0.85)", border: "rgba(255,90,90,0.95)", fg: "#FF4A4A" });
   }
   if (overlay.liveStreaming) {
-    const text = "◉ LIVE";
-    const w = ctx.measureText(text).width + pad * 1.4;
-    drawPill(ctx, cursorX - w / 2, pad + pillH + 8, w, pillH, "rgba(0,30,40,0.85)", "rgba(127,252,215,0.95)");
-    ctx.fillStyle = "#7FFCD7";
-    ctx.textAlign = "center";
-    ctx.fillText(text, cursorX, pad + pillH + 8 + pillH / 2);
+    const dur = overlay.liveStartedAt ? ` ${formatElapsed(now - overlay.liveStartedAt)}` : "";
+    pills.push({ text: `◉ LIVE${dur}`, bg: "rgba(0,30,40,0.85)", border: "rgba(127,252,215,0.95)", fg: "#7FFCD7" });
   }
+  if (showOffline) {
+    pills.push({ text: "⚠ OFFLINE", bg: "rgba(40,30,0,0.85)", border: "rgba(255,200,80,0.95)", fg: "#FFC850" });
+  }
+
+  // Measure total row width including gaps between pills.
+  const widths = pills.map((p) => ctx.measureText(p.text).width + pad * 1.4);
+  const totalW = widths.reduce((a, w) => a + w, 0) + gap * Math.max(0, pills.length - 1);
+  let cursorX = W / 2 - totalW / 2;
+  const pillY = pad + pillH + 8;
+
+  for (let i = 0; i < pills.length; i++) {
+    const p = pills[i];
+    const w = widths[i];
+    drawPill(ctx, cursorX, pillY, w, pillH, p.bg, p.border);
+    ctx.fillStyle = p.fg;
+    ctx.textAlign = "center";
+    ctx.fillText(p.text, cursorX + w / 2, pillY + pillH / 2);
+    cursorX += w + gap;
+  }
+  ctx.restore();
+}
+
+/**
+ * Audio level meter — gradient bar (green→yellow→red) centred below the
+ * status pills row. Drives off `audioRms` from the LiveAnalyzer.
+ *
+ * Layout: centred horizontally, ~22% of frame width, ~14 px tall (scales
+ * with H). Tick marks at 70% and 85% mark the safe / loud / clipping zones.
+ * No label text — the dock icon identifies the channel; the burnt-in meter
+ * stays clean for broadcast.
+ */
+function drawAudioMeter(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  H: number,
+  audioRms: number,
+): void {
+  const pad      = Math.round(W * 0.018);
+  const pillH    = Math.max(28, Math.round(H * 0.038));
+  // Sit just below the status-pills row (status pills sit at pad + pillH + 8).
+  const y        = pad + pillH + 8 + pillH + 6;
+  const meterW   = Math.max(180, Math.round(W * 0.22));
+  const meterH   = Math.max(12, Math.round(H * 0.018));
+  const x        = Math.round((W - meterW) / 2);
+  const radius   = meterH * 0.45;
+
+  // Clamp + ease the level. The Audio RMS is already 0–1 but log-scale feels
+  // more like a real VU meter than linear.
+  const level = Math.min(1, Math.max(0, audioRms));
+  // 0.55 power compresses the low end so quiet audio still shows movement.
+  const visualLevel = Math.pow(level, 0.55);
+
+  ctx.save();
+
+  // Background pill.
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + meterW, y, x + meterW, y + radius, radius);
+  ctx.arcTo(x + meterW, y + meterH, x + meterW - radius, y + meterH, radius);
+  ctx.arcTo(x, y + meterH, x, y + meterH - radius, radius);
+  ctx.arcTo(x, y, x + radius, y, radius);
+  ctx.closePath();
+  ctx.fillStyle = "rgba(0,0,0,0.72)";
+  ctx.fill();
+  // Subtle border so the meter reads on bright backgrounds.
+  ctx.strokeStyle = "rgba(255,255,255,0.12)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Inner fill bar — clipped to the pill shape so the rounded edges follow.
+  const innerPad = 2;
+  const fillX = x + innerPad;
+  const fillY = y + innerPad;
+  const fillFullW = meterW - innerPad * 2;
+  const fillH = meterH - innerPad * 2;
+  const fillW = fillFullW * visualLevel;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + meterW, y, x + meterW, y + radius, radius);
+  ctx.arcTo(x + meterW, y + meterH, x + meterW - radius, y + meterH, radius);
+  ctx.arcTo(x, y + meterH, x, y + meterH - radius, radius);
+  ctx.arcTo(x, y, x + radius, y, radius);
+  ctx.closePath();
+  ctx.clip();
+
+  if (fillW > 0) {
+    const grad = ctx.createLinearGradient(fillX, 0, fillX + fillFullW, 0);
+    grad.addColorStop(0,    "#33EE55");
+    grad.addColorStop(0.6,  "#9FE83A");
+    grad.addColorStop(0.75, "#FFDD00");
+    grad.addColorStop(0.88, "#FF8800");
+    grad.addColorStop(1,    "#FF2222");
+    ctx.fillStyle = grad;
+    ctx.fillRect(fillX, fillY, fillW, fillH);
+  }
+  ctx.restore();
+
+  // Threshold ticks at 70% (loud) and 85% (clipping). Inside the pill so
+  // they overlay both the fill and the background.
+  ctx.strokeStyle = "rgba(255,255,255,0.32)";
+  ctx.lineWidth = 1;
+  for (const frac of [0.7, 0.85]) {
+    const tx = fillX + fillFullW * frac;
+    ctx.beginPath();
+    ctx.moveTo(tx, y + 1);
+    ctx.lineTo(tx, y + meterH - 1);
+    ctx.stroke();
+  }
+
   ctx.restore();
 }

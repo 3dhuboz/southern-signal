@@ -130,11 +130,6 @@ export interface SensorSampleInput {
 const SENSOR_SYNC_THROTTLE_MS = 60_000;
 const lastSensorEnqueueAt = new Map<string, number>();
 
-/** Test/diagnostic helper — wipes the throttle map. */
-export function clearSensorEnqueueThrottle(): void {
-  lastSensorEnqueueAt.clear();
-}
-
 export async function recordSensorSample(input: SensorSampleInput): Promise<SensorSample> {
   const id = uuid();
   const ts = input.timestamp ?? nowUtc();

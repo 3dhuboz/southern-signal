@@ -16,6 +16,22 @@ import s from "./ScreenRecordButton.module.css";
 
 interface ScreenRecordButtonProps {
   investigationId: string | null;
+  /**
+   * When provided, renders as a compact icon+label tile (e.g. in the
+   * camera dock) using the caller's CSS Module classes. The dot indicator
+   * is suppressed; a monitor icon is shown instead. Without this prop the
+   * component renders as its default pill button.
+   */
+  classNames?: {
+    /** Button class when idle. */
+    idle: string;
+    /** Button class when recording or saving. */
+    active: string;
+    /** Wrapper class for the icon span. */
+    icon: string;
+    /** Class for the label span. */
+    label: string;
+  };
 }
 
 function formatMs(seconds: number): string {
@@ -25,7 +41,20 @@ function formatMs(seconds: number): string {
   return `${m}:${sec}`;
 }
 
-export function ScreenRecordButton({ investigationId }: ScreenRecordButtonProps) {
+function IconScreenRec() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
+      {/* Monitor frame */}
+      <rect x="2" y="3" width="20" height="14" rx="2" stroke="currentColor" strokeWidth="1.6" />
+      {/* Stand */}
+      <path d="M8 21h8M12 17v4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      {/* Recording dot — top-right corner of screen */}
+      <circle cx="17" cy="7" r="2.2" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function ScreenRecordButton({ investigationId, classNames }: ScreenRecordButtonProps) {
   const recorderRef = useRef<ScreenRecorder | null>(null);
   const [state, setState] = useState<RecorderState>(() => ({
     status: "idle",
@@ -94,21 +123,39 @@ export function ScreenRecordButton({ investigationId }: ScreenRecordButtonProps)
 
   return (
     <>
-      <button
-        type="button"
-        className={recording ? s.btnRec : s.btn}
-        onClick={recording ? handleStop : handleStart}
-        aria-label={recording ? "Stop recording" : "Start screen recording"}
-      >
-        <span className={recording ? s.dotRec : s.dot} aria-hidden="true" />
-        <span className={s.label}>
-          {state.status === "saving"
-            ? "Saving…"
-            : recording
-              ? `REC ${formatMs(state.durationSeconds)}`
-              : "Record screen"}
-        </span>
-      </button>
+      {classNames ? (
+        /* Compact dock-tile mode — icon above label, visual driven by caller's CSS. */
+        <button
+          type="button"
+          className={recording ? classNames.active : classNames.idle}
+          onClick={recording ? handleStop : handleStart}
+          aria-pressed={recording}
+          aria-label={recording ? "Stop screen recording" : "Screen record"}
+          title={recording ? "Stop screen recording" : "Screen record (raw device pixels)"}
+        >
+          <span className={classNames.icon} aria-hidden="true"><IconScreenRec /></span>
+          <span className={classNames.label}>
+            {state.status === "saving" ? "Save" : recording ? formatMs(state.durationSeconds) : "SCR"}
+          </span>
+        </button>
+      ) : (
+        /* Default pill mode. */
+        <button
+          type="button"
+          className={recording ? s.btnRec : s.btn}
+          onClick={recording ? handleStop : handleStart}
+          aria-label={recording ? "Stop recording" : "Start screen recording"}
+        >
+          <span className={recording ? s.dotRec : s.dot} aria-hidden="true" />
+          <span className={s.label}>
+            {state.status === "saving"
+              ? "Saving…"
+              : recording
+                ? `REC ${formatMs(state.durationSeconds)}`
+                : "Record screen"}
+          </span>
+        </button>
+      )}
       {state.error && <p className={s.error}>{state.error}</p>}
 
       {showIosTip && (

@@ -6,7 +6,7 @@
  * via a `source` column so cross-device sync can union rows safely.
  */
 
-export const CURRENT_SCHEMA_VERSION = 13;
+export const CURRENT_SCHEMA_VERSION = 14;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -51,7 +51,12 @@ CREATE TABLE IF NOT EXISTS investigations (
   -- v3: per-case cultural sensitivity. When 1, blocks cloud AI calls AND
   -- suppresses sync enqueue for this case's rows + media. The audit chain
   -- still records locally so chain integrity is preserved.
-  culturally_sensitive  INTEGER NOT NULL DEFAULT 0
+  culturally_sensitive    INTEGER NOT NULL DEFAULT 0,
+  -- v14: ICIP restriction workflow (Tier 3 #3). Separate-key AES-GCM
+  -- encryption is planned for V2; V1 records the consent document path
+  -- and flag so the export pipeline can check them at build time.
+  to_consent_path         TEXT,
+  commercial_use_approved INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS sensor_samples (
@@ -82,6 +87,8 @@ CREATE TABLE IF NOT EXISTS evidence_events (
   description       TEXT,
   metadata_json     TEXT,
   linked_file       TEXT,
+  -- v14: ICIP restriction level (Tier 3 #3). Default 'open'.
+  restriction       TEXT NOT NULL DEFAULT 'open',
   FOREIGN KEY (investigation_id) REFERENCES investigations (id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_events_inv_ts  ON evidence_events (investigation_id, timestamp);
@@ -98,6 +105,8 @@ CREATE TABLE IF NOT EXISTS media_assets (
   timestamp_end     TEXT,
   checksum_sha256   TEXT,
   metadata_json     TEXT,
+  -- v14: ICIP restriction level (Tier 3 #3). Default 'open'.
+  restriction       TEXT NOT NULL DEFAULT 'open',
   FOREIGN KEY (investigation_id) REFERENCES investigations (id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_media_inv_ts ON media_assets (investigation_id, timestamp_start);
@@ -306,6 +315,24 @@ CREATE TABLE IF NOT EXISTS audit_log (
 CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log (ts_utc);
 `;
 
+// ---- ICIP restriction level (v14 / Tier 3 #3) ----------------------------
+
+/**
+ * Per-evidence restriction level for ICIP-aware export.
+ *
+ *   open              — no restriction; include in exports as normal.
+ *   men_only          — men's business; omit from mixed or women-only contexts.
+ *   women_only        — women's business; omit from mixed or men-only contexts.
+ *   restricted_sacred — sacred/secret knowledge; omit from all external exports.
+ *   pending           — under Traditional Owner review; treated as restricted.
+ */
+export type RestrictionLevel =
+  | "open"
+  | "men_only"
+  | "women_only"
+  | "restricted_sacred"
+  | "pending";
+
 export interface Investigation {
   id: string;
   title: string;
@@ -343,6 +370,16 @@ export interface Investigation {
    * shadows. Null on active investigations.
    */
   paired_investigation_id: string | null;
+  /**
+   * v14: OPFS path to the Traditional Owners consent document uploaded by the
+   * operator. Required before `commercial_use_approved` can be set to 1.
+   */
+  to_consent_path: string | null;
+  /**
+   * v14: 1 when TO consent has been obtained and the consent document is
+   * on file. Used to gate commercial-use exports in the ICIP pipeline.
+   */
+  commercial_use_approved: number;
 }
 
 // ---- Trigger Object Tracker types (v11 / Tier 3 #5) --------------------
@@ -428,6 +465,8 @@ export interface EvidenceEvent {
   description: string | null;
   metadata_json: string | null;
   linked_file: string | null;
+  /** v14: ICIP restriction level. Default 'open'. */
+  restriction: RestrictionLevel;
 }
 
 export interface MediaAsset {
@@ -439,6 +478,8 @@ export interface MediaAsset {
   timestamp_end: string | null;
   checksum_sha256: string | null;
   metadata_json: string | null;
+  /** v14: ICIP restriction level. Default 'open'. */
+  restriction: RestrictionLevel;
 }
 
 export interface AuditLogEntry {

@@ -1,0 +1,154 @@
+/* ── compact (inline styled <select>) ───────────────────────────────────── */
+
+.selectWrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.select {
+  appearance: none;
+  padding: 3px 20px 3px 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  transition: border-color 120ms;
+}
+
+.select:focus { outline: 2px solid var(--signal); outline-offset: 1px; }
+
+/* Tone-tinted border when a restriction is active */
+.selectWrap[data-tone="warning"] .select { border-color: var(--warning); color: var(--warning); }
+.selectWrap[data-tone="signal"]  .select { border-color: var(--signal);  color: var(--signal);  }
+.selectWrap[data-tone="danger"]  .select { border-color: var(--danger);   color: var(--danger);  }
+
+/* Chevron arrow pseudo-element */
+.selectWrap::after {
+  content: "▾";
+  position: absolute;
+  right: 5px;
+  pointer-events: none;
+  font-size: 9px;
+  color: var(--text-muted);
+}
+
+/* ── full (5-option tile grid, same idiom as DispositionPicker) ──────────── */
+
+.wrap {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-lg);
+  padding: var(--s-12) var(--s-14);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--s-8);
+  flex-wrap: wrap;
+}
+
+.eyebrow {
+  font-size: 11px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 800;
+}
+
+.note {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s-8);
+}
+
+.opt {
+  min-height: 52px;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-family: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  transition: background 120ms, border-color 120ms, transform 80ms;
+}
+.opt:hover { background: var(--bg-overlay); }
+.opt:active { transform: scale(0.98); }
+
+.optLabel {
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.3px;
+}
+
+.optSub {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* Tone accents — only applied to the currently chosen option */
+.muted.chosen  { border-color: var(--text-muted); background: var(--bg-overlay); }
+
+.warning.chosen          { border-color: var(--warning); background: var(--warning-wash); color: var(--warning); }
+.warning.chosen .optSub  { color: var(--warning); }
+
+.signal.chosen           { border-color: var(--signal);  background: var(--signal-wash);  color: var(--signal);  }
+.signal.chosen .optSub   { color: var(--signal); }
+
+.danger.chosen           { border-color: var(--danger);  background: var(--danger-wash);  color: var(--danger);  }
+.danger.chosen .optSub   { color: var(--danger); }
+
+/* ── TK label reference block (full mode, non-open selections) ───────────── */
+
+.tkNotice {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.tkName {
+  font-size: 12px;
+  color: var(--text-primary);
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+.tkDesc {
+  line-height: 1.4;
+}
+
+.tkLink {
+  color: var(--signal);
+  text-decoration: none;
+  font-size: 11px;
+  margin-top: 2px;
+}
+.tkLink:hover { text-decoration: underline; }

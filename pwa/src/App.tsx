@@ -7,13 +7,14 @@ import { BottomNav } from "./components/BottomNav";
 import { CivilTwilightBanner } from "./components/CivilTwilightBanner";
 import { InterruptedSessionBanner } from "./components/InterruptedSessionBanner";
 import { ServiceWorkerUpdateBanner } from "./components/ServiceWorkerUpdateBanner";
-import { MissionControl } from "./views/MissionControl";
+import { CameraScreen } from "./views/CameraScreen";
 import { sunAltitudeDeg } from "./lib/sensors/civilTwilight";
 import { applyTheme, setPreferences, usePreferences } from "./lib/preferences";
 import "./styles/global.css";
 
-// Code-split secondary routes — MissionControl is the entry screen, the rest
-// load on demand to keep first paint fast on field cell connections.
+// Code-split secondary routes — CameraScreen is the entry screen (kept eager
+// for fast first paint). Everything else loads on demand over field connections.
+const MissionControl = lazy(() => import("./views/MissionControl").then((m) => ({ default: m.MissionControl })));
 const Review = lazy(() => import("./views/Review").then((m) => ({ default: m.Review })));
 const Setup = lazy(() => import("./views/Setup").then((m) => ({ default: m.Setup })));
 const Floorplan = lazy(() => import("./views/Floorplan").then((m) => ({ default: m.Floorplan })));
@@ -86,7 +87,8 @@ export default function App() {
       <main>
         <Suspense fallback={<RouteFallback />}>
           <Routes>
-            <Route path="/" element={<MissionControl />} />
+            <Route path="/" element={<CameraScreen />} />
+            <Route path="/investigate" element={<MissionControl />} />
             <Route path="/review" element={<Review />} />
             <Route path="/evp" element={<EvpReview />} />
             <Route path="/estes" element={<Estes />} />

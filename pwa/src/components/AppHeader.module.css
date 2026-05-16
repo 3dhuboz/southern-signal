@@ -258,6 +258,33 @@
   .wordmark { display: none; }
 }
 
+/* Offline connectivity indicator — muted teal-less palette so it doesn't
+   compete with REC/LIVE but is still visible at arm's length. */
+.offlineBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 var(--s-8);
+  border-radius: var(--r-full);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  white-space: nowrap;
+  text-transform: uppercase;
+  background: var(--bg-overlay);
+  color: var(--text-muted);
+  border: 1px solid var(--border-default);
+}
+.offlineDot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-full);
+  background: currentColor;
+  flex-shrink: 0;
+}
+
 .modePill {
   display: inline-flex;
   align-items: center;

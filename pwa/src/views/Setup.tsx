@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { applyTheme, usePreferences } from "../lib/preferences";
+import { WHIP_URL_KEY, WHIP_BEARER_KEY, WHIP_PROVIDER_KEY, WHIP_PROVIDERS } from "../lib/media/whipStorage";
 import { AuditLogInspector } from "../components/AuditLogInspector";
 import { CaseManager } from "../components/CaseManager";
 import { DeploymentHealth } from "../components/DeploymentHealth";
@@ -20,6 +21,10 @@ import st from "./Setup.module.css";
 
 const ONBOARDING_KEY = "ss-onboarding-completed-v1";
 
+// Derive a key→label lookup from the shared WHIP_PROVIDERS list so the
+// provider <select> stays in sync with LiveStreamView without manual duplication.
+const WHIP_PROVIDER_LABELS = Object.fromEntries(WHIP_PROVIDERS.map((p) => [p.key, p.label]));
+
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "—";
   if (bytes < 1024) return `${bytes} B`;
@@ -32,6 +37,49 @@ export function Setup() {
   const [onboardingCompletedAt, setOnboardingCompletedAt] = useState<string | null>(() => {
     try { return localStorage.getItem(ONBOARDING_KEY); } catch { return null; }
   });
+
+  // ── WHIP broadcast config ──────────────────────────────────────────────────
+  const [whipUrl, setWhipUrl] = useState(() => {
+    try { return localStorage.getItem(WHIP_URL_KEY) ?? ""; } catch { return ""; }
+  });
+  const [whipBearer, setWhipBearer] = useState(() => {
+    try { return localStorage.getItem(WHIP_BEARER_KEY) ?? ""; } catch { return ""; }
+  });
+  const [whipProvider, setWhipProvider] = useState(() => {
+    try {
+      const stored = localStorage.getItem(WHIP_PROVIDER_KEY) ?? "";
+      return stored in WHIP_PROVIDER_LABELS ? stored : "custom";
+    } catch { return "custom"; }
+  });
+  const [whipSaved, setWhipSaved] = useState(false);
+  const whipSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Derive once per render — used in badge, Clear-button guard, and save handler.
+  const trimmedWhipUrl = whipUrl.trim();
+  useEffect(() => () => { if (whipSavedTimerRef.current) clearTimeout(whipSavedTimerRef.current); }, []);
+
+  const handleSaveWhip = useCallback(() => {
+    try {
+      if (trimmedWhipUrl) localStorage.setItem(WHIP_URL_KEY, trimmedWhipUrl);
+      else localStorage.removeItem(WHIP_URL_KEY);
+      if (whipBearer.trim()) localStorage.setItem(WHIP_BEARER_KEY, whipBearer.trim());
+      else localStorage.removeItem(WHIP_BEARER_KEY);
+      localStorage.setItem(WHIP_PROVIDER_KEY, whipProvider);
+      if (whipSavedTimerRef.current) clearTimeout(whipSavedTimerRef.current);
+      setWhipSaved(true);
+      whipSavedTimerRef.current = setTimeout(() => setWhipSaved(false), 2000);
+    } catch { /* swallow — localStorage unavailable */ }
+  }, [trimmedWhipUrl, whipBearer, whipProvider]);
+
+  const handleClearWhip = useCallback(() => {
+    setWhipUrl("");
+    setWhipBearer("");
+    setWhipProvider("custom");
+    try {
+      localStorage.removeItem(WHIP_URL_KEY);
+      localStorage.removeItem(WHIP_BEARER_KEY);
+      localStorage.removeItem(WHIP_PROVIDER_KEY);
+    } catch { /* swallow */ }
+  }, []);
 
   // Stay in sync if the operator finishes the tour in another tab.
   useEffect(() => {
@@ -96,9 +144,9 @@ export function Setup() {
   return (
     <section className={s.view}>
       <div className={s.titleBlock}>
-        <span className={s.eyebrow}>Setup · Case manager</span>
-        <h1 className={s.title}>Cases, theme, privacy</h1>
-        <p className={s.lede}>Manage all investigations on this device. Edit metadata, browse media, set disposition, export, or delete. AI keys are server-side — nothing to configure here.</p>
+        <span className={s.eyebrow}>Setup · Configuration</span>
+        <h1 className={s.title}>Cases, broadcast, privacy</h1>
+        <p className={s.lede}>Manage investigations, configure live broadcast (WHIP), tune on-device transcription and AI, set rig loadout, and manage privacy posture. All data stays on this device unless you explicitly enable cloud sync.</p>
       </div>
 
       {/* CASE MANAGER */}
@@ -145,6 +193,65 @@ export function Setup() {
         </div>
       </section>
 
+
+      {/* Broadcast — WHIP live-stream destination */}
+      <section className={st.panel}>
+        <header className={st.panelHeader}>
+          <h2 className={st.panelTitle}>Broadcast</h2>
+          <span className={st.panelBadge}>{trimmedWhipUrl ? "Configured" : "Not set"}</span>
+        </header>
+        <p className={st.panelLede}>
+          Configure your WHIP live-stream destination. The Go Live button on the Camera screen uses these settings. Supported providers: Cloudflare Stream, Mux, Dolby.io, Restream, and any standards-compliant WHIP endpoint. Bearer token is optional — most Cloudflare and Mux endpoints don't require one.
+        </p>
+        <div className={st.fieldRow}>
+          <label className={st.fieldLabel} htmlFor="setup-whip-provider">Provider</label>
+          <select
+            id="setup-whip-provider"
+            className={st.input}
+            value={whipProvider}
+            onChange={(e) => setWhipProvider(e.target.value)}
+          >
+            {Object.entries(WHIP_PROVIDER_LABELS).map(([key, label]) => (
+              <option key={key} value={key}>{label}</option>
+            ))}
+          </select>
+        </div>
+        <div className={st.fieldRow}>
+          <label className={st.fieldLabel} htmlFor="setup-whip-url">WHIP endpoint URL</label>
+          <input
+            id="setup-whip-url"
+            type="url"
+            className={st.input}
+            value={whipUrl}
+            onChange={(e) => setWhipUrl(e.target.value)}
+            placeholder="https://…/webrtc/publish"
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </div>
+        <div className={st.fieldRow}>
+          <label className={st.fieldLabel} htmlFor="setup-whip-bearer">Bearer token <span className={st.fieldLabelSuffix}>(optional)</span></label>
+          <input
+            id="setup-whip-bearer"
+            type="password"
+            className={st.input}
+            value={whipBearer}
+            onChange={(e) => setWhipBearer(e.target.value)}
+            placeholder="Leave blank if not required"
+            autoComplete="new-password"
+          />
+        </div>
+        <div className={st.actionRow}>
+          <button type="button" className={st.linkBtn} onClick={handleSaveWhip}>
+            {whipSaved ? "Saved ✓" : "Save broadcast settings"}
+          </button>
+          {trimmedWhipUrl && (
+            <button type="button" className={st.linkBtn} onClick={handleClearWhip}>
+              Clear
+            </button>
+          )}
+        </div>
+      </section>
 
       {/* Cloud sync (R2 + D1) */}
       <SyncPanel />

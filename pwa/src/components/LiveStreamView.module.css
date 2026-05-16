@@ -19,6 +19,37 @@
   box-shadow: 0 40px 80px -40px rgba(0, 0, 0, 0.6);
 }
 
+/* Camera-first fullscreen mode — no card chrome, stage fills the container */
+.wrapFullscreen {
+  height: 100%;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  background: #000;
+  box-shadow: none;
+  gap: 0;
+}
+
+/* Stage fills all remaining height in fullscreen mode */
+.stageFull {
+  flex: 1;
+  aspect-ratio: unset !important;
+  border-radius: 0;
+}
+
+/* Open-camera button fills the container in fullscreen mode */
+.openButtonFull {
+  flex: 1;
+  border-radius: 0;
+  border: none;
+  background: #000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-12);
+}
+
 .head {
   display: flex;
   justify-content: space-between;

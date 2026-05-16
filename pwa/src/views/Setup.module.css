@@ -179,6 +179,13 @@
   color: var(--text-secondary);
 }
 
+/* Inline modifier inside a .fieldLabel — resets the label's caps/weight */
+.fieldLabelSuffix {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
 .input {
   background: var(--bg-inset);
   border: 1px solid var(--border-default);

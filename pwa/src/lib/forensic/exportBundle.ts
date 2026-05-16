@@ -22,6 +22,8 @@
 
 import { query } from "../db/db";
 import { readFile, exists } from "../opfs";
+import { isRestricted, tkLabelForRestriction, type TkLabel } from "../restricted/tkLabels";
+import type { RestrictionLevel } from "../db/schema";
 import { getPreferences } from "../preferences";
 import { buildManifest } from "./manifest";
 import { computeReadiness, type ReadinessCheck, type OverallStatus } from "./preAirReadiness";
@@ -52,6 +54,8 @@ export interface ExportSummary {
   entries: number;
   mediaIncluded: number;
   mediaMissing: number;
+  /** Media assets omitted due to ICIP restriction (replaced with notice files). */
+  mediaRestricted: number;
   scope: "all" | "single";
   investigationIds: string[];
 }
@@ -547,6 +551,63 @@ export function buildResearchEntries({ dossiers, notes }: ResearchBundleData): Z
   return out;
 }
 
+// ── ICIP restriction notice builder ─────────────────────────────────────────
+
+/**
+ * Builds the plain-text notice file that replaces a restricted binary in the
+ * export ZIP. Includes asset identifiers, the restriction level, and a
+ * citation of the applicable Local Contexts TK Label so reviewers understand
+ * why the file was omitted and what protocols govern access.
+ */
+function buildRestrictionNotice(
+  assetId: string,
+  originalPath: string,
+  mediaType: string | null,
+  restriction: RestrictionLevel,
+  tkLabel: ReturnType<typeof tkLabelForRestriction>,
+): string {
+  const lines: string[] = [
+    "RESTRICTED CONTENT — FILE OMITTED FROM THIS EXPORT",
+    "====================================================",
+    "",
+    "This file has been omitted because the recording was made at a site",
+    "that carries Traditional Knowledge restrictions. The binary content",
+    "has NOT been included in this export bundle.",
+    "",
+    `Asset ID     : ${assetId}`,
+    `Original path: ${originalPath}`,
+    `Media type   : ${mediaType ?? "(unknown)"}`,
+    `Restriction  : ${restriction}`,
+    "",
+  ];
+
+  if (tkLabel) {
+    lines.push(
+      "Applicable Local Contexts TK Label",
+      "----------------------------------",
+      `Label : ${tkLabel.name} (${tkLabel.id})`,
+      `Detail: ${tkLabel.description}`,
+      `URL   : ${tkLabel.url}`,
+      "",
+    );
+  }
+
+  lines.push(
+    "Next steps",
+    "----------",
+    "To obtain access to the original recording, contact the lead investigator",
+    "and the relevant Traditional Owners or Land Council for this site.",
+    "Do NOT redistribute or republish this notice file without authorisation.",
+    "",
+    `Generated: ${new Date().toISOString()}`,
+    "Southern Signal — ICIP-Aware Forensic Export v1",
+  );
+
+  return lines.join("\n");
+}
+
+// ── Main export function ─────────────────────────────────────────────────────
+
 export async function buildExportBundle(investigationId?: string): Promise<{ blob: Blob; summary: ExportSummary }> {
   const scope = investigationId ? "single" : "all";
   const manifest = await buildManifest();
@@ -626,10 +687,41 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
     counts: readiness.counts,
   }));
 
-  // 4. Media binaries.
+  // 4. Media binaries — ICIP-aware.
+  //
+  // Restricted assets (non-'open' restriction level) are NOT included as
+  // binaries. A _RESTRICTED.txt notice file is written in their place, and
+  // the asset is recorded in tk_labels.json so reviewers can see what was
+  // omitted and why. This is the V1 redaction posture; full AES-GCM at-rest
+  // encryption for restricted content is planned for V2.
   let mediaIncluded = 0;
   let mediaMissing = 0;
+  let mediaRestricted = 0;
+  const appliedTkLabels: TkLabel[] = [];
+  const restrictedItems: Array<{
+    original_path: string;
+    restriction: RestrictionLevel;
+    tk_label_id: string | null;
+  }> = [];
+
   for (const m of media) {
+    const restriction = (m.restriction as RestrictionLevel | undefined) ?? "open";
+
+    // ICIP gate — redact restricted assets.
+    if (isRestricted(restriction)) {
+      const tkLabel = tkLabelForRestriction(restriction);
+      const archivePath = m.file_path.replace(/^\/+/, "");
+      // Replace any file extension with _RESTRICTED.txt.
+      const noticePath = archivePath.replace(/(\.[^/.]+)?$/, "_RESTRICTED.txt");
+      entries.push(textEntry(noticePath, buildRestrictionNotice(m.id, m.file_path, m.media_type, restriction, tkLabel)));
+      mediaRestricted += 1;
+      if (tkLabel && !appliedTkLabels.find((l) => l.id === tkLabel.id)) {
+        appliedTkLabels.push(tkLabel);
+      }
+      restrictedItems.push({ original_path: archivePath, restriction, tk_label_id: tkLabel?.id ?? null });
+      continue;
+    }
+
     try {
       const ok = await exists(m.file_path);
       if (!ok) { mediaMissing += 1; continue; }
@@ -643,6 +735,21 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
     } catch {
       mediaMissing += 1;
     }
+  }
+
+  // If any restricted content was found, add the TK label manifest.
+  if (appliedTkLabels.length > 0) {
+    entries.push(jsonEntry("tk_labels.json", {
+      generated_at: new Date().toISOString(),
+      schema: "southern-signal.tk-labels.v1",
+      notice:
+        "This bundle contains recordings from sites where Traditional Knowledge " +
+        "restrictions apply. Binary files for restricted items have been omitted. " +
+        "Contact the investigator and the relevant Traditional Owners or Land Council " +
+        "before re-distributing any materials from this site.",
+      labels_applied: appliedTkLabels,
+      restricted_items: restrictedItems,
+    }));
   }
 
   // 5. README + verifiers.
@@ -856,6 +963,7 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
       entries: entries.length,
       mediaIncluded,
       mediaMissing,
+      mediaRestricted,
       scope,
       investigationIds,
     },

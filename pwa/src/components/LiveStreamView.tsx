@@ -27,29 +27,16 @@ import {
 } from "../lib/media/canvasCompositor";
 import { startWhipSession, type WhipSession, type WhipState, type WhipOutboundStats } from "../lib/media/whip";
 import { setLiveBroadcastState } from "../lib/system/liveBroadcast";
+import { useNetworkOnline } from "../lib/system/systemStatus";
 import { sha256HexBytes } from "../lib/forensic/canonicalJson";
 import { getItcChannels } from "../lib/itc/itcChannels";
+import { loadOverlayChannels, saveOverlayChannels } from "../lib/media/overlayChannelStorage";
+import {
+  WHIP_URL_KEY, WHIP_BEARER_KEY, WHIP_PROVIDER_KEY,
+  WHIP_PROVIDERS,
+  type WhipProviderKey, type WhipProviderTemplate,
+} from "../lib/media/whipStorage";
 import s from "./LiveStreamView.module.css";
-
-/* Overlay-channels localStorage key + helpers. Stored under ss-* like the
- * other LiveStreamView preferences. Merging against DEFAULT_OVERLAY_CHANNELS
- * keeps old persisted values forward-compatible when new channels are added. */
-const OVERLAY_CHANNELS_LS_KEY = "ss-overlay-channels";
-
-function loadOverlayChannels(): OverlayChannels {
-  try {
-    const raw = localStorage.getItem(OVERLAY_CHANNELS_LS_KEY);
-    if (!raw) return DEFAULT_OVERLAY_CHANNELS;
-    const parsed = JSON.parse(raw) as Partial<OverlayChannels>;
-    return { ...DEFAULT_OVERLAY_CHANNELS, ...parsed };
-  } catch {
-    return DEFAULT_OVERLAY_CHANNELS;
-  }
-}
-
-function saveOverlayChannels(channels: OverlayChannels): void {
-  try { localStorage.setItem(OVERLAY_CHANNELS_LS_KEY, JSON.stringify(channels)); } catch { /* ignore */ }
-}
 
 /* User-facing labels + short descriptions for the channels panel.
  * Kept here (next to the consumer) rather than in canvasCompositor so the
@@ -63,71 +50,16 @@ const CHANNEL_LABELS: Record<keyof OverlayChannels, { name: string; hint: string
   directionArrow:  { name: "Direction arrow",    hint: "Acoustic sector when coherence ≥ 0.5" },
   caption:         { name: "AI caption",         hint: "Bottom narration strip" },
   timestamp:       { name: "Timestamp + case",   hint: "Bottom-right ISO + case ID (recommended)" },
+  cornerBrackets:  { name: "Corner brackets",    hint: "Viewfinder framing marks — broadcast cue" },
   statusPills:     { name: "REC / LIVE pills",   hint: "Centre-top status indicators" },
+  kiiMeter:        { name: "K-II EMF meter",     hint: "Virtual 5-LED bar (bottom-left) driven by magnetometer" },
+  remPod:          { name: "Virtual REM pod",    hint: "Animated EM proximity widget (bottom-right) with pulsing rings" },
+  nightVision:     { name: "Night vision",       hint: "Green-channel IR filter — simulated NV look over the camera feed" },
+  audioMeter:      { name: "Audio meter",        hint: "Gradient level bar under the REC/LIVE row — confirms mic input" },
 };
 
 const CHANNEL_KEYS = Object.keys(CHANNEL_LABELS) as Array<keyof OverlayChannels>;
 
-type WhipProviderKey = "cloudflare" | "fb_live_via_cloudflare" | "fb_live_via_restream" | "mux" | "dolby" | "eyevinn" | "custom";
-
-interface WhipProviderTemplate {
-  key: WhipProviderKey;
-  label: string;
-  url: string;
-  note: string;
-}
-
-// URL templates with placeholders intentionally preserved — the user replaces
-// the <bracketed> bits with their stream-specific values.
-//
-// Honest constraint on Facebook Live: FB only accepts RTMP/RTMPS, and
-// browsers cannot speak RTMP. So "FB Live" entries below are RELAY paths —
-// the browser pushes WHIP to a relay, and the relay re-broadcasts to FB
-// over RTMP. The note for each entry explains the one-time setup.
-const WHIP_PROVIDERS: WhipProviderTemplate[] = [
-  {
-    key: "cloudflare",
-    label: "Cloudflare Stream Live",
-    url: "https://customer-XXXX.cloudflarestream.com/<input-id>/webrtc/publish",
-    note: "From Cloudflare dashboard → Stream → Live Inputs → WebRTC URL. Bearer token not required.",
-  },
-  {
-    key: "fb_live_via_cloudflare",
-    label: "Facebook Live (via Cloudflare relay)",
-    url: "https://customer-XXXX.cloudflarestream.com/<input-id>/webrtc/publish",
-    note: "FB Live needs RTMP, which browsers can't speak. ONE-TIME SETUP: in Cloudflare → Stream → Live Inputs, create a new input, then under 'Outputs' add Facebook Live with URL rtmps://live-api-s.facebook.com:443/rtmp/ and the stream key from facebook.com/live/producer. Paste this input's WebRTC URL above; we'll push to Cloudflare and Cloudflare relays to FB.",
-  },
-  {
-    key: "fb_live_via_restream",
-    label: "Facebook Live (via Restream.io)",
-    url: "https://live.restream.io/whip/<stream-key>",
-    note: "Restream gives you a single ingest URL that fans out to FB Live + others. ONE-TIME SETUP: restream.io → connect Facebook page → copy the WHIP URL from Settings → Encoding. Free tier supports one destination.",
-  },
-  {
-    key: "mux",
-    label: "Mux",
-    url: "https://global-live.mux.com/api/whip/<stream-key>",
-    note: "From Mux dashboard → Live Streams → Stream Key. Bearer token: paste your Mux access token. Mux can also re-broadcast to FB via Simulcast Targets.",
-  },
-  {
-    key: "dolby",
-    label: "Dolby.io",
-    url: "https://director.millicast.com/api/whip/<stream-name>",
-    note: "From Dolby.io dashboard → Live → WHIP. Token required.",
-  },
-  {
-    key: "eyevinn",
-    label: "Eyevinn open-source WHIP gateway",
-    url: "https://wht.eyevinn.technology/<channel-id>",
-    note: "Free public test endpoint. Treat as throwaway — anyone can publish.",
-  },
-  {
-    key: "custom",
-    label: "Custom",
-    url: "",
-    note: "",
-  },
-];
 
 interface LiveStreamViewProps {
   investigationId: string | null;
@@ -145,15 +77,72 @@ interface LiveStreamViewProps {
   magnetometerUt?: number;
   motionMs2?: number;
   temperatureC?: number;
+  /**
+   * Raw magnetometer z-score from the EMF sensor. Passed directly to the
+   * K-II virtual meter so its LEDs react to EMF spikes without Bayesian lag.
+   * Optional — K-II falls back to activityBand when absent.
+   */
+  emfZScore?: number;
   /** Bubbles recording / live state up so the parent can reflect it in
    *  out-of-band UI (e.g. the Simple-mode broadcast CTA). */
   onStateChange?: (state: { recording: boolean; broadcasting: boolean }) => void;
+  /**
+   * External overlay channel state. When provided, CameraScreen (or another
+   * parent) owns the channels and drives them via its own dock. The internal
+   * toggle panel is hidden so the two sources don't collide.
+   */
+  externalChannels?: OverlayChannels;
+  onExternalChannelChange?: (key: keyof OverlayChannels, value: boolean) => void;
+  /**
+   * Fullscreen camera-first mode. Removes card chrome (border, padding,
+   * border-radius, header), makes the stage fill its container with flex: 1
+   * instead of the fixed aspect-ratio, and hides the WHIP setup panel behind
+   * the Record/Go-live buttons. Used by CameraScreen.
+   */
+  fullscreen?: boolean;
+  /**
+   * When provided, CameraScreen fills this ref with LiveStreamView's
+   * toggleRecording callback so the dock button can drive it without
+   * prop-threading state back up.
+   */
+  recordToggleRef?: React.MutableRefObject<(() => void) | null>;
+  /** Same pattern as recordToggleRef — drives toggleLive from the dock. */
+  liveToggleRef?: React.MutableRefObject<(() => void) | null>;
+  /**
+   * Called whenever the camera stream opens / closes, the WHIP URL changes,
+   * or torch / facing hardware state changes. CameraScreen uses this to know
+   * which dock buttons to show and whether they're enabled.
+   */
+  onCameraState?: (s: {
+    streamOn: boolean;
+    whipConfigured: boolean;
+    torchSupported: boolean;
+    torchOn: boolean;
+    facingMode: "environment" | "user";
+  }) => void;
+  /**
+   * When provided, CameraScreen fills this ref with LiveStreamView's
+   * toggleTorch callback so the dock button can drive it without prop-threading.
+   */
+  torchToggleRef?: React.MutableRefObject<(() => void) | null>;
+  /** Same pattern as torchToggleRef — drives flipCamera from the dock. */
+  flipCameraRef?: React.MutableRefObject<(() => void) | null>;
+  /**
+   * Same pattern — exposes the camera-open `start` callback so CameraScreen
+   * can fire it from inside the Begin button's gesture handler. The browser
+   * camera permission prompt MUST originate in a user gesture; chaining the
+   * open into Begin gives a one-tap flow.
+   */
+  startCameraRef?: React.MutableRefObject<(() => Promise<void>) | null>;
 }
 
 export function LiveStreamView(props: LiveStreamViewProps) {
   const {
     investigationId, running, posterior, audioRms, sector, coherence, caseId, caseTitle, caption,
-    lightLux, magnetometerUt, motionMs2, temperatureC, onStateChange,
+    lightLux, magnetometerUt, motionMs2, temperatureC, emfZScore, onStateChange,
+    externalChannels, onExternalChannelChange, fullscreen,
+    recordToggleRef, liveToggleRef, onCameraState,
+    torchToggleRef, flipCameraRef, startCameraRef,
   } = props;
 
   const sourceVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -170,14 +159,14 @@ export function LiveStreamView(props: LiveStreamViewProps) {
   const [recording, setRecording] = useState(false);
   const [liveOn, setLiveOn] = useState(false);
   const [whipUrl, setWhipUrl] = useState<string>(() => {
-    try { return localStorage.getItem("ss-whip-url") ?? ""; } catch { return ""; }
+    try { return localStorage.getItem(WHIP_URL_KEY) ?? ""; } catch { return ""; }
   });
   const [whipBearer, setWhipBearer] = useState<string>(() => {
-    try { return localStorage.getItem("ss-whip-bearer") ?? ""; } catch { return ""; }
+    try { return localStorage.getItem(WHIP_BEARER_KEY) ?? ""; } catch { return ""; }
   });
   const [whipProvider, setWhipProvider] = useState<WhipProviderKey>(() => {
     try {
-      const stored = localStorage.getItem("ss-whip-provider");
+      const stored = localStorage.getItem(WHIP_PROVIDER_KEY);
       if (stored && WHIP_PROVIDERS.some((p) => p.key === stored)) {
         return stored as WhipProviderKey;
       }
@@ -200,15 +189,34 @@ export function LiveStreamView(props: LiveStreamViewProps) {
   const [fbConnecting, setFbConnecting] = useState(false);
   const [fbConnectMsg, setFbConnectMsg] = useState<string | null>(null);
   const [whipStats, setWhipStats] = useState<WhipOutboundStats | null>(null);
+  // Network status — feeds the canvas OFFLINE pill (visible when recording locally
+  // with no connectivity), proving the frame was captured before any cloud sync.
+  const online = useNetworkOnline();
+
+  // Timestamps for the on-canvas elapsed-time readouts that get burnt into the
+  // REC / LIVE pills. Captured once on transition; cleared when the activity
+  // ends. The compositor reads them every frame and computes `Date.now() - t`
+  // so the timer ticks per RAF tick without React state churn.
+  const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
+  const [liveStartedAt, setLiveStartedAt] = useState<number | null>(null);
+  useEffect(() => {
+    setRecordingStartedAt(recording ? Date.now() : null);
+  }, [recording]);
+  useEffect(() => {
+    setLiveStartedAt(liveOn ? Date.now() : null);
+  }, [liveOn]);
   // Compartmentalised overlay channels. Defaults all-on; operator hides the
   // bits they don't want baked into the recording or live stream. Persists
   // across sessions so a producer's choices stick.
+  // When externalChannels is provided (CameraScreen dock), use those instead.
   const [channels, setChannels] = useState<OverlayChannels>(() => loadOverlayChannels());
+  const activeChannels = externalChannels ?? channels;
   useEffect(() => { saveOverlayChannels(channels); }, [channels]);
 
   const setChannel = useCallback((key: keyof OverlayChannels, value: boolean) => {
+    if (onExternalChannelChange) { onExternalChannelChange(key, value); return; }
     setChannels((prev) => (prev[key] === value ? prev : { ...prev, [key]: value }));
-  }, []);
+  }, [onExternalChannelChange]);
   const setAllChannels = useCallback((value: boolean) => {
     setChannels(() => {
       const next = {} as OverlayChannels;
@@ -216,7 +224,7 @@ export function LiveStreamView(props: LiveStreamViewProps) {
       return next;
     });
   }, []);
-  const enabledChannelCount = CHANNEL_KEYS.reduce((n, k) => n + (channels[k] ? 1 : 0), 0);
+  const enabledChannelCount = CHANNEL_KEYS.reduce((n, k) => n + (activeChannels[k] ? 1 : 0), 0);
 
   // Keep the latest props in a ref so the compositor's getOverlay() always
   // returns fresh state without re-creating the compositor each render.
@@ -259,10 +267,14 @@ export function LiveStreamView(props: LiveStreamViewProps) {
       audioRms,
       recording,
       liveStreaming: liveOn,
+      online,
+      recordingStartedAt: recordingStartedAt ?? undefined,
+      liveStartedAt: liveStartedAt ?? undefined,
+      emfZScore: (typeof emfZScore === "number" && Number.isFinite(emfZScore)) ? emfZScore : undefined,
       sensors: hasAnySensor ? sensors : undefined,
-      channels,
+      channels: activeChannels,
     };
-  }, [posterior, audioRms, sector, coherence, caseId, caseTitle, caption, recording, liveOn, lightLux, magnetometerUt, motionMs2, temperatureC, channels]);
+  }, [posterior, audioRms, sector, coherence, caseId, caseTitle, caption, recording, liveOn, online, recordingStartedAt, liveStartedAt, lightLux, magnetometerUt, motionMs2, temperatureC, emfZScore, activeChannels]);
 
   const openCamera = useCallback(async (mode: "environment" | "user"): Promise<MediaStream> => {
     try {
@@ -547,9 +559,9 @@ export function LiveStreamView(props: LiveStreamViewProps) {
       return;
     }
     try {
-      localStorage.setItem("ss-whip-url", whipUrl.trim());
-      if (whipBearer.trim()) localStorage.setItem("ss-whip-bearer", whipBearer.trim());
-      else localStorage.removeItem("ss-whip-bearer");
+      localStorage.setItem(WHIP_URL_KEY, whipUrl.trim());
+      if (whipBearer.trim()) localStorage.setItem(WHIP_BEARER_KEY, whipBearer.trim());
+      else localStorage.removeItem(WHIP_BEARER_KEY);
     } catch { /* ignore */ }
     try {
       setStatusMsg("Connecting WHIP…");
@@ -607,9 +619,28 @@ export function LiveStreamView(props: LiveStreamViewProps) {
     return () => setLiveBroadcastState({ recording: false, broadcasting: false });
   }, []);
 
+  // Fill parent-owned refs so CameraScreen's dock can invoke recording/live/
+  // torch/flip/start without LiveStreamView needing to expose its internal state.
+  useEffect(() => {
+    if (recordToggleRef) recordToggleRef.current = toggleRecording;
+    if (liveToggleRef)   liveToggleRef.current   = toggleLive;
+    if (torchToggleRef)  torchToggleRef.current  = toggleTorch;
+    if (flipCameraRef)   flipCameraRef.current   = flipCamera;
+    if (startCameraRef)  startCameraRef.current  = start;
+  }, [recordToggleRef, liveToggleRef, toggleRecording, toggleLive, torchToggleRef, flipCameraRef, toggleTorch, flipCamera, startCameraRef, start]);
+
+  // Notify parent when the stream opens/closes or WHIP config changes
+  // so the dock buttons can show correct enabled/disabled state.
+  // Derived here so the effect only fires when the boolean boundary is crossed,
+  // not on every keystroke in the WHIP URL input.
+  const whipConfigured = whipUrl.trim().length > 0;
+  useEffect(() => {
+    onCameraState?.({ streamOn, whipConfigured, torchSupported, torchOn, facingMode });
+  }, [onCameraState, streamOn, whipConfigured, torchSupported, torchOn, facingMode]);
+
   const handleProviderChange = useCallback((nextKey: WhipProviderKey) => {
     setWhipProvider(nextKey);
-    try { localStorage.setItem("ss-whip-provider", nextKey); } catch { /* ignore */ }
+    try { localStorage.setItem(WHIP_PROVIDER_KEY, nextKey); } catch { /* ignore */ }
     const provider = WHIP_PROVIDERS.find((p) => p.key === nextKey);
     if (!provider) return;
     // Custom leaves the URL untouched-blank; everything else pre-fills the
@@ -655,7 +686,7 @@ export function LiveStreamView(props: LiveStreamViewProps) {
         return;
       }
       setWhipUrl(data.whip_url);
-      try { localStorage.setItem("ss-whip-url", data.whip_url); } catch { /* ignore */ }
+      try { localStorage.setItem(WHIP_URL_KEY, data.whip_url); } catch { /* ignore */ }
       setFbConnectMsg("Connected — WHIP URL above is ready. Click Go live to start broadcasting to Facebook.");
     } catch (err) {
       setFbConnectMsg(`Failed: ${(err as Error).message}`);
@@ -664,12 +695,20 @@ export function LiveStreamView(props: LiveStreamViewProps) {
     }
   }, [fbStreamKey, fbConnectToken]);
 
+  // Derive fullscreen variant class names once; avoids 3 repeated inline ternaries.
+  const wrapCls    = fullscreen ? `${s.wrap} ${s.wrapFullscreen}` : s.wrap;
+  const stageCls   = fullscreen ? `${s.stage} ${s.stageFull}` : s.stage;
+  const openBtnCls = fullscreen ? `${s.openButton} ${s.openButtonFull}` : s.openButton;
+
   return (
-    <div className={s.wrap}>
-      <header className={s.head}>
-        <span className={s.eyebrow}>LIVE BROADCAST · TV PRODUCTION</span>
-        <span className={s.note}>Camera + mic + AR overlays composited to one stream. Record + go live.</span>
-      </header>
+    <div className={wrapCls}>
+      {/* Title strip — hidden in fullscreen mode (camera IS the UI) */}
+      {!fullscreen && (
+        <header className={s.head}>
+          <span className={s.eyebrow}>LIVE BROADCAST · TV PRODUCTION</span>
+          <span className={s.note}>Camera + mic + AR overlays composited to one stream. Record + go live.</span>
+        </header>
+      )}
 
       {/* Hidden source video — feeds the compositor. */}
       <video ref={sourceVideoRef} className={s.hidden} playsInline muted />
@@ -677,13 +716,13 @@ export function LiveStreamView(props: LiveStreamViewProps) {
       {!streamOn && !error && (
         <button
           type="button"
-          className={s.openButton}
+          className={openBtnCls}
           onClick={start}
-          disabled={busy || !investigationId}
+          disabled={busy}
         >
           <span className={s.openIcon} aria-hidden="true">📡</span>
-          <span className={s.openLabel}>{busy ? "Opening…" : investigationId ? "Open camera + mic" : "Begin a session first"}</span>
-          <span className={s.openHint}>One-stream output. Record locally and/or go live with overlays.</span>
+          <span className={s.openLabel}>{busy ? "Opening…" : "Open camera"}</span>
+          {!fullscreen && <span className={s.openHint}>One-stream output. Record locally and/or go live with overlays.</span>}
         </button>
       )}
 
@@ -696,7 +735,7 @@ export function LiveStreamView(props: LiveStreamViewProps) {
 
       {streamOn && (
         <>
-          <div className={s.stage}>
+          <div className={stageCls}>
             <video ref={previewVideoRef} className={s.preview} playsInline muted />
             {(recording || liveOn) && (
               <div className={s.statusBadges}>
@@ -706,29 +745,34 @@ export function LiveStreamView(props: LiveStreamViewProps) {
             )}
           </div>
 
-          <div className={s.cameraControls}>
-            <button type="button" className={s.cameraBtn} onClick={flipCamera} disabled={busy} title="Flip camera">
-              <span aria-hidden="true">↺</span>
-              <span>{facingMode === "environment" ? "Rear" : "Front"}</span>
-            </button>
-            {torchSupported && (
-              <button
-                type="button"
-                className={`${s.cameraBtn} ${torchOn ? s.cameraBtnActive : ""}`.trim()}
-                onClick={toggleTorch}
-                aria-pressed={torchOn}
-                title="Toggle torch / flashlight"
-              >
-                <span aria-hidden="true">⚡</span>
-                <span>Torch {torchOn ? "on" : "off"}</span>
+          {/* Inline camera controls — shown only in non-fullscreen mode.
+              In fullscreen (CameraScreen), the dock owns flip and torch. */}
+          {!fullscreen && (
+            <div className={s.cameraControls}>
+              <button type="button" className={s.cameraBtn} onClick={flipCamera} disabled={busy} title="Flip camera">
+                <span aria-hidden="true">↺</span>
+                <span>{facingMode === "environment" ? "Rear" : "Front"}</span>
               </button>
-            )}
-          </div>
+              {torchSupported && (
+                <button
+                  type="button"
+                  className={`${s.cameraBtn} ${torchOn ? s.cameraBtnActive : ""}`.trim()}
+                  onClick={toggleTorch}
+                  aria-pressed={torchOn}
+                  title="Toggle torch / flashlight"
+                >
+                  <span aria-hidden="true">⚡</span>
+                  <span>Torch {torchOn ? "on" : "off"}</span>
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Overlay channels — operator picks which baked-in elements
               show on the composite. Collapsed by default; the count tells
-              them at a glance how many are on without opening it. */}
-          <details className={s.channels}>
+              them at a glance how many are on without opening it.
+              Hidden when CameraScreen's external dock drives channels. */}
+          {!externalChannels && <details className={s.channels}>
             <summary className={s.channelsSummary}>
               <span>Overlay channels</span>
               <span className={s.channelsCount}>{enabledChannelCount}/{CHANNEL_KEYS.length} on</span>
@@ -740,7 +784,7 @@ export function LiveStreamView(props: LiveStreamViewProps) {
               <div className={s.channelsGrid}>
                 {CHANNEL_KEYS.map((key) => {
                   const def = CHANNEL_LABELS[key];
-                  const on = channels[key];
+                  const on = activeChannels[key];
                   return (
                     <button
                       key={key}
@@ -766,7 +810,8 @@ export function LiveStreamView(props: LiveStreamViewProps) {
                 <button type="button" className={s.channelsActionBtn} onClick={() => setChannels(DEFAULT_OVERLAY_CHANNELS)}>Reset</button>
               </div>
             </div>
-          </details>
+          </details>}
+
 
           <div className={s.controls}>
             <button

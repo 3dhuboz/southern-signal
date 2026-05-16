@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { ExperienceToggle } from "./ExperienceToggle";
 import { ScotopicToggle } from "./ScotopicToggle";
-import { useSystemStatus } from "../lib/system/systemStatus";
+import { useSystemStatus, useNetworkOnline } from "../lib/system/systemStatus";
 import { useLiveBroadcastState } from "../lib/system/liveBroadcast";
 import { usePreferences } from "../lib/preferences";
 import { usePersistenceMode } from "../lib/db/db";
@@ -23,6 +23,8 @@ export function AppHeader() {
   const persistenceMode = usePersistenceMode();
   const memoryOnly = persistenceMode === "memory";
 
+  const online = useNetworkOnline();
+
   const showBattery = batteryPct !== null;
   const batteryDanger = showBattery && batteryPct !== null && batteryPct < BATTERY_DANGER_PCT && !charging;
 
@@ -37,6 +39,17 @@ export function AppHeader() {
           <span className={styles.wordmark}>SOUTHERN SIGNAL</span>
         </Link>
         <div className={styles.toolbar}>
+          {!online && (
+            <span
+              className={styles.offlineBadge}
+              role="status"
+              aria-label="No internet connection"
+              title="Offline — WHIP broadcast and cloud AI are unavailable. Recordings and evidence still capture locally."
+            >
+              <span className={styles.offlineDot} aria-hidden="true" />
+              OFFLINE
+            </span>
+          )}
           {memoryOnly && (
             <span
               className={styles.memoryBadge}
