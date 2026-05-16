@@ -248,20 +248,32 @@ export function getOverlayPlugin(id: OverlayId): OverlayPlugin | undefined {
 
 /**
  * Build an `OverlayChannels` object from a sparse Scene overlay map.
- * Mandatory overlays are forced on regardless of the scene's preference.
- * Missing overlays fall back to the plugin's `defaultEnabled`.
+ * Resolution order, highest to lowest priority:
+ *   1. `forensicMandatory` — always on, the audit chain can't be turned off.
+ *   2. `proOnly && !proMode` — Bayesian "ghost-o-meter" overlays stay off
+ *      for non-Pro users even if the scene asked for them. The skeptical
+ *      panel was firm on this: posterior pills mislead amateur audiences.
+ *   3. The scene's explicit choice (if any).
+ *   4. The plugin's `defaultEnabled`.
  */
 export function resolveOverlaysFromScene(
   sceneOverlays: Partial<Record<OverlayId, boolean>>,
+  options: { proMode?: boolean } = {},
 ): OverlayChannels {
+  const proMode = options.proMode === true;
   const out = {} as OverlayChannels;
   for (const plugin of OVERLAY_REGISTRY) {
     const sceneChoice = sceneOverlays[plugin.id];
-    const enabled = plugin.forensicMandatory
-      ? true
-      : sceneChoice !== undefined
-        ? sceneChoice
-        : plugin.defaultEnabled;
+    let enabled: boolean;
+    if (plugin.forensicMandatory) {
+      enabled = true;
+    } else if (plugin.proOnly && !proMode) {
+      enabled = false;
+    } else if (sceneChoice !== undefined) {
+      enabled = sceneChoice;
+    } else {
+      enabled = plugin.defaultEnabled;
+    }
     (out as Record<OverlayId, boolean>)[plugin.id] = enabled;
   }
   return out;

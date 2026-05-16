@@ -23,6 +23,7 @@
 
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { usePreferences } from "../lib/preferences";
 import {
   OVERLAY_REGISTRY,
   groupedRegistry,
@@ -93,15 +94,20 @@ const GROUP_LABELS: Record<OverlayGroup, string> = {
 
 /**
  * Resolve the *effective* toggle state for a plugin under a scene + the
- * operator's overrides. Forensic-mandatory always wins (true). Otherwise:
- * override > scene > plugin default.
+ * operator's overrides. Resolution order mirrors `resolveOverlaysFromScene`:
+ *   forensicMandatory → proOnly-and-not-Pro → override → scene → default.
+ * The proMode gate makes the customise panel honest about what will actually
+ * appear on the broadcast frame — a non-Pro operator sees the Bayesian rows
+ * as forced-off rather than flipping a switch that quietly does nothing.
  */
 function effectiveEnabled(
   plugin: OverlayPlugin,
   scene: Scene,
   overrides: Partial<Record<OverlayId, boolean>>,
+  proMode: boolean,
 ): boolean {
   if (plugin.forensicMandatory) return true;
+  if (plugin.proOnly && !proMode) return false;
   if (overrides[plugin.id] !== undefined) return overrides[plugin.id] as boolean;
   if (scene.overlays[plugin.id] !== undefined) return scene.overlays[plugin.id] as boolean;
   return plugin.defaultEnabled;
@@ -111,6 +117,8 @@ function effectiveEnabled(
 
 export function HuntSetup() {
   const navigate = useNavigate();
+  const [prefs] = usePreferences();
+  const proMode = prefs.proMode;
   const [selected, setSelected] = useState<SceneId>(() => {
     try { return loadActiveSceneId(); }
     catch { return DEFAULT_SCENE_ID; }
@@ -148,13 +156,15 @@ export function HuntSetup() {
   };
 
   const handleToggleOverride = (sceneId: SceneId, plugin: OverlayPlugin) => {
-    // Forensic-mandatory can't be flipped — short-circuit defensively even
-    // though the UI disables the input.
+    // Forensic-mandatory can't be flipped, and proOnly is locked off for
+    // non-Pro users — short-circuit defensively even though the UI disables
+    // those inputs.
     if (plugin.forensicMandatory) return;
+    if (plugin.proOnly && !proMode) return;
     setOverridesBySceneId((prev) => {
       const sceneOverrides = { ...(prev[sceneId] ?? {}) };
       const scene = BUILT_IN_SCENES.find((sc) => sc.id === sceneId)!;
-      const currentEffective = effectiveEnabled(plugin, scene, sceneOverrides);
+      const currentEffective = effectiveEnabled(plugin, scene, sceneOverrides, proMode);
       const nextEffective = !currentEffective;
 
       // Decide what the scene's "baseline" expectation is so we only store an
@@ -255,10 +265,12 @@ export function HuntSetup() {
                         <div className={s.customiseGroupLabel}>{GROUP_LABELS[groupKey]}</div>
                         <ul className={s.customiseList}>
                           {groupPlugins.map((plugin) => {
-                            const enabled = effectiveEnabled(plugin, scene, overrides);
+                            const enabled = effectiveEnabled(plugin, scene, overrides, proMode);
                             const missing = missingSensors(plugin, sensorAvailability);
                             const hasMissingSensors = missing.length > 0;
                             const isMandatory = plugin.forensicMandatory === true;
+                            const isProLocked  = plugin.proOnly === true && !proMode;
+                            const isDisabled   = isMandatory || isProLocked;
                             return (
                               <li key={plugin.id} className={s.customiseRow}>
                                 <div className={s.customiseRowText}>
@@ -267,6 +279,11 @@ export function HuntSetup() {
                                     {isMandatory && (
                                       <span className={s.alwaysOnChip} title="Forensic chain — cannot be turned off">
                                         Always on
+                                      </span>
+                                    )}
+                                    {isProLocked && (
+                                      <span className={s.alwaysOnChip} title="Enable Pro / Lab mode in Setup to use this overlay">
+                                        Pro only
                                       </span>
                                     )}
                                     {hasMissingSensors && (
@@ -282,13 +299,13 @@ export function HuntSetup() {
                                   <p className={s.customiseRowDesc}>{plugin.description}</p>
                                 </div>
                                 <label
-                                  className={`${s.customiseSwitch} ${isMandatory ? s.customiseSwitchDisabled : ""}`.trim()}
+                                  className={`${s.customiseSwitch} ${isDisabled ? s.customiseSwitchDisabled : ""}`.trim()}
                                   aria-label={`Toggle ${plugin.name}`}
                                 >
                                   <input
                                     type="checkbox"
                                     checked={enabled}
-                                    disabled={isMandatory}
+                                    disabled={isDisabled}
                                     onChange={() => handleToggleOverride(scene.id, plugin)}
                                   />
                                   <span className={s.customiseSwitchTrack} aria-hidden="true" />

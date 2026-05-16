@@ -34,6 +34,7 @@ import { type BaselineSummary, loadBaseline } from "../lib/posterior/sessionBase
 import { requestSensorPermissionsForUserGesture } from "../lib/sensors/permissions";
 import { useSensors } from "../lib/sensors/useSensors";
 import { setCurrent, setPermissionsGranted, useSession } from "../lib/session";
+import { usePreferences } from "../lib/preferences";
 import { useWakeLock } from "../lib/system/wakeLock";
 import type { OverlayChannels } from "../lib/media/canvasCompositor";
 import { resolveOverlaysFromScene } from "../lib/overlays/registry";
@@ -131,6 +132,8 @@ function fmtSecs(total: number): string {
 export function CameraScreen() {
   const session = useSession();
   const sensors = useSensors(session.permissionsGranted);
+  const [prefs] = usePreferences();
+  const proMode = prefs.proMode;
 
   // Session lifecycle
   const [running, setRunning] = useState(false);
@@ -222,13 +225,15 @@ export function CameraScreen() {
   const [activeSceneId, setActiveSceneId] = useState<SceneId>(() => loadActiveSceneId());
   const activeScene = getScene(activeSceneId);
   const [channels, setChannels] = useState<OverlayChannels>(() =>
-    resolveOverlaysFromScene({ ...(activeScene?.overlays ?? {}), ...loadSceneOverrides(activeSceneId) }),
+    resolveOverlaysFromScene({ ...(activeScene?.overlays ?? {}), ...loadSceneOverrides(activeSceneId) }, { proMode }),
   );
   // Whenever the active scene changes (operator picked a different one from
-  // the dock chip or HuntSetup), reset channels to that scene's resolution.
+  // the dock chip or HuntSetup) OR Pro mode flips, re-resolve channels.
+  // Pro-mode gating matters: turning Pro off mid-session should strip the
+  // posterior/activity/edge-glow overlays even from the pro_lab scene.
   useEffect(() => {
-    setChannels(resolveOverlaysFromScene({ ...(activeScene?.overlays ?? {}), ...loadSceneOverrides(activeSceneId) }));
-  }, [activeSceneId, activeScene]);
+    setChannels(resolveOverlaysFromScene({ ...(activeScene?.overlays ?? {}), ...loadSceneOverrides(activeSceneId) }, { proMode }));
+  }, [activeSceneId, activeScene, proMode]);
   const handleChannelChange = useCallback((key: keyof OverlayChannels, value: boolean) => {
     setChannels((prev) => prev[key] === value ? prev : { ...prev, [key]: value });
   }, []);
