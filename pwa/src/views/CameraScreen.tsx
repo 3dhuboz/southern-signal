@@ -168,9 +168,10 @@ export function CameraScreen() {
   // ITC quick-dock tools — phoneme cycle (spirit box) and word-gen (ovilus).
   // Both publish to the module-scope ITC channel store which the compositor
   // reads each frame; the `itc` overlay channel must be enabled to show them.
+  // The active scene's tools config kicks the cycle on automatically when the
+  // session begins (e.g. Spirit Box Session scene), so the operator gets a
+  // one-tap setup. Manual toggle remains the override.
   const itcEntropy = sensors.snapshot.magnetometer?.magnitude ?? sensors.snapshot.motion?.accelMagnitude ?? 0;
-  const spiritBox = useSpiritBox(itcEntropy, running);
-  const ovilus    = useOvilus(itcEntropy, running);
 
   // Session timer — elapsed seconds since Begin
   const [sessionSecs, setSessionSecs] = useState(0);
@@ -232,6 +233,12 @@ export function CameraScreen() {
     setChannels((prev) => prev[key] === value ? prev : { ...prev, [key]: value });
   }, []);
   void setActiveSceneId; // Reserved for the scene-chip switch in Phase 4.
+
+  // ITC hooks read the scene's tools config — Spirit Box Session auto-starts
+  // the spirit box; Pro/Lab leaves Ovilus to manual. Hooks live after scene
+  // resolution so the autoStart flag is always coherent with the active scene.
+  const spiritBox = useSpiritBox(itcEntropy, running, activeScene?.tools.spiritBox === true);
+  const ovilus    = useOvilus(itcEntropy, running, activeScene?.tools.ovilus === true);
 
   // First-run redirect: if the operator has NEVER picked a scene, send them
   // to HuntSetup before showing the camera surface. Once they pick once,
@@ -440,6 +447,8 @@ export function CameraScreen() {
           torchToggleRef={torchToggleRef}
           flipCameraRef={flipCameraRef}
           startCameraRef={startCameraRef}
+          defaultFacing={activeScene?.cameraDefaults.facing}
+          defaultTorch={activeScene?.cameraDefaults.torch}
           onCameraState={handleCameraState}
           fullscreen
         />

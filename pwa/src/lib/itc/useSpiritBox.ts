@@ -18,7 +18,7 @@ import { setSpiritBoxEmission } from "./itcChannels";
 const INTERVAL_MS = 280;
 const VOLUME = 0.85;
 
-export function useSpiritBox(entropy: number, sessionRunning: boolean) {
+export function useSpiritBox(entropy: number, sessionRunning: boolean, autoStart = false) {
   const [active, setActive] = useState(false);
   const [current, setCurrent] = useState("—");
   const seedRef    = useRef<number>(Date.now() & 0x7fffffff);
@@ -33,14 +33,23 @@ export function useSpiritBox(entropy: number, sessionRunning: boolean) {
     } catch { /* swallow — some browsers throw before any speak() call */ }
   }, []);
 
-  // Hard-stop when the session ends so the spirit box doesn't cycle silently
-  // after the user presses End.
+  // Session-running edge handling:
+  //   • false → true with autoStart=true: scene-driven kick-on (e.g. Spirit
+  //     Box Session scene). Fires on the rising edge only, so if the operator
+  //     manually toggles off mid-session it stays off.
+  //   • → false: hard-stop so the spirit box doesn't cycle silently after
+  //     End is pressed.
+  const prevSessionRunningRef = useRef(sessionRunning);
   useEffect(() => {
+    const prev = prevSessionRunningRef.current;
+    prevSessionRunningRef.current = sessionRunning;
     if (!sessionRunning) {
       stopSpeech();
       setActive(false);
+      return;
     }
-  }, [sessionRunning, stopSpeech]);
+    if (!prev && autoStart) setActive(true);
+  }, [sessionRunning, autoStart, stopSpeech]);
 
   // Hard-stop when the tab goes background (avoids audio running while the
   // phone is in a pocket or another app is in front).

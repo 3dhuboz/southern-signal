@@ -16,17 +16,26 @@ import { setOvilusEmission } from "./itcChannels";
 
 const INTERVAL_MS = 8000;
 
-export function useOvilus(entropy: number, sessionRunning: boolean) {
+export function useOvilus(entropy: number, sessionRunning: boolean, autoStart = false) {
   const [active, setActive] = useState(false);
   const [current, setCurrent] = useState("—");
   const seedRef    = useRef<number>(Date.now() & 0x7fffffff);
   const entropyRef = useRef<number>(entropy);
   useEffect(() => { entropyRef.current = entropy; }, [entropy]);
 
-  // Hard-stop when the session ends.
+  // Session-running edge handling — see useSpiritBox for full rationale.
+  // Rising edge with autoStart=true kicks the cycle on (used by the Pro/Lab
+  // scene); falling edge hard-stops so words don't continue after End.
+  const prevSessionRunningRef = useRef(sessionRunning);
   useEffect(() => {
-    if (!sessionRunning) setActive(false);
-  }, [sessionRunning]);
+    const prev = prevSessionRunningRef.current;
+    prevSessionRunningRef.current = sessionRunning;
+    if (!sessionRunning) {
+      setActive(false);
+      return;
+    }
+    if (!prev && autoStart) setActive(true);
+  }, [sessionRunning, autoStart]);
 
   // Emit one word — stable because it only reads refs and stable setters.
   const emitWord = useCallback(() => {

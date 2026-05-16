@@ -134,6 +134,15 @@ interface LiveStreamViewProps {
    * open into Begin gives a one-tap flow.
    */
   startCameraRef?: React.MutableRefObject<(() => Promise<void>) | null>;
+  /**
+   * Scene-driven camera defaults. `defaultFacing` seeds the initial
+   * facingMode at mount; `defaultTorch` requests torch-on once the camera
+   * is open AND torch is supported. Both are honored once-per-mount so that
+   * mid-session prop changes don't yank the camera underneath the operator
+   * (e.g. flipping to selfie wouldn't auto-re-engage torch).
+   */
+  defaultFacing?: "environment" | "user";
+  defaultTorch?: boolean;
 }
 
 export function LiveStreamView(props: LiveStreamViewProps) {
@@ -143,6 +152,7 @@ export function LiveStreamView(props: LiveStreamViewProps) {
     externalChannels, onExternalChannelChange, fullscreen,
     recordToggleRef, liveToggleRef, onCameraState,
     torchToggleRef, flipCameraRef, startCameraRef,
+    defaultFacing, defaultTorch,
   } = props;
 
   const sourceVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -176,9 +186,15 @@ export function LiveStreamView(props: LiveStreamViewProps) {
   const [error, setError] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [recordingsCount, setRecordingsCount] = useState(0);
-  const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
+  const [facingMode, setFacingMode] = useState<"environment" | "user">(() => defaultFacing ?? "environment");
   const [torchOn, setTorchOn] = useState(false);
   const [torchSupported, setTorchSupported] = useState(false);
+  // Pending auto-torch from the active scene. The scene's defaultTorch flag
+  // can't be applied at openCamera time (torch capability isn't known until
+  // detectTorchSupport probes the track), so we stash it here and let an
+  // effect fire toggleTorch the moment torchSupported flips true. The ref is
+  // consumed once so flips / re-opens don't repeatedly re-engage torch.
+  const autoTorchPendingRef = useRef<boolean>(defaultTorch === true);
   const [whipState, setWhipState] = useState<WhipState>("idle");
   const [fbStreamKey, setFbStreamKey] = useState<string>(() => {
     try { return localStorage.getItem("ss-fb-stream-key") ?? ""; } catch { return ""; }
@@ -386,6 +402,18 @@ export function LiveStreamView(props: LiveStreamViewProps) {
       setError(`Torch unavailable: ${(err as Error).message}`);
     }
   }, [torchOn, torchSupported]);
+
+  // Auto-torch from scene defaults — fires once when the camera comes online
+  // AND torch is supported, then clears the ref so subsequent flips don't
+  // re-engage it. If the active scene asked for torch but the device lacks
+  // it (e.g. front camera, or no LED hardware), the request simply lapses.
+  useEffect(() => {
+    if (!autoTorchPendingRef.current) return;
+    if (streamOn && torchSupported && !torchOn) {
+      autoTorchPendingRef.current = false;
+      void toggleTorch();
+    }
+  }, [streamOn, torchSupported, torchOn, toggleTorch]);
 
   // Once the stream is on and the source <video> element is mounted,
   // attach the camera track to it, build the compositor, and wire the
