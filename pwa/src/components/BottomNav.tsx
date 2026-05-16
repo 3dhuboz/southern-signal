@@ -92,6 +92,24 @@ const communityItem: NavItem = {
   ),
 };
 
+// Lab — Pro-only access to the full MissionControl review surface. Slotted
+// after Setup so the streaming-first tabs (Camera/EVP/Review/Setup) stay in
+// their familiar order; Lab is the back-office gateway before the wider-field
+// entries (Research, Map).
+const labItem: NavItem = {
+  to: "/lab",
+  label: "Lab",
+  icon: (
+    /* Erlenmeyer flask — narrow neck, sloped shoulders, fluid line. Clearly
+       "lab equipment", visually distinct from Investigate's bar-chart icon. */
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M9 3 H15" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M10 3 L10 9 L4.5 19 A1.5 1.5 0 0 0 5.8 21 H18.2 A1.5 1.5 0 0 0 19.5 19 L14 9 L14 3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" />
+      <path d="M7 15 H17" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  ),
+};
+
 export function BottomNav() {
   const [prefs] = usePreferences();
   const session = useSession();
@@ -146,6 +164,14 @@ export function BottomNav() {
         ];
       }
     }
+    if (prefs.proMode) {
+      // Lab sits AFTER Setup but BEFORE Research/Community — it's the
+      // back-office gateway to MissionControl, slotted ahead of the wider
+      // -field entries. Setup is the last item in the base `items` array,
+      // so append now (community is added below; research was inserted
+      // before Setup, so it's already to the left).
+      out = [...out, labItem];
+    }
     if (prefs.community.enabled) {
       // Community sits at the right edge of the nav — the "look at the wider
       // field" entry. Floorplan was previously its anchor; appended at the
@@ -153,7 +179,7 @@ export function BottomNav() {
       out = [...out, communityItem];
     }
     return out;
-  }, [researchEnabled, dossierBadge, prefs.community.enabled]);
+  }, [researchEnabled, dossierBadge, prefs.proMode, prefs.community.enabled]);
 
   return (
     <nav className={styles.nav} aria-label="Primary">

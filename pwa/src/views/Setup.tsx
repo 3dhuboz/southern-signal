@@ -194,6 +194,26 @@ export function Setup() {
       </section>
 
 
+      {/* Pro / Lab mode — surface the demoted MissionControl as a Lab tab */}
+      <section className={st.panel}>
+        <header className={st.panelHeader}>
+          <h2 className={st.panelTitle}>Pro / Lab mode</h2>
+        </header>
+        <label className={st.toggleRow}>
+          <span>
+            <strong>Pro / Lab mode</strong>
+            <span className={st.toggleHint}>
+              Surfaces the full MissionControl panel (sensors panel, Bayesian posterior breakdowns, all ITC tools) as a "Lab" tab in the bottom nav. Recommended only for review-grade work — not general streaming.
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            checked={prefs.proMode}
+            onChange={(e) => setPrefs({ proMode: e.target.checked })}
+          />
+        </label>
+      </section>
+
       {/* Broadcast — WHIP live-stream destination */}
       <section className={st.panel}>
         <header className={st.panelHeader}>

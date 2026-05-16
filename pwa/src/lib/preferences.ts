@@ -109,6 +109,13 @@ export interface AppPreferences {
      *  (lets the operator delete their own pins without an account). */
     anonymousId: string | null;
   };
+  /**
+   * Pro / Lab mode — surfaces the full MissionControl panel (sensors panel,
+   * Bayesian posterior breakdowns, all ITC tools) as a "Lab" tab in the
+   * bottom nav. Default OFF — the streaming-first surface stays focused
+   * on the broadcast rig; power users opt in for review-grade work.
+   */
+  proMode: boolean;
 }
 
 const DEFAULTS: AppPreferences = {
@@ -137,6 +144,7 @@ const DEFAULTS: AppPreferences = {
     },
   },
   community: { enabled: true, anonymousId: null },
+  proMode: false,
 };
 
 const KEY = "ss-preferences-v1";
