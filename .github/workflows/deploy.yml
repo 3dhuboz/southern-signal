@@ -1,0 +1,62 @@
+name: Deploy to Cloudflare Pages
+
+# Runs on every push to master + on manual dispatch. The Cloudflare Pages
+# project (`southern-signal`) is NOT linked to this repo via the dashboard's
+# Git provider integration — this workflow IS the deploy pipeline. If you
+# disable it, deploys won't happen automatically.
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# Cancel any in-flight deploy if a newer push lands — no point shipping an
+# already-stale commit when a fresher one is queued behind it.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # `deployments: write` lets the workflow create a deployment status that
+      # shows up on the commit + PR — useful for spotting deploy failures
+      # without leaving GitHub.
+      deployments: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: pwa/package-lock.json
+
+      - name: Install dependencies
+        working-directory: pwa
+        run: npm ci
+
+      - name: Type-check + build
+        working-directory: pwa
+        run: npm run build
+
+      - name: Run tests
+        working-directory: pwa
+        run: npm test -- --run
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # `--branch=master` puts this on the production alias; preview
+          # deployments would use a different branch name.
+          command: pages deploy pwa/dist --project-name=southern-signal --branch=master
+          # Don't try to install wrangler globally — the action will use the
+          # version pinned in pwa/package.json's devDependencies if present,
+          # or fall back to its bundled wrangler.
+          workingDirectory: pwa
