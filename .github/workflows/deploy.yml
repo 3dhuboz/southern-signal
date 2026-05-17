@@ -53,10 +53,13 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          # `--branch=master` puts this on the production alias; preview
-          # deployments would use a different branch name.
-          command: pages deploy pwa/dist --project-name=southern-signal --branch=master
-          # Don't try to install wrangler globally — the action will use the
-          # version pinned in pwa/package.json's devDependencies if present,
-          # or fall back to its bundled wrangler.
+          # wrangler-action cd's into workingDirectory BEFORE running command,
+          # so the deploy path is relative to pwa/. `dist` here resolves to
+          # pwa/dist — running from repo root with `pwa/dist` would also
+          # work, but pinning workingDirectory lets wrangler auto-discover
+          # pwa/wrangler.jsonc for the project's resource bindings.
+          # `--branch=master` puts this on the production alias.
+          # `--commit-dirty=true` silences the warning about untracked dist/
+          # files (dist is gitignored, so the runner always sees them as new).
+          command: pages deploy dist --project-name=southern-signal --branch=master --commit-dirty=true
           workingDirectory: pwa
