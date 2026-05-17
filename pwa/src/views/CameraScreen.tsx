@@ -90,6 +90,22 @@ function fmtSecs(total: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+// Top-left status pill — lookup table replaces three parallel ternary chains
+// (state, class, label). Adding a new state means one entry, not three.
+type TopPillState = "rec" | "live" | "ready" | "idle";
+type StyleMap = Record<string, string>;
+interface TopPillSpec {
+  /** Optional extra class added alongside the base `.cornerPillTopLeft`. */
+  extraClass?: (styles: StyleMap) => string;
+  label: (sessionSecs: number) => string;
+}
+const TOP_PILL_STATES: Record<TopPillState, TopPillSpec> = {
+  rec:   { extraClass: (st) => st.cornerPillRec,  label: (s) => `REC ${fmtSecs(s)}` },
+  live:  { extraClass: (st) => st.cornerPillLive, label: (s) => `LIVE ${fmtSecs(s)}` },
+  ready: {                                         label: (s) => `READY ${fmtSecs(s)}` },
+  idle:  {                                         label: ()  => "STANDBY" },
+};
+
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -137,7 +153,10 @@ export function CameraScreen() {
   // The active scene's tools config kicks the cycle on automatically when the
   // session begins (e.g. Spirit Box Session scene), so the operator gets a
   // one-tap setup. Manual toggle remains the override.
-  const itcEntropy = sensors.snapshot.magnetometer?.magnitude ?? sensors.snapshot.motion?.accelMagnitude ?? 0;
+  // Quantise to 2dp so sensor jitter doesn't thrash the entropy ref-write
+  // effect inside useSpiritBox / useOvilus every frame.
+  const rawEntropy = sensors.snapshot.magnetometer?.magnitude ?? sensors.snapshot.motion?.accelMagnitude ?? 0;
+  const itcEntropy = Math.round(rawEntropy * 100) / 100;
 
   // Session timer — elapsed seconds since Begin
   const [sessionSecs, setSessionSecs] = useState(0);
@@ -194,9 +213,13 @@ export function CameraScreen() {
   // the dock chip or HuntSetup) OR Pro mode flips, re-resolve channels.
   // Pro-mode gating matters: turning Pro off mid-session should strip the
   // posterior/activity/edge-glow overlays even from the pro_lab scene.
+  // Dep on `activeSceneId` (the scalar) — `activeScene` is derived from it
+  // and `getScene` returns a stable reference, but pinning to the id keeps
+  // the effect from re-firing if registry internals ever reshape the lookup.
   useEffect(() => {
-    setChannels(resolveOverlaysFromScene({ ...(activeScene?.overlays ?? {}), ...loadSceneOverrides(activeSceneId) }, { proMode }));
-  }, [activeSceneId, activeScene, proMode]);
+    const scene = getScene(activeSceneId);
+    setChannels(resolveOverlaysFromScene({ ...(scene?.overlays ?? {}), ...loadSceneOverrides(activeSceneId) }, { proMode }));
+  }, [activeSceneId, proMode]);
   const handleChannelChange = useCallback((key: keyof OverlayChannels, value: boolean) => {
     setChannels((prev) => prev[key] === value ? prev : { ...prev, [key]: value });
   }, []);
@@ -394,22 +417,18 @@ export function CameraScreen() {
   // Top-left status pill — REC > LIVE > READY > IDLE. The recording / live
   // state from useLiveBroadcastState owns priority because they're billable
   // capture; the session-running state is the lowest-priority indicator.
-  const topPillState = broadcastState.recording
+  const topPillState: TopPillState = broadcastState.recording
     ? "rec"
     : broadcastState.broadcasting
       ? "live"
       : running
         ? "ready"
         : "idle";
-  const topPillClass =
-    topPillState === "rec"  ? `${s.cornerPillTopLeft} ${s.cornerPillRec}`  :
-    topPillState === "live" ? `${s.cornerPillTopLeft} ${s.cornerPillLive}` :
-    s.cornerPillTopLeft;
-  const topPillLabel =
-    topPillState === "rec"   ? `REC ${fmtSecs(sessionSecs)}` :
-    topPillState === "live"  ? `LIVE ${fmtSecs(sessionSecs)}` :
-    topPillState === "ready" ? `READY ${fmtSecs(sessionSecs)}` :
-    "STANDBY";
+  const pillSpec = TOP_PILL_STATES[topPillState];
+  const topPillClass = pillSpec.extraClass
+    ? `${s.cornerPillTopLeft} ${pillSpec.extraClass(s)}`
+    : s.cornerPillTopLeft;
+  const topPillLabel = pillSpec.label(sessionSecs);
 
   const sceneName = activeScene?.name ?? "Walkthrough";
 

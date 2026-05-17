@@ -438,6 +438,10 @@ export function LiveStreamView(props: LiveStreamViewProps) {
         const hasAnyItc = Object.keys(itc).length > 0;
         return {
           ...overlayStateRef.current,
+          // `nowMs` is the cheap numeric channel the compositor uses directly;
+          // `isoTimestamp` is kept populated for any downstream tooling that
+          // still consumes the ISO string form (recorder metadata, audit log).
+          nowMs: now,
           isoTimestamp: new Date(now).toISOString(),
           itc: hasAnyItc ? itc : undefined,
         };

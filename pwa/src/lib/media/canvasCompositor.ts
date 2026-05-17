@@ -111,7 +111,13 @@ export interface ItcChannelView {
 export interface OverlayState {
   caseId?: string;
   caseTitle?: string;
+  /** ISO 8601 stamp — still required for back-compat with downstream tooling
+   *  (recorder metadata, audit log). When `nowMs` is also supplied the
+   *  compositor uses that for the burn-in to avoid a Date round-trip per frame. */
   isoTimestamp: string;
+  /** Optional numeric Unix-ms. Preferred over `isoTimestamp` for the burn-in
+   *  clock because we can format directly without parsing/reserialising. */
+  nowMs?: number;
   posterior: number;
   activityLabel: string;
   activityBand: "calm" | "light" | "possible" | "notable" | "strong";
@@ -223,12 +229,24 @@ const SECTOR_DEG: Record<string, number> = {
   "REAR-L": 240,
 };
 
-const BAND_COLOR: Record<OverlayState["activityBand"], { stroke: string; glow: string; fill: string }> = {
-  calm:     { stroke: "rgba(93, 242, 199, 0.55)",  glow: "rgba(93, 242, 199, 0.35)",  fill: "#5DF2C7" },
-  light:    { stroke: "rgba(127, 252, 215, 0.70)", glow: "rgba(127, 252, 215, 0.45)", fill: "#7FFCD7" },
-  possible: { stroke: "rgba(242, 185, 93, 0.85)",  glow: "rgba(242, 185, 93, 0.50)",  fill: "#F2B95D" },
-  notable:  { stroke: "rgba(255, 122, 122, 0.95)", glow: "rgba(255, 122, 122, 0.60)", fill: "#FF7A7A" },
-  strong:   { stroke: "rgba(255, 90, 90, 1.0)",    glow: "rgba(255, 90, 90, 0.75)",   fill: "#FF4A4A" },
+interface BandColor {
+  stroke: string;
+  glow: string;
+  /** R,G,B components only — used to compose rgba() strings without parsing the
+   *  baked `glow` string per-frame (regex-replace in the hot path was the old
+   *  approach). */
+  glowRgb: string;
+  fill: string;
+  /** Stable id used as a cache key for derived gradient objects. */
+  id: OverlayState["activityBand"];
+}
+
+const BAND_COLOR: Record<OverlayState["activityBand"], BandColor> = {
+  calm:     { id: "calm",     stroke: "rgba(93, 242, 199, 0.55)",  glow: "rgba(93, 242, 199, 0.35)",  glowRgb: "93, 242, 199",  fill: "#5DF2C7" },
+  light:    { id: "light",    stroke: "rgba(127, 252, 215, 0.70)", glow: "rgba(127, 252, 215, 0.45)", glowRgb: "127, 252, 215", fill: "#7FFCD7" },
+  possible: { id: "possible", stroke: "rgba(242, 185, 93, 0.85)",  glow: "rgba(242, 185, 93, 0.50)",  glowRgb: "242, 185, 93",  fill: "#F2B95D" },
+  notable:  { id: "notable",  stroke: "rgba(255, 122, 122, 0.95)", glow: "rgba(255, 122, 122, 0.60)", glowRgb: "255, 122, 122", fill: "#FF7A7A" },
+  strong:   { id: "strong",   stroke: "rgba(255, 90, 90, 1.0)",    glow: "rgba(255, 90, 90, 0.75)",   glowRgb: "255, 90, 90",   fill: "#FF4A4A" },
 };
 
 /**
@@ -243,6 +261,20 @@ function scaleFactor(W: number, H: number): number {
   return Math.max(0.7, Math.min(1.8, Math.min(W, H) / 720));
 }
 
+/**
+ * Mutable state passed to renderFrame — geometry + per-context gradient caches.
+ * Lives on the compositor closure so allocations survive only as long as the
+ * compositor instance. Each gradient is keyed by the inputs that affect its
+ * geometry/colour; invalidation happens via cache.key string compare.
+ */
+interface FrameContext {
+  W: number;
+  H: number;
+  s: number;
+  edgeGlow: { key: string; grad: CanvasGradient } | null;
+  audioBar: { key: string; grad: CanvasGradient } | null;
+}
+
 export function createCanvasCompositor(opts: CanvasCompositorOptions): CanvasCompositor {
   const { video, getOverlay, fps = 30 } = opts;
   const canvas = document.createElement("canvas");
@@ -252,11 +284,29 @@ export function createCanvasCompositor(opts: CanvasCompositorOptions): CanvasCom
   let lastFrameTs = 0;
   const frameInterval = 1000 / fps;
 
+  // Frame-geometry + gradient caches. Recomputed only when source dimensions
+  // change — sizeCanvas reads video.videoWidth every tick (cheap), but the
+  // derived scale factor + gradient objects are stable per resolution.
+  const frame: FrameContext = { W: 0, H: 0, s: 1, edgeGlow: null, audioBar: null };
+
+  // Context handle is also stable — getContext returns a cached instance, but
+  // we hoist the call so the hot path doesn't even round-trip through it.
+  const ctx = canvas.getContext("2d");
+
   const sizeCanvas = () => {
     const w = opts.width ?? (video.videoWidth || 1280);
     const h = opts.height ?? (video.videoHeight || 720);
     if (canvas.width !== w) canvas.width = w;
     if (canvas.height !== h) canvas.height = h;
+    if (w !== frame.W || h !== frame.H) {
+      frame.W = w;
+      frame.H = h;
+      frame.s = scaleFactor(w, h);
+      // Geometry shifted — gradient objects baked against the old coords are
+      // now wrong. Drop them so the next frame rebuilds.
+      frame.edgeGlow = null;
+      frame.audioBar = null;
+    }
   };
 
   const draw = (now: number) => {
@@ -264,11 +314,10 @@ export function createCanvasCompositor(opts: CanvasCompositorOptions): CanvasCom
     if (now - lastFrameTs >= frameInterval) {
       lastFrameTs = now;
       sizeCanvas();
-      const ctx = canvas.getContext("2d");
       // Guard: drawImage on readyState < HAVE_CURRENT_DATA throws
       // InvalidStateError on Safari/iOS, which would escape this closure
       // and kill the RAF loop permanently. Skip the frame instead.
-      if (ctx && video.readyState >= 2) renderFrame(ctx, canvas, video, getOverlay());
+      if (ctx && video.readyState >= 2) renderFrame(ctx, video, getOverlay(), frame);
     }
     raf = requestAnimationFrame(draw);
   };
@@ -296,13 +345,11 @@ export function createCanvasCompositor(opts: CanvasCompositorOptions): CanvasCom
 
 function renderFrame(
   ctx: CanvasRenderingContext2D,
-  canvas: HTMLCanvasElement,
   video: HTMLVideoElement,
   overlay: OverlayState,
+  frame: FrameContext,
 ): void {
-  const W = canvas.width;
-  const H = canvas.height;
-  const s = scaleFactor(W, H);
+  const { W, H, s } = frame;
   const channels = resolveChannels(overlay);
 
   // 1. Camera frame (cover-fit). ALWAYS drawn — disabling this would just
@@ -319,15 +366,22 @@ function renderFrame(
 
   const band = BAND_COLOR[overlay.activityBand] ?? BAND_COLOR.calm;
 
-  // 2. Edge glow tied to posterior + audio RMS. Halved intensity vs previous
-  //    revision — the corner-mounted overlays read better without a heavy
-  //    radial tint competing with them.
+  // 2. Edge glow tied to posterior + audio RMS. Bucketed by 0.05 alpha steps
+  //    so the gradient object is reused across frames where the bucket
+  //    doesn't change; full recreation would otherwise burn 30 gradients/sec.
   if (channels.edgeGlow) {
     const edgeAlpha = Math.min(0.5, 0.09 + overlay.posterior * 0.25 + overlay.audioRms * 0.30);
-    const grad = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.7);
-    grad.addColorStop(0, "rgba(0,0,0,0)");
-    grad.addColorStop(1, band.glow.replace(/[\d.]+\)$/, `${edgeAlpha})`));
-    ctx.fillStyle = grad;
+    const bucket = Math.round(edgeAlpha * 20) / 20; // 0.05 increments
+    const key = `${band.id}|${bucket}`;
+    let entry = frame.edgeGlow;
+    if (!entry || entry.key !== key) {
+      const grad = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.7);
+      grad.addColorStop(0, "rgba(0,0,0,0)");
+      grad.addColorStop(1, `rgba(${band.glowRgb}, ${bucket})`);
+      entry = { key, grad };
+      frame.edgeGlow = entry;
+    }
+    ctx.fillStyle = entry.grad;
     ctx.fillRect(0, 0, W, H);
   }
 
@@ -367,7 +421,7 @@ function renderFrame(
 
   // 5. Audio meter — left edge, vertical bar.
   if (channels.audioMeter) {
-    drawAudioMeter(ctx, W, H, overlay.audioRms, s);
+    drawAudioMeter(ctx, W, H, overlay.audioRms, s, frame);
   }
 
   // 6. Direction arrow (only if sector + coherence are valid).
@@ -1035,6 +1089,7 @@ function drawAudioMeter(
   H: number,
   audioRms: number,
   s: number,
+  frame: FrameContext,
 ): void {
   // Size constants
   const barW = Math.round(12 * s);
@@ -1074,18 +1129,25 @@ function drawAudioMeter(
   ctx.closePath();
   ctx.fill();
 
-  // Fill (clipped to slot shape).
+  // Fill (clipped to slot shape). Gradient depends only on bar geometry, so
+  // we cache it on the compositor's FrameContext and reuse across frames.
   ctx.clip();
   if (visualLevel > 0) {
     const fillH = barH * visualLevel;
     const fillTop = barY + barH - fillH;
-    const grad = ctx.createLinearGradient(0, barY + barH, 0, barY);
-    grad.addColorStop(0,    "#33EE55");
-    grad.addColorStop(0.6,  "#9FE83A");
-    grad.addColorStop(0.75, "#FFDD00");
-    grad.addColorStop(0.88, "#FF8800");
-    grad.addColorStop(1,    "#FF2222");
-    ctx.fillStyle = grad;
+    const key = `${barY}|${barH}`;
+    let entry = frame.audioBar;
+    if (!entry || entry.key !== key) {
+      const grad = ctx.createLinearGradient(0, barY + barH, 0, barY);
+      grad.addColorStop(0,    "#33EE55");
+      grad.addColorStop(0.6,  "#9FE83A");
+      grad.addColorStop(0.75, "#FFDD00");
+      grad.addColorStop(0.88, "#FF8800");
+      grad.addColorStop(1,    "#FF2222");
+      entry = { key, grad };
+      frame.audioBar = entry;
+    }
+    ctx.fillStyle = entry.grad;
     ctx.fillRect(barX, fillTop, barW, fillH);
   }
   ctx.restore();
@@ -1280,16 +1342,24 @@ function drawTimestamp(
   const boxH = fontSize + padY * 2;
   const margin = Math.round(12 * s);
 
-  const date = new Date(overlay.isoTimestamp);
-  // ISO 8601 HH:MM:SS plus a 30fps frame counter (FF) — same convention as
-  // SMPTE non-drop time-code that editors expect on burn-in.
-  const baseTime = isNaN(date.getTime())
-    ? "00:00:00"
-    : date.toISOString().substring(11, 19);
-  const ms = isNaN(date.getTime()) ? 0 : date.getUTCMilliseconds();
-  const frame = Math.min(29, Math.floor((ms / 1000) * 30));
-  const ff = frame < 10 ? `0${frame}` : `${frame}`;
-  const text = `${baseTime}:${ff}`;
+  // Prefer the numeric stamp when supplied — avoids the per-frame Date round-
+  // trip (parse ISO → reserialise → substring) the previous revision did. Falls
+  // back to parsing isoTimestamp for back-compat with callers that only supply
+  // the string form.
+  let now = overlay.nowMs;
+  if (now === undefined || !Number.isFinite(now)) {
+    const parsed = Date.parse(overlay.isoTimestamp);
+    now = Number.isNaN(parsed) ? 0 : parsed;
+  }
+  // ISO 8601 HH:MM:SS plus a 30fps frame counter (FF) — SMPTE non-drop time-
+  // code convention that editors expect on burn-in. UTC-anchored to match the
+  // forensic chain.
+  const totalSec = Math.floor(now / 1000);
+  const hh = String(Math.floor(totalSec / 3600) % 24).padStart(2, "0");
+  const mm = String(Math.floor(totalSec / 60) % 60).padStart(2, "0");
+  const ss = String(totalSec % 60).padStart(2, "0");
+  const ff = String(Math.min(29, Math.floor((now % 1000) / (1000 / 30)))).padStart(2, "0");
+  const text = `${hh}:${mm}:${ss}:${ff}`;
 
   ctx.save();
   ctx.font = `600 ${fontSize}px "JetBrains Mono", monospace`;
