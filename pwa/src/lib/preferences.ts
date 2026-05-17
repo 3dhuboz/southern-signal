@@ -116,6 +116,15 @@ export interface AppPreferences {
    * on the broadcast rig; power users opt in for review-grade work.
    */
   proMode: boolean;
+  /**
+   * Headphone monitoring for the ITC mixer. When ON, the synthesised tones
+   * (spirit box / ovilus / future EVP synths) ALSO route to ctx.destination
+   * so the operator can hear them through plugged-in headphones. Default OFF
+   * because routing through speakers feedback-loops back into the mic and
+   * defeats the no-speakers fix the mixer exists for — operator only enables
+   * this when monitoring through headphones.
+   */
+  itcMonitor: boolean;
 }
 
 const DEFAULTS: AppPreferences = {
@@ -145,6 +154,7 @@ const DEFAULTS: AppPreferences = {
   },
   community: { enabled: true, anonymousId: null },
   proMode: false,
+  itcMonitor: false,
 };
 
 const KEY = "ss-preferences-v1";

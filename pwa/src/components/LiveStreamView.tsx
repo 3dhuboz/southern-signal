@@ -31,6 +31,7 @@ import { useNetworkOnline } from "../lib/system/systemStatus";
 import { sha256HexBytes } from "../lib/forensic/canonicalJson";
 import { getItcChannels } from "../lib/itc/itcChannels";
 import { getItcMixer } from "../lib/audio/itcAudioMixer";
+import { usePreferences } from "../lib/preferences";
 import { loadOverlayChannels, saveOverlayChannels } from "../lib/media/overlayChannelStorage";
 import {
   WHIP_URL_KEY, WHIP_BEARER_KEY, WHIP_PROVIDER_KEY,
@@ -124,6 +125,10 @@ interface LiveStreamViewProps {
   /** When provided, CameraScreen fills this ref with LiveStreamView's
    *  flipCamera callback so the dock (or a gesture) can drive it. */
   flipCameraRef?: React.MutableRefObject<(() => void) | null>;
+  /** When provided, CameraScreen fills this ref with LiveStreamView's
+   *  toggleTorch callback so a dock button can drive it. Only meaningful
+   *  on devices where the active camera reports torch support. */
+  torchToggleRef?: React.MutableRefObject<(() => void) | null>;
   /**
    * Same pattern — exposes the camera-open `start` callback so CameraScreen
    * can fire it from inside the Begin button's gesture handler. The browser
@@ -148,10 +153,11 @@ export function LiveStreamView(props: LiveStreamViewProps) {
     lightLux, magnetometerUt, motionMs2, temperatureC, emfZScore, onStateChange,
     externalChannels, onExternalChannelChange, fullscreen,
     recordToggleRef, liveToggleRef, onCameraState,
-    flipCameraRef, startCameraRef,
+    flipCameraRef, startCameraRef, torchToggleRef,
     defaultFacing, defaultTorch,
   } = props;
 
+  const [prefs] = usePreferences();
   const sourceVideoRef = useRef<HTMLVideoElement | null>(null);
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const compositorRef = useRef<CanvasCompositor | null>(null);
@@ -162,6 +168,15 @@ export function LiveStreamView(props: LiveStreamViewProps) {
   const whipSessionRef = useRef<WhipSession | null>(null);
 
   const [streamOn, setStreamOn] = useState(false);
+  // Headphone monitor preference — operator opts in via Setup → Broadcast.
+  // Re-applied whenever the camera opens (which guarantees a user-gesture has
+  // happened, so the mixer's AudioContext can unlock) AND whenever the pref
+  // itself toggles. Until either of those fires, getItcMixer() may throw
+  // (autoplay rejected); the catch swallows that case silently.
+  useEffect(() => {
+    try { getItcMixer().setMonitor(prefs.itcMonitor === true); }
+    catch { /* mixer unavailable yet — picked up on next gesture */ }
+  }, [prefs.itcMonitor, streamOn]);
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
   const [liveOn, setLiveOn] = useState(false);
@@ -674,13 +689,14 @@ export function LiveStreamView(props: LiveStreamViewProps) {
   }, []);
 
   // Fill parent-owned refs so CameraScreen can drive recording/live/flip/
-  // start without LiveStreamView exposing its internal state.
+  // torch/start without LiveStreamView exposing its internal state.
   useEffect(() => {
     if (recordToggleRef) recordToggleRef.current = toggleRecording;
     if (liveToggleRef)   liveToggleRef.current   = toggleLive;
     if (flipCameraRef)   flipCameraRef.current   = flipCamera;
+    if (torchToggleRef)  torchToggleRef.current  = toggleTorch;
     if (startCameraRef)  startCameraRef.current  = start;
-  }, [recordToggleRef, liveToggleRef, toggleRecording, toggleLive, flipCameraRef, flipCamera, startCameraRef, start]);
+  }, [recordToggleRef, liveToggleRef, toggleRecording, toggleLive, flipCameraRef, flipCamera, torchToggleRef, toggleTorch, startCameraRef, start]);
 
   // Notify parent when the stream opens/closes or WHIP config changes
   // so the dock buttons can show correct enabled/disabled state.

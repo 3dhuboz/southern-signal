@@ -212,6 +212,19 @@ export function Setup() {
             onChange={(e) => setPrefs({ proMode: e.target.checked })}
           />
         </label>
+        <label className={st.toggleRow}>
+          <span>
+            <strong>Monitor ITC tones through headphones</strong>
+            <span className={st.toggleHint}>
+              Routes the Spirit Box / Ovilus tone mixer to the device's default audio out as well as the recording. <strong>Enable only with headphones plugged in</strong> — through speakers, the mic re-captures the tones and creates a feedback loop in the recording. The recording path itself is unaffected by this toggle.
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            checked={prefs.itcMonitor}
+            onChange={(e) => setPrefs({ itcMonitor: e.target.checked })}
+          />
+        </label>
       </section>
 
       {/* Broadcast — WHIP live-stream destination */}

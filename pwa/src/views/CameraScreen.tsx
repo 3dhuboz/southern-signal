@@ -28,7 +28,7 @@ import { ScreenRecordButton } from "../components/ScreenRecordButton";
 import { SceneSheet } from "../components/SceneSheet";
 import { useLiveBroadcastState } from "../lib/system/liveBroadcast";
 import { usePushToTalk } from "../lib/audio/usePushToTalk";
-import { useLongPress, useDoubleTap } from "../lib/gestures";
+import { useLongPress, useDoubleTap, useHorizontalSwipe, composeHandlers } from "../lib/gestures";
 import { useLiveNarrator } from "../lib/posterior/liveNarrator";
 import { LiveAnalyzer } from "../lib/audio/liveAnalyzer";
 import { type SectorReading } from "../lib/audio/sectorIndicator";
@@ -52,6 +52,7 @@ import { useWakeLock } from "../lib/system/wakeLock";
 import type { OverlayChannels } from "../lib/media/canvasCompositor";
 import { resolveOverlaysFromScene } from "../lib/overlays/registry";
 import {
+  BUILT_IN_SCENES,
   hasPickedSceneEver, loadActiveSceneId, saveActiveSceneId, getScene, loadSceneOverrides,
   type SceneId,
 } from "../lib/overlays/scenes";
@@ -61,11 +62,11 @@ import { Navigate, useNavigate } from "react-router-dom";
 import s from "./CameraScreen.module.css";
 
 // ── Dock button icons ──────────────────────────────────────────────────────
-// The chrome-heavy 14-toggle channel grid AND the secondary action grid
-// (Flip / Torch / SBX / OVL) are gone. Flip is a double-tap gesture on the
-// camera wrap; torch is reserved for a long-press gesture (post-V1); SBX/OVL
-// are scene-managed via tools.autoStart. The slim dock keeps just the icons
-// for Settings (gear) and the still-supported Clip-Record button.
+// Slim dock holds: Scenes (text), Settings, ScreenRec, Clip Rec, Flip, Torch.
+// Viewport gestures:
+//   • long-press anywhere   → push-to-talk (ducks ITC mixer -18dB)
+//   • double-tap anywhere   → drop a moment marker into the audit chain
+//   • horizontal swipe      → cycle scene (prev / next from BUILT_IN_SCENES)
 
 function IconRecord() {
   return (
@@ -79,6 +80,25 @@ function IconSettings() {
     <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5">
       <circle cx="12" cy="12" r="3" />
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  );
+}
+function IconFlip() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
+      <rect x="2" y="7" width="20" height="14" rx="2.5" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="12" cy="14" r="4" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M9 4.5 Q12 2 15 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+      <polyline points="13.5,3 15,4.5 13.5,6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function IconTorch() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
+      <path d="M9 2 H15 L20 21 H4 Z" fill="currentColor" opacity="0.2" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+      <rect x="8.5" y="0.5" width="7" height="3.5" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="12" cy="2.25" r="1" fill="currentColor" />
     </svg>
   );
 }
@@ -128,6 +148,7 @@ export function CameraScreen() {
   const recordToggleRef = useRef<(() => void) | null>(null);
   const liveToggleRef   = useRef<(() => void) | null>(null);
   const flipCameraRef   = useRef<(() => void) | null>(null);
+  const torchToggleRef  = useRef<(() => void) | null>(null);
   const startCameraRef  = useRef<(() => Promise<void>) | null>(null);
   const [cameraState, setCameraState] = useState({
     streamOn: false, whipConfigured: false,
@@ -230,15 +251,58 @@ export function CameraScreen() {
   const [sceneSheetOpen, setSceneSheetOpen] = useState(false);
 
   // ── Gesture handlers ─────────────────────────────────────────────────────
-  // Double-tap on the camera wrap flips between rear/front camera (replaces
-  // the old dock Flip button). Long-press primes Push-To-Talk for EVP capture
-  // (Worker A's audio module). usePushToTalk is the activation hook — it
-  // mounts the audio pipeline while `pttActive` is true and tears it down
-  // when released.
+  // Long-press anywhere on the camera primes Push-To-Talk — ducks the ITC
+  // mixer -18dB so the operator's narration lands cleanly on the recording.
+  // Double-tap drops a moment marker into the audit chain (a transient toast
+  // confirms). Horizontal swipe cycles to the previous/next scene.
   const [pttActive, setPttActive] = useState(false);
   usePushToTalk(pttActive);
   const longPressProps = useLongPress(setPttActive);
-  const doubleTapProps = useDoubleTap(() => { void flipCameraRef.current?.(); });
+
+  // Marker drop — fires a recordEvent into the current investigation +
+  // surfaces a 1.5s confirmation toast at top-center. The audit log already
+  // captures `event.marker` per recordEvent's instrumentation.
+  const [markerToastUntil, setMarkerToastUntil] = useState<number>(0);
+  const dropMarker = useCallback(() => {
+    const inv = session.current;
+    if (!inv) return;
+    const nowMs = Date.now();
+    const elapsed = sessionStartRef.current ? Math.floor((nowMs - sessionStartRef.current) / 1000) : 0;
+    void recordEvent({
+      investigation_id: inv.id,
+      source: "user",
+      event_type: "marker",
+      title: "Moment marked",
+      metadata: { sessionElapsedSec: elapsed, sceneId: activeSceneId },
+    });
+    setMarkerToastUntil(nowMs + 1500);
+  }, [session, activeSceneId]);
+  const doubleTapProps = useDoubleTap(dropMarker);
+
+  // Horizontal swipe → cycle scene. Index modulo wraps both directions so the
+  // operator can keep swiping past either end. saveActiveSceneId persists the
+  // pick so the next session reload starts on the chosen scene.
+  const cycleScene = useCallback((dir: "left" | "right") => {
+    const idx = BUILT_IN_SCENES.findIndex((sc) => sc.id === activeSceneId);
+    if (idx < 0) return;
+    const len = BUILT_IN_SCENES.length;
+    const next = dir === "right"
+      ? BUILT_IN_SCENES[(idx + 1) % len]
+      : BUILT_IN_SCENES[(idx - 1 + len) % len];
+    saveActiveSceneId(next.id);
+    setActiveSceneId(next.id);
+  }, [activeSceneId]);
+  const swipeProps = useHorizontalSwipe(cycleScene);
+
+  // Marker toast — visible flag flips off via a setTimeout. Keeping the
+  // expiry in state (vs imperative timer) lets the toast survive React
+  // re-renders without flashing.
+  const markerToastVisible = markerToastUntil > Date.now();
+  useEffect(() => {
+    if (!markerToastVisible) return;
+    const handle = window.setTimeout(() => setMarkerToastUntil(0), Math.max(0, markerToastUntil - Date.now()));
+    return () => window.clearTimeout(handle);
+  }, [markerToastVisible, markerToastUntil]);
 
   // ITC hooks read the scene's tools config — Spirit Box Session auto-starts
   // the spirit box; Pro/Lab leaves Ovilus to manual. Output is consumed via
@@ -434,13 +498,17 @@ export function CameraScreen() {
 
   return (
     <div className={s.screen}>
-      {/* Full-bleed camera. Gesture wrap captures double-tap (flip) and
-          long-press (push-to-talk). Pointer/touch handlers spread on the
-          OUTER wrap so they fire above LiveStreamView's internal canvas. */}
+      {/* Full-bleed camera. Three viewport gestures composed together —
+          composeHandlers chains the onPointerDown across long-press +
+          double-tap + swipe so a single touch can prime any of them
+          depending on how the operator follows through. */}
       <div
         className={s.cameraWrap}
-        {...longPressProps}
-        {...doubleTapProps}
+        onPointerDown={composeHandlers(longPressProps.onPointerDown, doubleTapProps.onPointerDown, swipeProps.onPointerDown)}
+        onPointerMove={swipeProps.onPointerMove}
+        onPointerUp={composeHandlers(longPressProps.onPointerUp, swipeProps.onPointerUp)}
+        onPointerCancel={longPressProps.onPointerCancel}
+        onPointerLeave={longPressProps.onPointerLeave}
       >
         <LiveStreamView
           investigationId={session.current?.id ?? null}
@@ -461,6 +529,7 @@ export function CameraScreen() {
           recordToggleRef={recordToggleRef}
           liveToggleRef={liveToggleRef}
           flipCameraRef={flipCameraRef}
+          torchToggleRef={torchToggleRef}
           startCameraRef={startCameraRef}
           defaultFacing={activeScene?.cameraDefaults.facing}
           defaultTorch={activeScene?.cameraDefaults.torch}
@@ -490,6 +559,15 @@ export function CameraScreen() {
           <span className={s.cornerPillText}>{sceneName}</span>
           <span className={s.cornerPillChevron} aria-hidden="true">▾</span>
         </button>
+
+        {/* ── Marker drop toast — top-center, 1.5s fade. Confirms that the
+             double-tap landed without interrupting the camera feed. The
+             actual marker is already in the audit chain via recordEvent. */}
+        {markerToastVisible && (
+          <div className={s.markerToast} role="status" aria-live="polite">
+            ✓ MARKED
+          </div>
+        )}
 
         {/* ── BIG SHUTTER — primary action, Snapchat-grade. ─────────────
              88×88 circular button anchored above the slim dock. Red when
@@ -557,6 +635,36 @@ export function CameraScreen() {
             <span className={s.dockSlimIcon} aria-hidden="true"><IconRecord /></span>
             <span className={s.dockSlimLabel}>{broadcastState.recording ? "Stop" : "Clip"}</span>
           </button>
+
+          {/* Flip camera — single tap toggles rear ↔ front. (Was previously
+              wired as a double-tap gesture; double-tap is now marker drop.) */}
+          <button
+            type="button"
+            className={s.dockSlimBtn}
+            onClick={() => flipCameraRef.current?.()}
+            disabled={!cameraState.streamOn}
+            aria-label={cameraState.facingMode === "environment" ? "Switch to front camera" : "Switch to rear camera"}
+            title="Flip camera"
+          >
+            <span className={s.dockSlimIcon} aria-hidden="true"><IconFlip /></span>
+            <span className={s.dockSlimLabel}>{cameraState.facingMode === "environment" ? "Rear" : "Front"}</span>
+          </button>
+
+          {/* Torch — only rendered when the active camera reports torch
+              support. Front cameras and most laptops won't expose it. */}
+          {cameraState.torchSupported && (
+            <button
+              type="button"
+              className={`${s.dockSlimBtn} ${cameraState.torchOn ? s.dockSlimBtnRec : ""}`.trim()}
+              onClick={() => torchToggleRef.current?.()}
+              aria-pressed={cameraState.torchOn}
+              aria-label={cameraState.torchOn ? "Turn torch off" : "Turn torch on"}
+              title="Torch"
+            >
+              <span className={s.dockSlimIcon} aria-hidden="true"><IconTorch /></span>
+              <span className={s.dockSlimLabel}>Torch</span>
+            </button>
+          )}
         </div>
       </div>
 

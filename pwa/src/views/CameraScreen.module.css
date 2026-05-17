@@ -73,6 +73,42 @@
   left: 12px;
 }
 
+/* ── Marker drop toast ─────────────────────────────────────────────────────
+   Brief 1.5s confirmation that a double-tap landed and a moment marker is
+   in the audit chain. Positioned top-center so it doesn't compete with the
+   REC pill (top-left) or scene chip (top-right). Fades in fast, slides up
+   and fades out — keyframe animation handles the lifecycle so CameraScreen
+   only has to flip a boolean to show/hide.                                    */
+
+.markerToast {
+  position: absolute;
+  top: calc(48px + var(--safe-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 16px;
+  background: rgba(34, 197, 94, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  pointer-events: none;
+  z-index: 6;
+  box-shadow: 0 4px 16px rgba(34, 197, 94, 0.35);
+  animation: markerToastIn 180ms ease-out, markerToastOut 220ms ease-in 1.28s forwards;
+}
+
+@keyframes markerToastIn {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+@keyframes markerToastOut {
+  from { opacity: 1; transform: translate(-50%, 0); }
+  to   { opacity: 0; transform: translate(-50%, -8px); }
+}
+
 .cornerPillTopRight {
   right: 12px;
   cursor: pointer;

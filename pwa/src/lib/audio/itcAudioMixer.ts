@@ -33,6 +33,17 @@ export interface ItcMixer {
   setMasterGain(value: number, rampMs?: number): void;
   /** The mixed MediaStream containing one synthetic audio track. */
   getStream(): MediaStream;
+  /**
+   * Toggle a parallel monitor tap that routes the mixed output to
+   * `ctx.destination` (device default audio out — headphones if plugged
+   * in, speakers otherwise). The recording/streaming path is unaffected.
+   *
+   * Operator should only enable this when monitoring through HEADPHONES,
+   * otherwise the speaker output gets recaptured by the camera mic and we
+   * lose the feedback-loop fix this mixer exists for. The UI guards this
+   * with a Setup → Broadcast toggle that defaults to OFF.
+   */
+  setMonitor(enabled: boolean): void;
 }
 
 interface InternalMixer extends ItcMixer {
@@ -48,6 +59,11 @@ function buildMixer(ctx: AudioContext): InternalMixer {
   const master = ctx.createGain();
   master.gain.value = 1.0;
   master.connect(destination);
+
+  // Optional monitor tap — disconnected by default so nothing reaches
+  // ctx.destination (and therefore the device speakers). Operator opts in
+  // via Setup when they have headphones in.
+  let monitorConnected = false;
 
   const gains = new Map<ToolId, GainNode>();
   // Per-tool starting volumes — spirit box is the noisier of the two, so it
@@ -82,6 +98,22 @@ function buildMixer(ctx: AudioContext): InternalMixer {
     },
     getStream() {
       return destination.stream;
+    },
+    setMonitor(enabled) {
+      if (enabled === monitorConnected) return;
+      try {
+        if (enabled) {
+          master.connect(ctx.destination);
+          monitorConnected = true;
+        } else {
+          master.disconnect(ctx.destination);
+          monitorConnected = false;
+        }
+      } catch {
+        // disconnect() throws when the node isn't connected to that
+        // destination — treat as idempotent.
+        monitorConnected = enabled;
+      }
     },
   };
 }
