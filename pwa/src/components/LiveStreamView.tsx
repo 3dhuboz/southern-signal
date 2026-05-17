@@ -267,26 +267,30 @@ export function LiveStreamView(props: LiveStreamViewProps) {
     if (typeof temperatureC === "number" && Number.isFinite(temperatureC)) sensors.temperature = temperatureC;
     const hasAnySensor = Object.keys(sensors).length > 0;
 
-    overlayStateRef.current = {
-      caseId: caseId ?? undefined,
-      caseTitle: caseTitle ?? undefined,
-      isoTimestamp: new Date().toISOString(),
-      posterior,
-      activityLabel: activity.label,
-      activityBand: activity.id as OverlayState["activityBand"],
-      sector,
-      coherence,
-      caption: caption ?? null,
-      audioRms,
-      recording,
-      liveStreaming: liveOn,
-      online,
-      recordingStartedAt: recordingStartedAt ?? undefined,
-      liveStartedAt: liveStartedAt ?? undefined,
-      emfZScore: (typeof emfZScore === "number" && Number.isFinite(emfZScore)) ? emfZScore : undefined,
-      sensors: hasAnySensor ? sensors : undefined,
-      channels: activeChannels,
-    };
+    // Mutate the existing ref object in place — getOverlay() returns the same
+    // identity each frame, so reassigning .current would force every consumer
+    // to grab a new reference. The ref is read by a single consumer (the
+    // compositor's per-frame closure) on the main thread, so there's no
+    // tear risk from concurrent reads.
+    const overlay = overlayStateRef.current;
+    overlay.caseId = caseId ?? undefined;
+    overlay.caseTitle = caseTitle ?? undefined;
+    overlay.isoTimestamp = new Date().toISOString();
+    overlay.posterior = posterior;
+    overlay.activityLabel = activity.label;
+    overlay.activityBand = activity.id as OverlayState["activityBand"];
+    overlay.sector = sector;
+    overlay.coherence = coherence;
+    overlay.caption = caption ?? null;
+    overlay.audioRms = audioRms;
+    overlay.recording = recording;
+    overlay.liveStreaming = liveOn;
+    overlay.online = online;
+    overlay.recordingStartedAt = recordingStartedAt ?? undefined;
+    overlay.liveStartedAt = liveStartedAt ?? undefined;
+    overlay.emfZScore = (typeof emfZScore === "number" && Number.isFinite(emfZScore)) ? emfZScore : undefined;
+    overlay.sensors = hasAnySensor ? sensors : undefined;
+    overlay.channels = activeChannels;
   }, [posterior, audioRms, sector, coherence, caseId, caseTitle, caption, recording, liveOn, online, recordingStartedAt, liveStartedAt, lightLux, magnetometerUt, motionMs2, temperatureC, emfZScore, activeChannels]);
 
   const openCamera = useCallback(async (mode: "environment" | "user"): Promise<MediaStream> => {
@@ -424,27 +428,30 @@ export function LiveStreamView(props: LiveStreamViewProps) {
 
     const compositor = createCanvasCompositor({
       video: sourceV,
-      // Always stamp the timestamp + recompute ITC ages at draw time, not when
-      // overlay state was last assembled in the props effect — otherwise the
-      // time freezes whenever the watched props are stable (e.g. quiet scene)
-      // and the age stamps stop ticking.
+      // Mutate the ref object in place each frame and return the same identity.
+      // The prop-watching useEffect below ALSO mutates the same object (rather
+      // than reassigning .current to a fresh allocation) so the per-frame and
+      // per-prop-change paths converge on a single OverlayState instance. At
+      // 30fps that's ~510 field-copies/sec we no longer perform.
       getOverlay: () => {
+        const overlay = overlayStateRef.current;
         const now = Date.now();
+        overlay.nowMs = now;
+        // isoTimestamp stays populated for downstream tooling (audit log,
+        // recorder metadata) that consumes the ISO form, but the compositor
+        // reads nowMs preferentially.
+        overlay.isoTimestamp = new Date(now).toISOString();
         const store = getItcChannels();
-        const itc: NonNullable<OverlayState["itc"]> = {};
-        if (store.spiritBox) itc.spiritBox = { text: store.spiritBox.text, ageMs: now - store.spiritBox.timestamp };
-        if (store.ovilus) itc.ovilus = { text: store.ovilus.text, ageMs: now - store.ovilus.timestamp };
-        if (store.evp) itc.evp = { text: store.evp.text, ageMs: now - store.evp.timestamp };
-        const hasAnyItc = Object.keys(itc).length > 0;
-        return {
-          ...overlayStateRef.current,
-          // `nowMs` is the cheap numeric channel the compositor uses directly;
-          // `isoTimestamp` is kept populated for any downstream tooling that
-          // still consumes the ISO string form (recorder metadata, audit log).
-          nowMs: now,
-          isoTimestamp: new Date(now).toISOString(),
-          itc: hasAnyItc ? itc : undefined,
-        };
+        if (store.spiritBox || store.ovilus || store.evp) {
+          const itc: NonNullable<OverlayState["itc"]> = {};
+          if (store.spiritBox) itc.spiritBox = { text: store.spiritBox.text, ageMs: now - store.spiritBox.timestamp };
+          if (store.ovilus)    itc.ovilus    = { text: store.ovilus.text,    ageMs: now - store.ovilus.timestamp };
+          if (store.evp)       itc.evp       = { text: store.evp.text,       ageMs: now - store.evp.timestamp };
+          overlay.itc = itc;
+        } else {
+          overlay.itc = undefined;
+        }
+        return overlay;
       },
       fps: 30,
     });
