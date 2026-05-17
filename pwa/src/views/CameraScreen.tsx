@@ -111,7 +111,6 @@ export function CameraScreen() {
   const broadcastState = useLiveBroadcastState();
   const recordToggleRef = useRef<(() => void) | null>(null);
   const liveToggleRef   = useRef<(() => void) | null>(null);
-  const torchToggleRef  = useRef<(() => void) | null>(null);
   const flipCameraRef   = useRef<(() => void) | null>(null);
   const startCameraRef  = useRef<(() => Promise<void>) | null>(null);
   const [cameraState, setCameraState] = useState({
@@ -219,13 +218,11 @@ export function CameraScreen() {
   const doubleTapProps = useDoubleTap(() => { void flipCameraRef.current?.(); });
 
   // ITC hooks read the scene's tools config — Spirit Box Session auto-starts
-  // the spirit box; Pro/Lab leaves Ovilus to manual. Hooks live after scene
-  // resolution so the autoStart flag is always coherent with the active scene.
-  const spiritBox = useSpiritBox(itcEntropy, running, activeScene?.tools.spiritBox === true);
-  const ovilus    = useOvilus(itcEntropy, running, activeScene?.tools.ovilus === true);
-  // Spirit Box / Ovilus state is consumed via the live overlay compositor;
-  // the camera surface no longer renders chrome around them.
-  void spiritBox; void ovilus;
+  // the spirit box; Pro/Lab leaves Ovilus to manual. Output is consumed via
+  // the live overlay compositor, so we call the hooks for their side effects
+  // (publishing to the ITC channel store) and ignore their returned API.
+  useSpiritBox(itcEntropy, running, activeScene?.tools.spiritBox === true);
+  useOvilus(itcEntropy, running, activeScene?.tools.ovilus === true);
 
   // First-run redirect: if the operator has NEVER picked a scene, send them
   // to HuntSetup before showing the camera surface. Once they pick once,
@@ -444,7 +441,6 @@ export function CameraScreen() {
           onExternalChannelChange={handleChannelChange}
           recordToggleRef={recordToggleRef}
           liveToggleRef={liveToggleRef}
-          torchToggleRef={torchToggleRef}
           flipCameraRef={flipCameraRef}
           startCameraRef={startCameraRef}
           defaultFacing={activeScene?.cameraDefaults.facing}

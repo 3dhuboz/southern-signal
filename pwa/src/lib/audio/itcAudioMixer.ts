@@ -7,113 +7,76 @@
  * The previous flow routed `speechSynthesis.speak(...)` straight to the device
  * speakers. With `echoCancellation: false` on the camera mic (required for
  * forensic EVP work), the speaker output was re-captured by the mic and baked
- * straight into the WAV/WebM recordings as a feedback loop. The text was also
- * audible to anyone in the room, undercutting the "operator-only headphone
- * cue" pattern most paranormal productions use.
+ * into the recording as a feedback loop. The mixer routes synthesised tones
+ * through a `MediaStreamAudioDestinationNode` instead, so the audio reaches
+ * MediaRecorder + WHIP but never the device speakers — no feedback.
  *
- * # What this does
+ *     [tool A gain] ─┐
+ *     [tool B gain] ─┼─► [master gain] ─► [MediaStreamAudioDestinationNode]
  *
- * The mixer wires:
- *
- *     [tool A GainNode] ─┐
- *     [tool B GainNode] ─┼─► [master GainNode] ─► [destination]
- *     [tool C GainNode] ─┘
- *
- * `destination` is a `MediaStreamAudioDestinationNode`, so the mixed output
- * lives inside a `MediaStream` we can attach as an additional audio track on
- * the composite stream consumed by MediaRecorder + WHIP. Critically, that
- * stream is NOT connected to `ctx.destination`, so nothing reaches the device
- * speakers — the operator hears the tones only when they're monitoring the
- * preview/recording through headphones, and the room mic never re-captures
- * them.
- *
- * Master gain is exposed for the push-to-talk hook to duck ITC tones while
- * the operator is speaking, so what they say lands cleanly on the recording.
- *
- * # Autoplay policy
- *
- * AudioContext construction outside a user gesture is rejected by every
- * mobile browser. `getItcMixer()` is therefore lazy + wrapped in try/catch —
- * the first caller MUST be in a gesture, and downstream callers should be
- * prepared for the singleton to throw. The Spirit-Box / Ovilus hooks already
- * sit behind a user toggle, so by the time their effect fires we're inside
- * the gesture chain.
+ * Master gain is exposed via `setMasterGain` for the push-to-talk hook to duck
+ * tones while the operator narrates. The AudioContext itself is the shared
+ * singleton from `audioUnlock.ts` — we don't construct a second one (each
+ * extra context wastes a hardware audio path and risks re-tripping the
+ * autoplay policy).
  */
 
+import { peekAudioContext, unlockAudio } from "./audioUnlock";
+
+/** Tool ids this mixer accepts. Subset of `ItcSource` from itcChannels.ts;
+ *  EVP doesn't currently emit tones (it's user-recorded audio) so it's not
+ *  routed here. Widen if EVP ever needs its own synth channel. */
+type ToolId = "spiritBox" | "ovilus";
+
 export interface ItcMixer {
-  context: AudioContext;
-  destination: MediaStreamAudioDestinationNode;
-  /** Per-tool gain stage. Same tool id returns the same node every call. */
-  getGainNode(toolId: "spiritBox" | "ovilus"): GainNode;
   /** Smoothly ramp the master gain. rampMs defaults to 50ms. */
   setMasterGain(value: number, rampMs?: number): void;
   /** The mixed MediaStream containing one synthetic audio track. */
   getStream(): MediaStream;
 }
 
-let cached: ItcMixer | null = null;
+interface InternalMixer extends ItcMixer {
+  context: AudioContext;
+  gainFor: (toolId: ToolId) => GainNode;
+}
 
-/**
- * Lazy-init the singleton mixer. Returns null callers can shortcut on if
- * AudioContext construction failed (very rare — only happens on a closed
- * window or browsers that hard-disable Web Audio in private mode).
- *
- * Implementation throws on failure so the call-site can decide whether to
- * silently no-op (tool hooks) or surface an error.
- */
-export function getItcMixer(): ItcMixer {
-  if (cached) return cached;
+let cached: InternalMixer | null = null;
 
-  // Construct lazily; wrap in try so a hostile environment doesn't crash the
-  // whole React tree. Callers are expected to handle thrown errors.
-  const Ctor = (window.AudioContext ||
-    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext);
-  if (!Ctor) throw new Error("Web Audio unavailable");
+function buildMixer(ctx: AudioContext): InternalMixer {
+  const destination = ctx.createMediaStreamDestination();
 
-  const context = new Ctor();
-  // First resume — no-op on Chromium desktop, important on iOS/in-app browsers.
-  void context.resume();
-
-  const destination = context.createMediaStreamDestination();
-
-  const master = context.createGain();
+  const master = ctx.createGain();
   master.gain.value = 1.0;
   master.connect(destination);
 
-  const gains = new Map<"spiritBox" | "ovilus", GainNode>();
+  const gains = new Map<ToolId, GainNode>();
+  // Per-tool starting volumes — spirit box is the noisier of the two, so it
+  // sits a touch lower in the mix by default.
+  const DEFAULT_GAINS: Record<ToolId, number> = { spiritBox: 0.6, ovilus: 0.8 };
 
-  const ensureGain = (toolId: "spiritBox" | "ovilus"): GainNode => {
+  const gainFor = (toolId: ToolId): GainNode => {
     const existing = gains.get(toolId);
     if (existing) return existing;
-    const node = context.createGain();
-    // Per-tool starting volume — kept modest so a tool toggling on doesn't
-    // pin the headphone signal. Tools can adjust their own GainNode further
-    // if they want a different baseline.
-    node.gain.value = toolId === "spiritBox" ? 0.6 : 0.8;
+    const node = ctx.createGain();
+    node.gain.value = DEFAULT_GAINS[toolId];
     node.connect(master);
     gains.set(toolId, node);
     return node;
   };
 
-  cached = {
-    context,
-    destination,
-    getGainNode(toolId) {
-      return ensureGain(toolId);
-    },
+  return {
+    context: ctx,
+    gainFor,
     setMasterGain(value, rampMs = 50) {
-      const now = context.currentTime;
+      const now = ctx.currentTime;
       const target = Math.max(0, Math.min(1, value));
       const seconds = Math.max(0, rampMs) / 1000;
-      // cancelScheduledValues drops any in-flight ramp; setValueAtTime
-      // anchors the ramp's start at the current gain (queried via .value).
       try {
         master.gain.cancelScheduledValues(now);
         master.gain.setValueAtTime(master.gain.value, now);
         master.gain.linearRampToValueAtTime(target, now + seconds);
       } catch {
         // Some browsers throw on cancelScheduledValues for unusual states.
-        // Hard fallback — set the value directly.
         master.gain.value = target;
       }
     },
@@ -121,15 +84,123 @@ export function getItcMixer(): ItcMixer {
       return destination.stream;
     },
   };
+}
 
+/**
+ * Lazy-init the singleton mixer. Throws if Web Audio is unavailable; callers
+ * (tool hooks) wrap in try/catch and silently skip the audible cue.
+ */
+export function getItcMixer(): ItcMixer {
+  if (cached) return cached;
+  const ctx = unlockAudio();
+  if (!ctx) throw new Error("Web Audio unavailable");
+  cached = buildMixer(ctx);
   return cached;
 }
 
-/** Test-only helper. Drops the cached singleton so a fresh getItcMixer() call
- *  rebuilds with a different AudioContext (e.g. when JSDOM re-stubs it).  */
-export function __resetItcMixerForTests(): void {
-  if (cached) {
-    try { cached.context.close(); } catch { /* ignore */ }
+/** Internal — used by the tone-burst helpers below to skip work when no
+ *  AudioContext has been unlocked yet (the mixer can't synthesise without a
+ *  gesture). Public callers should use getItcMixer(). */
+function peekMixer(): InternalMixer | null {
+  if (cached) return cached;
+  const ctx = peekAudioContext();
+  if (!ctx) return null;
+  cached = buildMixer(ctx);
+  return cached;
+}
+
+// ── Tone-burst synthesis ───────────────────────────────────────────────────
+// Spirit Box and Ovilus both schedule short oscillator bursts on their own
+// gain stage. Consolidating here so the two hooks don't drift in their
+// envelope/pitch logic.
+
+const SPIRIT_BOX_BANDS_HZ = [220, 330, 440, 660] as const;
+const OVILUS_BANDS_HZ     = [110, 165, 220, 275] as const;
+
+function pickPitch(text: string, bands: readonly number[]): number {
+  if (!text) return bands[0];
+  return bands[text.charCodeAt(0) % bands.length];
+}
+
+interface ToneSpec {
+  toolId: ToolId;
+  frequency: number;
+  waveform: OscillatorType;
+  /** Total burst duration in seconds. */
+  totalSec: number;
+  /** Attack ramp 0→peak, in seconds. */
+  attackSec: number;
+  /** Peak envelope gain, 0-1. */
+  peak: number;
+  /** Optional sustain plateau — { atSec, level } applied between attack and
+   *  the final decay-to-zero. Omitted for a simple attack/decay envelope. */
+  sustain?: { atSec: number; level: number };
+}
+
+function emit(spec: ToneSpec): void {
+  const mixer = peekMixer();
+  if (!mixer) return;
+  const ctx = mixer.context;
+  // iOS audio sessions can suspend the context behind our back (incoming call,
+  // backgrounding). Cheap to nudge each tick.
+  if (ctx.state === "suspended") void ctx.resume();
+
+  const osc = ctx.createOscillator();
+  osc.type = spec.waveform;
+  osc.frequency.value = spec.frequency;
+
+  const env = ctx.createGain();
+  const t0 = ctx.currentTime;
+  env.gain.setValueAtTime(0, t0);
+  env.gain.linearRampToValueAtTime(spec.peak, t0 + spec.attackSec);
+  if (spec.sustain) {
+    env.gain.linearRampToValueAtTime(spec.sustain.level, t0 + spec.sustain.atSec);
   }
+  env.gain.linearRampToValueAtTime(0, t0 + spec.totalSec);
+
+  osc.connect(env).connect(mixer.gainFor(spec.toolId));
+  osc.start(t0);
+  osc.stop(t0 + spec.totalSec + 0.05);
+  // Explicit disconnect on natural end — defensive against iOS Safari's
+  // historic tendency to hold onto stopped-but-still-connected nodes.
+  osc.onended = () => {
+    try { osc.disconnect(); } catch { /* ignore */ }
+    try { env.disconnect(); } catch { /* ignore */ }
+  };
+}
+
+/** Spirit Box — short (200ms) sine pop. Quick attack so the cycle feels chop-y. */
+export function emitSpiritBoxTone(phoneme: string): void {
+  emit({
+    toolId: "spiritBox",
+    frequency: pickPitch(phoneme, SPIRIT_BOX_BANDS_HZ),
+    waveform: "sine",
+    totalSec: 0.20,
+    attackSec: 0.01,
+    peak: 0.9,
+  });
+}
+
+/** Ovilus — longer (600ms) triangle burst with a near-flat sustain that
+ *  reads as a word rather than a chop. Lower pitch bands keep it audibly
+ *  distinct from the Spirit Box. */
+export function emitOvilusTone(word: string): void {
+  const total = 0.6;
+  emit({
+    toolId: "ovilus",
+    frequency: pickPitch(word, OVILUS_BANDS_HZ),
+    waveform: "triangle",
+    totalSec: total,
+    attackSec: 0.05,
+    peak: 0.85,
+    sustain: { atSec: total * 0.75, level: 0.85 * 0.9 },
+  });
+}
+
+/** Test-only helper. Drops the cached singleton so a fresh getItcMixer() call
+ *  rebuilds with a different AudioContext (e.g. when JSDOM re-stubs it). The
+ *  shared audioUnlock context is left alone — callers that want to reset it
+ *  should use closeAudioContext() from audioUnlock.ts. */
+export function __resetItcMixerForTests(): void {
   cached = null;
 }

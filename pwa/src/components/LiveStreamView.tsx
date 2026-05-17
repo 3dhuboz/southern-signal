@@ -121,12 +121,8 @@ interface LiveStreamViewProps {
     torchOn: boolean;
     facingMode: "environment" | "user";
   }) => void;
-  /**
-   * When provided, CameraScreen fills this ref with LiveStreamView's
-   * toggleTorch callback so the dock button can drive it without prop-threading.
-   */
-  torchToggleRef?: React.MutableRefObject<(() => void) | null>;
-  /** Same pattern as torchToggleRef — drives flipCamera from the dock. */
+  /** When provided, CameraScreen fills this ref with LiveStreamView's
+   *  flipCamera callback so the dock (or a gesture) can drive it. */
   flipCameraRef?: React.MutableRefObject<(() => void) | null>;
   /**
    * Same pattern — exposes the camera-open `start` callback so CameraScreen
@@ -152,7 +148,7 @@ export function LiveStreamView(props: LiveStreamViewProps) {
     lightLux, magnetometerUt, motionMs2, temperatureC, emfZScore, onStateChange,
     externalChannels, onExternalChannelChange, fullscreen,
     recordToggleRef, liveToggleRef, onCameraState,
-    torchToggleRef, flipCameraRef, startCameraRef,
+    flipCameraRef, startCameraRef,
     defaultFacing, defaultTorch,
   } = props;
 
@@ -666,15 +662,14 @@ export function LiveStreamView(props: LiveStreamViewProps) {
     return () => setLiveBroadcastState({ recording: false, broadcasting: false });
   }, []);
 
-  // Fill parent-owned refs so CameraScreen's dock can invoke recording/live/
-  // torch/flip/start without LiveStreamView needing to expose its internal state.
+  // Fill parent-owned refs so CameraScreen can drive recording/live/flip/
+  // start without LiveStreamView exposing its internal state.
   useEffect(() => {
     if (recordToggleRef) recordToggleRef.current = toggleRecording;
     if (liveToggleRef)   liveToggleRef.current   = toggleLive;
-    if (torchToggleRef)  torchToggleRef.current  = toggleTorch;
     if (flipCameraRef)   flipCameraRef.current   = flipCamera;
     if (startCameraRef)  startCameraRef.current  = start;
-  }, [recordToggleRef, liveToggleRef, toggleRecording, toggleLive, torchToggleRef, flipCameraRef, toggleTorch, flipCamera, startCameraRef, start]);
+  }, [recordToggleRef, liveToggleRef, toggleRecording, toggleLive, flipCameraRef, flipCamera, startCameraRef, start]);
 
   // Notify parent when the stream opens/closes or WHIP config changes
   // so the dock buttons can show correct enabled/disabled state.
