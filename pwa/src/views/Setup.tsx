@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { applyTheme, usePreferences, type AppPreferences } from "../lib/preferences";
+import { applyTheme, setPreferences, usePreferences, type AppPreferences } from "../lib/preferences";
 import { MicLevelMeter } from "../lib/audio/micLevel";
 import { startVad, type VadHandle } from "../lib/audio/vad";
 import { usePwaInstall } from "../lib/system/usePwaInstall";
@@ -671,6 +671,20 @@ export function Setup() {
  * it's relevant to the feature being configured.
  */
 function SoundCheckCard({ vadConfig }: { vadConfig: AppPreferences["vadConfig"] }) {
+  /** Save the current adaptive floor into prefs so a fresh hunt starts
+   *  with a pre-learned baseline. Only valid while the test is active +
+   *  the analyser has produced a finite reading. */
+  const saveBaseline = useCallback((floorDb: number) => {
+    if (!Number.isFinite(floorDb)) return;
+    setPreferences({ vadConfig: { ...vadConfig, noiseFloorDb: Math.round(floorDb) } });
+  }, [vadConfig]);
+
+  /** Clear the saved baseline — lets the operator reset back to the
+   *  pessimistic -50 default, useful when moving to a new venue. */
+  const clearBaseline = useCallback(() => {
+    setPreferences({ vadConfig: { ...vadConfig, noiseFloorDb: null } });
+  }, [vadConfig]);
+
   const [active, setActive] = useState(false);
   const [level, setLevel] = useState(0);
   const [vadActive, setVadActive] = useState(false);
@@ -752,6 +766,22 @@ function SoundCheckCard({ vadConfig }: { vadConfig: AppPreferences["vadConfig"] 
       >
         {active ? "Stop test" : "Test mic"}
       </button>
+      {active && Number.isFinite(floorDb) && (
+        <button
+          type="button"
+          className={st.linkBtn}
+          onClick={() => saveBaseline(floorDb)}
+          title="Saves the current adaptive floor so a fresh hunt skips the warmup window."
+        >
+          Save baseline
+        </button>
+      )}
+      {vadConfig.noiseFloorDb != null && (
+        <span className={st.soundCheckHint} title="A saved baseline is seeding VAD on new sessions.">
+          Saved floor: <strong>{vadConfig.noiseFloorDb} dB</strong>
+          <button type="button" className={st.soundCheckClear} onClick={clearBaseline} aria-label="Clear saved baseline">×</button>
+        </span>
+      )}
       <div className={st.soundCheckMeterWrap}>
         <div className={st.soundCheckMeterBar} aria-hidden="true">
           <span

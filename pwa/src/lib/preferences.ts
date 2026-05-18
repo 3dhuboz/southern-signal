@@ -145,6 +145,14 @@ export interface AppPreferences {
     sensitivityDb: number;
     attackMs: number;
     releaseMs: number;
+    /**
+     * Saved noise-floor estimate from a Sound-Check session. When present, a
+     * new VAD instance can seed its adaptive floor here instead of the
+     * pessimistic -50 dB default — operators in consistent rooms get an
+     * instantly-correct trigger threshold without waiting for the EMA to
+     * adapt during the first few seconds of a hunt. null = unseeded.
+     */
+    noiseFloorDb: number | null;
   };
 }
 
@@ -177,7 +185,7 @@ const DEFAULTS: AppPreferences = {
   proMode: false,
   itcMonitor: false,
   vadAutoDuck: false,
-  vadConfig: { sensitivityDb: 12, attackMs: 120, releaseMs: 350 },
+  vadConfig: { sensitivityDb: 12, attackMs: 120, releaseMs: 350, noiseFloorDb: null },
 };
 
 const KEY = "ss-preferences-v1";
@@ -200,6 +208,7 @@ function read(): AppPreferences {
         modules: { ...DEFAULTS.rig.modules, ...(parsed.rig?.modules ?? {}) },
       },
       community: { ...DEFAULTS.community, ...(parsed.community ?? {}) },
+      vadConfig: { ...DEFAULTS.vadConfig, ...(parsed.vadConfig ?? {}) },
     };
   } catch {
     return DEFAULTS;
@@ -229,6 +238,7 @@ export function setPreferences(patch: Partial<AppPreferences>): AppPreferences {
       modules: { ...current.rig.modules, ...(patch.rig?.modules ?? {}) },
     },
     community: { ...current.community, ...(patch.community ?? {}) },
+    vadConfig: { ...current.vadConfig, ...(patch.vadConfig ?? {}) },
   };
   write(next);
   return next;

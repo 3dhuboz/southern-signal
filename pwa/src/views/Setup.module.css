@@ -383,6 +383,23 @@
   margin: 4px 0 0;
 }
 
+/* Inline × button next to the "Saved floor: -38 dB" chip — clears the
+   persisted baseline so a fresh hunt falls back to the -50 default. */
+.soundCheckClear {
+  appearance: none;
+  margin-left: 6px;
+  padding: 0 5px;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+.soundCheckClear:hover { color: var(--danger); border-color: var(--danger); }
+
 .footerNote {
   font-family: var(--font-mono);
   font-size: 10px;

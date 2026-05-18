@@ -25,6 +25,14 @@ export interface VadConfig {
   releaseMs?: number;
   /** Noise-floor adapts at this rate when below activation. Default 0.05. */
   noiseFloorAlpha?: number;
+  /**
+   * Seed the adaptive noise floor with a previously-saved estimate (e.g. from
+   * a Sound-Check session in Setup). Default -50 dB is intentionally
+   * pessimistic so the floor only adapts UPWARD during the first few seconds
+   * of a quiet room; supplying a learned floor here skips that warmup so the
+   * trigger threshold is correct from the first tick.
+   */
+  initialNoiseFloorDb?: number;
 }
 
 export interface VadHandle {
@@ -70,7 +78,9 @@ export function startVad(
   source.connect(analyser);
 
   const buf = new Uint8Array(analyser.fftSize);
-  let noiseFloorDb = -50; // pessimistic start; first few frames will adapt
+  // -50 = pessimistic default that adapts upward over the first few seconds.
+  // Caller can seed a saved floor (from Sound-Check) to skip the warmup.
+  let noiseFloorDb = cfg.initialNoiseFloorDb ?? -50;
   let lastLevelDb = -100;
   let aboveSince  = 0;
   let belowSince  = 0;

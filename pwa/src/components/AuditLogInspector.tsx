@@ -33,6 +33,11 @@ type ChainResult = ChainStatus | ChainStatusBad;
 
 const LIMIT_DEFAULT = 50;
 
+/** localStorage key for the persisted quick-filter selection. The user's
+ *  last filter survives reloads so a reviewer who left the panel filtered
+ *  to "session_" doesn't have to re-pick on every visit. */
+const FILTER_STORAGE_KEY = "ss-audit-filter-v1";
+
 /**
  * Quick-filter presets — saved hand-shortcuts for the kinds of audit rows the
  * operator most often wants to scan. Each `match` is plugged straight into the
@@ -52,7 +57,17 @@ export function AuditLogInspector() {
   const [chain, setChain] = useState<ChainResult | null>(null);
   const [entries, setEntries] = useState<AuditRow[]>([]);
   const [total, setTotal] = useState(0);
-  const [filter, setFilter] = useState<string>("");
+  const [filter, setFilter] = useState<string>(() => {
+    try { return localStorage.getItem(FILTER_STORAGE_KEY) ?? ""; } catch { return ""; }
+  });
+  // Persist the operator's filter across reloads. Empty string clears storage
+  // so we don't keep a stale value pinned forever.
+  useEffect(() => {
+    try {
+      if (filter) localStorage.setItem(FILTER_STORAGE_KEY, filter);
+      else localStorage.removeItem(FILTER_STORAGE_KEY);
+    } catch { /* swallow — localStorage unavailable */ }
+  }, [filter]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

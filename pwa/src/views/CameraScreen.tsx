@@ -30,13 +30,14 @@ import { useLiveBroadcastState } from "../lib/system/liveBroadcast";
 import { usePushToTalk } from "../lib/audio/usePushToTalk";
 import { startVad, type VadHandle } from "../lib/audio/vad";
 import { useLongPress, useDoubleTap, useHorizontalSwipe, composeHandlers } from "../lib/gestures";
-import { runPreflight, type PreflightReport } from "../lib/system/preflight";
+import { runPreflight, type PreflightCheck, type PreflightReport } from "../lib/system/preflight";
+import { usePwaInstall } from "../lib/system/usePwaInstall";
 import { useLiveNarrator } from "../lib/posterior/liveNarrator";
 import { LiveAnalyzer } from "../lib/audio/liveAnalyzer";
 import { type SectorReading } from "../lib/audio/sectorIndicator";
 import { ensureTodayInvestigation } from "../lib/bootstrap";
 import { requestPersistentStorage } from "../lib/opfs";
-import { recordEvent, startInvestigation, stopInvestigation } from "../lib/db/repo";
+import { recordEvent, recordSensorSample, startInvestigation, stopInvestigation } from "../lib/db/repo";
 import { lockProtocol } from "../lib/db/protocolRepo";
 import {
   emitAcousticTransient,
@@ -128,6 +129,36 @@ const TOP_PILL_STATES: Record<TopPillState, TopPillSpec> = {
   idle:  {                                         label: ()  => "STANDBY" },
 };
 
+/**
+ * Format the failing preflight checks for the watchdog toast. Prefers the
+ * numeric `data` snapshot (e.g. "Battery 18%", "212 MB free") over the prose
+ * `message` field — a glance-readable number sells the warning's urgency
+ * better than a sentence the operator has to parse mid-hunt.
+ */
+function formatWatchdogChecks(checks: readonly PreflightCheck[]): string {
+  const parts: string[] = [];
+  for (const c of checks) {
+    if (c.level === "ok") continue;
+    if (c.id === "battery" && c.data?.batteryLevel != null) {
+      const pct = Math.round(c.data.batteryLevel * 100);
+      parts.push(`Battery ${pct}%${c.data.batteryCharging ? " ⚡" : ""}`);
+    } else if (c.id === "storage" && c.data?.storageFreeBytes != null) {
+      const mb = Math.round(c.data.storageFreeBytes / (1024 * 1024));
+      parts.push(`${mb} MB free`);
+    } else if (c.id === "camera" || c.id === "mic") {
+      parts.push(`${c.id} ${c.data?.permission ?? "issue"}`);
+    } else {
+      parts.push(c.message);
+    }
+  }
+  return parts.join(" · ");
+}
+
+/** True when any failing check is the storage one — drives the install CTA. */
+function watchdogStorageWarn(report: PreflightReport): boolean {
+  return report.checks.some((c) => c.id === "storage" && c.level !== "ok");
+}
+
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -136,6 +167,12 @@ export function CameraScreen() {
   const sensors = useSensors(session.permissionsGranted);
   const [prefs] = usePreferences();
   const proMode = prefs.proMode;
+  // PWA install status — surfaced from the watchdog toast as a fallback CTA
+  // when storage is the failing check. Standalone PWAs get OPFS persistence
+  // guarantees, which is exactly what a "running out of room" warning is
+  // really about. usePwaInstall is cheap (a single useEffect with two
+  // listeners) so we always call it even on non-storage paths.
+  const installStatus = usePwaInstall();
 
   // Session lifecycle
   const [running, setRunning] = useState(false);
@@ -353,6 +390,10 @@ export function CameraScreen() {
         deactivationDb: Math.max(2, prefs.vadConfig.sensitivityDb / 2),
         attackMs: prefs.vadConfig.attackMs,
         releaseMs: prefs.vadConfig.releaseMs,
+        // Seed the adaptive floor from a saved Sound-Check baseline so the
+        // trigger threshold is correct from the first audio frame instead of
+        // adapting upward through the warmup window.
+        initialNoiseFloorDb: prefs.vadConfig.noiseFloorDb ?? undefined,
       });
     } catch { setVadActive(false); }
     return () => { handle?.stop(); setVadActive(false); };
@@ -379,6 +420,11 @@ export function CameraScreen() {
   const WATCHDOG_TOAST_MS = 7000;
   const [watchdog, setWatchdog] = useState<PreflightReport | null>(null);
   const lastWatchdogLevelRef = useRef<"ok" | "warn" | "block">("ok");
+  // Suppresses watchdog ticks while the browser install prompt is on screen.
+  // Without it, a 60s tick can fire mid-prompt and stack a fresh toast behind
+  // the native dialog — confusing the operator when they dismiss the prompt
+  // and find a second warning waiting.
+  const installPromptOpenRef = useRef(false);
 
   // ITC hooks read the scene's tools config — Spirit Box Session auto-starts
   // the spirit box; Pro/Lab leaves Ovilus to manual. Output is consumed via
@@ -403,12 +449,43 @@ export function CameraScreen() {
       return;
     }
     const tick = async () => {
+      // Skip while the install prompt is open — preflight still passes, but
+      // a fresh toast stacking behind the browser's native dialog would be
+      // confusing UX. The next tick after the prompt closes picks up state.
+      if (installPromptOpenRef.current) return;
       try {
         const report = await runPreflight();
         const severity = { ok: 0, warn: 1, block: 2 } as const;
         if (severity[report.overall] > severity[lastWatchdogLevelRef.current]) {
           lastWatchdogLevelRef.current = report.overall;
           setWatchdog(report);
+        }
+        // Sample battery + storage into the case file each tick — gives the
+        // export bundle a per-minute timeline of device-state degradation
+        // alongside the audio/sensor evidence stream. Cheap (one INSERT each)
+        // and the sample queue throttles cloud sync to one row per minute
+        // per (investigation_id, sensor_type) anyway.
+        const inv = session.current;
+        if (inv) {
+          const battery = report.checks.find((c) => c.id === "battery");
+          if (battery?.data?.batteryLevel != null) {
+            void recordSensorSample({
+              investigation_id: inv.id,
+              sensor_type: "battery",
+              value: battery.data.batteryLevel,
+              unit: "fraction",
+              metadata: { charging: battery.data.batteryCharging === true },
+            });
+          }
+          const storage = report.checks.find((c) => c.id === "storage");
+          if (storage?.data?.storageFreeBytes != null) {
+            void recordSensorSample({
+              investigation_id: inv.id,
+              sensor_type: "storage_free",
+              value: storage.data.storageFreeBytes,
+              unit: "bytes",
+            });
+          }
         }
       } catch { /* swallow — best-effort watchdog, never breaks the hunt */ }
     };
@@ -751,25 +828,48 @@ export function CameraScreen() {
         {/* ── Watchdog toast — non-blocking warning when the device state
              degraded since the session started (storage low, battery dipped
              below 20%). Sits below the corner pills so it doesn't compete
-             with the REC indicator. Tap dismisses. Hard-dismisses after
-             WATCHDOG_TOAST_MS even if untouched. */}
+             with the REC indicator. The toast itself dismisses on tap; an
+             optional inline "Install" CTA appears when storage is the
+             failing check AND the browser exposed a beforeinstallprompt
+             event — standalone PWAs get OPFS persistence guarantees, which
+             is the durable fix for "running out of room". Hard-dismisses
+             after WATCHDOG_TOAST_MS even if untouched. */}
         {watchdog && (
-          <button
-            type="button"
+          <div
             className={`${s.watchdogToast} ${watchdog.overall === "block" ? s.watchdogToastBlock : s.watchdogToastWarn}`.trim()}
-            onClick={() => setWatchdog(null)}
-            aria-label="Dismiss device-state warning"
+            role="alert"
           >
-            <span className={s.watchdogToastLabel}>
-              {watchdog.overall === "block" ? "Device state critical" : "Device state degraded"}
-            </span>
-            <span className={s.watchdogToastDetail}>
-              {watchdog.checks
-                .filter((c) => c.level !== "ok")
-                .map((c) => c.message)
-                .join(" · ") || "Tap to dismiss"}
-            </span>
-          </button>
+            <button
+              type="button"
+              className={s.watchdogToastBody}
+              onClick={() => setWatchdog(null)}
+              title="Tap to dismiss"
+            >
+              <span className={s.watchdogToastLabel}>
+                {watchdog.overall === "block" ? "Device state critical" : "Device state degraded"}
+              </span>
+              <span className={s.watchdogToastDetail}>
+                {formatWatchdogChecks(watchdog.checks) || "Tap to dismiss"}
+              </span>
+            </button>
+            {watchdogStorageWarn(watchdog) && installStatus.kind === "ready" && (
+              <button
+                type="button"
+                className={s.watchdogToastCta}
+                onClick={async () => {
+                  setWatchdog(null);
+                  installPromptOpenRef.current = true;
+                  try {
+                    await installStatus.prompt();
+                  } finally {
+                    installPromptOpenRef.current = false;
+                  }
+                }}
+              >
+                Install
+              </button>
+            )}
+          </div>
         )}
 
         {/* ── Pre-flight blocker — only shown when a critical check failed

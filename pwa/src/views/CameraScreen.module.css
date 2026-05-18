@@ -120,21 +120,49 @@
   left: 50%;
   transform: translateX(-50%);
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: stretch;
-  gap: 2px;
-  max-width: 88%;
-  padding: 8px 16px;
+  gap: 0;
+  max-width: 92%;
   border-radius: 12px;
   font-family: var(--font-mono);
   color: #fff;
   pointer-events: auto;
   z-index: 6;
-  cursor: pointer;
   border: 1px solid rgba(255, 255, 255, 0.25);
-  text-align: center;
+  overflow: hidden;
   animation: markerToastIn 200ms ease-out;
 }
+.watchdogToastBody {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 8px 16px;
+  background: transparent;
+  border: none;
+  font: inherit;
+  color: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+.watchdogToastCta {
+  flex: 0 0 auto;
+  padding: 0 14px;
+  background: rgba(0, 0, 0, 0.18);
+  border: none;
+  border-left: 1px solid rgba(255, 255, 255, 0.3);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: inherit;
+  cursor: pointer;
+}
+.watchdogToastCta:hover  { background: rgba(0, 0, 0, 0.32); }
+.watchdogToastCta:active { background: rgba(0, 0, 0, 0.42); }
 .watchdogToastWarn {
   background: rgba(212, 192, 38, 0.92);
   box-shadow: 0 4px 16px rgba(212, 192, 38, 0.35);
