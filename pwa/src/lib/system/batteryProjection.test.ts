@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { projectTimeToEmpty, formatTimeToEmpty, type BatterySample } from "./batteryProjection";
+import { projectTimeToEmpty, projectTimeToZero, formatTimeToEmpty, type BatterySample } from "./batteryProjection";
 
 function makeSamples(values: number[], stepSeconds = 60, start = "2024-01-01T00:00:00.000Z"): BatterySample[] {
   const startMs = Date.parse(start);
@@ -49,6 +49,26 @@ describe("projectTimeToEmpty", () => {
     expect(fresh).not.toBeNull();
     expect(stale).not.toBeNull();
     expect(fresh!.minutesToEmpty - stale!.minutesToEmpty).toBeCloseTo(10, 0);
+  });
+});
+
+describe("projectTimeToZero (storage)", () => {
+  it("projects free-MB depletion to zero", () => {
+    // Storage shrinks 50 MB / minute starting from 500 MB free.
+    // Should project ~10 min to 0 MB.
+    const ts = (i: number) => new Date(Date.parse("2024-01-01T00:00:00.000Z") + i * 60_000).toISOString();
+    const samples = [500, 450, 400, 350, 300].map((mb, i) => ({ value: mb, ts: ts(i) }));
+    const proj = projectTimeToZero(samples, Date.parse(samples[samples.length - 1].ts));
+    expect(proj).not.toBeNull();
+    expect(proj!.minutesToZero).toBeGreaterThan(5);
+    expect(proj!.minutesToZero).toBeLessThan(7);
+    expect(proj!.slopePerMinute).toBeCloseTo(-50, 1);
+  });
+
+  it("refuses to project a flat / growing series", () => {
+    const ts = (i: number) => new Date(Date.parse("2024-01-01T00:00:00.000Z") + i * 60_000).toISOString();
+    expect(projectTimeToZero([300, 300, 300, 300].map((v, i) => ({ value: v, ts: ts(i) })))).toBeNull();
+    expect(projectTimeToZero([300, 320, 340, 360].map((v, i) => ({ value: v, ts: ts(i) })))).toBeNull();
   });
 });
 

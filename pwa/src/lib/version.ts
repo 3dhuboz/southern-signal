@@ -9,7 +9,7 @@
  * users via WHATS_NEW_KEY, so a release manifests as both a manifest bump
  * AND a discovery prompt in one change.
  */
-export const APP_VERSION = "0.3.0";
+export const APP_VERSION = "0.4.0";
 
 /** localStorage key for the "What's new" panel dismissal — versioned by
  *  APP_VERSION so each release re-surfaces the card. */

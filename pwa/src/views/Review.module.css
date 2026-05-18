@@ -358,6 +358,45 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  transition: background 200ms;
+  border-radius: var(--r-sm);
+}
+/* Flash animation when a marker is jumped to (from a spark tick or kbd
+   nav). Two pulses then settle so the eye lands on the row without a
+   strobing distraction. */
+.markerRowFlash {
+  animation: markerRowFlash 1.6s ease-out;
+}
+@keyframes markerRowFlash {
+  0%   { background: color-mix(in srgb, var(--signal) 28%, transparent); }
+  40%  { background: color-mix(in srgb, var(--signal) 18%, transparent); }
+  100% { background: transparent; }
+}
+/* Persistent focus indicator — driven by the j/k keyboard navigation.
+   Lower-prominence than the flash so it doesn't compete; just a thin left
+   stripe so the operator can tell where their focus landed after a jump. */
+.markerRowFocused > .incrementRow {
+  box-shadow: -3px 0 0 0 var(--signal);
+}
+
+/* Keyboard shortcut hint appended to the marker section header — small
+   inline kbd glyphs styled to match the rest of the mono-font UI. */
+.kbdHint {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  color: var(--text-dim);
+}
+.kbdHint kbd {
+  display: inline-block;
+  padding: 0 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.3;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  color: var(--text-secondary);
 }
 .markerEditBtn {
   appearance: none;

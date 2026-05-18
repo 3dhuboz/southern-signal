@@ -1,20 +1,20 @@
 /**
- * Battery time-to-empty projection — linear regression of recent battery
- * samples to a "minutes until 0%" estimate. Surfaces in:
+ * Time-to-zero projection — linear regression of recent samples to a
+ * "minutes until value hits 0" estimate. Used by both:
  *
- *   - CameraScreen watchdog toast (when battery is the failing check)
- *   - Review spark headline (when tone === "battery")
+ *   - CameraScreen watchdog toast (battery → time-to-empty; storage → time-to-full)
+ *   - Review spark headline (same two surfaces, expanded view)
  *
- * Why linear? The phone's battery curve is famously non-linear at the
- * extremes (above 80% it's roughly linear, then it falls off a cliff under
- * 20%). Linear regression on the most recent samples is a "if the next 10
- * minutes look like the last 10, you've got X minutes" estimate — directional
- * not predictive. Good enough to tell the operator "swap a battery in the
- * next 20 minutes" without pretending it's a real time-of-death prediction.
+ * Why linear? Battery and storage curves both have non-linear regimes (the
+ * battery cliff under 20%; storage fills slower as media compression takes
+ * effect). Linear regression on the most recent samples is a "if the next
+ * 10 minutes look like the last 10, you've got X minutes" estimate —
+ * directional not predictive. Good enough to tell the operator "swap a
+ * battery in the next 20 minutes" without pretending it's a real
+ * time-of-death prediction.
  *
  * Refuses to project when:
- *   - charging (slope is up; "time to empty" is undefined)
- *   - slope is non-negative (flat or rising — battery's holding steady)
+ *   - slope is non-negative (flat or rising — the resource isn't depleting)
  *   - fewer than 3 samples (insufficient data)
  *   - elapsed window < 90 seconds (too short to average out noise)
  */
@@ -39,6 +39,17 @@ export interface BatteryProjection {
   windowMinutes: number;
 }
 
+export interface ZeroProjection {
+  /** Minutes until value reaches 0 at the current slope. */
+  minutesToZero: number;
+  /** Per-minute slope (negative when depleting). */
+  slopePerMinute: number;
+  /** Number of samples that went into the fit. */
+  sampleCount: number;
+  /** Wall-clock span the fit covered, in minutes. */
+  windowMinutes: number;
+}
+
 const MIN_SAMPLES = 3;
 const MIN_WINDOW_SECONDS = 90;
 
@@ -48,14 +59,11 @@ const MIN_WINDOW_SECONDS = 90;
  * comment for why).
  *
  * Accepts an optional `now` (defaults to Date.now()) so tests can pin time.
+ * Domain-neutral — feeds both battery and storage projections.
  */
-export function projectTimeToEmpty(samples: readonly BatterySample[], now: number = Date.now()): BatteryProjection | null {
+export function projectTimeToZero(samples: readonly { value: number; ts: string }[], now: number = Date.now()): ZeroProjection | null {
   if (samples.length < MIN_SAMPLES) return null;
-  // Refuse if the most recent sample is charging — discharge slope is
-  // physically meaningless when the cable is plugged in.
   const last = samples[samples.length - 1];
-  if (last.charging === true) return null;
-
   // Convert timestamps to seconds-from-first-sample so the regression
   // doesn't lose precision on huge wall-clock numbers.
   const firstMs = Date.parse(samples[0].ts);
@@ -83,25 +91,39 @@ export function projectTimeToEmpty(samples: readonly BatterySample[], now: numbe
   const meanY = sumY / n;
   const denom = sumX2 - n * meanX * meanX;
   if (Math.abs(denom) < 1e-9) return null;
-  const slope = (sumXY - n * meanX * meanY) / denom; // fraction per second
-  if (slope >= -1e-9) return null; // not draining
-  const intercept = meanY - slope * meanX; // fraction at t=0 (first sample)
+  const slope = (sumXY - n * meanX * meanY) / denom; // value per second
+  if (slope >= -1e-9) return null; // not depleting
+  const intercept = meanY - slope * meanX; // value at t=0 (first sample)
   const lastT = points[points.length - 1].x;
-  // Project from "now" (i.e. the latest fitted value) to y=0 along the
-  // fitted line. fittedNow = intercept + slope * lastT.
   const fittedNow = intercept + slope * lastT;
-  if (fittedNow <= 0) return null; // already empty per the fit; nothing to project
-  const secondsToEmpty = -fittedNow / slope;
-  if (!Number.isFinite(secondsToEmpty) || secondsToEmpty <= 0) return null;
-  // Account for time elapsed since the last sample arrived — a 5-minute-old
-  // sample shouldn't project as if it just landed.
+  if (fittedNow <= 0) return null; // already at zero per the fit
+  const secondsToZero = -fittedNow / slope;
+  if (!Number.isFinite(secondsToZero) || secondsToZero <= 0) return null;
   const lastSampleAgeSec = Math.max(0, (now - Date.parse(last.ts)) / 1000);
-  const minutesToEmpty = Math.max(0, (secondsToEmpty - lastSampleAgeSec) / 60);
+  const minutesToZero = Math.max(0, (secondsToZero - lastSampleAgeSec) / 60);
   return {
-    minutesToEmpty,
-    drainPerMinute: -slope * 60,
+    minutesToZero,
+    slopePerMinute: slope * 60,
     sampleCount: n,
     windowMinutes: elapsedSec / 60,
+  };
+}
+
+/**
+ * Battery flavour — refuses additionally when the latest sample is
+ * charging (cable plugged in invalidates discharge-rate semantics).
+ */
+export function projectTimeToEmpty(samples: readonly BatterySample[], now: number = Date.now()): BatteryProjection | null {
+  if (samples.length === 0) return null;
+  const last = samples[samples.length - 1];
+  if (last.charging === true) return null;
+  const proj = projectTimeToZero(samples, now);
+  if (!proj) return null;
+  return {
+    minutesToEmpty: proj.minutesToZero,
+    drainPerMinute: -proj.slopePerMinute,
+    sampleCount: proj.sampleCount,
+    windowMinutes: proj.windowMinutes,
   };
 }
 

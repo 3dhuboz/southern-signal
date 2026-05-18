@@ -31,7 +31,7 @@ import { usePushToTalk } from "../lib/audio/usePushToTalk";
 import { startVad, type VadHandle } from "../lib/audio/vad";
 import { useLongPress, useDoubleTap, useHorizontalSwipe, composeHandlers } from "../lib/gestures";
 import { resolvePreflightOverrides, runPreflight, type PreflightCheck, type PreflightLevel, type PreflightReport } from "../lib/system/preflight";
-import { formatTimeToEmpty, projectTimeToEmpty, type BatterySample } from "../lib/system/batteryProjection";
+import { formatTimeToEmpty, projectTimeToEmpty, projectTimeToZero, type BatterySample } from "../lib/system/batteryProjection";
 import { verifyAuditChain } from "../lib/db/auditLog";
 import { usePwaInstall } from "../lib/system/usePwaInstall";
 import { useLiveNarrator } from "../lib/posterior/liveNarrator";
@@ -525,13 +525,45 @@ export function CameraScreen() {
   const batterySamplesRef = useRef<BatterySample[]>([]);
   const BATTERY_SAMPLE_BUFFER = 20;
   const [batteryProjectionMinutes, setBatteryProjectionMinutes] = useState<number | null>(null);
+  // Sibling buffer for storage_free MB samples — same projection helper as
+  // the battery path, just looking for "when does free hit 0 MB" instead.
+  // Useful on long video sessions where the operator's already lost track
+  // of how fast the disk's filling.
+  const storageSamplesRef = useRef<{ value: number; ts: string }[]>([]);
+  const STORAGE_SAMPLE_BUFFER = 20;
+  const [storageProjectionMinutes, setStorageProjectionMinutes] = useState<number | null>(null);
   // Watchdog snooze — when set in the future, tick() skips the toast-fire
   // path entirely until the timestamp has passed. Lighter-touch than the
   // Setup-level suppression toggle: suppress is "stop nagging me about
   // this check forever", snooze is "give me ten minutes of quiet". The
   // operator gets a Snooze button on the toast itself; cleared when the
   // session stops or the operator dismisses the toast manually.
+  //
+  // State holds the deadline so the HUD chip ("Snoozed for 8m") can render;
+  // the parallel ref is what the watchdog tick reads at fire time without
+  // re-binding the 60s interval on every state update.
+  const [watchdogSnoozeUntil, setWatchdogSnoozeUntil] = useState<number | null>(null);
   const watchdogSnoozeUntilRef = useRef<number | null>(null);
+  useEffect(() => { watchdogSnoozeUntilRef.current = watchdogSnoozeUntil; }, [watchdogSnoozeUntil]);
+  // Auto-clear when the snooze deadline passes so the chip vanishes without
+  // a click. One setTimeout per snooze — cleaner than polling every tick.
+  useEffect(() => {
+    if (watchdogSnoozeUntil == null) return;
+    const remaining = watchdogSnoozeUntil - Date.now();
+    if (remaining <= 0) { setWatchdogSnoozeUntil(null); return; }
+    const h = window.setTimeout(() => setWatchdogSnoozeUntil(null), remaining);
+    return () => window.clearTimeout(h);
+  }, [watchdogSnoozeUntil]);
+  // Re-tick the chip every 30s so the "Snoozed for Nm" countdown stays
+  // roughly current. State doesn't actually change — we just force a render
+  // via a dummy ticker. Skipped when no snooze is active.
+  const [snoozeTick, setSnoozeTick] = useState(0);
+  useEffect(() => {
+    if (watchdogSnoozeUntil == null) return;
+    const h = window.setInterval(() => setSnoozeTick((n) => n + 1), 30_000);
+    return () => window.clearInterval(h);
+  }, [watchdogSnoozeUntil]);
+  void snoozeTick; // referenced only to satisfy lint; the value drives renders
   const WATCHDOG_SNOOZE_MS = 10 * 60_000;
   // Suppresses watchdog ticks while the browser install prompt is on screen.
   // Without it, a 60s tick can fire mid-prompt and stack a fresh toast behind
@@ -563,7 +595,10 @@ export function CameraScreen() {
       setWatchdogCount(0);
       batterySamplesRef.current = [];
       setBatteryProjectionMinutes(null);
+      storageSamplesRef.current = [];
+      setStorageProjectionMinutes(null);
       watchdogSnoozeUntilRef.current = null;
+      setWatchdogSnoozeUntil(null);
       setSessionMarkerCount(0);
       return;
     }
@@ -646,6 +681,28 @@ export function CameraScreen() {
             setBatteryProjectionMinutes(null);
           }
         }
+        // Update the storage projection buffer regardless of investigation
+        // state — same rationale as battery; the toast wants an ETA even on
+        // a not-yet-started session. Storage projects in MB rather than
+        // bytes to stay readable in the buffer + drainPerMinute.
+        const storageCheck = raw.checks.find((c) => c.id === "storage");
+        if (storageCheck?.data?.storageFreeBytes != null) {
+          const sample = {
+            value: storageCheck.data.storageFreeBytes / (1024 * 1024),
+            ts: new Date().toISOString(),
+          };
+          const buf = storageSamplesRef.current;
+          buf.push(sample);
+          if (buf.length > STORAGE_SAMPLE_BUFFER) buf.splice(0, buf.length - STORAGE_SAMPLE_BUFFER);
+          const projection = projectTimeToZero(buf);
+          // Same soft-threshold treatment as battery — if the disk has 8 h
+          // before filling, we don't need to dramatise it on the toast.
+          if (projection && projection.minutesToZero < 35 * 60) {
+            setStorageProjectionMinutes(projection.minutesToZero);
+          } else {
+            setStorageProjectionMinutes(null);
+          }
+        }
         if (inv) {
           if (battery?.data?.batteryLevel != null) {
             void recordSensorSample({
@@ -656,12 +713,11 @@ export function CameraScreen() {
               metadata: { charging: battery.data.batteryCharging === true },
             });
           }
-          const storage = raw.checks.find((c) => c.id === "storage");
-          if (storage?.data?.storageFreeBytes != null) {
+          if (storageCheck?.data?.storageFreeBytes != null) {
             void recordSensorSample({
               investigation_id: inv.id,
               sensor_type: "storage_free",
-              value: storage.data.storageFreeBytes,
+              value: storageCheck.data.storageFreeBytes,
               unit: "bytes",
             });
           }
@@ -1014,6 +1070,26 @@ export function CameraScreen() {
           </div>
         )}
 
+        {/* ── Snooze indicator chip — only visible while a snooze window
+             is active. Tap to unsnooze immediately. Without this, an
+             operator who hit Snooze could forget toasts are muted and
+             wonder why nothing's firing. Sits in the bottom-left HUD just
+             above the marker pill. */}
+        {running && watchdogSnoozeUntil != null && (
+          <button
+            type="button"
+            className={s.snoozeChip}
+            onClick={() => setWatchdogSnoozeUntil(null)}
+            title="Watchdog toasts are silenced. Tap to resume immediately."
+            aria-label="Watchdog snoozed — tap to resume"
+          >
+            <span className={s.snoozeChipIcon} aria-hidden="true">🔕</span>
+            <span className={s.snoozeChipLabel}>
+              Snoozed {Math.max(0, Math.ceil((watchdogSnoozeUntil - Date.now()) / 60_000))}m
+            </span>
+          </button>
+        )}
+
         {/* ── Marker tally pill — bottom-left, low-prominence. Surfaces the
              session-scoped marker count so the operator knows their tag
              rhythm without leaving the camera. Tapping navigates to Review;
@@ -1120,6 +1196,9 @@ export function CameraScreen() {
                 {batteryProjectionMinutes != null && watchdog.checks.some((c) => c.id === "battery" && c.level !== "ok") && (
                   <span className={s.watchdogToastEta}> · ~{formatTimeToEmpty(batteryProjectionMinutes)} until empty</span>
                 )}
+                {storageProjectionMinutes != null && watchdog.checks.some((c) => c.id === "storage" && c.level !== "ok") && (
+                  <span className={s.watchdogToastEta}> · ~{formatTimeToEmpty(storageProjectionMinutes)} until full</span>
+                )}
               </span>
             </button>
             {watchdogStorageWarn(watchdog) && installStatus.kind === "ready" && (
@@ -1143,7 +1222,7 @@ export function CameraScreen() {
               type="button"
               className={s.watchdogToastSnooze}
               onClick={() => {
-                watchdogSnoozeUntilRef.current = Date.now() + WATCHDOG_SNOOZE_MS;
+                setWatchdogSnoozeUntil(Date.now() + WATCHDOG_SNOOZE_MS);
                 setWatchdog(null);
               }}
               title="Suppress watchdog toasts for the next 10 minutes. A worsening degradation will still fire."

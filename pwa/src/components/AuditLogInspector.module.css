@@ -290,6 +290,23 @@
   margin-left: auto;
 }
 
+/* Tiny chip that copies a deep-link to this row to the clipboard. Sits at
+   the end of the rowHead grid so it never competes with the seq/kind/ts
+   for the operator's primary scan attention. */
+.rowLinkBtn {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  padding: 0 5px;
+  margin-left: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.rowLinkBtn:hover { color: var(--signal); border-color: var(--signal-dim); }
+
 /* One-line summary surfaced for session_start rows — battery %, free MB,
    permission states pulled from the embedded preflight snapshot so the
    operator triages without expanding the JSON payload. */

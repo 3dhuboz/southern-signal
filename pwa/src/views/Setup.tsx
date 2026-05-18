@@ -831,16 +831,16 @@ function PreflightThresholdsPanel({
  * lives.
  */
 const WHATS_NEW_ITEMS: { title: string; where: string }[] = [
+  { title: "Storage time-to-full projection",           where: "Camera watchdog toast + Review storage spark — same italic ETA chip as battery" },
+  { title: "Watchdog snooze visible on the HUD",        where: "Camera screen — yellow Snoozed chip while a 10-min window is active; tap to resume" },
+  { title: "Tap a spark marker tick to open the row",   where: "Review → Device state — tap any vertical tick to scroll + flash the matching marker" },
+  { title: "Keyboard shortcuts in Review",              where: "Review → Moment markers — j/k navigate, e edit, d dismiss, Esc close editor" },
+  { title: "Deep-link to a specific audit-chain row",   where: "Setup → Audit log — 🔗 button per row copies a /setup#audit-seq-N link" },
   { title: "Reviewer notes flow to brief + bundle",     where: "Review → Marker edit notes show in the case brief and bundle cover.html" },
   { title: "Battery time-remaining estimate",           where: "Camera watchdog toast + Review battery spark — italic chip" },
-  { title: "Snooze watchdog toasts for 10 min",         where: "Camera screen — Snooze button on the device-state degraded toast" },
   { title: "Live marker tally on the camera HUD",       where: "Camera screen — pill above the dock; tap to open Review" },
   { title: "Drag the expanded spark to zoom",           where: "Review → Device state → ⛶ — drag across the chart to slice a range" },
-  { title: "Silence battery / storage watchdog toasts", where: "Setup → Preflight thresholds → Silence mid-session toasts for…" },
   { title: "Refuse sessions on broken audit chain",     where: "Setup → Preflight thresholds → Refuse to start on broken audit chain" },
-  { title: "Edit + delete moment markers",              where: "Review → Moment markers — tap Edit on any row to add a note or dismiss" },
-  { title: "Compare chain against last export",         where: "Setup → Audit log → Compare to last export" },
-  { title: "Expand sparkline to a readable chart",      where: "Review → Device state — tap the ⛶ icon to enlarge" },
 ];
 
 function WhatsNewCard() {

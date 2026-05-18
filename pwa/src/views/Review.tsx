@@ -11,7 +11,7 @@ import { loadMarkerOverrides } from "../lib/db/markerOverrides";
 import { buildManifest } from "../lib/forensic/manifest";
 import { buildExportBundle, downloadBlob } from "../lib/forensic/exportBundle";
 import { usePreferences } from "../lib/preferences";
-import { formatTimeToEmpty, projectTimeToEmpty } from "../lib/system/batteryProjection";
+import { formatTimeToEmpty, projectTimeToEmpty, projectTimeToZero } from "../lib/system/batteryProjection";
 import { getScene } from "../lib/overlays/scenes";
 import s from "./View.module.css";
 import r from "./Review.module.css";
@@ -155,6 +155,19 @@ export function Review() {
   const [editingMarkerId, setEditingMarkerId] = useState<string | null>(null);
   const [draftNote, setDraftNote] = useState("");
   const [draftCategory, setDraftCategory] = useState<MarkerCategory>(null);
+  // Flash a marker row when the operator jumps to it from a spark tick or
+  // keyboard nav. Auto-clears so the highlight doesn't strobe forever.
+  const [flashMarkerId, setFlashMarkerId] = useState<string | null>(null);
+  const markerListRef = useRef<HTMLOListElement | null>(null);
+  useEffect(() => {
+    if (flashMarkerId == null) return;
+    const h = window.setTimeout(() => setFlashMarkerId(null), 1600);
+    return () => window.clearTimeout(h);
+  }, [flashMarkerId]);
+  // Focused marker for keyboard shortcuts — j/k navigates, e opens the
+  // editor, d dismisses, Esc closes. Distinct from `flashMarkerId` (which
+  // is a one-shot pulse) because the focus persists between key presses.
+  const [focusedMarkerId, setFocusedMarkerId] = useState<string | null>(null);
   const [timeline, setTimeline] = useState<DeviceTimeline | null>(null);
 
   useEffect(() => {
@@ -319,6 +332,19 @@ export function Review() {
     URL.revokeObjectURL(url);
   }, []);
 
+  // Scroll the matching marker row into view + flash it. Wired to the
+  // spark marker ticks so the operator can dive from "I see a tick at
+  // 14:32" to the row's editor in one tap. Also used by the j/k keyboard
+  // nav to keep the focused row visible as it moves through the list.
+  const jumpToMarker = useCallback((id: string) => {
+    setFlashMarkerId(id);
+    setFocusedMarkerId(id);
+    requestAnimationFrame(() => {
+      const el = markerListRef.current?.querySelector<HTMLLIElement>(`[data-marker-id="${id}"]`);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, []);
+
   // Open the inline editor for a marker — pre-seed the draft from the
   // marker's current values so an operator who just wants to fix the
   // category doesn't have to re-type the note (and vice versa).
@@ -360,6 +386,62 @@ export function Review() {
       if (editingMarkerId === markerId) closeMarkerEditor();
     } catch { /* swallow */ }
   }, [editingMarkerId, closeMarkerEditor]);
+
+  // Keyboard shortcuts for power-use review. j/ArrowDown + k/ArrowUp navigate
+  // through the filtered markers list; e opens the editor on the focused
+  // row; d dismisses; Esc closes the editor. Skip when an input is focused
+  // so typing in the note textarea doesn't trigger 'e' for edit.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable)) {
+        // Esc inside the editor still closes — gives the operator a quick
+        // way out without reaching for the Cancel button.
+        if (e.key === "Escape" && editingMarkerId) {
+          setEditingMarkerId(null);
+          setDraftNote("");
+          setDraftCategory(null);
+        }
+        return;
+      }
+      if (markers.length === 0) return;
+      const visible = markers.filter((m) => matchesMarkerFilter(m, markerCategoryFilter));
+      if (visible.length === 0) return;
+      const currentIdx = focusedMarkerId ? visible.findIndex((m) => m.id === focusedMarkerId) : -1;
+      if (e.key === "j" || e.key === "ArrowDown") {
+        e.preventDefault();
+        const next = visible[Math.min(visible.length - 1, currentIdx < 0 ? 0 : currentIdx + 1)];
+        if (next) jumpToMarker(next.id);
+      } else if (e.key === "k" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const prev = visible[Math.max(0, currentIdx < 0 ? 0 : currentIdx - 1)];
+        if (prev) jumpToMarker(prev.id);
+      } else if (e.key === "e" && focusedMarkerId) {
+        e.preventDefault();
+        const m = visible.find((x) => x.id === focusedMarkerId);
+        if (m) {
+          setEditingMarkerId(m.id);
+          setDraftNote(m.note ?? "");
+          setDraftCategory(m.category);
+        }
+      } else if (e.key === "d" && focusedMarkerId) {
+        e.preventDefault();
+        // No confirm — the dismissal is reversible via the audit chain.
+        // Aggressive shortcut + reversible action = no need for a modal.
+        void dismissMarker(focusedMarkerId);
+      } else if (e.key === "Escape" && editingMarkerId) {
+        setEditingMarkerId(null);
+        setDraftNote("");
+        setDraftCategory(null);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  // dismissMarker is stable; markers/editingMarkerId/focusedMarkerId/filter
+  // are read at fire time, so the effect doesn't need to re-bind on each
+  // keystroke — that'd be a re-bind storm. Closures capture the latest.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [markers, markerCategoryFilter, focusedMarkerId, editingMarkerId, jumpToMarker, dismissMarker]);
 
   const handleExportZip = useCallback(async () => {
     if (exporting) return;
@@ -611,7 +693,8 @@ export function Review() {
               <DeviceSpark
                 label="Battery"
                 samples={timeline.battery}
-                markerTimestamps={markers.map((m) => m.timestamp)}
+                markers={markers.map((m) => ({ id: m.id, ts: m.timestamp }))}
+                onMarkerJump={jumpToMarker}
                 domain={{ min: 0, max: 1 }}
                 format={(v) => `${Math.round(v * 100)}%`}
                 tone="battery"
@@ -621,7 +704,8 @@ export function Review() {
               <DeviceSpark
                 label="Storage free"
                 samples={timeline.storageMb}
-                markerTimestamps={markers.map((m) => m.timestamp)}
+                markers={markers.map((m) => ({ id: m.id, ts: m.timestamp }))}
+                onMarkerJump={jumpToMarker}
                 format={(v) => `${Math.round(v)} MB`}
                 tone="storage"
               />
@@ -642,7 +726,14 @@ export function Review() {
           {(() => {
             const filteredMarkers = markers.filter((m) => matchesMarkerFilter(m, markerCategoryFilter));
             return (
-              <h2>Moment markers ({filteredMarkers.length}{markerCategoryFilter ? ` / ${markers.length}` : ""})</h2>
+              <h2>
+                Moment markers ({filteredMarkers.length}{markerCategoryFilter ? ` / ${markers.length}` : ""})
+                {markers.length > 0 && (
+                  <span className={r.kbdHint} title="Keyboard: j/k navigate · e edit focused · d dismiss focused · Esc close editor">
+                    {" "}· <kbd>j</kbd>/<kbd>k</kbd> · <kbd>e</kbd> · <kbd>d</kbd>
+                  </span>
+                )}
+              </h2>
             );
           })()}
         </header>
@@ -685,13 +776,19 @@ export function Review() {
             No markers yet. Double-tap the camera viewport during a session to drop a moment marker — it lands here with the elapsed time + active scene for one-tap review later.
           </p>
         ) : (
-          <ol className={r.incrementList}>
+          <ol className={r.incrementList} ref={markerListRef}>
             {markers
               .filter((m) => matchesMarkerFilter(m, markerCategoryFilter))
               .map((m) => {
                 const isEditing = editingMarkerId === m.id;
+                const isFlashed = flashMarkerId === m.id;
+                const isFocused = focusedMarkerId === m.id;
                 return (
-                  <li key={m.id} className={r.markerRow}>
+                  <li
+                    key={m.id}
+                    data-marker-id={m.id}
+                    className={`${r.markerRow} ${isFlashed ? r.markerRowFlash : ""} ${isFocused ? r.markerRowFocused : ""}`.trim()}
+                  >
                     <div className={r.incrementRow}>
                       <span className={r.incrementSeq}>●</span>
                       <span className={r.incrementChannel}>{m.elapsedLabel ?? "—"}</span>
@@ -834,7 +931,7 @@ export function Review() {
  * series.
  */
 function DeviceSpark({
-  label, samples, format, domain, tone, markerTimestamps,
+  label, samples, format, domain, tone, markerTimestamps, markers, onMarkerJump,
 }: {
   label: string;
   samples: readonly { value: number; ts: string; charging?: boolean }[];
@@ -843,8 +940,17 @@ function DeviceSpark({
   tone: "battery" | "storage";
   /** ISO timestamps of moment markers — rendered as faint vertical ticks so
    *  the reviewer sees where the operator flagged moments against the
-   *  device-state curve. Markers outside [first..last] sample range clip. */
+   *  device-state curve. Markers outside [first..last] sample range clip.
+   *  Kept for callers that don't need click-to-jump; pass `markers` instead
+   *  if you want the spark ticks to act as deep links. */
   markerTimestamps?: readonly string[];
+  /** Same series as markerTimestamps but with stable ids so a click can
+   *  scroll/flash the matching row. Supersedes markerTimestamps when both
+   *  are provided. */
+  markers?: readonly { id: string; ts: string }[];
+  /** Click handler fired when the operator taps a marker tick. Only wired
+   *  when `markers` is provided. */
+  onMarkerJump?: (id: string) => void;
 }) {
   // Hover/tap readout — index of the sample nearest the pointer's x in the
   // viewBox. Null = no hover, render the "latest sample" headline value.
@@ -922,29 +1028,35 @@ function DeviceSpark({
   const startMs = Date.parse(first.ts);
   const endMs = Date.parse(last.ts);
   const rangeMs = Math.max(1, endMs - startMs);
-  // Keep timestamp + x together so we can key the rendered <line> by the
-  // stable timestamp instead of array index — append-only markers shouldn't
-  // shift keys, but ts-keyed is the defensive choice.
-  const markerPoints = (markerTimestamps ?? [])
-    .map((iso) => ({ iso, ms: Date.parse(iso) }))
+  // Keep id+timestamp+x together. When `markers` is provided, id powers
+  // the click-to-jump handler; otherwise we fall back to markerTimestamps
+  // (kept for the cover.html consumer that doesn't need ids).
+  const markerSource = markers
+    ? markers.map((m) => ({ id: m.id as string | null, iso: m.ts, ms: Date.parse(m.ts) }))
+    : (markerTimestamps ?? []).map((iso) => ({ id: null as string | null, iso, ms: Date.parse(iso) }));
+  const markerPoints = markerSource
     .filter(({ ms }) => Number.isFinite(ms) && ms >= startMs && ms <= endMs)
-    .map(({ iso, ms }) => ({ iso, x: ((ms - startMs) / rangeMs) * W }));
-  // Battery time-to-empty projection on the spark headline — a recent-trend
-  // estimate of when the charge would hit 0% at the current discharge slope.
-  // Refuses to project when charging, flat-slope, or short windows so the
-  // hint never lies; the helper returns null in those cases.
+    .map(({ id, iso, ms }) => ({ id, iso, x: ((ms - startMs) / rangeMs) * W }));
+  // Time-to-zero projection on the spark headline. Battery projects to
+  // 0% (empty); storage projects free-MB to 0 (disk full). Both refuse on
+  // flat/rising series so the chip never appears in a steady state. The
+  // battery path additionally refuses while charging.
   const batteryEta = tone === "battery"
     ? projectTimeToEmpty(samples as readonly { value: number; ts: string; charging?: boolean }[])
     : null;
+  const storageEta = tone === "storage" ? projectTimeToZero(samples) : null;
+  const etaMinutes = batteryEta?.minutesToEmpty ?? storageEta?.minutesToZero ?? null;
+  const etaWindow = batteryEta?.windowMinutes ?? storageEta?.windowMinutes ?? null;
+  const etaSuffix = tone === "battery" ? "until empty" : "until full";
 
   return (
     <div className={r.deviceSpark} data-tone={tone}>
       <div className={r.deviceSparkHead}>
         <span className={r.deviceSparkLabel}>{label}</span>
         <span className={r.deviceSparkValue}>{format(displayValue.value)}</span>
-        {batteryEta && batteryEta.minutesToEmpty < 24 * 60 && (
-          <span className={r.deviceSparkEta} title={`Projected from the last ${batteryEta.windowMinutes.toFixed(0)} min of samples — informational, not a guarantee.`}>
-            ~{formatTimeToEmpty(batteryEta.minutesToEmpty)}
+        {etaMinutes != null && etaMinutes < 24 * 60 && (
+          <span className={r.deviceSparkEta} title={`Projected from the last ${etaWindow?.toFixed(0)} min of samples — ${etaSuffix}. Informational, not a guarantee.`}>
+            ~{formatTimeToEmpty(etaMinutes)}
           </span>
         )}
         <button
@@ -977,13 +1089,30 @@ function DeviceSpark({
           }
         }}
       >
-        {/* Markers behind the polyline so the curve reads over the ticks. */}
+        {/* Markers behind the polyline so the curve reads over the ticks.
+            Each tick gets an invisible wider hit-target rect so taps land
+            reliably on a 120-pixel-wide spark; clicking jumps to the row. */}
         {markerPoints.map((m) => (
-          <line
-            key={m.iso}
-            x1={m.x} x2={m.x} y1={0} y2={H}
-            stroke="var(--text-dim)" strokeWidth={0.6} strokeDasharray="1.5 1.5" opacity={0.55}
-          />
+          <g key={m.iso}>
+            <line
+              x1={m.x} x2={m.x} y1={0} y2={H}
+              stroke="var(--text-dim)" strokeWidth={0.6} strokeDasharray="1.5 1.5" opacity={0.55}
+              pointerEvents="none"
+            />
+            {m.id && onMarkerJump && (
+              <rect
+                x={m.x - 3} y={0} width={6} height={H}
+                fill="transparent"
+                style={{ cursor: "pointer" }}
+                onPointerDown={(e) => {
+                  // stopPropagation: keep the spark's tap-to-lock from
+                  // firing when the operator's intent was "jump to row".
+                  e.stopPropagation();
+                  onMarkerJump(m.id!);
+                }}
+              />
+            )}
+          </g>
         ))}
         <polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
         {/* Hover guide — vertical line + dot at the hovered sample so the

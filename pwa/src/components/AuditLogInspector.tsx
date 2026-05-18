@@ -109,6 +109,39 @@ export function AuditLogInspector() {
     const h = window.setTimeout(() => setFlashSeq(null), 2000);
     return () => window.clearTimeout(h);
   }, [flashSeq]);
+
+  // Deep-link via URL hash — `/setup#audit-seq-42` jumps to that row and
+  // flashes it. Lets a reviewer paste a link in a thread and the recipient
+  // lands directly on the entry under discussion. We watch the hash for
+  // changes too so a re-click on a different link without a reload still
+  // triggers the jump. The target seq is held in a separate state so the
+  // jump runs once entries have actually loaded — without this, the
+  // querySelector on mount fires before the async reload completes and
+  // misses the row.
+  const [pendingJumpSeq, setPendingJumpSeq] = useState<number | null>(null);
+  useEffect(() => {
+    const handleHash = () => {
+      const match = window.location.hash.match(/^#audit-seq-(\d+)$/);
+      if (!match) return;
+      const seq = Number(match[1]);
+      if (Number.isFinite(seq)) setPendingJumpSeq(seq);
+    };
+    handleHash();
+    window.addEventListener("hashchange", handleHash);
+    return () => window.removeEventListener("hashchange", handleHash);
+  }, []);
+  // Execute the pending jump once rows are present (and again whenever the
+  // entries list updates so a Refresh re-anchors the operator).
+  useEffect(() => {
+    if (pendingJumpSeq == null || entries.length === 0) return;
+    setFilter("");
+    setFlashSeq(pendingJumpSeq);
+    requestAnimationFrame(() => {
+      const el = listRef.current?.querySelector<HTMLLIElement>(`[data-seq="${pendingJumpSeq}"]`);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    setPendingJumpSeq(null);
+  }, [pendingJumpSeq, entries]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -464,6 +497,21 @@ export function AuditLogInspector() {
                 <span className={s.rowKind}>{e.kind}</span>
                 <span className={s.rowActor}>{e.actor}</span>
                 <span className={s.rowTs}>{new Date(e.ts_utc).toLocaleString()}</span>
+                <button
+                  type="button"
+                  className={s.rowLinkBtn}
+                  title="Copy deep-link to this entry"
+                  aria-label={`Copy deep-link to seq ${e.seq}`}
+                  onClick={() => {
+                    // Write the URL with the seq anchor to the clipboard so
+                    // the reviewer can paste it elsewhere. We update the
+                    // location.hash too — chains the browser's back button
+                    // to the deep-link AND makes "view source" obvious.
+                    const url = `${window.location.origin}${window.location.pathname}#audit-seq-${e.seq}`;
+                    window.history.replaceState(null, "", `#audit-seq-${e.seq}`);
+                    void navigator.clipboard?.writeText(url);
+                  }}
+                >🔗</button>
               </div>
               {preflightSummary && (
                 <p className={s.rowSummary} aria-label="Pre-flight snapshot">

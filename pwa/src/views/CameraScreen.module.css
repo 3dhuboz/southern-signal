@@ -437,6 +437,35 @@
   pointer-events: none;
 }
 
+/* Snooze indicator — sits just above the marker pill. Same chrome, but
+   tinted with the warning palette so the operator notices it. Tap to
+   unsnooze; auto-vanishes when the 10-minute window elapses. */
+.snoozeChip {
+  position: absolute;
+  bottom: calc(160px + var(--safe-bottom, 0px));
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: rgba(212, 192, 38, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  color: #1a1604;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.5px;
+  font-weight: 700;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  cursor: pointer;
+  z-index: 5;
+}
+.snoozeChip:hover  { background: rgba(212, 192, 38, 0.92); }
+.snoozeChip:active { background: rgba(212, 192, 38, 1); }
+.snoozeChipIcon { font-size: 12px; line-height: 1; }
+.snoozeChipLabel { text-transform: uppercase; letter-spacing: 1.1px; }
+
 /* Marker-count tally pill — sits in the bottom-left HUD safe-area corner,
    well clear of the BIG SHUTTER and dock buttons. Glanceable but quiet so
    it doesn't compete with the REC pill for the operator's attention. Tap
