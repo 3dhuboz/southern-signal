@@ -101,6 +101,45 @@ function matchesMarkerFilter(m: { category: MarkerCategory }, filter: MarkerFilt
   return m.category === filter;
 }
 
+/** localStorage key prefix for marker-edit drafts. One entry per marker so
+ *  an operator editing multiple markers in quick succession doesn't lose
+ *  one when opening another. Versioned to allow schema migration. */
+const MARKER_DRAFT_KEY_PREFIX = "ss-marker-draft-v1:";
+
+interface MarkerDraft { note: string; category: MarkerCategory }
+
+function saveMarkerDraft(markerId: string, note: string, category: MarkerCategory): void {
+  try {
+    // Don't pin empty drafts — they're indistinguishable from "no draft" at
+    // restore time, and clutter localStorage with stale keys. The clear
+    // helper handles success-save cleanup; this just keeps junk out.
+    if (!note.trim() && category === null) {
+      localStorage.removeItem(`${MARKER_DRAFT_KEY_PREFIX}${markerId}`);
+      return;
+    }
+    localStorage.setItem(`${MARKER_DRAFT_KEY_PREFIX}${markerId}`, JSON.stringify({ note, category }));
+  } catch { /* swallow — localStorage unavailable */ }
+}
+
+function loadMarkerDraft(markerId: string): MarkerDraft | null {
+  try {
+    const raw = localStorage.getItem(`${MARKER_DRAFT_KEY_PREFIX}${markerId}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { note?: unknown; category?: unknown };
+    if (typeof parsed.note !== "string") return null;
+    let category: MarkerCategory = null;
+    if (parsed.category === "sound" || parsed.category === "movement" || parsed.category === "felt") {
+      category = parsed.category;
+    }
+    return { note: parsed.note, category };
+  } catch { return null; }
+}
+
+function clearMarkerDraft(markerId: string): void {
+  try { localStorage.removeItem(`${MARKER_DRAFT_KEY_PREFIX}${markerId}`); }
+  catch { /* swallow */ }
+}
+
 
 interface DeviceSampleRow {
   timestamp: string;
@@ -168,6 +207,12 @@ export function Review() {
   // editor, d dismisses, Esc closes. Distinct from `flashMarkerId` (which
   // is a one-shot pulse) because the focus persists between key presses.
   const [focusedMarkerId, setFocusedMarkerId] = useState<string | null>(null);
+  // Bulk selection mode — when on, each marker row shows a checkbox and a
+  // toolbar surfaces "Set category" + "Dismiss" actions over the selection.
+  // Shift-click extends the range from the last clicked checkbox.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedMarkerIds, setSelectedMarkerIds] = useState<Set<string>>(() => new Set());
+  const [lastClickedMarkerId, setLastClickedMarkerId] = useState<string | null>(null);
   const [timeline, setTimeline] = useState<DeviceTimeline | null>(null);
 
   useEffect(() => {
@@ -348,12 +393,25 @@ export function Review() {
   // Open the inline editor for a marker — pre-seed the draft from the
   // marker's current values so an operator who just wants to fix the
   // category doesn't have to re-type the note (and vice versa).
+  //
+  // Restores any in-flight draft from localStorage first — if the operator
+  // closed the editor mid-edit (or accidentally navigated away), the next
+  // open re-hydrates so the half-typed note isn't lost.
   const openMarkerEditor = useCallback((m: MarkerView) => {
     setEditingMarkerId(m.id);
-    setDraftNote(m.note ?? "");
-    setDraftCategory(m.category);
+    const draft = loadMarkerDraft(m.id);
+    if (draft) {
+      setDraftNote(draft.note);
+      setDraftCategory(draft.category);
+    } else {
+      setDraftNote(m.note ?? "");
+      setDraftCategory(m.category);
+    }
   }, []);
 
+  // Closing the editor without saving keeps the draft in localStorage so
+  // the next open re-hydrates. Use clearMarkerDraft to drop it explicitly
+  // (success-save / dismiss paths).
   const closeMarkerEditor = useCallback(() => {
     setEditingMarkerId(null);
     setDraftNote("");
@@ -371,6 +429,7 @@ export function Review() {
       setMarkers((cur) => cur.map((m) =>
         m.id === markerId ? { ...m, note: trimmed || null, category: draftCategory } : m,
       ));
+      clearMarkerDraft(markerId);
       closeMarkerEditor();
     } catch { /* swallow — audit append failures are surfaced via the chain banner */ }
   }, [draftNote, draftCategory, closeMarkerEditor]);
@@ -383,9 +442,87 @@ export function Review() {
         payload: { marker_id: markerId },
       });
       setMarkers((cur) => cur.filter((m) => m.id !== markerId));
+      clearMarkerDraft(markerId);
       if (editingMarkerId === markerId) closeMarkerEditor();
     } catch { /* swallow */ }
   }, [editingMarkerId, closeMarkerEditor]);
+
+  // Persist the draft note + category to localStorage whenever they change
+  // while an editor is open. Debounce-free — typing latency on a small
+  // payload (note + category) is negligible. Keeps the editor recoverable
+  // across page reloads as well as nav.
+  useEffect(() => {
+    if (!editingMarkerId) return;
+    saveMarkerDraft(editingMarkerId, draftNote, draftCategory);
+  }, [editingMarkerId, draftNote, draftCategory]);
+
+  // Toggle a marker's selection. Shift-click extends the selection range
+  // from the last-clicked marker to the current one across the visible
+  // (filtered) list — matches the convention every file picker uses.
+  const toggleMarkerSelection = useCallback((markerId: string, shiftKey: boolean) => {
+    setSelectedMarkerIds((prev) => {
+      const next = new Set(prev);
+      const visible = markers.filter((m) => matchesMarkerFilter(m, markerCategoryFilter));
+      if (shiftKey && lastClickedMarkerId) {
+        const a = visible.findIndex((m) => m.id === lastClickedMarkerId);
+        const b = visible.findIndex((m) => m.id === markerId);
+        if (a >= 0 && b >= 0) {
+          const [lo, hi] = a < b ? [a, b] : [b, a];
+          for (let i = lo; i <= hi; i += 1) next.add(visible[i].id);
+          return next;
+        }
+      }
+      if (next.has(markerId)) next.delete(markerId);
+      else next.add(markerId);
+      return next;
+    });
+    setLastClickedMarkerId(markerId);
+  }, [markers, markerCategoryFilter, lastClickedMarkerId]);
+
+  // Apply a category to every selected marker — one audit entry per marker
+  // so the chain captures each change individually. Optimistic local state
+  // update; failures are best-effort surfaced via the chain banner.
+  const bulkSetCategory = useCallback(async (category: MarkerCategory) => {
+    if (selectedMarkerIds.size === 0) return;
+    const ids = Array.from(selectedMarkerIds);
+    for (const id of ids) {
+      try {
+        await appendAuditEntry({
+          actor: "user",
+          kind: "marker.annotated",
+          payload: { marker_id: id, note: null, category },
+        });
+      } catch { /* continue — chain banner surfaces failures */ }
+    }
+    setMarkers((cur) => cur.map((m) => (selectedMarkerIds.has(m.id) ? { ...m, category } : m)));
+    setSelectedMarkerIds(new Set());
+    setSelectMode(false);
+  }, [selectedMarkerIds]);
+
+  // Dismiss every selected marker — same pattern, one audit entry each.
+  const bulkDismiss = useCallback(async () => {
+    if (selectedMarkerIds.size === 0) return;
+    const ids = Array.from(selectedMarkerIds);
+    for (const id of ids) {
+      try {
+        await appendAuditEntry({
+          actor: "user",
+          kind: "marker.dismissed",
+          payload: { marker_id: id },
+        });
+        clearMarkerDraft(id);
+      } catch { /* continue */ }
+    }
+    setMarkers((cur) => cur.filter((m) => !selectedMarkerIds.has(m.id)));
+    setSelectedMarkerIds(new Set());
+    setSelectMode(false);
+  }, [selectedMarkerIds]);
+
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false);
+    setSelectedMarkerIds(new Set());
+    setLastClickedMarkerId(null);
+  }, []);
 
   // Keyboard shortcuts for power-use review. j/ArrowDown + k/ArrowUp navigate
   // through the filtered markers list; e opens the editor on the focused
@@ -733,10 +870,59 @@ export function Review() {
                     {" "}· <kbd>j</kbd>/<kbd>k</kbd> · <kbd>e</kbd> · <kbd>d</kbd>
                   </span>
                 )}
+                {markers.length > 1 && (
+                  <button
+                    type="button"
+                    className={r.selectModeBtn}
+                    onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+                    title={selectMode ? "Exit select mode" : "Pick multiple markers to recategorise or dismiss in one go"}
+                  >
+                    {selectMode ? "Done" : "Select"}
+                  </button>
+                )}
               </h2>
             );
           })()}
         </header>
+        {selectMode && (
+          <div className={r.bulkToolbar} role="toolbar" aria-label="Bulk marker actions">
+            <span className={r.bulkCount}>
+              {selectedMarkerIds.size === 0
+                ? "No markers selected"
+                : `${selectedMarkerIds.size} selected`}
+            </span>
+            <div className={r.bulkActions}>
+              <span className={r.bulkActionsLabel}>Set category:</span>
+              {MARKER_CATEGORIES.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  className={r.bulkChip}
+                  onClick={() => void bulkSetCategory(c.id)}
+                  disabled={selectedMarkerIds.size === 0}
+                >
+                  {c.label}
+                </button>
+              ))}
+              <button
+                type="button"
+                className={r.bulkChip}
+                onClick={() => void bulkSetCategory(null)}
+                disabled={selectedMarkerIds.size === 0}
+              >
+                Untagged
+              </button>
+              <button
+                type="button"
+                className={r.bulkDismiss}
+                onClick={() => void bulkDismiss()}
+                disabled={selectedMarkerIds.size === 0}
+              >
+                Dismiss ×{selectedMarkerIds.size}
+              </button>
+            </div>
+          </div>
+        )}
         {markers.length > 0 && (
           <div className={r.markerChipRow}>
             <button
@@ -783,14 +969,30 @@ export function Review() {
                 const isEditing = editingMarkerId === m.id;
                 const isFlashed = flashMarkerId === m.id;
                 const isFocused = focusedMarkerId === m.id;
+                const isSelected = selectedMarkerIds.has(m.id);
                 return (
                   <li
                     key={m.id}
                     data-marker-id={m.id}
-                    className={`${r.markerRow} ${isFlashed ? r.markerRowFlash : ""} ${isFocused ? r.markerRowFocused : ""}`.trim()}
+                    className={`${r.markerRow} ${isFlashed ? r.markerRowFlash : ""} ${isFocused ? r.markerRowFocused : ""} ${isSelected ? r.markerRowSelected : ""}`.trim()}
                   >
                     <div className={r.incrementRow}>
-                      <span className={r.incrementSeq}>●</span>
+                      {selectMode ? (
+                        <input
+                          type="checkbox"
+                          className={r.markerRowCheckbox}
+                          checked={isSelected}
+                          onChange={(e) => toggleMarkerSelection(m.id, (e.nativeEvent as MouseEvent).shiftKey)}
+                          onClick={(e) => {
+                            // shift-click on the actual checkbox reaches us via
+                            // change/click; we also support the row label below.
+                            if (e.shiftKey) toggleMarkerSelection(m.id, true);
+                          }}
+                          aria-label={`Select marker ${m.elapsedLabel ?? ""}`}
+                        />
+                      ) : (
+                        <span className={r.incrementSeq}>●</span>
+                      )}
                       <span className={r.incrementChannel}>{m.elapsedLabel ?? "—"}</span>
                       <span className={r.incrementMath}>{m.title}</span>
                       {m.category && (

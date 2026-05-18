@@ -66,6 +66,10 @@ import { useOvilus } from "../lib/itc/useOvilus";
 import { Navigate, useNavigate } from "react-router-dom";
 import s from "./CameraScreen.module.css";
 
+/** localStorage key for the watchdog snooze deadline (ms epoch). Versioned
+ *  so a future schema change can skip the legacy value cleanly. */
+const SNOOZE_STORAGE_KEY = "ss-watchdog-snooze-until-v1";
+
 // ── Dock button icons ──────────────────────────────────────────────────────
 // Slim dock holds: Scenes (text), Settings, ScreenRec, Clip Rec, Flip, Torch.
 // Viewport gestures:
@@ -532,6 +536,14 @@ export function CameraScreen() {
   const storageSamplesRef = useRef<{ value: number; ts: string }[]>([]);
   const STORAGE_SAMPLE_BUFFER = 20;
   const [storageProjectionMinutes, setStorageProjectionMinutes] = useState<number | null>(null);
+  // Latest battery/storage readings the watchdog observed — drives the
+  // always-on device-state HUD chip. Stored as integers/booleans so React
+  // doesn't re-render on micro-float jitter; only meaningful changes propagate.
+  const [hudBatteryPct, setHudBatteryPct] = useState<number | null>(null);
+  const [hudBatteryCharging, setHudBatteryCharging] = useState(false);
+  const [hudStorageMb, setHudStorageMb] = useState<number | null>(null);
+  const [hudBatteryWarn, setHudBatteryWarn] = useState(false);
+  const [hudStorageWarn, setHudStorageWarn] = useState(false);
   // Watchdog snooze — when set in the future, tick() skips the toast-fire
   // path entirely until the timestamp has passed. Lighter-touch than the
   // Setup-level suppression toggle: suppress is "stop nagging me about
@@ -541,14 +553,35 @@ export function CameraScreen() {
   //
   // State holds the deadline so the HUD chip ("Snoozed for 8m") can render;
   // the parallel ref is what the watchdog tick reads at fire time without
-  // re-binding the 60s interval on every state update.
-  const [watchdogSnoozeUntil, setWatchdogSnoozeUntil] = useState<number | null>(null);
+  // re-binding the 60s interval on every state update. The deadline is also
+  // mirrored to localStorage so a navigation away (Setup, Review) and back
+  // doesn't reset the snooze — operators rely on it persisting through the
+  // 10-minute window they asked for.
+  const [watchdogSnoozeUntil, setWatchdogSnoozeUntil] = useState<number | null>(() => {
+    try {
+      const stored = localStorage.getItem(SNOOZE_STORAGE_KEY);
+      if (!stored) return null;
+      const parsed = Number(stored);
+      if (!Number.isFinite(parsed)) return null;
+      // A stored deadline in the past is stale — treat as no snooze and
+      // tidy the storage so the chip doesn't briefly flicker on mount.
+      if (parsed <= Date.now()) {
+        localStorage.removeItem(SNOOZE_STORAGE_KEY);
+        return null;
+      }
+      return parsed;
+    } catch { return null; }
+  });
   const watchdogSnoozeUntilRef = useRef<number | null>(null);
   useEffect(() => { watchdogSnoozeUntilRef.current = watchdogSnoozeUntil; }, [watchdogSnoozeUntil]);
   // Auto-clear when the snooze deadline passes so the chip vanishes without
   // a click. One setTimeout per snooze — cleaner than polling every tick.
   useEffect(() => {
-    if (watchdogSnoozeUntil == null) return;
+    if (watchdogSnoozeUntil == null) {
+      try { localStorage.removeItem(SNOOZE_STORAGE_KEY); } catch { /* swallow */ }
+      return;
+    }
+    try { localStorage.setItem(SNOOZE_STORAGE_KEY, String(watchdogSnoozeUntil)); } catch { /* swallow */ }
     const remaining = watchdogSnoozeUntil - Date.now();
     if (remaining <= 0) { setWatchdogSnoozeUntil(null); return; }
     const h = window.setTimeout(() => setWatchdogSnoozeUntil(null), remaining);
@@ -600,6 +633,11 @@ export function CameraScreen() {
       watchdogSnoozeUntilRef.current = null;
       setWatchdogSnoozeUntil(null);
       setSessionMarkerCount(0);
+      setHudBatteryPct(null);
+      setHudBatteryCharging(false);
+      setHudStorageMb(null);
+      setHudBatteryWarn(false);
+      setHudStorageWarn(false);
       return;
     }
     const tick = async () => {
@@ -681,11 +719,33 @@ export function CameraScreen() {
             setBatteryProjectionMinutes(null);
           }
         }
+        // Always update the HUD chip from the raw report — even when the
+        // operator has suppressed toasts for a check, they still want to see
+        // the live readings. Comparing-before-setting keeps React from re-
+        // rendering on float jitter (battery levels arrive as 0.83000004 etc).
+        if (battery?.data?.batteryLevel != null) {
+          const pct = Math.round(battery.data.batteryLevel * 100);
+          const charging = battery.data.batteryCharging === true;
+          setHudBatteryPct((prev) => (prev === pct ? prev : pct));
+          setHudBatteryCharging((prev) => (prev === charging ? prev : charging));
+        }
+        setHudBatteryWarn((prev) => {
+          const next = report.checks.some((c) => c.id === "battery" && c.level !== "ok");
+          return prev === next ? prev : next;
+        });
         // Update the storage projection buffer regardless of investigation
         // state — same rationale as battery; the toast wants an ETA even on
         // a not-yet-started session. Storage projects in MB rather than
         // bytes to stay readable in the buffer + drainPerMinute.
         const storageCheck = raw.checks.find((c) => c.id === "storage");
+        if (storageCheck?.data?.storageFreeBytes != null) {
+          const mb = Math.round(storageCheck.data.storageFreeBytes / (1024 * 1024));
+          setHudStorageMb((prev) => (prev === mb ? prev : mb));
+        }
+        setHudStorageWarn((prev) => {
+          const next = report.checks.some((c) => c.id === "storage" && c.level !== "ok");
+          return prev === next ? prev : next;
+        });
         if (storageCheck?.data?.storageFreeBytes != null) {
           const sample = {
             value: storageCheck.data.storageFreeBytes / (1024 * 1024),
@@ -1067,6 +1127,38 @@ export function CameraScreen() {
                 style={{ transform: `scaleX(${Math.min(1, Math.max(0, audioRms))})` }}
               />
             </div>
+          </div>
+        )}
+
+        {/* ── Always-on device-state chip — sits under the mic meter and
+             shows the live battery + free-storage readings the watchdog
+             observed on the last tick. Tone shifts to amber/red when a
+             check is failing, so the operator picks up trouble without
+             waiting for the next toast. */}
+        {running && (hudBatteryPct != null || hudStorageMb != null) && (
+          <div
+            className={`${s.deviceChip} ${hudBatteryWarn || hudStorageWarn ? s.deviceChipWarn : ""}`.trim()}
+            aria-label="Device state"
+          >
+            {hudBatteryPct != null && (
+              <span className={`${s.deviceChipReading} ${hudBatteryWarn ? s.deviceChipReadingWarn : ""}`.trim()}>
+                {hudBatteryCharging && <span className={s.deviceChipIcon} aria-hidden="true">⚡</span>}
+                <span className={s.deviceChipValue}>{hudBatteryPct}%</span>
+              </span>
+            )}
+            {hudBatteryPct != null && hudStorageMb != null && (
+              <span className={s.deviceChipSep} aria-hidden="true">·</span>
+            )}
+            {hudStorageMb != null && (
+              <span className={`${s.deviceChipReading} ${hudStorageWarn ? s.deviceChipReadingWarn : ""}`.trim()}>
+                <span className={s.deviceChipValue}>
+                  {hudStorageMb >= 1024
+                    ? `${(hudStorageMb / 1024).toFixed(1)}GB`
+                    : `${hudStorageMb}MB`}
+                </span>
+                <span className={s.deviceChipUnit}>free</span>
+              </span>
+            )}
           </div>
         )}
 

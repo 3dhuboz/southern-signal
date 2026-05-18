@@ -94,6 +94,11 @@ export function AuditLogInspector() {
     | { snapshot: null }
     | null
   >(null);
+  // Session-range filter — set via the "Show session events" button on a
+  // session_start row. Restricts the visible list to entries inside that
+  // session window so the reviewer can audit one capture run without
+  // scrolling past noise from neighbours.
+  const [sessionFilter, setSessionFilter] = useState<{ startSeq: number; endSeq: number } | null>(null);
   // Persist the operator's filter across reloads. Empty string clears storage
   // so we don't keep a stale value pinned forever.
   useEffect(() => {
@@ -232,15 +237,32 @@ export function AuditLogInspector() {
     setExportComparison({ snapshot, comparison, ranAt: new Date().toISOString() });
   }, []);
 
+  // Resolve the session window starting at a given session_start seq: find
+  // the next session_stop seq strictly greater than it, defaulting to the
+  // current chain tip when no stop is recorded (live or crashed session).
+  const showSessionEvents = useCallback(async (startSeq: number) => {
+    const stops = await query<{ seq: number }>(
+      "SELECT seq FROM audit_log WHERE kind = 'event.session_stop' AND seq > ? ORDER BY seq ASC LIMIT 1",
+      [startSeq],
+    );
+    const max = await query<{ n: number }>("SELECT MAX(seq) AS n FROM audit_log");
+    const endSeq = stops[0]?.seq ?? max[0]?.n ?? startSeq;
+    setSessionFilter({ startSeq, endSeq });
+    setFilter("");
+  }, []);
+
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    if (!q) return entries;
-    return entries.filter((e) =>
+    const ranged = sessionFilter
+      ? entries.filter((e) => e.seq >= sessionFilter.startSeq && e.seq <= sessionFilter.endSeq)
+      : entries;
+    if (!q) return ranged;
+    return ranged.filter((e) =>
       e.kind.toLowerCase().includes(q)
       || e.actor.toLowerCase().includes(q)
       || e.payload_json.toLowerCase().includes(q),
     );
-  }, [filter, entries]);
+  }, [filter, entries, sessionFilter]);
 
   const uniqueKinds = useMemo(() => {
     const set = new Set<string>();
@@ -482,6 +504,19 @@ export function AuditLogInspector() {
         </div>
       )}
 
+      {sessionFilter && (
+        <div className={s.sessionRangeBanner} role="status">
+          <span>
+            Viewing session events · seq <code>{sessionFilter.startSeq}</code> → <code>{sessionFilter.endSeq}</code> ({filtered.length} of {entries.length} entries)
+          </span>
+          <button
+            type="button"
+            className={s.sessionRangeClear}
+            onClick={() => setSessionFilter(null)}
+          >Show all</button>
+        </div>
+      )}
+
       <ul className={s.list} ref={listRef}>
         {filtered.map((e) => {
           const preflightSummary = preflightSummaries.get(e.seq) ?? null;
@@ -497,6 +532,15 @@ export function AuditLogInspector() {
                 <span className={s.rowKind}>{e.kind}</span>
                 <span className={s.rowActor}>{e.actor}</span>
                 <span className={s.rowTs}>{new Date(e.ts_utc).toLocaleString()}</span>
+                {e.kind === "event.session_start" && (
+                  <button
+                    type="button"
+                    className={s.rowLinkBtn}
+                    title="Filter to entries between this session_start and the next session_stop"
+                    aria-label={`Show events in session starting at seq ${e.seq}`}
+                    onClick={() => { void showSessionEvents(e.seq); }}
+                  >📂</button>
+                )}
                 <button
                   type="button"
                   className={s.rowLinkBtn}

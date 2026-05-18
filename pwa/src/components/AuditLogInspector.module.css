@@ -307,6 +307,43 @@
 }
 .rowLinkBtn:hover { color: var(--signal); border-color: var(--signal-dim); }
 
+/* Session-range banner — surfaces when "Show session events" is active so
+   the reviewer doesn't forget they're looking at a slice and wonder why
+   half the chain is missing. Clear button drops the range back to "all". */
+.sessionRangeBanner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  margin-bottom: 6px;
+  background: color-mix(in srgb, var(--signal) 12%, var(--bg-elevated));
+  border: 1px solid var(--signal-dim);
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-primary);
+}
+.sessionRangeBanner code {
+  background: var(--bg-inset);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.sessionRangeClear {
+  appearance: none;
+  margin-left: auto;
+  padding: 2px 10px;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.sessionRangeClear:hover { color: var(--signal); border-color: var(--signal-dim); }
+
 /* One-line summary surfaced for session_start rows — battery %, free MB,
    permission states pulled from the embedded preflight snapshot so the
    operator triages without expanding the JSON payload. */

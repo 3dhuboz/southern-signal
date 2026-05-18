@@ -437,6 +437,47 @@
   pointer-events: none;
 }
 
+/* Always-on device-state chip — sits just under the mic meter. Glanceable
+   battery % + free-storage readout that's always present during a session,
+   not just when a watchdog toast fires. Tone shifts when the watchdog is
+   flagging either check so the operator picks up trouble before the next
+   tick if they happen to look. */
+.deviceChip {
+  position: absolute;
+  top: calc(80px + var(--safe-top, 0px));
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  color: #e8e8e8;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.4px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  pointer-events: none;
+  z-index: 5;
+}
+.deviceChipWarn {
+  background: rgba(212, 192, 38, 0.16);
+  border-color: rgba(212, 192, 38, 0.55);
+  color: #ffe089;
+}
+.deviceChipReading {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+}
+.deviceChipReadingWarn { color: #ff9d3a; }
+.deviceChipIcon { font-size: 9px; opacity: 0.9; }
+.deviceChipValue { font-weight: 700; letter-spacing: 0.5px; }
+.deviceChipUnit  { opacity: 0.7; font-size: 9px; text-transform: uppercase; letter-spacing: 0.7px; }
+.deviceChipSep   { opacity: 0.5; }
+
 /* Snooze indicator — sits just above the marker pill. Same chrome, but
    tinted with the warning palette so the operator notices it. Tap to
    unsnooze; auto-vanishes when the 10-minute window elapses. */

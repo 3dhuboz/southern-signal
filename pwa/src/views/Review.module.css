@@ -379,6 +379,99 @@
   box-shadow: -3px 0 0 0 var(--signal);
 }
 
+/* Bulk-select toolbar — sits between the section header and the marker
+   list when select mode is on. Inline action chips so a reviewer can
+   recategorise / dismiss without leaving the keyboard or mouse focus. */
+.selectModeBtn {
+  appearance: none;
+  margin-left: 10px;
+  padding: 2px 10px;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.selectModeBtn:hover { color: var(--signal); border-color: var(--signal-dim); }
+
+.bulkToolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  margin: 6px 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+.bulkCount {
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.6px;
+}
+.bulkActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.bulkActionsLabel {
+  color: var(--text-muted);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  font-size: 10px;
+}
+.bulkChip {
+  appearance: none;
+  padding: 3px 10px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.bulkChip:hover:not(:disabled) { color: var(--signal); border-color: var(--signal-dim); }
+.bulkChip:disabled { opacity: 0.4; cursor: not-allowed; }
+.bulkDismiss {
+  appearance: none;
+  margin-left: auto;
+  padding: 3px 10px;
+  background: transparent;
+  border: 1px solid var(--danger);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--danger);
+  cursor: pointer;
+}
+.bulkDismiss:hover:not(:disabled) { background: var(--danger-wash); }
+.bulkDismiss:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Selected-row highlight + checkbox sizing — readable on touch + mouse. */
+.markerRowSelected > .incrementRow {
+  background: color-mix(in srgb, var(--signal) 14%, var(--bg-elevated));
+  border-color: var(--signal-dim);
+}
+.markerRowCheckbox {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--signal);
+  cursor: pointer;
+}
+
 /* Keyboard shortcut hint appended to the marker section header — small
    inline kbd glyphs styled to match the rest of the mono-font UI. */
 .kbdHint {
