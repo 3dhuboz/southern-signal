@@ -75,6 +75,32 @@ function extractInvestigationId(input: EnqueueInput): string | null {
   return typeof ref === "string" ? ref : null;
 }
 
+// ---------------------------------------------------------------------------
+// Audit-logger injection.
+//
+// queue.ts and auditLog.ts form a cycle (auditLog.ts statically imports
+// `enqueue` here; this module needs to append audit entries when it skips a
+// row for cultural-sensitivity reasons). To keep the cycle from forcing a
+// dynamic import (which the bundler then flags as INEFFECTIVE_DYNAMIC_IMPORT
+// because auditLog is already in the eager index chunk), we accept an
+// `appendAuditEntry` function via setter-injection. auditLog.ts wires itself
+// in at module-init time via the `setAuditLogger` call at the bottom of that
+// file. Until injection happens (e.g. in unit tests that import queue.ts
+// without auditLog.ts), logSkip becomes a no-op + console.warn.
+// ---------------------------------------------------------------------------
+
+type AuditLogger = (input: {
+  actor: string;
+  kind: string;
+  payload: Record<string, unknown>;
+}) => Promise<unknown>;
+
+let auditLogger: AuditLogger | null = null;
+
+export function setAuditLogger(fn: AuditLogger | null): void {
+  auditLogger = fn;
+}
+
 async function logSkip(
   input: EnqueueInput,
   investigationId: string,
@@ -83,10 +109,12 @@ async function logSkip(
   // Append a hash-chained audit entry recording the sync skip. The audit
   // module re-enters enqueue() for its own kind="audit" row, but those are
   // never gated (no investigation_id in payload) so there is no recursion.
-  // Lazy-import to avoid a circular module-load.
+  if (!auditLogger) {
+    console.warn(`[sync] audit logger not registered; cannot record ${auditKind}`);
+    return;
+  }
   try {
-    const { appendAuditEntry } = await import("../db/auditLog");
-    await appendAuditEntry({
+    await auditLogger({
       actor: "system",
       kind: auditKind,
       payload: {

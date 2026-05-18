@@ -11,7 +11,12 @@ vi.mock("../db/db", () => ({ query: queryFn, exec: execFn }));
 vi.mock("../db/auditLog", () => ({ appendAuditEntry: auditFn }));
 vi.mock("../preferences", () => ({ getPreferences: prefsFn }));
 
-import { clearSensitivityCache, enqueue } from "./queue";
+import { clearSensitivityCache, enqueue, setAuditLogger } from "./queue";
+
+// Wire the audit logger directly. In production this happens at module-init
+// time inside auditLog.ts; under test, auditLog.ts is mocked, so we register
+// the mock here.
+setAuditLogger(auditFn);
 
 const PREFS_PRISTINE = { globalCulturalSensitivityFlag: false } as const;
 

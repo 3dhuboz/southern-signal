@@ -7,7 +7,7 @@ const { queryFn, execFn, enqueueFn } = vi.hoisted(() => ({
 }));
 
 vi.mock("./db", () => ({ query: queryFn, exec: execFn }));
-vi.mock("../sync/queue", () => ({ enqueue: enqueueFn }));
+vi.mock("../sync/queue", () => ({ enqueue: enqueueFn, setAuditLogger: vi.fn() }));
 
 import { appendAuditEntry, verifyAuditChain } from "./auditLog";
 import { canonicalJson, sha256Hex } from "../forensic/canonicalJson";

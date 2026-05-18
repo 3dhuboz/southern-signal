@@ -11,7 +11,7 @@
  */
 
 import { exec, query } from "./db";
-import { enqueue } from "../sync/queue";
+import { enqueue, setAuditLogger } from "../sync/queue";
 import { canonicalJson, sha256Hex } from "../forensic/canonicalJson";
 
 const GENESIS_HASH = "0".repeat(64);
@@ -72,6 +72,12 @@ export async function appendAuditEntry({ actor, kind, payload, ts }: AuditAppend
 
   return { seq, ts_utc: tsUtc, prev_hash: prevHash, entry_hash: entryHash };
 }
+
+// Register ourselves as the audit logger for queue.ts. This breaks the cycle
+// that previously required queue.ts to dynamically import this module (which
+// the bundler flagged as INEFFECTIVE_DYNAMIC_IMPORT because we're already in
+// the eager index chunk via 20+ statically-importing callers).
+setAuditLogger(appendAuditEntry);
 
 /** Walk the entire chain and verify every link. Returns null on success or the seq of the broken entry. */
 export async function verifyAuditChain(): Promise<{ ok: true } | { ok: false; brokenAtSeq: number; reason: string }> {
