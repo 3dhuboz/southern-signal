@@ -147,6 +147,62 @@
 .markerPickerBtn:hover  { background: rgba(34, 197, 94, 0.5); }
 .markerPickerBtn:active { transform: scale(0.94); }
 
+/* Wrapper around the picker so the quick-tag row sits above the original
+   category row in the same vertical column. The wrapper itself doesn't
+   capture pointer events — the camera viewport still gets gestures around
+   the chips. */
+.markerPickerWrap {
+  position: absolute;
+  top: calc(86px + var(--safe-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+  z-index: 6;
+  animation: markerToastIn 180ms ease-out;
+}
+/* When wrapped, the inner picker should no longer position itself — its
+   parent already handles layout. */
+.markerPickerWrap .markerPicker {
+  position: static;
+  transform: none;
+  animation: none;
+}
+.markerQuickTags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  max-width: min(92vw, 480px);
+}
+.markerQuickTagBtn {
+  pointer-events: auto;
+  appearance: none;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  padding: 5px 11px;
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  cursor: pointer;
+  transition: background 100ms ease, transform 80ms ease, border-color 100ms ease;
+}
+.markerQuickTagBtn:hover  { background: rgba(34, 197, 94, 0.45); border-color: rgba(34, 197, 94, 0.6); }
+.markerQuickTagBtn:active { transform: scale(0.93); }
+/* Per-category accent dot so the operator's eye can register which bucket
+   the chip will land in without parsing the label. */
+.markerQuickTagBtn[data-category="sound"]    { border-left: 3px solid rgba(56, 189, 248, 0.7); }
+.markerQuickTagBtn[data-category="movement"] { border-left: 3px solid rgba(168, 85, 247, 0.7); }
+.markerQuickTagBtn[data-category="felt"]     { border-left: 3px solid rgba(251, 191, 36, 0.7); }
+
 /* ── Watchdog toast ────────────────────────────────────────────────────────
    Mid-session degradation warning (storage running out, battery dropped
    under 20%). Anchored top-center BELOW the marker toast zone so it
@@ -414,6 +470,87 @@
   max-width: 60vw;
 }
 
+/* ── First-run welcome card ───────────────────────────────────────────────
+   Sits centered over the camera viewport when the operator hasn't yet
+   dismissed it. Wraps the four discoverable gestures so a fresh install
+   doesn't have to find them by trial. pointerEvents:auto on the card
+   itself; the surrounding viewport still gets gestures for double-tap. */
+.welcomeCard {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 8;
+  pointer-events: auto;
+  width: min(86vw, 380px);
+  padding: 14px 16px;
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 14px;
+  color: #fff;
+  animation: markerToastIn 220ms ease-out;
+}
+.welcomeHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.welcomeEyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+.welcomeDismiss {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  opacity: 0.7;
+  padding: 4px 6px;
+  line-height: 1;
+}
+.welcomeDismiss:hover { opacity: 1; }
+.welcomeList {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.welcomeList li::before {
+  content: "·";
+  margin-right: 6px;
+  opacity: 0.55;
+}
+.welcomeList strong { font-weight: 700; color: #fff; }
+.welcomeGotIt {
+  appearance: none;
+  width: 100%;
+  background: rgba(34, 197, 94, 0.85);
+  border: 1px solid rgba(34, 197, 94, 0.9);
+  border-radius: 8px;
+  padding: 8px 14px;
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 100ms ease;
+}
+.welcomeGotIt:hover { background: rgba(34, 197, 94, 1); }
+
 .cornerPillText {
   text-transform: uppercase;
   line-height: 1;
@@ -531,10 +668,16 @@
    well clear of the BIG SHUTTER and dock buttons. Glanceable but quiet so
    it doesn't compete with the REC pill for the operator's attention. Tap
    to open Review where the editor lives. */
-.markerCountPill {
+/* Wrapper for the pill + its popover so absolute-positioned children share
+   the same anchor without each having to re-derive the offset. */
+.markerCountPillWrap {
   position: absolute;
   bottom: calc(120px + var(--safe-bottom, 0px));
   left: 12px;
+  z-index: 5;
+}
+.markerCountPill {
+  position: static;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -568,6 +711,68 @@
   letter-spacing: 1.1px;
   opacity: 0.78;
 }
+
+/* Pill popover — opens above the pill on tap, shows per-category breakdown
+   + a Review CTA. Anchored to the wrapper so it stays glued to the pill
+   regardless of where the viewport is sized. */
+.markerCountPopover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 180px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  color: #f4f4f4;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  z-index: 6;
+  animation: markerToastIn 140ms ease-out;
+}
+.markerCountList {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.markerCountList li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.markerCountDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.65);
+}
+.markerCountDot[data-category="sound"]    { background: rgba(56, 189, 248, 0.85); }
+.markerCountDot[data-category="movement"] { background: rgba(168, 85, 247, 0.85); }
+.markerCountDot[data-category="felt"]     { background: rgba(251, 191, 36, 0.85); }
+.markerCountDot[data-category="untagged"] { background: rgba(148, 163, 184, 0.65); }
+.markerCountReviewLink {
+  appearance: none;
+  width: 100%;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: var(--signal, #5DF2C7);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 100ms ease;
+}
+.markerCountReviewLink:hover { background: rgba(34, 197, 94, 0.18); }
 
 .micMeterBar {
   width: 100%;

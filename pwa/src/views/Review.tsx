@@ -85,6 +85,10 @@ interface MarkerView {
   sceneId: string | null;
   category: MarkerCategory;
   note: string | null;
+  /** Small JPEG dataUrl captured at marker-drop time. Null when the marker
+   *  was dropped without an active camera (audio-only scene, source not yet
+   *  decodable, or the marker pre-dates the thumbnail capture feature). */
+  thumbnailDataUrl: string | null;
 }
 
 const MARKER_CATEGORIES: { id: Exclude<MarkerCategory, null>; label: string }[] = [
@@ -214,6 +218,10 @@ export function Review() {
   const [selectedMarkerIds, setSelectedMarkerIds] = useState<Set<string>>(() => new Set());
   const [lastClickedMarkerId, setLastClickedMarkerId] = useState<string | null>(null);
   const [timeline, setTimeline] = useState<DeviceTimeline | null>(null);
+  // EVP captures for the most-recent investigation. Looked up once at load
+  // alongside markers so the summary card has a denominator that matches
+  // what's actually on disk for this case, not the global event count.
+  const [evpCaptureCount, setEvpCaptureCount] = useState(0);
 
   useEffect(() => {
     void (async () => {
@@ -285,17 +293,31 @@ export function Review() {
           // the original capture happened. The shared loader hits audit_log
           // once and folds latest-wins; dismissals are absorbing.
           const overrides = await loadMarkerOverrides();
+          // EVP capture count for the same case. One round-trip; the result
+          // feeds the Session summary card. Failure is non-fatal — the
+          // card just renders "0 captured" if the query errors.
+          try {
+            const evpRows = await query<{ n: number }>(
+              "SELECT COUNT(*) as n FROM evidence_events WHERE investigation_id = ? AND event_type = 'audio.evp_capture'",
+              [recentId],
+            );
+            setEvpCaptureCount(Number(evpRows[0]?.n ?? 0));
+          } catch { /* leave at 0 */ }
           setMarkers(rows
             .filter((row) => !overrides.dismissed.has(row.id))
             .map((row) => {
               let sceneId: string | null = null;
               let category: MarkerCategory = null;
+              let thumbnailDataUrl: string | null = null;
               if (row.metadata_json) {
                 try {
-                  const parsed = JSON.parse(row.metadata_json) as { sceneId?: unknown; category?: unknown };
+                  const parsed = JSON.parse(row.metadata_json) as { sceneId?: unknown; category?: unknown; thumbnailDataUrl?: unknown };
                   if (typeof parsed.sceneId === "string") sceneId = parsed.sceneId;
                   if (parsed.category === "sound" || parsed.category === "movement" || parsed.category === "felt") {
                     category = parsed.category;
+                  }
+                  if (typeof parsed.thumbnailDataUrl === "string" && parsed.thumbnailDataUrl.startsWith("data:image/")) {
+                    thumbnailDataUrl = parsed.thumbnailDataUrl;
                   }
                 } catch { /* ignore */ }
               }
@@ -308,12 +330,47 @@ export function Review() {
                 sceneId,
                 category: ann?.category !== undefined ? ann.category : category,
                 note: ann?.note ?? null,
+                thumbnailDataUrl,
               };
             }));
         }
       } catch { /* verdict card just won't render */ }
     })();
   }, []);
+
+  // At-a-glance session summary — counts by category, EVP captures, audit
+  // entries, and session duration derived from the device-state timeline.
+  // Computed inline because all the inputs are already in state; a memoised
+  // intermediate would be over-engineered for ~5 small reductions.
+  const sessionSummary = (() => {
+    const total = markers.length;
+    const byCategory: Record<"sound" | "movement" | "felt" | "untagged", number> = {
+      sound: 0, movement: 0, felt: 0, untagged: 0,
+    };
+    for (const m of markers) {
+      if (m.category === "sound") byCategory.sound += 1;
+      else if (m.category === "movement") byCategory.movement += 1;
+      else if (m.category === "felt") byCategory.felt += 1;
+      else byCategory.untagged += 1;
+    }
+    // Duration from the watchdog timeline — first and last device-state
+    // samples bracket the session. Empty / single-sample sessions show no
+    // duration (the chip simply omits). Audio-only sessions still have the
+    // EVP count and marker count even when the timeline is empty.
+    let durationLabel: string | null = null;
+    if (timeline?.startTs && timeline?.endTs && timeline.startTs !== timeline.endTs) {
+      try {
+        const ms = new Date(timeline.endTs).getTime() - new Date(timeline.startTs).getTime();
+        if (Number.isFinite(ms) && ms > 0) {
+          const totalSec = Math.round(ms / 1000);
+          const h = Math.floor(totalSec / 3600);
+          const m = Math.floor((totalSec % 3600) / 60);
+          durationLabel = h > 0 ? `${h}h ${m}m` : `${m}m`;
+        }
+      } catch { /* leave null */ }
+    }
+    return { total, byCategory, durationLabel };
+  })();
 
   const posteriorRows: PosteriorRow[] = entries
     .filter((e) => e.kind.startsWith("evidence."))
@@ -851,6 +908,46 @@ export function Review() {
         </div>
       )}
 
+      {/* Session summary card — a compact at-a-glance read on the most
+          recent investigation. Only renders when there's *something* to
+          summarise (markers, EVPs, or a measurable duration) so a brand-new
+          install doesn't see a stack of zeroes. */}
+      {(sessionSummary.total > 0 || evpCaptureCount > 0 || sessionSummary.durationLabel) && (
+        <div className={r.sessionSummary} aria-label="Most recent session summary">
+          <div className={r.sessionSummaryRow}>
+            <div className={r.sessionSummaryTile}>
+              <span className={r.sessionSummaryValue}>{sessionSummary.total}</span>
+              <span className={r.sessionSummaryLabel}>markers</span>
+            </div>
+            <div className={r.sessionSummaryTile}>
+              <span className={r.sessionSummaryValue}>{evpCaptureCount}</span>
+              <span className={r.sessionSummaryLabel}>EVP{evpCaptureCount === 1 ? "" : "s"}</span>
+            </div>
+            {sessionSummary.durationLabel && (
+              <div className={r.sessionSummaryTile}>
+                <span className={r.sessionSummaryValue}>{sessionSummary.durationLabel}</span>
+                <span className={r.sessionSummaryLabel}>duration</span>
+              </div>
+            )}
+            <div className={r.sessionSummaryTile}>
+              <span className={r.sessionSummaryValue}>{entries.length}</span>
+              <span className={r.sessionSummaryLabel}>chain entr{entries.length === 1 ? "y" : "ies"}</span>
+            </div>
+          </div>
+          {sessionSummary.total > 0 && (
+            <div className={r.sessionSummaryBreakdown}>
+              {(["sound", "movement", "felt", "untagged"] as const)
+                .filter((cat) => sessionSummary.byCategory[cat] > 0)
+                .map((cat) => (
+                  <span key={cat} className={r.sessionSummaryChip} data-category={cat}>
+                    {sessionSummary.byCategory[cat]} {cat}
+                  </span>
+                ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Moment markers — double-taps the operator dropped during capture.
           Latest case only; oldest cases are still searchable through the
           audit log if needed. Filter chips narrow by category — the
@@ -1018,6 +1115,14 @@ export function Review() {
                         {isEditing ? "Cancel" : "Edit"}
                       </button>
                     </div>
+                    {m.thumbnailDataUrl && !isEditing && (
+                      <img
+                        className={r.markerThumb}
+                        src={m.thumbnailDataUrl}
+                        alt={`Camera view at ${m.elapsedLabel ?? "marker drop"}`}
+                        loading="lazy"
+                      />
+                    )}
                     {m.note && !isEditing && (
                       <p className={r.markerNote}>{m.note}</p>
                     )}

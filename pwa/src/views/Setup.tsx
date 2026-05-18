@@ -831,6 +831,11 @@ function PreflightThresholdsPanel({
  * lives.
  */
 const WHATS_NEW_ITEMS: { title: string; where: string }[] = [
+  { title: "Marker thumbnail capture",                  where: "Camera screen — every marker drop snapshots a 160px JPEG of the live camera. Renders on the Review marker row alongside the elapsed-time tag." },
+  { title: "Quick-tag chips on the marker picker",      where: "Camera screen — after a double-tap, tap Cold spot / Footstep / Voice / Object moved / Touched to land a marker with category + note in one gesture." },
+  { title: "Session summary on Review",                 where: "Review → above Moment markers — markers, EVPs, duration, chain entries in tiles + per-category chips." },
+  { title: "First-run welcome card",                    where: "Camera screen — short overlay on first launch explaining double-tap, swipe-to-cycle, the scene pill, and the watchdog." },
+  { title: "Tap the marker pill for a breakdown",       where: "Camera HUD — the marker count pill now opens a popover showing per-category counts + an Open Review link." },
   { title: "Three new scenes — EVP, Outdoor, Interview", where: "HuntSetup → pick a scene. EVP + Interview auto-mount the forensic recorder; Outdoor tightens battery." },
   { title: "EVP recorder lives inside the scene",       where: "Camera screen — EVP / Spirit Box / Interview scenes float the compact recorder under the scene pill" },
   { title: "Snooze survives navigation",                where: "Camera screen — Snoozed window persists when you switch tabs or routes; clears on session end" },

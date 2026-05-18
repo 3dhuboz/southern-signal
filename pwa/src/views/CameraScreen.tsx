@@ -31,9 +31,10 @@ import { useLiveBroadcastState } from "../lib/system/liveBroadcast";
 import { usePushToTalk } from "../lib/audio/usePushToTalk";
 import { startVad, type VadHandle } from "../lib/audio/vad";
 import { useLongPress, useDoubleTap, useHorizontalSwipe, composeHandlers } from "../lib/gestures";
+import { CAMERA_WELCOME_KEY } from "../lib/version";
 import { resolvePreflightOverrides, runPreflight, type PreflightCheck, type PreflightLevel, type PreflightReport } from "../lib/system/preflight";
 import { formatTimeToEmpty, projectTimeToEmpty, projectTimeToZero, type BatterySample } from "../lib/system/batteryProjection";
-import { verifyAuditChain } from "../lib/db/auditLog";
+import { verifyAuditChain, appendAuditEntry } from "../lib/db/auditLog";
 import { usePwaInstall } from "../lib/system/usePwaInstall";
 import { useLiveNarrator } from "../lib/posterior/liveNarrator";
 import { LiveAnalyzer } from "../lib/audio/liveAnalyzer";
@@ -70,6 +71,33 @@ import s from "./CameraScreen.module.css";
 /** localStorage key for the watchdog snooze deadline (ms epoch). Versioned
  *  so a future schema change can skip the legacy value cleanly. */
 const SNOOZE_STORAGE_KEY = "ss-watchdog-snooze-until-v1";
+
+// Pre-canned quick-tag chips for the marker picker. Each lands a marker with
+// category + note in one tap. Module-scoped so the array isn't reallocated
+// per render — the picker is part of a long-lived HUD.
+type MarkerCat = "sound" | "movement" | "felt";
+const QUICK_TAGS: ReadonlyArray<{ label: string; category: MarkerCat }> = [
+  { label: "Cold spot",    category: "felt" },
+  { label: "Footstep",     category: "sound" },
+  { label: "Voice",        category: "sound" },
+  { label: "Object moved", category: "movement" },
+  { label: "Touched",      category: "felt" },
+];
+// Long-form category picker chips — same set as MARKER_CATEGORIES upstream
+// but module-scoped here so the picker JSX can map without re-declaring.
+const PICKER_CATEGORIES: ReadonlyArray<{ id: MarkerCat; label: string }> = [
+  { id: "sound",    label: "Sound" },
+  { id: "movement", label: "Movement" },
+  { id: "felt",     label: "Felt" },
+];
+// Marker breakdown rows for the HUD popover. Order matches reading priority:
+// the loudest signal types first, untagged last.
+const MARKER_BREAKDOWN: ReadonlyArray<{ id: "sound" | "movement" | "felt" | "untagged"; label: string }> = [
+  { id: "sound",    label: "sound" },
+  { id: "movement", label: "movement" },
+  { id: "felt",     label: "felt" },
+  { id: "untagged", label: "untagged" },
+];
 
 // ── Dock button icons ──────────────────────────────────────────────────────
 // Slim dock holds: Scenes (text), Settings, ScreenRec, Clip Rec, Flip, Torch.
@@ -232,6 +260,11 @@ export function CameraScreen() {
   const torchToggleRef  = useRef<(() => void) | null>(null);
   const refocusRef      = useRef<(() => void) | null>(null);
   const startCameraRef  = useRef<(() => Promise<void>) | null>(null);
+  // Snap a small JPEG thumbnail of the active camera frame on marker drop.
+  // LiveStreamView fills this in once the source <video> is decodable;
+  // commitMarker reads it synchronously so the dataUrl can flow into the
+  // audit chain via the marker's metadata payload.
+  const snapThumbnailRef = useRef<(() => string | null) | null>(null);
   const [cameraState, setCameraState] = useState({
     streamOn: false, whipConfigured: false,
     torchSupported: false, torchOn: false,
@@ -376,9 +409,51 @@ export function CameraScreen() {
   // so the operator knows their tag count without leaving the scene. Resets
   // on session start; bumps on every successful commitMarker call so an
   // auto-untag (after the picker timeout) counts the same as a category tap.
-  const [sessionMarkerCount, setSessionMarkerCount] = useState(0);
+  // Per-category breakdown for the HUD pill + popover. Total count is
+  // derived from these (sound + movement + felt + untagged) so we don't
+  // carry two pieces of state that can desync. Reset on session start.
+  const [sessionMarkerByCat, setSessionMarkerByCat] = useState<{ sound: number; movement: number; felt: number; untagged: number }>(
+    { sound: 0, movement: 0, felt: 0, untagged: 0 },
+  );
+  const sessionMarkerCount = sessionMarkerByCat.sound + sessionMarkerByCat.movement + sessionMarkerByCat.felt + sessionMarkerByCat.untagged;
+  // Pill popover open-state. Click pill → open; second click or outside
+  // pointer → close. Navigation to Review moves to an explicit "Open
+  // Review →" link inside the popover so an accidental swipe-on-pill
+  // doesn't yank the operator off the camera mid-session.
+  const [markerPillOpen, setMarkerPillOpen] = useState(false);
+  const markerPillWrapRef = useRef<HTMLDivElement | null>(null);
+  // Outside-pointer close — once the popover is open, any pointerdown that
+  // doesn't land inside the wrap dismisses it. Listener is short-lived
+  // (only attached while open) so it doesn't add a global handler for the
+  // 99% case where the popover is closed.
+  useEffect(() => {
+    if (!markerPillOpen) return;
+    const onPointer = (e: PointerEvent) => {
+      const wrap = markerPillWrapRef.current;
+      if (wrap && e.target instanceof Node && !wrap.contains(e.target)) {
+        setMarkerPillOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", onPointer);
+    return () => document.removeEventListener("pointerdown", onPointer);
+  }, [markerPillOpen]);
 
-  const commitMarker = useCallback((category: MarkerCategory) => {
+  // First-run helper card. Shows once on a fresh install (or after the
+  // version bump) and dismisses to localStorage. Hidden while a session is
+  // running so the operator's eye lands on the live feed, not onboarding
+  // copy — the dismissal still persists so it doesn't pop back when they
+  // end the session.
+  const [welcomeVisible, setWelcomeVisible] = useState<boolean>(() => {
+    try { return localStorage.getItem(CAMERA_WELCOME_KEY) == null; }
+    catch { return false; }
+  });
+  const dismissWelcome = useCallback(() => {
+    try { localStorage.setItem(CAMERA_WELCOME_KEY, String(Date.now())); }
+    catch { /* private mode — in-memory dismiss still works for the session */ }
+    setWelcomeVisible(false);
+  }, []);
+
+  const commitMarker = useCallback((category: MarkerCategory, note?: string) => {
     if (markerCommittedRef.current) return;
     const inv = session.current;
     if (!inv) return;
@@ -386,16 +461,40 @@ export function CameraScreen() {
     // race could leave the ref stuck true and suppress the next session's
     // marker commits until dropMarker reset it.
     markerCommittedRef.current = true;
-    setSessionMarkerCount((n) => n + 1);
+    setSessionMarkerByCat((prev) => {
+      const key = category ?? "untagged";
+      return { ...prev, [key]: prev[key] + 1 };
+    });
     const nowMs = Date.now();
     const elapsed = sessionStartRef.current ? Math.floor((nowMs - sessionStartRef.current) / 1000) : 0;
-    void recordEvent({
-      investigation_id: inv.id,
-      source: "user",
-      event_type: "marker",
-      title: category ? `Moment marked · ${category}` : "Moment marked",
-      metadata: { sessionElapsedSec: elapsed, sceneId: activeSceneId, category },
-    });
+    // Snap a 160px JPEG of the live frame. Null when the camera is closed
+    // (audio-only scene, source not ready) — marker still lands. The dataUrl
+    // sits in evidence_events.metadata_json (+ rides the sync queue); the
+    // audit chain entry itself only carries {id, source, event_type}, so the
+    // thumbnail is replayable but not directly in the hash chain.
+    const thumb = snapThumbnailRef.current?.() ?? null;
+    const trimmedNote = note?.trim();
+    void (async () => {
+      const event = await recordEvent({
+        investigation_id: inv.id,
+        source: "user",
+        event_type: "marker",
+        title: category ? `Moment marked · ${category}` : "Moment marked",
+        metadata: { sessionElapsedSec: elapsed, sceneId: activeSceneId, category, thumbnailDataUrl: thumb },
+      });
+      // Quick-tag note → append-only marker.annotated, same path the Review
+      // editor uses. Preserves "marker created, then noted" in the chain
+      // rather than back-editing the capture row.
+      if (trimmedNote) {
+        try {
+          await appendAuditEntry({
+            actor: "user",
+            kind: "marker.annotated",
+            payload: { marker_id: event.id, note: trimmedNote, category },
+          });
+        } catch { /* surfaced via the chain banner */ }
+      }
+    })();
   }, [session, activeSceneId]);
 
   const dropMarker = useCallback(() => {
@@ -419,6 +518,12 @@ export function CameraScreen() {
 
   const pickMarkerCategory = useCallback((cat: Exclude<MarkerCategory, null>) => {
     commitMarker(cat);
+    setMarkerPicker(null);
+  }, [commitMarker]);
+
+  // Quick-tag chip handler. The chip set itself is module-scoped (QUICK_TAGS).
+  const pickMarkerQuickTag = useCallback((label: string, cat: Exclude<MarkerCategory, null>) => {
+    commitMarker(cat, label);
     setMarkerPicker(null);
   }, [commitMarker]);
 
@@ -633,7 +738,8 @@ export function CameraScreen() {
       setStorageProjectionMinutes(null);
       watchdogSnoozeUntilRef.current = null;
       setWatchdogSnoozeUntil(null);
-      setSessionMarkerCount(0);
+      setSessionMarkerByCat({ sound: 0, movement: 0, felt: 0, untagged: 0 });
+      setMarkerPillOpen(false);
       setHudBatteryPct(null);
       setHudBatteryCharging(false);
       setHudStorageMb(null);
@@ -1093,6 +1199,7 @@ export function CameraScreen() {
           refocusRef={refocusRef}
           onSourceStream={setMicStream}
           startCameraRef={startCameraRef}
+          snapThumbnailRef={snapThumbnailRef}
           defaultFacing={activeScene?.cameraDefaults.facing}
           defaultTorch={activeScene?.cameraDefaults.torch}
           onCameraState={handleCameraState}
@@ -1190,17 +1297,78 @@ export function CameraScreen() {
              until the operator drops their first marker so an empty HUD
              stays clean. */}
         {running && sessionMarkerCount > 0 && (
-          <button
-            type="button"
-            className={s.markerCountPill}
-            onClick={() => navigate("/review")}
-            title="Tap to open the markers list in Review"
-            aria-label={`${sessionMarkerCount} marker${sessionMarkerCount === 1 ? "" : "s"} this session — open Review`}
-          >
-            <span className={s.markerCountIcon} aria-hidden="true">●</span>
-            <span className={s.markerCountValue}>{sessionMarkerCount}</span>
-            <span className={s.markerCountLabel}>marker{sessionMarkerCount === 1 ? "" : "s"}</span>
-          </button>
+          <div className={s.markerCountPillWrap} ref={markerPillWrapRef}>
+            <button
+              type="button"
+              className={s.markerCountPill}
+              onClick={(e) => { e.stopPropagation(); setMarkerPillOpen((v) => !v); }}
+              onPointerDown={(e) => e.stopPropagation()}
+              title="Tap to see this session's marker breakdown"
+              aria-expanded={markerPillOpen}
+              aria-label={`${sessionMarkerCount} marker${sessionMarkerCount === 1 ? "" : "s"} this session — tap for breakdown`}
+            >
+              <span className={s.markerCountIcon} aria-hidden="true">●</span>
+              <span className={s.markerCountValue}>{sessionMarkerCount}</span>
+              <span className={s.markerCountLabel}>marker{sessionMarkerCount === 1 ? "" : "s"}</span>
+            </button>
+            {markerPillOpen && (
+              <div className={s.markerCountPopover} role="dialog" aria-label="Marker breakdown by category">
+                <ul className={s.markerCountList}>
+                  {MARKER_BREAKDOWN.filter((row) => sessionMarkerByCat[row.id] > 0).map((row) => (
+                    <li key={row.id}>
+                      <span className={s.markerCountDot} data-category={row.id} aria-hidden="true">●</span>
+                      {sessionMarkerByCat[row.id]} {row.label}
+                    </li>
+                  ))}
+                </ul>
+                <button
+                  type="button"
+                  className={s.markerCountReviewLink}
+                  onClick={(e) => { e.stopPropagation(); setMarkerPillOpen(false); navigate("/review"); }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                >
+                  Open Review →
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── First-run welcome card. Surfaces the four gestures that aren't
+             discoverable from the chrome alone (double-tap markers, swipe
+             scenes, scene pill, watchdog). Dismissal is sticky in
+             localStorage so it never re-appears for this version. Hidden
+             while a session is running so the operator's eye lands on the
+             feed. */}
+        {welcomeVisible && !running && (
+          <div className={s.welcomeCard} role="dialog" aria-label="Welcome to the camera">
+            <header className={s.welcomeHead}>
+              <span className={s.welcomeEyebrow}>Welcome</span>
+              <button
+                type="button"
+                className={s.welcomeDismiss}
+                onClick={(e) => { e.stopPropagation(); dismissWelcome(); }}
+                onPointerDown={(e) => e.stopPropagation()}
+                aria-label="Dismiss welcome card"
+              >
+                ✕
+              </button>
+            </header>
+            <ul className={s.welcomeList}>
+              <li><strong>Double-tap</strong> the viewport to drop a moment marker.</li>
+              <li><strong>Swipe left/right</strong> to cycle scenes (or tap the pill ↗).</li>
+              <li><strong>BIG SHUTTER</strong> below begins / ends a session.</li>
+              <li>The watchdog warns if battery or storage drops mid-session.</li>
+            </ul>
+            <button
+              type="button"
+              className={s.welcomeGotIt}
+              onClick={(e) => { e.stopPropagation(); dismissWelcome(); }}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              Got it
+            </button>
+          </div>
         )}
 
         {/* ── Top-right floating pill: active scene name (opens SceneSheet) ── */}
@@ -1248,31 +1416,34 @@ export function CameraScreen() {
              taps still land. Each chip stops pointer propagation so tapping
              a chip doesn't also re-trigger the swipe / long-press handlers. */}
         {markerPicker && (
-          <div className={s.markerPicker} role="group" aria-label="Tag this marker">
-            <button
-              type="button"
-              className={s.markerPickerBtn}
-              onClick={(e) => { e.stopPropagation(); pickMarkerCategory("sound"); }}
-              onPointerDown={(e) => e.stopPropagation()}
-            >
-              Sound
-            </button>
-            <button
-              type="button"
-              className={s.markerPickerBtn}
-              onClick={(e) => { e.stopPropagation(); pickMarkerCategory("movement"); }}
-              onPointerDown={(e) => e.stopPropagation()}
-            >
-              Movement
-            </button>
-            <button
-              type="button"
-              className={s.markerPickerBtn}
-              onClick={(e) => { e.stopPropagation(); pickMarkerCategory("felt"); }}
-              onPointerDown={(e) => e.stopPropagation()}
-            >
-              Felt
-            </button>
+          <div className={s.markerPickerWrap} role="group" aria-label="Tag this marker">
+            <div className={s.markerQuickTags} aria-label="Quick tags — commit a marker with a pre-filled note">
+              {QUICK_TAGS.map((q) => (
+                <button
+                  key={q.label}
+                  type="button"
+                  className={s.markerQuickTagBtn}
+                  data-category={q.category}
+                  onClick={(e) => { e.stopPropagation(); pickMarkerQuickTag(q.label, q.category); }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                >
+                  {q.label}
+                </button>
+              ))}
+            </div>
+            <div className={s.markerPicker}>
+              {PICKER_CATEGORIES.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  className={s.markerPickerBtn}
+                  onClick={(e) => { e.stopPropagation(); pickMarkerCategory(c.id); }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 

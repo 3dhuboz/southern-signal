@@ -145,6 +145,16 @@ interface LiveStreamViewProps {
    */
   startCameraRef?: React.MutableRefObject<(() => Promise<void>) | null>;
   /**
+   * Exposes a synchronous "snap a small JPEG thumbnail of the current frame"
+   * callback. CameraScreen wires it into `commitMarker` so every marker drop
+   * captures a 160x90 visual receipt at the exact moment the operator tapped.
+   * The thumbnail flows through the audit chain via the marker's metadata, so
+   * the timestamp / hash chain proves what was on screen when the moment was
+   * marked. Returns null if the camera isn't open or the source video element
+   * doesn't have a decodable frame yet.
+   */
+  snapThumbnailRef?: React.MutableRefObject<(() => string | null) | null>;
+  /**
    * Scene-driven camera defaults. `defaultFacing` seeds the initial
    * facingMode at mount; `defaultTorch` requests torch-on once the camera
    * is open AND torch is supported. Both are honored once-per-mount so that
@@ -162,6 +172,7 @@ export function LiveStreamView(props: LiveStreamViewProps) {
     externalChannels, onExternalChannelChange, fullscreen,
     recordToggleRef, liveToggleRef, onCameraState,
     flipCameraRef, startCameraRef, torchToggleRef, refocusRef, onSourceStream,
+    snapThumbnailRef,
     defaultFacing, defaultTorch,
   } = props;
 
@@ -451,6 +462,32 @@ export function LiveStreamView(props: LiveStreamViewProps) {
     }
   }, [torchOn, torchSupported]);
 
+  // Marker thumbnail capture. Draws the latest source-video frame to a small
+  // canvas (160x90, 16:9) and returns a JPEG dataUrl at quality 0.5 — large
+  // enough to recognise the scene, small enough (~3-5 KB) to embed in the
+  // audit chain payload without bloating the SQLite row. Returns null if the
+  // camera isn't open or the video element hasn't decoded a frame yet.
+  // Synchronous — operates on the already-decoded current frame — so the
+  // caller can include the dataUrl directly in the marker's metadata at the
+  // moment commitMarker fires.
+  const snapMarkerThumbnail = useCallback((): string | null => {
+    const v = sourceVideoRef.current;
+    if (!v || v.readyState < 2 || v.videoWidth === 0) return null;
+    const w = 160;
+    const h = Math.max(1, Math.round((v.videoHeight / v.videoWidth) * w));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    try {
+      ctx.drawImage(v, 0, 0, w, h);
+      return canvas.toDataURL("image/jpeg", 0.5);
+    } catch {
+      return null;
+    }
+  }, []);
+
   // Auto-torch from scene defaults — fires once when the camera comes online
   // AND torch is supported, then clears the ref so subsequent flips don't
   // re-engage it. If the active scene asked for torch but the device lacks
@@ -729,7 +766,8 @@ export function LiveStreamView(props: LiveStreamViewProps) {
     if (torchToggleRef)  torchToggleRef.current  = toggleTorch;
     if (refocusRef)      refocusRef.current      = refocus;
     if (startCameraRef)  startCameraRef.current  = start;
-  }, [recordToggleRef, liveToggleRef, toggleRecording, toggleLive, flipCameraRef, flipCamera, torchToggleRef, toggleTorch, refocusRef, refocus, startCameraRef, start]);
+    if (snapThumbnailRef) snapThumbnailRef.current = snapMarkerThumbnail;
+  }, [recordToggleRef, liveToggleRef, toggleRecording, toggleLive, flipCameraRef, flipCamera, torchToggleRef, toggleTorch, refocusRef, refocus, startCameraRef, start, snapThumbnailRef, snapMarkerThumbnail]);
 
   // Hand the source stream to the parent so it can attach a VAD analyser to
   // the mic track. Fires once each open/close — the parent compares by ref

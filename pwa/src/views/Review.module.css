@@ -506,6 +506,82 @@
 }
 .markerEditBtn:hover { color: var(--signal); border-color: var(--signal-dim); }
 
+/* Session summary card — sits between the chain banner and the markers list.
+   Compact at-a-glance read: markers / EVPs / duration / chain entries. The
+   tiles row is a horizontal flex strip; below it, optional per-category
+   chips break down the marker count without forcing a deep dive into the
+   filter chips. */
+.sessionSummary {
+  margin: 16px 0 12px;
+  padding: 12px 14px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sessionSummaryRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  align-items: baseline;
+}
+.sessionSummaryTile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 56px;
+}
+.sessionSummaryValue {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.05;
+}
+.sessionSummaryLabel {
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.sessionSummaryBreakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sessionSummaryChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.sessionSummaryChip[data-category="sound"]    { border-left: 3px solid rgba(56, 189, 248, 0.7); }
+.sessionSummaryChip[data-category="movement"] { border-left: 3px solid rgba(168, 85, 247, 0.7); }
+.sessionSummaryChip[data-category="felt"]     { border-left: 3px solid rgba(251, 191, 36, 0.7); }
+.sessionSummaryChip[data-category="untagged"] { border-left: 3px solid rgba(148, 163, 184, 0.5); }
+
+/* Marker thumbnail — the camera-frame snapshot captured at marker-drop time.
+   Indented to align with the rest of the marker row's secondary content and
+   capped at 160px wide so the row stays scannable. */
+.markerThumb {
+  display: block;
+  margin: 6px 0 0 26px;
+  width: 160px;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  background: var(--bg-inset);
+}
+
 /* Saved free-text note rendered under the row when present and the editor
    isn't open. Pulled out of the row's monospace grid so prose reads as prose. */
 .markerNote {
