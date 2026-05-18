@@ -1,13 +1,19 @@
 name: Deploy to Cloudflare Pages
 
-# Runs on every push to master + on manual dispatch. The Cloudflare Pages
-# project (`southern-signal`) is NOT linked to this repo via the dashboard's
-# Git provider integration — this workflow IS the deploy pipeline. If you
-# disable it, deploys won't happen automatically.
+# Runs on every push to master (→ production) and dev (→ preview) plus
+# manual dispatch. The Cloudflare Pages project (`southern-signal`) is NOT
+# linked to this repo via the dashboard's Git provider integration — this
+# workflow IS the deploy pipeline. If you disable it, deploys won't happen
+# automatically.
+#
+# The wrangler `--branch` flag determines which Cloudflare Pages alias the
+# build lands on. master → production (the project's primary URL).
+# Any other branch → preview deployment at `https://<branch>.<project>.pages.dev`,
+# so pushing to `dev` produces `https://dev.southern-signal.pages.dev`.
 
 on:
   push:
-    branches: [master]
+    branches: [master, dev]
   workflow_dispatch:
 
 # Cancel any in-flight deploy if a newer push lands — no point shipping an
@@ -58,8 +64,11 @@ jobs:
           # pwa/dist — running from repo root with `pwa/dist` would also
           # work, but pinning workingDirectory lets wrangler auto-discover
           # pwa/wrangler.jsonc for the project's resource bindings.
-          # `--branch=master` puts this on the production alias.
+          # `--branch=<github.ref_name>` picks the Cloudflare Pages alias from
+          # the pushed branch. master → production (project's primary URL),
+          # dev → https://dev.southern-signal.pages.dev. Add more branches
+          # to the `on.push.branches` list above to extend this.
           # `--commit-dirty=true` silences the warning about untracked dist/
           # files (dist is gitignored, so the runner always sees them as new).
-          command: pages deploy dist --project-name=southern-signal --branch=master --commit-dirty=true
+          command: pages deploy dist --project-name=southern-signal --branch=${{ github.ref_name }} --commit-dirty=true
           workingDirectory: pwa
