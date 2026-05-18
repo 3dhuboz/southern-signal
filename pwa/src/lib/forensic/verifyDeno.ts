@@ -263,6 +263,13 @@ console.log("3. COSE_Sign1 Ed25519 signature");
 {
   const coseBytes = await readBytes("cose_signature.cbor");
   const manifestText = await readText("manifest.json");
+  // signing.json sidecar holds bundle_id, built_at, ed25519_pubkey_hex,
+  // tsa_status. It's a separate file so manifest.json can stay byte-stable
+  // — what the COSE envelope is over. Older bundles (pre-fix) embedded the
+  // pubkey inside manifest.signing instead; we fall back to that path so
+  // those bundles can still be partially verified (structure check passes,
+  // signature won't because their stored bytes never matched signed bytes).
+  const signingText = await readText("signing.json");
 
   if (!coseBytes) {
     fail("cose_signature.cbor", "file missing from bundle");
@@ -336,13 +343,24 @@ console.log("3. COSE_Sign1 Ed25519 signature");
           cborBstr(payloadBytes),
         ]);
 
-        // Extract the Ed25519 public key from the protected header.
-        // The protected header is { 1: -8 } (alg=EdDSA).
-        // The public key is NOT in the COSE envelope — it's in manifest.json
-        // (ed25519_pubkey_b64) or in the signing_info section if present,
-        // OR in the bundle_signatures table. We look for it in manifest.json.
-        const manifest = JSON.parse(manifestText);
-        const pubKeyHex = manifest?.signing?.ed25519_pubkey_hex ?? null;
+        // Extract the Ed25519 public key. Live bundles store it in
+        // signing.json (sidecar); legacy bundles embedded it under
+        // manifest.signing — fall back to that for verification of older
+        // exports (though their signature won't match because the manifest
+        // bytes drifted across the augmentation step that's since been fixed).
+        let pubKeyHex: string | null = null;
+        if (signingText) {
+          try {
+            const signing = JSON.parse(signingText);
+            if (typeof signing?.ed25519_pubkey_hex === "string") pubKeyHex = signing.ed25519_pubkey_hex;
+          } catch { /* fall through to legacy lookup */ }
+        }
+        if (!pubKeyHex) {
+          try {
+            const manifest = JSON.parse(manifestText);
+            if (typeof manifest?.signing?.ed25519_pubkey_hex === "string") pubKeyHex = manifest.signing.ed25519_pubkey_hex;
+          } catch { /* leave null */ }
+        }
 
         if (!pubKeyHex) {
           // No public key in manifest — we can still verify structure but

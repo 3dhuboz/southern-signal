@@ -27,6 +27,7 @@ import { LiveStreamView } from "../components/LiveStreamView";
 import { ScreenRecordButton } from "../components/ScreenRecordButton";
 import { SceneSheet } from "../components/SceneSheet";
 import { EvpRecorderControl } from "../components/EvpRecorderControl";
+import { DispositionPicker } from "../components/DispositionPicker";
 import { useLiveBroadcastState } from "../lib/system/liveBroadcast";
 import { usePushToTalk } from "../lib/audio/usePushToTalk";
 import { startVad, type VadHandle } from "../lib/audio/vad";
@@ -422,6 +423,13 @@ export function CameraScreen() {
   // doesn't yank the operator off the camera mid-session.
   const [markerPillOpen, setMarkerPillOpen] = useState(false);
   const markerPillWrapRef = useRef<HTMLDivElement | null>(null);
+  // After a session stops on the Camera surface, hold the investigation id
+  // here so the DispositionPicker can prompt the operator to classify it.
+  // Without this, the base-rate dashboard silently miscounts (Pro/Lab
+  // sessions get classified via MissionControl's picker but default Camera
+  // sessions slipped through). Mandatory-classify contract from
+  // DispositionPicker.tsx:9-13 enforced for both flows now.
+  const [pendingDispositionFor, setPendingDispositionFor] = useState<string | null>(null);
   // Outside-pointer close — once the popover is open, any pointerdown that
   // doesn't land inside the wrap dismisses it. Listener is short-lived
   // (only attached while open) so it doesn't add a global handler for the
@@ -905,16 +913,14 @@ export function CameraScreen() {
   }, [watchdog]);
 
   // First-run redirect: if the operator has NEVER picked a scene, send them
-  // to HuntSetup before showing the camera surface. Once they pick once,
-  // the scene persists and this hook becomes a no-op on every subsequent boot.
+  // to HuntSetup before showing the camera surface. The synchronous Navigate
+  // avoids one frame of camera-screen render; we don't ALSO wire a useEffect
+  // navigate() here — that was a redundant second redirect path that fired
+  // on every nav-back from /hunt-setup before the synchronous Navigate could
+  // intercept. BottomNav still provides the escape hatch (Review / Setup /
+  // EVP tabs) for a user who back-buttons mid-flow.
   const navigate = useNavigate();
-  useEffect(() => {
-    if (!hasPickedSceneEver()) {
-      navigate("/hunt-setup", { replace: true });
-    }
-  }, [navigate]);
   if (!hasPickedSceneEver()) {
-    // Avoid one frame of camera-screen render before the redirect fires.
     return <Navigate to="/hunt-setup" replace />;
   }
 
@@ -1132,10 +1138,16 @@ export function CameraScreen() {
     if (!session.current) return;
     setBusy(true);
     try {
+      const stoppingId = session.current.id;
       await stopLiveAnalyzer();
-      await stopInvestigation(session.current.id);
-      await recordEvent({ investigation_id: session.current.id, source: "system", event_type: "session_stop", title: "Session ended" });
+      await stopInvestigation(stoppingId);
+      await recordEvent({ investigation_id: stoppingId, source: "system", event_type: "session_stop", title: "Session ended" });
       setRunning(false);
+      // Park the just-ended id so DispositionPicker can prompt classification
+      // before the operator wanders off. Mirrors the MissionControl flow at
+      // MissionControl.tsx:418 — single source of truth for "session ended,
+      // not yet classified".
+      setPendingDispositionFor(stoppingId);
     } catch { /**/ } finally {
       setBusy(false);
     }
@@ -1163,6 +1175,16 @@ export function CameraScreen() {
 
   return (
     <div className={s.screen}>
+      {/* Mandatory disposition prompt — appears immediately after a session
+          stops so the operator can't wander off without classifying. Mirrors
+          MissionControl's post-stop flow; without this the base-rate
+          dashboard would only count Pro/Lab sessions. */}
+      {pendingDispositionFor && (
+        <DispositionPicker
+          investigationId={pendingDispositionFor}
+          onChosen={() => setPendingDispositionFor(null)}
+        />
+      )}
       {/* Full-bleed camera. Three viewport gestures composed together —
           composeHandlers chains the onPointerDown across long-press +
           double-tap + swipe so a single touch can prime any of them

@@ -579,7 +579,7 @@ export function AuditLogInspector() {
         </p>
       )}
       {entries.length === 0 && !loading && (
-        <p className={s.empty}>No audit entries yet. Start an investigation in Mission Control.</p>
+        <p className={s.empty}>No audit entries yet. Start a hunt from the Camera tab.</p>
       )}
     </div>
   );

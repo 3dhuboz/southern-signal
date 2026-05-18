@@ -96,10 +96,18 @@ App version: ${APP_VERSION}
   sheet. Computed from the live state, not stored — running the build
   again later may produce a different result if sign-offs were added.
 - \`cose_signature.cbor\` — COSE_Sign1 Ed25519 signature over \`manifest.json\` bytes. Proves
-  the manifest was signed by this device's key at export time. The device public key is
-  embedded in \`manifest.json\` under \`signing.ed25519_pubkey_hex\`.
-- \`tsa_token.ts\` — RFC 3161 TimeStampResp from freetsa.org (present only when the device
+  the manifest was signed by this device's key at export time.
+- \`signing.json\` — signing metadata sidecar: \`bundle_id\`, \`built_at\`, \`ed25519_pubkey_hex\`,
+  \`tsa_status\`. Kept separate from \`manifest.json\` so the signed payload stays byte-stable.
+- \`tsa_token.der\` — RFC 3161 TimeStampResp from freetsa.org (present only when the device
   had network access at export time; otherwise the TSA anchor is queued and applied later).
+- \`marker_overrides.json\` — replay-on-load index of \`marker.annotated\` + \`marker.dismissed\`
+  audit entries so reviewers see the latest reviewer state without walking the chain.
+- \`cover.html\` — printable single-page summary of the bundle: chain status, marker notes,
+  device timeline. Open in a browser.
+- \`tk_labels.json\` — Traditional Knowledge labels for ICIP-restricted items, when present.
+- \`research/<investigation>/<dossier_id>.json\` — saved AI-Investigator research dossiers
+  with citations, when present. \`research/finding_notes.json\` holds reviewer annotations.
 - \`verifier.ts\` — \`deno run --allow-read --allow-net verifier.ts bundle.zip\` to re-verify
   the chain, merkle root, and Ed25519 signature without trusting this app.
 - \`README.md\` — this file.
@@ -763,10 +771,22 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
   const entries: ZipEntry[] = [];
 
   // 1. Manifest (filtered to this scope's investigations).
+  //
+  // CRITICAL — signing depends on byte-stable manifest output. We pretty-
+  // print ONCE here, encode to bytes ONCE, and reuse the same bytes for
+  // both the manifest.json ZIP entry AND the COSE_Sign1 payload below.
+  // Previously the signing path was re-stringifying (compact) and the ZIP
+  // path was re-stringifying (pretty + post-augmented with a `signing`
+  // block), so every signed bundle shipped with a payload that didn't
+  // match manifest.json on disk — verifier check #3 always failed.
+  // Fix: keep manifest.json byte-stable; put signing metadata in a
+  // separate `signing.json` sidecar (written below in the signing block).
   const scopedManifest = scope === "single"
     ? { ...manifest, investigations: manifest.investigations.filter((i) => investigationIds.includes(i.id)) }
     : manifest;
-  entries.push(jsonEntry("manifest.json", scopedManifest));
+  const manifestText = JSON.stringify(scopedManifest, null, 2);
+  const manifestBytes = new TextEncoder().encode(manifestText);
+  entries.push({ path: "manifest.json", data: manifestBytes, mtime: new Date() });
 
   // 2. Audit log as JSONL — global chain (partial chains aren't verifiable).
   const auditJsonl = allAudit.map((e) => JSON.stringify(e)).join("\n") + (allAudit.length ? "\n" : "");
@@ -1085,12 +1105,15 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
     const signingKey = await getOrCreateSigningKey();
     publicKeyHex = signingKey.publicKeyHex;
 
-    // Sign the manifest JSON bytes.
-    const manifestBytes = new TextEncoder().encode(JSON.stringify(scopedManifest));
+    // Sign the EXACT bytes that were already written to manifest.json
+    // above. Re-stringifying here would re-introduce the bug — `JSON.
+    // stringify(obj)` is not byte-stable across calls when the object has
+    // been mutated, and even on identical input the pretty-vs-compact
+    // distinction would silently break verification.
     const coseEnvelope = await buildCoseSign1(manifestBytes, signBytes);
     coseSignatureB64 = toBase64(coseEnvelope);
 
-    // Add the COSE envelope as a binary ZIP entry.
+    // COSE envelope as a binary ZIP entry.
     entries.push({ path: "cose_signature.cbor", data: coseEnvelope, mtime: new Date() });
 
     // Attempt RFC 3161 TSA anchoring (may throw if offline).
@@ -1109,9 +1132,13 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
         entries.push({ path: "tsa_token.der", data: tsaResp, mtime: new Date() });
       } else {
         tsaStatus = "failed";
+        console.warn("[export] TSA response rejected by tsaResponseOk heuristic — tsa_status=failed");
       }
-    } catch {
+    } catch (err) {
       // Offline or TSA unreachable — stays 'pending', anchored later.
+      // Log so a stuck-pending bundle is diagnosable from the console
+      // instead of looking identical to "queued for later".
+      console.warn("[export] TSA anchor unreachable — tsa_status=pending:", err);
     }
 
     // Persist the signature row — non-fatal on schema miss (pre-v12 installs).
@@ -1132,22 +1159,18 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
       console.warn("[export] Failed to persist bundle_signatures row:", err);
     }
 
-    // Augment the manifest entry with signing metadata.
-    const signingManifest = {
-      ...scopedManifest,
-      signing: {
-        bundle_id: bundleId,
-        built_at: builtAt,
-        ed25519_pubkey_hex: publicKeyHex,
-        tsa_status: tsaStatus,
-      },
-    };
-    const manifestIdx = entries.findIndex((e) => e.path === "manifest.json");
-    if (manifestIdx !== -1) {
-      entries[manifestIdx] = jsonEntry("manifest.json", signingManifest);
-    } else {
-      entries.push(jsonEntry("manifest.json", signingManifest));
-    }
+    // Signing metadata lives in a sidecar — NEVER in manifest.json, because
+    // the manifest is what the COSE envelope is over. The verifier reads
+    // signing.json for the public key + TSA status; cose_signature.cbor
+    // for the actual signature bytes; manifest.json byte-stable in the ZIP.
+    entries.push(jsonEntry("signing.json", {
+      bundle_id: bundleId,
+      built_at: builtAt,
+      ed25519_pubkey_hex: publicKeyHex,
+      tsa_status: tsaStatus,
+      tsa_requested_at: tsaRequestedAt,
+      tsa_anchored_at: tsaAnchoredAt,
+    }));
 
   } catch (err) {
     console.warn("[export] Signing failed (non-fatal):", err);

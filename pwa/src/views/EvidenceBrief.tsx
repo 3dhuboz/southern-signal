@@ -79,7 +79,7 @@ export function EvidenceBrief() {
       try {
         const id = paramId ?? (await findMostRecentInvestigationId());
         if (!id) {
-          setError("No investigations yet. Run a session in Mission Control first.");
+          setError("No investigations yet. Start a hunt from the Camera tab first.");
           return;
         }
         const result = await buildEvidenceBrief(id);

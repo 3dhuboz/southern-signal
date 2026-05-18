@@ -89,7 +89,7 @@ interface RawStep {
 const RAW_STEPS: RawStep[] = [
   {
     title: "Welcome to Southern Signal",
-    body: "A phone-first paranormal investigation tool that fuses sensor data, transparent statistics, and on-device storage into a defensible record. Begin a session in Mission Control, or flip Switch to Pro if you want the math exposed.",
+    body: "A phone-first paranormal investigation tool that fuses sensor data, transparent statistics, and on-device storage into a defensible record. Start a hunt from the Camera tab, or flip Switch to Pro if you want the math exposed.",
     cue: cueWelcome,
   },
   {

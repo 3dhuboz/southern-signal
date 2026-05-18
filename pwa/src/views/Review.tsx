@@ -725,10 +725,10 @@ export function Review() {
             <strong>{isPro ? "CHAIN EMPTY" : "Nothing recorded yet"}</strong>
             <span>
               {isPro
-                ? " · No audit entries on this device. Begin a session in Mission Control to start the chain."
+                ? " · No audit entries on this device. Start a hunt from the Camera tab to start the chain."
                 : " — no investigations have been recorded on this device. "}
             </span>
-            {!isPro && <Link to="/">Open Mission Control →</Link>}
+            {!isPro && <Link to="/">Open Camera →</Link>}
           </>
         )}
         {chainStatus === "ok" && entries.length > 0 && (
@@ -1181,7 +1181,7 @@ export function Review() {
           <p className={r.empty}>
             {isPro
               ? "No posterior updates yet. Run a session — every LR is logged here with its channel and reason."
-              : "No evidence yet. Run a session in Mission Control — anything notable will show up here."}
+              : "No evidence yet. Start a hunt from the Camera tab — anything notable will show up here."}
           </p>
         ) : (
           <ol className={r.incrementList}>

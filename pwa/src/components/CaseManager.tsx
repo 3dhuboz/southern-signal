@@ -665,7 +665,7 @@ export function CaseManager() {
               />
             </g>
           </svg>
-          <p className={s.empty}>No investigations yet. Begin one in <strong>Mission Control</strong>.</p>
+          <p className={s.empty}>No investigations yet. Start a hunt from the <strong>Camera</strong> tab.</p>
         </div>
       ) : (
         <ul className={s.list}>

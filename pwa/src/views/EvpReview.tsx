@@ -86,7 +86,7 @@ export function EvpReview() {
           No audio clips yet.{" "}
           {session.current
             ? "Tap Start recording above to capture an EVP attempt."
-            : <>Begin a session in <Link to="/">Mission Control</Link>, then come back here to record.</>}
+            : <>Begin a session on the <Link to="/">Camera tab</Link>, then come back here to record.</>}
         </p>
       ) : (
         <ol className={r.list}>
