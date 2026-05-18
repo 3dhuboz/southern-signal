@@ -394,6 +394,26 @@
 .cornerPillTopRight:hover  { background: rgba(0, 0, 0, 0.7); }
 .cornerPillTopRight:active { transform: scale(0.97); }
 
+/* Scene-driven EVP recorder dock — anchored below the scene pill so the
+   operator sees their auto-running clip status without crowding the
+   shutter or the marker pill. Compact variant of EvpRecorderControl;
+   the panel's own chrome handles the start/stop button + timer. */
+.evpDock {
+  position: absolute;
+  top: calc(44px + var(--safe-top, 0px));
+  right: 12px;
+  z-index: 5;
+  /* Tinted to match the HUD's chrome — sits over the camera frame without
+     reading as a foreign UI element. */
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 4px 6px;
+  max-width: 60vw;
+}
+
 .cornerPillText {
   text-transform: uppercase;
   line-height: 1;

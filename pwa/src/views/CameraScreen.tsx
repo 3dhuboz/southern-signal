@@ -26,6 +26,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { LiveStreamView } from "../components/LiveStreamView";
 import { ScreenRecordButton } from "../components/ScreenRecordButton";
 import { SceneSheet } from "../components/SceneSheet";
+import { EvpRecorderControl } from "../components/EvpRecorderControl";
 import { useLiveBroadcastState } from "../lib/system/liveBroadcast";
 import { usePushToTalk } from "../lib/audio/usePushToTalk";
 import { startVad, type VadHandle } from "../lib/audio/vad";
@@ -1213,6 +1214,24 @@ export function CameraScreen() {
           <span className={s.cornerPillText}>{sceneName}</span>
           <span className={s.cornerPillChevron} aria-hidden="true">▾</span>
         </button>
+
+        {/* ── Scene-driven EVP recorder — only mounts when the active scene
+             declares `evp.showRecorder`. Auto-starts on session begin when
+             scene.evp.autoRecord is true; auto-stops when the operator ends
+             the session via the BIG SHUTTER (active flips false). Lives in
+             a fixed corner so it doesn't compete with the camera frame; the
+             compact variant keeps the chrome tight. Hidden until running
+             so the operator sees the empty state on the EVP tab itself. */}
+        {activeScene?.evp?.showRecorder && running && session.current && (
+          <div className={s.evpDock}>
+            <EvpRecorderControl
+              investigationId={session.current.id}
+              variant="compact"
+              autoStart={activeScene.evp.autoRecord === true}
+              active={running}
+            />
+          </div>
+        )}
 
         {/* ── Marker drop toast — top-center, 1.5s fade. Confirms that the
              double-tap landed without interrupting the camera feed. The

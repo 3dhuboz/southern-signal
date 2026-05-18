@@ -24,6 +24,25 @@ interface Props {
   investigationId: string | null;
   onSaved?: () => void;
   variant?: "default" | "compact";
+  /**
+   * Scene-driven auto-start. When true, the recorder fires `handleStart`
+   * once as soon as `investigationId` becomes non-null and status is idle.
+   * Wired into CameraScreen via scene.evp.autoRecord so an "EVP Session"
+   * scene captures the moment Begin is pressed, without the operator
+   * also having to tap Start Recording.
+   *
+   * Per-mount latch: re-mounting (e.g. scene change between investigations)
+   * arms autoStart again, but the latch prevents a single mount from
+   * re-firing if the parent rerenders.
+   */
+  autoStart?: boolean;
+  /**
+   * Mirror flag — when this transitions from true → false, the recorder
+   * stops + saves. Lets a session-end (running flips off) flush a clip
+   * without the operator needing to remember to hit Stop. No-op when
+   * false → false / status is already idle.
+   */
+  active?: boolean;
 }
 
 function formatDuration(seconds: number): string {
@@ -33,7 +52,7 @@ function formatDuration(seconds: number): string {
   return `${m.toString().padStart(2, "0")}:${sec.toString().padStart(2, "0")}`;
 }
 
-export function EvpRecorderControl({ investigationId, onSaved, variant = "default" }: Props) {
+export function EvpRecorderControl({ investigationId, onSaved, variant = "default", autoStart = false, active }: Props) {
   const recorderRef = useRef<EvpRecorder | null>(null);
   if (!recorderRef.current) recorderRef.current = new EvpRecorder();
 
@@ -41,6 +60,11 @@ export function EvpRecorderControl({ investigationId, onSaved, variant = "defaul
   const [savingMessage, setSavingMessage] = useState<string | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
   const [transcribeStatus, setTranscribeStatus] = useState<string | null>(null);
+  // Latch so the autoStart effect doesn't refire on every render. Reset
+  // when investigationId changes (new session, new clip) so the operator
+  // can move between cases without losing the auto-start behaviour.
+  const autoStartedRef = useRef(false);
+  useEffect(() => { autoStartedRef.current = false; }, [investigationId]);
 
   useEffect(() => {
     return recorderRef.current!.subscribe(setState);
@@ -220,6 +244,34 @@ export function EvpRecorderControl({ investigationId, onSaved, variant = "defaul
       setSavingMessage(null);
     }
   };
+
+  // Scene-driven auto-start. Fires once when investigationId becomes
+  // non-null + status is idle + the parent has armed autoStart. The latch
+  // resets when investigationId changes (new session / new case) so the
+  // recorder picks up the next case's auto-start too. Behind both an
+  // investigation-id check AND an idle-status check so re-renders never
+  // double-fire start.
+  useEffect(() => {
+    if (!autoStart || autoStartedRef.current) return;
+    if (!investigationId) return;
+    if (state.status !== "idle") return;
+    autoStartedRef.current = true;
+    void handleStart();
+  }, [autoStart, investigationId, state.status]);
+
+  // Scene-driven auto-stop. When the parent flips `active` from true to
+  // false (e.g. the operator ended the session), flush the in-flight clip
+  // so we don't lose audio when the camera surface tears down. Tracks the
+  // previous value in a ref so we only fire on the transition, not when
+  // active starts as undefined.
+  const prevActiveRef = useRef<boolean | undefined>(active);
+  useEffect(() => {
+    const prev = prevActiveRef.current;
+    prevActiveRef.current = active;
+    if (prev === true && active === false && state.status === "recording") {
+      void handleStop();
+    }
+  }, [active, state.status]);
 
   // Cleanup on unmount — stop the recorder if it's still running.
   useEffect(() => {

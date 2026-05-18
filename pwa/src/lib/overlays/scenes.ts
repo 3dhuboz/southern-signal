@@ -16,8 +16,11 @@ import type { PreflightOverrides } from "../system/preflight";
 
 export type SceneId =
   | "walkthrough"
+  | "evp_session"
   | "spirit_box_session"
   | "vigil"
+  | "outdoor_cemetery"
+  | "interview"
   | "calibration"
   | "pro_lab";
 
@@ -31,6 +34,24 @@ export interface SceneToolConfig {
 export interface SceneCameraDefaults {
   torch: boolean;
   facing: "environment" | "user";
+}
+
+/**
+ * Scene-driven EVP recorder behaviour. When `showRecorder` is true, the
+ * camera HUD mounts a compact EvpRecorderControl near the dock so the
+ * operator can start/stop forensic-grade audio capture without leaving
+ * the camera. When `autoRecord` is also true, the recorder starts itself
+ * the moment the session begins — useful for "EVP Session" scenes where
+ * the whole point is audio capture, and matches what the operator would
+ * have manually clicked anyway.
+ *
+ * Stop-on-session-end is implicit: when `running` flips off, the recorder
+ * auto-stops + saves so the operator doesn't lose the clip by simply
+ * hitting the BIG SHUTTER's end-session action.
+ */
+export interface SceneEvpConfig {
+  showRecorder: boolean;
+  autoRecord?: boolean;
 }
 
 export interface Scene {
@@ -56,6 +77,12 @@ export interface Scene {
    * still works as the primary action so the operator can start/stop.
    */
   simplifiedDock?: boolean;
+  /**
+   * EVP recorder mount + auto-start config. Undefined = no embedded
+   * recorder; the EVP tab remains the only path to capture clips for that
+   * scene. Defined → mounts on the camera HUD; honour autoRecord if set.
+   */
+  evp?: SceneEvpConfig;
 }
 
 /**
@@ -83,6 +110,27 @@ export const BUILT_IN_SCENES: readonly Scene[] = [
   },
 
   {
+    id: "evp_session",
+    name: "EVP Session",
+    description: "Stationary, mic is the instrument. Auto-starts a forensic 16-bit / 48 kHz capture the moment the session begins; the recorder sits on the camera HUD so you can pause / stop without leaving the scene.",
+    overlays: {
+      // Mic is the centrepiece — keep the visual HUD calm so the operator's
+      // ear can do the work. Sensors visible but no ITC noise.
+      sensors: true,
+      itc: false,
+      kiiMeter: false,
+      remPod: false,
+      nightVision: false,
+      directionArrow: false,
+      caption: true,            // Captions are critical when the audience is listening.
+      cornerBrackets: true,
+    },
+    tools: { spiritBox: false, ovilus: false },
+    cameraDefaults: { torch: false, facing: "environment" },
+    evp: { showRecorder: true, autoRecord: true },
+  },
+
+  {
     id: "spirit_box_session",
     name: "Spirit Box Session",
     description: "Stationary, ITC running, NV on. Camera focused on the investigator's face and the phone's auto-running phoneme cycle.",
@@ -96,6 +144,11 @@ export const BUILT_IN_SCENES: readonly Scene[] = [
     },
     tools: { spiritBox: true, ovilus: false },
     cameraDefaults: { torch: false, facing: "user" }, // Selfie cam — face on camera.
+    // Spirit-box runs ARE EVP territory — auto-mount the recorder so the
+    // operator captures the phoneme output stream alongside the ITC tones.
+    // Don't auto-start: the operator should hit it explicitly so the clip
+    // boundary is intentional (start when they begin a "question round").
+    evp: { showRecorder: true, autoRecord: false },
   },
 
   {
@@ -118,6 +171,46 @@ export const BUILT_IN_SCENES: readonly Scene[] = [
     // Vigil is cinematic — strip the dock down so nothing competes with the
     // frame. Shutter still anchors the bottom for start/stop.
     simplifiedDock: true,
+  },
+
+  {
+    id: "outdoor_cemetery",
+    name: "Outdoor Cemetery",
+    description: "Daylight outdoor sweep. EMF + magnetometer are the workhorses; ITC tools are off because outdoor noise floors make spirit-box phonemes unintelligible. Tighter battery threshold — you're mobile and can't charge between graves.",
+    overlays: {
+      sensors: true,
+      itc: false,
+      kiiMeter: true,
+      remPod: false,            // Stationary instrument — doesn't track outdoors.
+      nightVision: false,       // Daylight scene; NV would just black-clip.
+      directionArrow: true,     // Useful for "which way did the spike come from".
+      caption: true,
+      cornerBrackets: false,
+    },
+    tools: { spiritBox: false, ovilus: false },
+    cameraDefaults: { torch: false, facing: "environment" },
+    // Outdoor → mobile → mid-day low charge can sneak up. Warn at 30% like
+    // Walkthrough so the operator has time to wrap before the device cuts.
+    preflightOverrides: { lowBatteryFraction: 0.30 },
+  },
+
+  {
+    id: "interview",
+    name: "Interview",
+    description: "Witness interview capture. Front camera, captions on, mic prioritised. Auto-starts the EVP recorder so the testimony lands in OPFS as a forensic clip alongside the audit-chain entry.",
+    overlays: {
+      sensors: false,
+      itc: false,
+      kiiMeter: false,
+      remPod: false,
+      nightVision: false,
+      directionArrow: false,
+      caption: true,            // Captions are mandatory in interview mode.
+      cornerBrackets: true,
+    },
+    tools: { spiritBox: false, ovilus: false },
+    cameraDefaults: { torch: false, facing: "user" }, // Selfie cam — face the witness.
+    evp: { showRecorder: true, autoRecord: true },
   },
 
   {
