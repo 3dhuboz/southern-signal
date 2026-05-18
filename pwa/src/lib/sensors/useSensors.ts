@@ -64,21 +64,39 @@ export function useSensors(active: boolean): SensorState {
   const compassBaseline = useRef<BaselineState>(createBaseline(120));
   const lightBaseline = useRef<BaselineState>(createBaseline(60));
   const lastHeading = useRef<number | null>(null);
+  // devicemotion fires at 50-60 Hz. setSnapshot/setVibration each yield a
+  // fresh object, churning referential equality for every downstream consumer
+  // (and re-rendering the SensorPanel etc.) ~55 times/sec for the lifetime of
+  // a session. Throttle the React updates to ~10 Hz; the baseline z-score
+  // still updates every event, but the visible state only flips on a 100 ms
+  // grid. The watchdog / posterior engine read from sensors.snapshot via
+  // refs in their own effects, so they're not starved by the throttle.
+  const MOTION_STATE_INTERVAL_MS = 100;
+  const lastMotionStateEmitRef = useRef<number>(0);
 
   useEffect(() => {
     if (!active) return;
 
     const unsubMotion = subscribeMotion((s) => {
-      setSnapshot((prev) => ({ ...prev, motion: s }));
+      // Always advance the baseline so the z-score reflects every event.
       const result = updateBaseline(motionBaseline.current, s.accelMagnitude);
       motionBaseline.current = result.state;
-      setVibration({
-        value: s.accelMagnitude,
-        z: result.z,
-        mean: result.mean,
-        stdev: result.stdev,
-        alert: Math.abs(result.z) > ANOMALY_THRESHOLD,
-      });
+      // Throttle the React commits to 10 Hz. ALWAYS flush when the latest
+      // event crosses the anomaly threshold — operators must see the alert
+      // immediately rather than waiting up to 100 ms.
+      const now = performance.now();
+      const alert = Math.abs(result.z) > ANOMALY_THRESHOLD;
+      if (alert || now - lastMotionStateEmitRef.current >= MOTION_STATE_INTERVAL_MS) {
+        lastMotionStateEmitRef.current = now;
+        setSnapshot((prev) => ({ ...prev, motion: s }));
+        setVibration({
+          value: s.accelMagnitude,
+          z: result.z,
+          mean: result.mean,
+          stdev: result.stdev,
+          alert,
+        });
+      }
     });
 
     const unsubOrientation = subscribeOrientation((s) => {
