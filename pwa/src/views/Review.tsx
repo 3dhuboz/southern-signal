@@ -10,6 +10,7 @@ import { verifyAuditChain, appendAuditEntry } from "../lib/db/auditLog";
 import { buildManifest } from "../lib/forensic/manifest";
 import { buildExportBundle, downloadBlob } from "../lib/forensic/exportBundle";
 import { usePreferences } from "../lib/preferences";
+import { getScene } from "../lib/overlays/scenes";
 import s from "./View.module.css";
 import r from "./Review.module.css";
 
@@ -464,7 +465,13 @@ export function Review() {
                 <span className={r.incrementChannel}>{m.elapsedLabel ?? "—"}</span>
                 <span className={r.incrementMath}>{m.title}</span>
                 {m.sceneId && (
-                  <span className={r.incrementReason}>scene: {m.sceneId}</span>
+                  <span className={r.incrementReason}>
+                    {/* Pretty-print scene id → display name (e.g.
+                        "walkthrough" → "Walkthrough"). Falls back to the
+                        raw id if the scene was deleted/renamed between
+                        capture and review. */}
+                    scene: {getScene(m.sceneId as never)?.name ?? m.sceneId}
+                  </span>
                 )}
                 <span className={r.incrementTs}>{new Date(m.timestamp).toLocaleTimeString()}</span>
               </li>

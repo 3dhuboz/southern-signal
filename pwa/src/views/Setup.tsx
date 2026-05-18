@@ -239,6 +239,40 @@ export function Setup() {
             onChange={(e) => setPrefs({ vadAutoDuck: e.target.checked })}
           />
         </label>
+        {prefs.vadAutoDuck && (
+          <div className={st.fieldRow} style={{ flexDirection: "column", alignItems: "stretch", gap: 12 }}>
+            <label className={st.fieldLabel}>
+              Sensitivity: {prefs.vadConfig.sensitivityDb} dB above floor
+              <input
+                type="range"
+                min={6} max={24} step={1}
+                value={prefs.vadConfig.sensitivityDb}
+                onChange={(e) => setPrefs({ vadConfig: { ...prefs.vadConfig, sensitivityDb: Number(e.target.value) } })}
+              />
+              <span className={st.toggleHint}>Lower = fires on quieter voices (better indoors); higher = resists outdoor wind / HVAC false-positives.</span>
+            </label>
+            <label className={st.fieldLabel}>
+              Attack: {prefs.vadConfig.attackMs} ms
+              <input
+                type="range"
+                min={40} max={400} step={20}
+                value={prefs.vadConfig.attackMs}
+                onChange={(e) => setPrefs({ vadConfig: { ...prefs.vadConfig, attackMs: Number(e.target.value) } })}
+              />
+              <span className={st.toggleHint}>How long voice must stay above threshold before the duck engages. Faster = less missed first-syllable, more chatter triggers.</span>
+            </label>
+            <label className={st.fieldLabel}>
+              Release: {prefs.vadConfig.releaseMs} ms
+              <input
+                type="range"
+                min={150} max={1200} step={50}
+                value={prefs.vadConfig.releaseMs}
+                onChange={(e) => setPrefs({ vadConfig: { ...prefs.vadConfig, releaseMs: Number(e.target.value) } })}
+              />
+              <span className={st.toggleHint}>How long silence must persist before tones come back. Longer = smoother re-entry between phrases.</span>
+            </label>
+          </div>
+        )}
       </section>
 
       {/* PWA install card — only renders when the browser exposed an install

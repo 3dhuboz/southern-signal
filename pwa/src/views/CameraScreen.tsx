@@ -266,11 +266,21 @@ export function CameraScreen() {
   // Marker drop — fires a recordEvent into the current investigation +
   // surfaces a 1.5s confirmation toast at top-center. The audit log already
   // captures `event.marker` per recordEvent's instrumentation.
+  //
+  // Throttle: rapid-fire taps (operator excited, hands shaky, accidental
+  // double-double-tap) within 600ms of the last marker get swallowed. The
+  // toast still extends so the operator sees their second tap "succeeded"
+  // visually — no marker dupes in the audit chain, no UI mystery.
+  const MARKER_THROTTLE_MS = 600;
   const [markerToastUntil, setMarkerToastUntil] = useState<number>(0);
+  const lastMarkerTsRef = useRef<number>(0);
   const dropMarker = useCallback(() => {
     const inv = session.current;
     if (!inv) return;
     const nowMs = Date.now();
+    setMarkerToastUntil(nowMs + 1500);
+    if (nowMs - lastMarkerTsRef.current < MARKER_THROTTLE_MS) return;
+    lastMarkerTsRef.current = nowMs;
     const elapsed = sessionStartRef.current ? Math.floor((nowMs - sessionStartRef.current) / 1000) : 0;
     void recordEvent({
       investigation_id: inv.id,
@@ -279,7 +289,6 @@ export function CameraScreen() {
       title: "Moment marked",
       metadata: { sessionElapsedSec: elapsed, sceneId: activeSceneId },
     });
-    setMarkerToastUntil(nowMs + 1500);
   }, [session, activeSceneId]);
   const doubleTapProps = useDoubleTap(dropMarker);
 
@@ -336,10 +345,18 @@ export function CameraScreen() {
   useEffect(() => {
     if (!prefs.vadAutoDuck || !micStream) { setVadActive(false); return; }
     let handle: VadHandle | null = null;
-    try { handle = startVad(micStream, setVadActive); }
-    catch { setVadActive(false); }
+    try {
+      handle = startVad(micStream, setVadActive, {
+        activationDb: prefs.vadConfig.sensitivityDb,
+        // Deactivation sits half the activation gap below — keeps the
+        // hysteresis ratio consistent as the operator tunes sensitivity.
+        deactivationDb: Math.max(2, prefs.vadConfig.sensitivityDb / 2),
+        attackMs: prefs.vadConfig.attackMs,
+        releaseMs: prefs.vadConfig.releaseMs,
+      });
+    } catch { setVadActive(false); }
     return () => { handle?.stop(); setVadActive(false); };
-  }, [prefs.vadAutoDuck, micStream]);
+  }, [prefs.vadAutoDuck, micStream, prefs.vadConfig.sensitivityDb, prefs.vadConfig.attackMs, prefs.vadConfig.releaseMs]);
   usePushToTalk(pttActive || vadActive);
 
   // ── Pre-flight blocker — runs at mount + on every Begin tap. If anything

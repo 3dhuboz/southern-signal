@@ -133,6 +133,19 @@ export interface AppPreferences {
    * fits-all proposition (noisy outdoor hunts vs quiet attics).
    */
   vadAutoDuck: boolean;
+  /**
+   * Tuning for the VAD detector. All thresholds are relative to the adaptive
+   * noise floor — sensitivity is the activation threshold in dB above the
+   * floor (lower = more sensitive, fires on quieter voices but more prone to
+   * false-positives on outdoor wind / HVAC). attackMs / releaseMs govern how
+   * long the signal must stay above/below threshold before flipping; bumping
+   * them up smooths out fast chatter at the cost of a perceptible delay.
+   */
+  vadConfig: {
+    sensitivityDb: number;
+    attackMs: number;
+    releaseMs: number;
+  };
 }
 
 const DEFAULTS: AppPreferences = {
@@ -164,6 +177,7 @@ const DEFAULTS: AppPreferences = {
   proMode: false,
   itcMonitor: false,
   vadAutoDuck: false,
+  vadConfig: { sensitivityDb: 12, attackMs: 120, releaseMs: 350 },
 };
 
 const KEY = "ss-preferences-v1";
