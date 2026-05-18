@@ -79,3 +79,15 @@
   color: var(--danger);
 }
 .dismissBtn:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
+
+.openBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.exportError {
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  color: var(--danger);
+  font-family: var(--font-mono);
+}

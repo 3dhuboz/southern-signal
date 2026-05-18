@@ -335,6 +335,35 @@ export function CameraScreen() {
   const MARKER_THROTTLE_MS = 600;
   const [markerToastUntil, setMarkerToastUntil] = useState<number>(0);
   const lastMarkerTsRef = useRef<number>(0);
+  // Marker categories — three operator-affordable types for reviewers to
+  // filter by later in Review. The picker auto-commits as `null` (untagged)
+  // after MARKER_PICKER_MS so a fire-and-forget double-tap still lands a
+  // marker — categorisation is opt-in. NB: changing this set has no schema
+  // impact since metadata is opaque, but Review's filter chips lock to these.
+  type MarkerCategory = "sound" | "movement" | "felt" | null;
+  const MARKER_PICKER_MS = 2200;
+  const [markerPicker, setMarkerPicker] = useState<{ until: number; committed: boolean } | null>(null);
+  const markerCommittedRef = useRef(false);
+
+  const commitMarker = useCallback((category: MarkerCategory) => {
+    if (markerCommittedRef.current) return;
+    const inv = session.current;
+    if (!inv) return;
+    // Flip the ref AFTER the session-guard — otherwise an end-of-session
+    // race could leave the ref stuck true and suppress the next session's
+    // marker commits until dropMarker reset it.
+    markerCommittedRef.current = true;
+    const nowMs = Date.now();
+    const elapsed = sessionStartRef.current ? Math.floor((nowMs - sessionStartRef.current) / 1000) : 0;
+    void recordEvent({
+      investigation_id: inv.id,
+      source: "user",
+      event_type: "marker",
+      title: category ? `Moment marked · ${category}` : "Moment marked",
+      metadata: { sessionElapsedSec: elapsed, sceneId: activeSceneId, category },
+    });
+  }, [session, activeSceneId]);
+
   const dropMarker = useCallback(() => {
     const inv = session.current;
     if (!inv) return;
@@ -342,16 +371,22 @@ export function CameraScreen() {
     setMarkerToastUntil(nowMs + 1500);
     if (nowMs - lastMarkerTsRef.current < MARKER_THROTTLE_MS) return;
     lastMarkerTsRef.current = nowMs;
-    const elapsed = sessionStartRef.current ? Math.floor((nowMs - sessionStartRef.current) / 1000) : 0;
-    void recordEvent({
-      investigation_id: inv.id,
-      source: "user",
-      event_type: "marker",
-      title: "Moment marked",
-      metadata: { sessionElapsedSec: elapsed, sceneId: activeSceneId },
-    });
-  }, [session, activeSceneId]);
+    markerCommittedRef.current = false;
+    setMarkerPicker({ until: nowMs + MARKER_PICKER_MS, committed: false });
+    // Auto-commit as untagged after the picker timeout — fire-and-forget
+    // double-taps still land in the chain. A category tap before then races
+    // the timer; markerCommittedRef guards against double-commits.
+    window.setTimeout(() => {
+      if (!markerCommittedRef.current) commitMarker(null);
+      setMarkerPicker(null);
+    }, MARKER_PICKER_MS);
+  }, [session, commitMarker]);
   const doubleTapProps = useDoubleTap(dropMarker);
+
+  const pickMarkerCategory = useCallback((cat: Exclude<MarkerCategory, null>) => {
+    commitMarker(cat);
+    setMarkerPicker(null);
+  }, [commitMarker]);
 
   // Horizontal swipe → cycle scene. Index modulo wraps both directions so the
   // operator can keep swiping past either end. saveActiveSceneId persists the
@@ -879,6 +914,40 @@ export function CameraScreen() {
         {markerToastVisible && (
           <div className={s.markerToast} role="status" aria-live="polite">
             ✓ MARKED
+          </div>
+        )}
+
+        {/* ── Marker category picker — fires after a double-tap. Three chips
+             (Sound / Movement / Felt) for reviewers to filter by later. Auto-
+             commits as untagged after MARKER_PICKER_MS so fire-and-forget
+             taps still land. Each chip stops pointer propagation so tapping
+             a chip doesn't also re-trigger the swipe / long-press handlers. */}
+        {markerPicker && (
+          <div className={s.markerPicker} role="group" aria-label="Tag this marker">
+            <button
+              type="button"
+              className={s.markerPickerBtn}
+              onClick={(e) => { e.stopPropagation(); pickMarkerCategory("sound"); }}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              Sound
+            </button>
+            <button
+              type="button"
+              className={s.markerPickerBtn}
+              onClick={(e) => { e.stopPropagation(); pickMarkerCategory("movement"); }}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              Movement
+            </button>
+            <button
+              type="button"
+              className={s.markerPickerBtn}
+              onClick={(e) => { e.stopPropagation(); pickMarkerCategory("felt"); }}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              Felt
+            </button>
           </div>
         )}
 

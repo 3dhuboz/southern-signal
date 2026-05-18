@@ -68,12 +68,34 @@ interface MarkerRow {
   metadata_json: string | null;
 }
 
+type MarkerCategory = "sound" | "movement" | "felt" | null;
+/** Filter state for the Review marker list. Categories match MarkerCategory
+ *  plus an "untagged" sentinel that maps to category === null at filter time
+ *  — modelled as its own union member so type-narrowing handles both paths
+ *  without unsafe casts. `null` = show all. */
+type MarkerFilter = MarkerCategory | "untagged";
+
 interface MarkerView {
   id: string;
   timestamp: string;
   title: string;
   elapsedLabel: string | null;
   sceneId: string | null;
+  category: MarkerCategory;
+}
+
+const MARKER_CATEGORIES: { id: Exclude<MarkerCategory, null>; label: string }[] = [
+  { id: "sound",    label: "Sound" },
+  { id: "movement", label: "Movement" },
+  { id: "felt",     label: "Felt" },
+];
+
+/** Single predicate shared by header count + list render so the "untagged"
+ *  sentinel can't desync them. `null` filter = show all. */
+function matchesMarkerFilter(m: { category: MarkerCategory }, filter: MarkerFilter): boolean {
+  if (filter === null) return true;
+  if (filter === "untagged") return m.category === null;
+  return m.category === filter;
 }
 
 interface DeviceSampleRow {
@@ -114,6 +136,10 @@ export function Review() {
   const [merkleRoot, setMerkleRoot] = useState<string | null>(null);
   const [latestBrief, setLatestBrief] = useState<EvidenceBrief | null>(null);
   const [markers, setMarkers] = useState<MarkerView[]>([]);
+  // Active category filter for the markers list — null = show all.
+  // Selecting a chip restricts the visible markers; chip stays sticky
+  // through reload? No — case-by-case workflow, in-session state is fine.
+  const [markerCategoryFilter, setMarkerCategoryFilter] = useState<MarkerFilter>(null);
   const [timeline, setTimeline] = useState<DeviceTimeline | null>(null);
 
   useEffect(() => {
@@ -170,10 +196,14 @@ export function Review() {
           );
           setMarkers(rows.map((row) => {
             let sceneId: string | null = null;
+            let category: MarkerCategory = null;
             if (row.metadata_json) {
               try {
-                const parsed = JSON.parse(row.metadata_json) as { sceneId?: unknown };
+                const parsed = JSON.parse(row.metadata_json) as { sceneId?: unknown; category?: unknown };
                 if (typeof parsed.sceneId === "string") sceneId = parsed.sceneId;
+                if (parsed.category === "sound" || parsed.category === "movement" || parsed.category === "felt") {
+                  category = parsed.category;
+                }
               } catch { /* ignore */ }
             }
             return {
@@ -182,6 +212,7 @@ export function Review() {
               title: row.title ?? "Moment marked",
               elapsedLabel: formatMarkerElapsed(row.metadata_json),
               sceneId,
+              category,
             };
           }));
         }
@@ -522,34 +553,82 @@ export function Review() {
 
       {/* Moment markers — double-taps the operator dropped during capture.
           Latest case only; oldest cases are still searchable through the
-          audit log if needed. */}
+          audit log if needed. Filter chips narrow by category — the
+          category is recorded at drop-time via the camera-surface picker.
+
+          filteredMarkers single-sources both the header count and the list
+          render so the "Untagged" sentinel can't desync the two paths. */}
       <div className={r.section}>
         <header className={r.sectionHeader}>
-          <h2>Moment markers ({markers.length})</h2>
+          {(() => {
+            const filteredMarkers = markers.filter((m) => matchesMarkerFilter(m, markerCategoryFilter));
+            return (
+              <h2>Moment markers ({filteredMarkers.length}{markerCategoryFilter ? ` / ${markers.length}` : ""})</h2>
+            );
+          })()}
         </header>
+        {markers.length > 0 && (
+          <div className={r.markerChipRow}>
+            <button
+              type="button"
+              className={`${r.markerChip} ${markerCategoryFilter === null ? r.markerChipActive : ""}`.trim()}
+              onClick={() => setMarkerCategoryFilter(null)}
+            >
+              All
+            </button>
+            {MARKER_CATEGORIES.map((cat) => {
+              const count = markers.filter((m) => m.category === cat.id).length;
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  className={`${r.markerChip} ${markerCategoryFilter === cat.id ? r.markerChipActive : ""}`.trim()}
+                  onClick={() => setMarkerCategoryFilter(cat.id)}
+                  disabled={count === 0}
+                >
+                  {cat.label} ({count})
+                </button>
+              );
+            })}
+            {markers.some((m) => m.category === null) && (
+              <button
+                type="button"
+                className={`${r.markerChip} ${markerCategoryFilter === "untagged" ? r.markerChipActive : ""}`.trim()}
+                onClick={() => setMarkerCategoryFilter("untagged")}
+              >
+                Untagged ({markers.filter((m) => m.category === null).length})
+              </button>
+            )}
+          </div>
+        )}
         {markers.length === 0 ? (
           <p className={r.empty}>
             No markers yet. Double-tap the camera viewport during a session to drop a moment marker — it lands here with the elapsed time + active scene for one-tap review later.
           </p>
         ) : (
           <ol className={r.incrementList}>
-            {markers.map((m) => (
-              <li key={m.id} className={r.incrementRow}>
-                <span className={r.incrementSeq}>●</span>
-                <span className={r.incrementChannel}>{m.elapsedLabel ?? "—"}</span>
-                <span className={r.incrementMath}>{m.title}</span>
-                {m.sceneId && (
-                  <span className={r.incrementReason}>
-                    {/* Pretty-print scene id → display name (e.g.
-                        "walkthrough" → "Walkthrough"). Falls back to the
-                        raw id if the scene was deleted/renamed between
-                        capture and review. */}
-                    scene: {getScene(m.sceneId as never)?.name ?? m.sceneId}
-                  </span>
-                )}
-                <span className={r.incrementTs}>{new Date(m.timestamp).toLocaleTimeString()}</span>
-              </li>
-            ))}
+            {markers
+              .filter((m) => matchesMarkerFilter(m, markerCategoryFilter))
+              .map((m) => (
+                <li key={m.id} className={r.incrementRow}>
+                  <span className={r.incrementSeq}>●</span>
+                  <span className={r.incrementChannel}>{m.elapsedLabel ?? "—"}</span>
+                  <span className={r.incrementMath}>{m.title}</span>
+                  {m.category && (
+                    <span className={r.markerCategoryTag} data-category={m.category}>{m.category}</span>
+                  )}
+                  {m.sceneId && (
+                    <span className={r.incrementReason}>
+                      {/* Pretty-print scene id → display name (e.g.
+                          "walkthrough" → "Walkthrough"). Falls back to the
+                          raw id if the scene was deleted/renamed between
+                          capture and review. */}
+                      scene: {getScene(m.sceneId as never)?.name ?? m.sceneId}
+                    </span>
+                  )}
+                  <span className={r.incrementTs}>{new Date(m.timestamp).toLocaleTimeString()}</span>
+                </li>
+              ))}
           </ol>
         )}
       </div>
@@ -634,8 +713,23 @@ function DeviceSpark({
 }) {
   // Hover/tap readout — index of the sample nearest the pointer's x in the
   // viewBox. Null = no hover, render the "latest sample" headline value.
+  // `locked` keeps the readout visible after pointerleave on mobile, where a
+  // touch+drag off the SVG would otherwise dismiss the reading mid-read. Tap
+  // again to unlock; outside-click also dismisses via a document listener.
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const [locked, setLocked] = useState(false);
+  useEffect(() => {
+    if (!locked) return;
+    const onDocPointer = (e: PointerEvent) => {
+      if (svgRef.current && !svgRef.current.contains(e.target as Node)) {
+        setLocked(false);
+        setHoverIdx(null);
+      }
+    };
+    document.addEventListener("pointerdown", onDocPointer);
+    return () => document.removeEventListener("pointerdown", onDocPointer);
+  }, [locked]);
 
   if (samples.length < 2) return null;
   const W = 120;
@@ -698,9 +792,21 @@ function DeviceSpark({
         className={r.deviceSparkSvg}
         role="img"
         aria-label={`${label} timeline${markerPoints.length ? ` with ${markerPoints.length} markers` : ""}`}
-        onPointerMove={(e) => setHoverIdx(pointerToIdx(e.clientX))}
-        onPointerLeave={() => setHoverIdx(null)}
-        onPointerDown={(e) => setHoverIdx(pointerToIdx(e.clientX))}
+        onPointerMove={(e) => { if (!locked) setHoverIdx(pointerToIdx(e.clientX)); }}
+        onPointerLeave={() => { if (!locked) setHoverIdx(null); }}
+        onPointerDown={(e) => {
+          // Tapping the spark sets the readout AND locks it for sticky
+          // inspection on touch devices. Tapping again on a locked spark
+          // unlocks + clears so a single tap toggles read → dismiss.
+          const idx = pointerToIdx(e.clientX);
+          if (locked && idx === hoverIdx) {
+            setLocked(false);
+            setHoverIdx(null);
+          } else {
+            setHoverIdx(idx);
+            setLocked(true);
+          }
+        }}
       >
         {/* Markers behind the polyline so the curve reads over the ticks. */}
         {markerPoints.map((m) => (

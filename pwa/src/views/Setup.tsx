@@ -4,6 +4,7 @@ import { MicLevelMeter } from "../lib/audio/micLevel";
 import { startVad, type VadHandle } from "../lib/audio/vad";
 import { usePwaInstall } from "../lib/system/usePwaInstall";
 import { ACTIVE_SCENE_CHANGE_EVENT, getScene, loadActiveSceneId } from "../lib/overlays/scenes";
+import { WHATS_NEW_KEY } from "../lib/version";
 import { WHIP_URL_KEY, WHIP_BEARER_KEY, WHIP_PROVIDER_KEY, WHIP_PROVIDERS } from "../lib/media/whipStorage";
 import { AuditLogInspector } from "../components/AuditLogInspector";
 import { CaseManager } from "../components/CaseManager";
@@ -773,13 +774,18 @@ function PreflightThresholdsPanel({
 
 /**
  * What's new — surfaces recent feature additions so operators discover them
- * without needing release notes. Versioned via WHATS_NEW_KEY so each release
- * can ship a fresh card; the dismissal state is keyed to the version, so the
- * next release's card reappears for everyone. Keep entries terse — one line
- * per feature, point at the surface where it lives.
+ * without needing release notes. The localStorage dismissal key is derived
+ * from APP_VERSION (see lib/version.ts) so bumping the version automatically
+ * re-surfaces the card for everyone — no manual key-bump required.
+ *
+ * Keep entries terse — one line per feature, point at the surface where it
+ * lives.
  */
-const WHATS_NEW_KEY = "ss-whats-new-seen-2026-05-18";
 const WHATS_NEW_ITEMS: { title: string; where: string }[] = [
+  { title: "Tag markers by category on drop",         where: "Camera screen — after double-tap, pick Sound / Movement / Felt" },
+  { title: "Filter markers by category in Review",    where: "Review → Moment markers — chip row above the list" },
+  { title: "Tap-to-lock sparkline readout",           where: "Review → Device state — tap a spark to pin a value/time" },
+  { title: "Chain-broken banner with Export now",     where: "Top of every route — fires when verifier finds a chain break" },
   { title: "Save your room's noise floor",            where: "Setup → Hands-free narration → Auto-baseline (3s)" },
   { title: "Live mic + VAD meter on the camera HUD",  where: "Camera screen, top-left below the REC pill" },
   { title: "Battery & storage timeline in Review",    where: "Review → Device state · battery + storage" },

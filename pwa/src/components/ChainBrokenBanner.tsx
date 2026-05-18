@@ -19,7 +19,7 @@
  * tampered with between page loads, so the mount check usually suffices.
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { verifyAuditChain } from "../lib/db/auditLog";
 import s from "./ChainBrokenBanner.module.css";
@@ -31,7 +31,32 @@ const RECHECK_INTERVAL_MS = 5 * 60_000;
 export function ChainBrokenBanner() {
   const [broken, setBroken] = useState<BrokenStatus | null>(null);
   const [dismissed, setDismissed] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  // Snapshot the current bundle to disk immediately. Critical when the chain
+  // is broken — the operator wants the forensic record captured before any
+  // further evidence appends, so the export reflects the chain state at the
+  // moment the failure was first surfaced.
+  const exportNow = useCallback(async () => {
+    if (exporting) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      // Lazy-load the bundle builder — it pulls in COSE signing + JSZip,
+      // ~60KB gzipped, and the banner is shown app-wide. Keeping it out of
+      // the root chunk keeps every page-load lean; only operators who
+      // actually hit Export now pay the load cost.
+      const { buildExportBundle, downloadBlob } = await import("../lib/forensic/exportBundle");
+      const { blob, summary } = await buildExportBundle();
+      downloadBlob(blob, summary.filename);
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : "Export failed.");
+    } finally {
+      setExporting(false);
+    }
+  }, [exporting]);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,6 +91,15 @@ export function ChainBrokenBanner() {
         <button
           type="button"
           className={s.openBtn}
+          onClick={() => void exportNow()}
+          disabled={exporting}
+          title="Captures the bundle (with the current broken chain) to disk for forensic review."
+        >
+          {exporting ? "Exporting…" : "Export now"}
+        </button>
+        <button
+          type="button"
+          className={s.openBtn}
           onClick={() => navigate("/setup")}
         >
           Open audit log
@@ -79,6 +113,7 @@ export function ChainBrokenBanner() {
           Later
         </button>
       </div>
+      {exportError && <p className={s.exportError}>{exportError}</p>}
     </div>
   );
 }

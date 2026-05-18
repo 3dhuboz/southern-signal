@@ -306,6 +306,52 @@
   font-style: italic;
 }
 
+/* Marker filter chips — Sound / Movement / Felt / Untagged. Active chip
+   pops with the signal colour; chips with no matching markers disable. */
+.markerChipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.markerChip {
+  appearance: none;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms, color 120ms;
+}
+.markerChip:hover:not(:disabled) { color: var(--signal); border-color: var(--signal-dim); }
+.markerChip:disabled { opacity: 0.4; cursor: not-allowed; }
+.markerChipActive {
+  background: color-mix(in srgb, var(--signal) 16%, var(--bg-inset));
+  border-color: var(--signal);
+  color: var(--signal);
+}
+
+/* Inline tag inside a marker row showing the category. Tone colour is per-
+   category so reviewers can scan visually without reading the label. */
+.markerCategoryTag {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid currentColor;
+}
+.markerCategoryTag[data-category="sound"]    { color: #5DF2C7; }
+.markerCategoryTag[data-category="movement"] { color: #FFD166; }
+.markerCategoryTag[data-category="felt"]     { color: #FF9AA2; }
+
 /* ── Device-state sparklines ──────────────────────────────────────────────
    Inline battery + storage timeline pulled from sensor_samples written by
    the mid-session watchdog. Two compact cards side-by-side so the reviewer
