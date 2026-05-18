@@ -178,6 +178,22 @@
   letter-spacing: 1.4px;
   text-transform: uppercase;
   line-height: 1.1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+}
+/* Small inline chip showing "2nd warning" / "3rd warning" etc. once the
+   session has surfaced more than one toast. Sits next to the headline so
+   the operator immediately sees this isn't an isolated event. */
+.watchdogToastCount {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  padding: 1px 6px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  opacity: 0.85;
 }
 .watchdogToastDetail {
   font-size: 11px;

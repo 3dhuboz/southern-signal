@@ -1,0 +1,81 @@
+/* App-shell banner shown when verifyAuditChain returns BROKEN. Same shape
+   as InterruptedSessionBanner but pinned to danger colours so an operator
+   never confuses "your chain has a real integrity issue" with the milder
+   "you forgot to end a session." */
+
+.banner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-12);
+  margin: 0 var(--s-20) var(--s-12);
+  padding: 14px var(--s-16);
+  border-radius: var(--r-md);
+  border: 1px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, var(--bg-elevated));
+  color: var(--text);
+}
+
+@media (min-width: 640px) {
+  .banner {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-16);
+  }
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  min-width: 0;
+  flex: 1;
+}
+
+.title {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--danger);
+}
+
+.detail {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.seq, .reason {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-primary);
+}
+
+.actions {
+  display: flex;
+  gap: var(--s-8);
+  flex-shrink: 0;
+}
+
+.openBtn, .dismissBtn {
+  padding: var(--s-8) 14px;
+  border-radius: var(--r-md);
+  font-size: 12px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid var(--danger);
+}
+.openBtn {
+  background: var(--danger);
+  color: #fff;
+}
+.openBtn:hover  { filter: brightness(1.05); }
+.dismissBtn {
+  background: transparent;
+  color: var(--danger);
+}
+.dismissBtn:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }

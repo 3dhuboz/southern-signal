@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { AHT_H0_SUSPEND_THRESHOLD, computeH0Confidence } from "../lib/posterior/ahtVerdict";
 import { buildEvidenceBrief, findMostRecentInvestigationId, type EvidenceBrief } from "../lib/forensic/evidenceBrief";
@@ -632,6 +632,11 @@ function DeviceSpark({
    *  device-state curve. Markers outside [first..last] sample range clip. */
   markerTimestamps?: readonly string[];
 }) {
+  // Hover/tap readout — index of the sample nearest the pointer's x in the
+  // viewBox. Null = no hover, render the "latest sample" headline value.
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
   if (samples.length < 2) return null;
   const W = 120;
   const H = 28;
@@ -647,6 +652,27 @@ function DeviceSpark({
   }).join(" ");
   const last = samples[samples.length - 1];
   const first = samples[0];
+
+  // Map a clientX inside the SVG bounding box to the nearest sample index.
+  // We use bounding-box → viewBox math instead of relying on the SVG's CTM
+  // (getScreenCTM) because the SVG scales with the container; bbox math is
+  // simpler + survives the CSS scale-to-fit treatment.
+  const pointerToIdx = (clientX: number) => {
+    const svg = svgRef.current;
+    if (!svg) return null;
+    const rect = svg.getBoundingClientRect();
+    if (rect.width === 0) return null;
+    const xInViewBox = ((clientX - rect.left) / rect.width) * W;
+    const idx = Math.round(xInViewBox / stepX);
+    if (idx < 0 || idx >= samples.length) return null;
+    return idx;
+  };
+
+  const hovered = hoverIdx != null ? samples[hoverIdx] : null;
+  const hoveredX = hoverIdx != null ? hoverIdx * stepX : null;
+  // Display the hovered sample in the headline value when active; otherwise
+  // the latest sample. Footer toggles to show the hovered timestamp.
+  const displayValue = hovered ?? last;
   // Map markers to x-positions on the spark's time axis. Clip anything that
   // falls outside the sample range (e.g. markers from before the watchdog
   // started writing samples).
@@ -664,9 +690,18 @@ function DeviceSpark({
     <div className={r.deviceSpark} data-tone={tone}>
       <div className={r.deviceSparkHead}>
         <span className={r.deviceSparkLabel}>{label}</span>
-        <span className={r.deviceSparkValue}>{format(last.value)}</span>
+        <span className={r.deviceSparkValue}>{format(displayValue.value)}</span>
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className={r.deviceSparkSvg} role="img" aria-label={`${label} timeline${markerPoints.length ? ` with ${markerPoints.length} markers` : ""}`}>
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${W} ${H}`}
+        className={r.deviceSparkSvg}
+        role="img"
+        aria-label={`${label} timeline${markerPoints.length ? ` with ${markerPoints.length} markers` : ""}`}
+        onPointerMove={(e) => setHoverIdx(pointerToIdx(e.clientX))}
+        onPointerLeave={() => setHoverIdx(null)}
+        onPointerDown={(e) => setHoverIdx(pointerToIdx(e.clientX))}
+      >
         {/* Markers behind the polyline so the curve reads over the ticks. */}
         {markerPoints.map((m) => (
           <line
@@ -676,9 +711,27 @@ function DeviceSpark({
           />
         ))}
         <polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+        {/* Hover guide — vertical line + dot at the hovered sample so the
+            reviewer's eye lands on the exact reading. Rendered last so it
+            stays on top of both the markers and the data curve. */}
+        {hoveredX != null && hovered && (
+          <>
+            <line x1={hoveredX} x2={hoveredX} y1={0} y2={H} stroke="currentColor" strokeWidth={0.5} opacity={0.4} />
+            <circle
+              cx={hoveredX}
+              cy={H - ((hovered.value - min) / span) * H}
+              r={2}
+              fill="currentColor"
+            />
+          </>
+        )}
       </svg>
       <div className={r.deviceSparkFoot}>
-        <span className={r.deviceSparkMeta}>start {format(first.value)}</span>
+        <span className={r.deviceSparkMeta}>
+          {hovered
+            ? new Date(hovered.ts).toLocaleTimeString()
+            : `start ${format(first.value)}`}
+        </span>
         <span className={r.deviceSparkMeta}>
           {samples.length} samples
           {markerPoints.length > 0 ? ` · ${markerPoints.length} marker${markerPoints.length === 1 ? "" : "s"}` : ""}

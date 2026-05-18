@@ -187,8 +187,20 @@ export function loadActiveSceneId(): SceneId {
   return DEFAULT_SCENE_ID;
 }
 
+/** Custom event name fired alongside the localStorage write so same-tab
+ *  listeners (e.g. Setup's preflight panel) can react to scene swaps. The
+ *  browser's native `storage` event fires only in OTHER tabs by spec —
+ *  this event covers the same-tab gap. */
+export const ACTIVE_SCENE_CHANGE_EVENT = "ss-active-scene-changed";
+
 export function saveActiveSceneId(id: SceneId): void {
   try { localStorage.setItem(ACTIVE_SCENE_KEY, id); } catch { /* ignore */ }
+  // Same-tab notification: localStorage.setItem doesn't dispatch a `storage`
+  // event in the tab that wrote, so any in-tab listener (e.g. an open Setup
+  // panel) needs this event to stay in sync without a page reload.
+  try {
+    window.dispatchEvent(new CustomEvent(ACTIVE_SCENE_CHANGE_EVENT, { detail: id }));
+  } catch { /* swallow — SSR or stripped CustomEvent constructor */ }
 }
 
 /** First-run marker — HuntSetup forces itself on a fresh install. */

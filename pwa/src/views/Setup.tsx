@@ -3,6 +3,7 @@ import { applyTheme, setPreferences, usePreferences, type AppPreferences } from 
 import { MicLevelMeter } from "../lib/audio/micLevel";
 import { startVad, type VadHandle } from "../lib/audio/vad";
 import { usePwaInstall } from "../lib/system/usePwaInstall";
+import { ACTIVE_SCENE_CHANGE_EVENT, getScene, loadActiveSceneId } from "../lib/overlays/scenes";
 import { WHIP_URL_KEY, WHIP_BEARER_KEY, WHIP_PROVIDER_KEY, WHIP_PROVIDERS } from "../lib/media/whipStorage";
 import { AuditLogInspector } from "../components/AuditLogInspector";
 import { CaseManager } from "../components/CaseManager";
@@ -301,45 +302,10 @@ export function Setup() {
       {/* Mid-session preflight watchdog tuning. Scene-level overrides still
           trump these (e.g. Pro/Lab always skips battery); think of these as
           the FLOOR an operator wants for any scene without its own opinion. */}
-      <section className={st.panel}>
-        <header className={st.panelHeader}>
-          <h2 className={st.panelTitle}>Preflight thresholds</h2>
-          <span className={st.panelBadge}>
-            {(prefs.preflight.lowBatteryFraction != null || prefs.preflight.minStorageMb != null) ? "Customised" : "Defaults"}
-          </span>
-        </header>
-        <p className={st.panelLede}>
-          The watchdog re-runs preflight every 60s during a session and surfaces a toast when device state degrades vs the start. Tune the thresholds here if the canned defaults (battery 20%, storage 200MB) don't match your device. Scene-specific tunings still win — Walkthrough warns earlier on battery, Calibration/Pro-Lab skip the battery check.
-        </p>
-        <label className={st.fieldLabel}>
-          Battery warn threshold: {prefs.preflight.lowBatteryFraction != null ? `${Math.round(prefs.preflight.lowBatteryFraction * 100)}%` : "default (20%)"}
-          <input
-            type="range"
-            min={5} max={50} step={1}
-            value={prefs.preflight.lowBatteryFraction != null ? Math.round(prefs.preflight.lowBatteryFraction * 100) : 20}
-            onChange={(e) => setPrefs({ preflight: { ...prefs.preflight, lowBatteryFraction: Number(e.target.value) / 100 } })}
-          />
-          {prefs.preflight.lowBatteryFraction != null && (
-            <button type="button" className={st.linkBtn} onClick={() => setPrefs({ preflight: { ...prefs.preflight, lowBatteryFraction: null } })}>
-              Reset to default
-            </button>
-          )}
-        </label>
-        <label className={st.fieldLabel}>
-          Storage block threshold: {prefs.preflight.minStorageMb != null ? `${prefs.preflight.minStorageMb} MB` : "default (200 MB)"}
-          <input
-            type="range"
-            min={50} max={1000} step={50}
-            value={prefs.preflight.minStorageMb ?? 200}
-            onChange={(e) => setPrefs({ preflight: { ...prefs.preflight, minStorageMb: Number(e.target.value) } })}
-          />
-          {prefs.preflight.minStorageMb != null && (
-            <button type="button" className={st.linkBtn} onClick={() => setPrefs({ preflight: { ...prefs.preflight, minStorageMb: null } })}>
-              Reset to default
-            </button>
-          )}
-        </label>
-      </section>
+      <PreflightThresholdsPanel
+        prefs={prefs}
+        onChange={(patch) => setPrefs({ preflight: { ...prefs.preflight, ...patch } })}
+      />
 
       {/* PWA install card — only renders when the browser exposed an install
           prompt OR we're on iOS (manual A2HS guidance). Hides when already
@@ -699,6 +665,108 @@ export function Setup() {
         )}
       </section>
 
+    </section>
+  );
+}
+
+/**
+ * Preflight thresholds panel. Shows the operator their two sliders + an
+ * annotation about how the currently-active scene modifies them — so the
+ * operator understands why dragging the battery slider might appear to have
+ * no effect (Pro/Lab skips battery entirely, Walkthrough tightens it).
+ *
+ * Active scene is read from localStorage at mount + listened to via a
+ * storage event so a scene swap in the camera view (which writes the same
+ * key via saveActiveSceneId) reflects here without a page reload.
+ */
+function PreflightThresholdsPanel({
+  prefs, onChange,
+}: {
+  prefs: AppPreferences;
+  onChange: (patch: { lowBatteryFraction?: number | null; minStorageMb?: number | null }) => void;
+}) {
+  const [activeSceneId, setActiveSceneId] = useState(() => loadActiveSceneId());
+  useEffect(() => {
+    // Three notification paths cover scene swaps:
+    //   - `storage` event: cross-tab — fires when ANOTHER tab writes the key.
+    //   - `ss-active-scene-changed` CustomEvent: same-tab — dispatched by
+    //     saveActiveSceneId in this tab, since `storage` doesn't self-notify.
+    //   - `focus`: belt-and-braces for the case where the operator was on a
+    //     different tab, swiped a scene, then refocused this one.
+    const reread = () => setActiveSceneId(loadActiveSceneId());
+    const onStorage = (e: StorageEvent) => { if (e.key === "ss-active-scene") reread(); };
+    window.addEventListener("storage", onStorage);
+    window.addEventListener(ACTIVE_SCENE_CHANGE_EVENT, reread);
+    window.addEventListener("focus", reread);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(ACTIVE_SCENE_CHANGE_EVENT, reread);
+      window.removeEventListener("focus", reread);
+    };
+  }, []);
+  const activeScene = getScene(activeSceneId);
+  const sceneName = activeScene?.name ?? activeSceneId;
+  const sceneSkipsBattery = activeScene?.preflightOverrides?.skipBattery === true;
+  const sceneBatteryWarnPct = activeScene?.preflightOverrides?.lowBatteryFraction != null
+    ? Math.round(activeScene.preflightOverrides.lowBatteryFraction * 100)
+    : null;
+  const sceneStorageMb = activeScene?.preflightOverrides?.minStorageBytes != null
+    ? Math.round(activeScene.preflightOverrides.minStorageBytes / (1024 * 1024))
+    : null;
+
+  return (
+    <section className={st.panel}>
+      <header className={st.panelHeader}>
+        <h2 className={st.panelTitle}>Preflight thresholds</h2>
+        <span className={st.panelBadge}>
+          {(prefs.preflight.lowBatteryFraction != null || prefs.preflight.minStorageMb != null) ? "Customised" : "Defaults"}
+        </span>
+      </header>
+      <p className={st.panelLede}>
+        The watchdog re-runs preflight every 60s during a session and surfaces a toast when device state degrades vs the start. Tune the thresholds here if the canned defaults (battery 20%, storage 200MB) don't match your device. Scene-specific tunings still win — Walkthrough warns earlier on battery, Calibration/Pro-Lab skip the battery check.
+      </p>
+      <label className={st.fieldLabel}>
+        Battery warn threshold: {prefs.preflight.lowBatteryFraction != null ? `${Math.round(prefs.preflight.lowBatteryFraction * 100)}%` : "default (20%)"}
+        <input
+          type="range"
+          min={5} max={50} step={1}
+          value={prefs.preflight.lowBatteryFraction != null ? Math.round(prefs.preflight.lowBatteryFraction * 100) : 20}
+          onChange={(e) => onChange({ lowBatteryFraction: Number(e.target.value) / 100 })}
+        />
+        {sceneSkipsBattery ? (
+          <span className={st.toggleHint}>
+            Active scene <strong>{sceneName}</strong> skips the battery check — this slider has no effect until you switch to a mobile scene.
+          </span>
+        ) : sceneBatteryWarnPct != null ? (
+          <span className={st.toggleHint}>
+            Active scene <strong>{sceneName}</strong> overrides this to <strong>{sceneBatteryWarnPct}%</strong>.
+          </span>
+        ) : null}
+        {prefs.preflight.lowBatteryFraction != null && (
+          <button type="button" className={st.linkBtn} onClick={() => onChange({ lowBatteryFraction: null })}>
+            Reset to default
+          </button>
+        )}
+      </label>
+      <label className={st.fieldLabel}>
+        Storage block threshold: {prefs.preflight.minStorageMb != null ? `${prefs.preflight.minStorageMb} MB` : "default (200 MB)"}
+        <input
+          type="range"
+          min={50} max={1000} step={50}
+          value={prefs.preflight.minStorageMb ?? 200}
+          onChange={(e) => onChange({ minStorageMb: Number(e.target.value) })}
+        />
+        {sceneStorageMb != null && (
+          <span className={st.toggleHint}>
+            Active scene <strong>{sceneName}</strong> overrides this to <strong>{sceneStorageMb} MB</strong>.
+          </span>
+        )}
+        {prefs.preflight.minStorageMb != null && (
+          <button type="button" className={st.linkBtn} onClick={() => onChange({ minStorageMb: null })}>
+            Reset to default
+          </button>
+        )}
+      </label>
     </section>
   );
 }

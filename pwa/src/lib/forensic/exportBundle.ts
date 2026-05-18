@@ -187,6 +187,18 @@ interface CoverData {
     summary: string;
     checks: ReadinessCheck[];
   };
+  /**
+   * Device-state timeline for the single-case cover. Mirrors the Review-tab
+   * sparklines (battery + storage_free) with marker overlays — bakes a
+   * printable forensic snapshot of the device's condition into the case
+   * file so reviewers can correlate "marked moment" with "device state"
+   * without having to re-open the app. Undefined for scope="all".
+   */
+  deviceState?: {
+    battery: { value: number; ts: string }[];
+    storageMb: { value: number; ts: string }[];
+    markerTimestamps: string[];
+  };
 }
 
 function escapeHtml(s: string): string {
@@ -199,6 +211,59 @@ function truncateMiddle(s: string | null, head = 10, tail = 10): string {
   if (!s) return "(empty chain)";
   if (s.length <= head + tail + 1) return s;
   return `${s.slice(0, head)}…${s.slice(-tail)}`;
+}
+
+/**
+ * Render a device-state sparkline as an inline SVG string for the printable
+ * cover sheet. Mirrors the math in the Review-tab DeviceSpark component so
+ * the printed forensic snapshot matches what the operator saw in-app.
+ * Falls back to an empty string when there's nothing to plot.
+ */
+function renderCoverSparkline(opts: {
+  label: string;
+  samples: { value: number; ts: string }[];
+  markerTimestamps: readonly string[];
+  format: (v: number) => string;
+  domain?: { min: number; max: number };
+  stroke: string;
+}): string {
+  if (opts.samples.length < 2) return "";
+  const W = 280;
+  const H = 60;
+  const values = opts.samples.map((s) => s.value);
+  const min = opts.domain?.min ?? Math.min(...values);
+  const max = opts.domain?.max ?? Math.max(...values);
+  const span = Math.max(0.0001, max - min);
+  const stepX = W / (opts.samples.length - 1);
+  const points = opts.samples
+    .map((s, i) => `${(i * stepX).toFixed(1)},${(H - ((s.value - min) / span) * H).toFixed(1)}`)
+    .join(" ");
+  const first = opts.samples[0];
+  const last = opts.samples[opts.samples.length - 1];
+  const startMs = Date.parse(first.ts);
+  const endMs = Date.parse(last.ts);
+  const rangeMs = Math.max(1, endMs - startMs);
+  const markerXs = opts.markerTimestamps
+    .map((iso) => Date.parse(iso))
+    .filter((ms) => Number.isFinite(ms) && ms >= startMs && ms <= endMs)
+    .map((ms) => ((ms - startMs) / rangeMs) * W);
+  const markerLines = markerXs
+    .map((x) => `<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="0" y2="${H}" stroke="#888" stroke-width="0.6" stroke-dasharray="2 2" opacity="0.55" />`)
+    .join("");
+  return `<div class="spark">
+    <div class="sparkHead">
+      <strong>${escapeHtml(opts.label)}</strong>
+      <span class="sparkValue">${escapeHtml(opts.format(last.value))}</span>
+    </div>
+    <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none">
+      ${markerLines}
+      <polyline points="${points}" fill="none" stroke="${opts.stroke}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" />
+    </svg>
+    <div class="sparkFoot">
+      <span>start ${escapeHtml(opts.format(first.value))} · ${new Date(first.ts).toLocaleTimeString()}</span>
+      <span>${opts.samples.length} samples${markerXs.length > 0 ? ` · ${markerXs.length} marker${markerXs.length === 1 ? "" : "s"}` : ""}</span>
+    </div>
+  </div>`;
 }
 
 const COVER_HTML_TEMPLATE = (d: CoverData): string => {
@@ -276,6 +341,13 @@ const COVER_HTML_TEMPLATE = (d: CoverData): string => {
   ul.reviewers .rmeta { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 9pt; color: #666; margin-top: 4px; }
   ul.reviewers blockquote { margin-top: 8px; }
   ul.reviewers .rrefs { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 9pt; color: #666; margin-top: 6px; word-break: break-all; }
+  .sparks { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .spark { border: 1px solid #ddd; border-radius: 4px; padding: 8px 12px; background: #fafafa; }
+  .sparkHead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+  .sparkHead strong { font-size: 10pt; font-weight: 700; color: #333; }
+  .sparkValue { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11pt; font-weight: 700; color: #111; }
+  .sparkFoot { display: flex; justify-content: space-between; font-size: 8.5pt; color: #777; margin-top: 4px; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  @media print { .sparks { grid-template-columns: 1fr 1fr; } }
   .readiness { display: flex; flex-direction: column; gap: 10px; }
   .readiness .rbanner { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 4px; border: 1px solid #ccc; }
   .readiness .rmark { font-size: 18pt; font-weight: 800; line-height: 1; }
@@ -319,6 +391,30 @@ const COVER_HTML_TEMPLATE = (d: CoverData): string => {
     <tr><td>Transcripts</td><td>${d.counts.transcripts}</td></tr>
   </table>
 </section>
+${(() => {
+  const ds = d.deviceState;
+  if (!ds || (ds.battery.length < 2 && ds.storageMb.length < 2)) return "";
+  const batterySvg = renderCoverSparkline({
+    label: "Battery",
+    samples: ds.battery,
+    markerTimestamps: ds.markerTimestamps,
+    format: (v) => `${Math.round(v * 100)}%`,
+    domain: { min: 0, max: 1 },
+    stroke: "#b87600",
+  });
+  const storageSvg = renderCoverSparkline({
+    label: "Storage free",
+    samples: ds.storageMb,
+    markerTimestamps: ds.markerTimestamps,
+    format: (v) => `${Math.round(v)} MB`,
+    stroke: "#0a7e3f",
+  });
+  if (!batterySvg && !storageSvg) return "";
+  return `<section><h2>Device state — battery + storage</h2>
+    <div class="sparks">${batterySvg}${storageSvg}</div>
+    <p class="muted">Watchdog samples taken every 60s during capture. Dashed vertical ticks mark double-tap moments dropped by the operator.</p>
+  </section>`;
+})()}
 <section><h2>Pre-air readiness</h2>${readinessBlock}</section>
 <section><h2>External reviewer sign-off</h2>${reviewersBlock}</section>
 <section><h2>Acknowledgement of Country</h2>${aocBlock}</section>
@@ -771,6 +867,31 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
 
   // Cover page — single-page printable summary for binders/case files.
   const singleCase = scope === "single" ? investigations[0] ?? null : null;
+  // Build the device-state timeline for single-case exports. battery and
+  // storage_free samples come from the mid-session watchdog (sensor_samples
+  // table); marker timestamps come from the operator's double-taps stored
+  // as event_type='marker' on evidence_events. We filter from the already-
+  // queried `events` array instead of re-hitting the DB.
+  let coverDeviceState: CoverData["deviceState"] | undefined;
+  if (singleCase) {
+    const deviceSamples = await query<{ timestamp: string; sensor_type: string; value: number | null }>(
+      "SELECT timestamp, sensor_type, value FROM sensor_samples WHERE investigation_id = ? AND sensor_type IN ('battery', 'storage_free') ORDER BY timestamp ASC",
+      [singleCase.id],
+    );
+    const battery: { value: number; ts: string }[] = [];
+    const storageMb: { value: number; ts: string }[] = [];
+    for (const row of deviceSamples) {
+      if (row.value == null) continue;
+      if (row.sensor_type === "battery") battery.push({ value: row.value, ts: row.timestamp });
+      else if (row.sensor_type === "storage_free") storageMb.push({ value: row.value / (1024 * 1024), ts: row.timestamp });
+    }
+    if (battery.length > 1 || storageMb.length > 1) {
+      const markerTimestamps = events
+        .filter((e) => e.investigation_id === singleCase.id && e.event_type === "marker")
+        .map((e) => e.timestamp);
+      coverDeviceState = { battery, storageMb, markerTimestamps };
+    }
+  }
   const coverHtml = COVER_HTML_TEMPLATE({
     generatedAt: new Date().toISOString(),
     scope,
@@ -809,6 +930,7 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
       summary: readiness.summary,
       checks: readiness.checks,
     },
+    deviceState: coverDeviceState,
   });
   entries.push(textEntry("cover.html", coverHtml));
 

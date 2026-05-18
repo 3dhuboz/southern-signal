@@ -159,6 +159,15 @@ function watchdogStorageWarn(report: PreflightReport): boolean {
   return report.checks.some((c) => c.id === "storage" && c.level !== "ok");
 }
 
+/** Ordinal formatter for the "Nth warning" counter — short forms that read
+ *  cleanly inline. Used by the watchdog toast superscript chip. */
+function ordinal(n: number): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  const mod10 = n % 10;
+  return `${n}${mod10 === 1 ? "st" : mod10 === 2 ? "nd" : mod10 === 3 ? "rd" : "th"}`;
+}
+
 // `mergeWatchdogReports` USED to keep the worst-severity check per id across
 // reports — but each preflight is already a full snapshot, so the new report
 // always contains current state for every active check. Merging just stalled
@@ -440,6 +449,11 @@ export function CameraScreen() {
   // the toast even though `overall` stayed at warn. Without this, a same-level
   // re-degradation goes unsurfaced.
   const lastWatchdogFailIdsRef = useRef<string>("");
+  // Count of toasts fired in the current session — surfaced as "Nth warning"
+  // in the toast so the operator notices a degrading trend rather than
+  // treating each notification as an isolated event. Resets when running
+  // flips off (alongside the level/failIds refs).
+  const [watchdogCount, setWatchdogCount] = useState(0);
   // Suppresses watchdog ticks while the browser install prompt is on screen.
   // Without it, a 60s tick can fire mid-prompt and stack a fresh toast behind
   // the native dialog — confusing the operator when they dismiss the prompt
@@ -467,6 +481,7 @@ export function CameraScreen() {
       // from the Begin preflight, but the explicit reset here is defensive.
       lastWatchdogLevelRef.current = "ok";
       lastWatchdogFailIdsRef.current = "";
+      setWatchdogCount(0);
       return;
     }
     const tick = async () => {
@@ -497,6 +512,7 @@ export function CameraScreen() {
           lastWatchdogLevelRef.current = report.overall;
           lastWatchdogFailIdsRef.current = failIds;
           setWatchdog(report);
+          setWatchdogCount((n) => n + 1);
         }
         // Sample battery + storage into the case file each tick — gives the
         // export bundle a per-minute timeline of device-state degradation
@@ -888,6 +904,9 @@ export function CameraScreen() {
             >
               <span className={s.watchdogToastLabel}>
                 {watchdog.overall === "block" ? "Device state critical" : "Device state degraded"}
+                {watchdogCount > 1 && (
+                  <span className={s.watchdogToastCount}>{ordinal(watchdogCount)} warning</span>
+                )}
               </span>
               <span className={s.watchdogToastDetail}>
                 {formatWatchdogChecks(watchdog.checks) || "Tap to dismiss"}

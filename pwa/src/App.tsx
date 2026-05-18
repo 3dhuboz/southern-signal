@@ -4,6 +4,7 @@ import { AcknowledgementGate } from "./components/AcknowledgementGate";
 import { OnboardingTour } from "./components/OnboardingTour";
 import { AppHeader } from "./components/AppHeader";
 import { BottomNav } from "./components/BottomNav";
+import { ChainBrokenBanner } from "./components/ChainBrokenBanner";
 import { CivilTwilightBanner } from "./components/CivilTwilightBanner";
 import { InterruptedSessionBanner } from "./components/InterruptedSessionBanner";
 import { ServiceWorkerUpdateBanner } from "./components/ServiceWorkerUpdateBanner";
@@ -99,6 +100,7 @@ export default function App() {
       <ServiceWorkerUpdateBanner />
       <CivilTwilightBanner />
       <InterruptedSessionBanner />
+      <ChainBrokenBanner />
       <main>
         <Suspense fallback={<RouteFallback />}>
           <Routes>
