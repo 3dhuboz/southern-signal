@@ -365,6 +365,20 @@ export function CameraScreen() {
   //    10 minutes into a hunt.
   const [preflight, setPreflight] = useState<PreflightReport | null>(null);
   const [preflightDismissed, setPreflightDismissed] = useState(false);
+  // ── Mid-session watchdog — re-runs preflight every 60s while running.
+  //    Surfaces a non-blocking toast only when the overall level WORSENS vs
+  //    what was seen at Begin. Storage and battery degrade slowly during a
+  //    long hunt; the watchdog gives the operator a chance to swap a battery
+  //    or free space before the recording silently drops chunks.
+  //
+  //    Anti-pester: we only fire the toast once per degradation event by
+  //    tracking the last-fired overall in a ref; staying degraded doesn't
+  //    re-emit. Returning to OK doesn't fire either — it just resets the ref
+  //    so the next degradation event can fire.
+  const WATCHDOG_INTERVAL_MS = 60_000;
+  const WATCHDOG_TOAST_MS = 7000;
+  const [watchdog, setWatchdog] = useState<PreflightReport | null>(null);
+  const lastWatchdogLevelRef = useRef<"ok" | "warn" | "block">("ok");
 
   // ITC hooks read the scene's tools config — Spirit Box Session auto-starts
   // the spirit box; Pro/Lab leaves Ovilus to manual. Output is consumed via
@@ -372,6 +386,44 @@ export function CameraScreen() {
   // (publishing to the ITC channel store) and ignore their returned API.
   useSpiritBox(itcEntropy, running, activeScene?.tools.spiritBox === true);
   useOvilus(itcEntropy, running, activeScene?.tools.ovilus === true);
+
+  // Watchdog effect: ticks every WATCHDOG_INTERVAL_MS while running. The
+  // baseline level (from the Begin preflight) is captured into the ref by
+  // handleBegin; this effect only ESCALATES the ref upward, so going from
+  // ok → warn → block surfaces toasts but warn → ok doesn't. We fire an
+  // immediate tick at activation so a device that degrades inside the first
+  // minute still gets surfaced, then settle into the periodic cadence.
+  useEffect(() => {
+    if (!running) {
+      // Reset the baseline so the next session's watchdog starts clean —
+      // otherwise a session that hit `block` would silently leave the next
+      // session unable to fire warn-tier toasts. handleBegin re-seeds this
+      // from the Begin preflight, but the explicit reset here is defensive.
+      lastWatchdogLevelRef.current = "ok";
+      return;
+    }
+    const tick = async () => {
+      try {
+        const report = await runPreflight();
+        const severity = { ok: 0, warn: 1, block: 2 } as const;
+        if (severity[report.overall] > severity[lastWatchdogLevelRef.current]) {
+          lastWatchdogLevelRef.current = report.overall;
+          setWatchdog(report);
+        }
+      } catch { /* swallow — best-effort watchdog, never breaks the hunt */ }
+    };
+    void tick();
+    const handle = window.setInterval(() => { void tick(); }, WATCHDOG_INTERVAL_MS);
+    return () => window.clearInterval(handle);
+  }, [running]);
+
+  // Auto-dismiss the toast after WATCHDOG_TOAST_MS. The operator can also
+  // tap it; staying surfaced indefinitely would compete with the camera view.
+  useEffect(() => {
+    if (!watchdog) return;
+    const h = window.setTimeout(() => setWatchdog(null), WATCHDOG_TOAST_MS);
+    return () => window.clearTimeout(h);
+  }, [watchdog]);
 
   // First-run redirect: if the operator has NEVER picked a scene, send them
   // to HuntSetup before showing the camera surface. Once they pick once,
@@ -538,6 +590,10 @@ export function CameraScreen() {
       // The shape is intentionally JSON-flat — every audit-log consumer
       // (export, hash chain, sync) treats metadata as opaque storage.
       const report = await preflightPromise;
+      // Seed the watchdog baseline from the Begin snapshot so the periodic
+      // re-check only fires a toast when the device state actually degrades
+      // during the hunt — not when the operator started already on warn.
+      lastWatchdogLevelRef.current = report.overall;
       await recordEvent({
         investigation_id: inv.id,
         source: "system",
@@ -690,6 +746,30 @@ export function CameraScreen() {
           <div className={s.markerToast} role="status" aria-live="polite">
             ✓ MARKED
           </div>
+        )}
+
+        {/* ── Watchdog toast — non-blocking warning when the device state
+             degraded since the session started (storage low, battery dipped
+             below 20%). Sits below the corner pills so it doesn't compete
+             with the REC indicator. Tap dismisses. Hard-dismisses after
+             WATCHDOG_TOAST_MS even if untouched. */}
+        {watchdog && (
+          <button
+            type="button"
+            className={`${s.watchdogToast} ${watchdog.overall === "block" ? s.watchdogToastBlock : s.watchdogToastWarn}`.trim()}
+            onClick={() => setWatchdog(null)}
+            aria-label="Dismiss device-state warning"
+          >
+            <span className={s.watchdogToastLabel}>
+              {watchdog.overall === "block" ? "Device state critical" : "Device state degraded"}
+            </span>
+            <span className={s.watchdogToastDetail}>
+              {watchdog.checks
+                .filter((c) => c.level !== "ok")
+                .map((c) => c.message)
+                .join(" · ") || "Tap to dismiss"}
+            </span>
+          </button>
         )}
 
         {/* ── Pre-flight blocker — only shown when a critical check failed

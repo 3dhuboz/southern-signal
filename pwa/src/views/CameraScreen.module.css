@@ -109,6 +109,56 @@
   to   { opacity: 0; transform: translate(-50%, -8px); }
 }
 
+/* ── Watchdog toast ────────────────────────────────────────────────────────
+   Mid-session degradation warning (storage running out, battery dropped
+   under 20%). Anchored top-center BELOW the marker toast zone so it
+   doesn't clash when both fire close together. Tap to dismiss; the
+   surrounding component also auto-dismisses after a few seconds. */
+.watchdogToast {
+  position: absolute;
+  top: calc(82px + var(--safe-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  max-width: 88%;
+  padding: 8px 16px;
+  border-radius: 12px;
+  font-family: var(--font-mono);
+  color: #fff;
+  pointer-events: auto;
+  z-index: 6;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  text-align: center;
+  animation: markerToastIn 200ms ease-out;
+}
+.watchdogToastWarn {
+  background: rgba(212, 192, 38, 0.92);
+  box-shadow: 0 4px 16px rgba(212, 192, 38, 0.35);
+  color: #1a1604;
+}
+.watchdogToastBlock {
+  background: rgba(216, 57, 44, 0.94);
+  box-shadow: 0 4px 16px rgba(216, 57, 44, 0.45);
+}
+.watchdogToastLabel {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  line-height: 1.1;
+}
+.watchdogToastDetail {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  line-height: 1.35;
+  opacity: 0.95;
+}
+
 /* ── Tap-to-focus ring ────────────────────────────────────────────────────
    Anchored at the tap point. Scales from 1.6 → 1 over ~250ms, then fades.
    Pure CSS animation so the gesture feels instant — no React re-render gate. */

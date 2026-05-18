@@ -31,6 +31,11 @@ export interface VadHandle {
   stop(): void;
   /** Last computed level, in dBFS. Useful for debugging. */
   getLevelDb(): number;
+  /** Current adaptive noise floor estimate, in dB. The detector compares
+   *  `getLevelDb()` against `getNoiseFloorDb() + activationDb` to decide
+   *  whether voice is active — surfacing this lets a UI render the gap so
+   *  the operator can tune sensitivity with a live readout. */
+  getNoiseFloorDb(): number;
 }
 
 /**
@@ -47,7 +52,7 @@ export function startVad(
 ): VadHandle {
   const ctx = unlockAudio();
   if (!ctx) {
-    return { stop: () => {}, getLevelDb: () => -Infinity };
+    return { stop: () => {}, getLevelDb: () => -Infinity, getNoiseFloorDb: () => -Infinity };
   }
 
   const activationDb   = cfg.activationDb   ?? 12;
@@ -134,5 +139,6 @@ export function startVad(
       try { analyser.disconnect(); } catch { /* ignore */ }
     },
     getLevelDb() { return lastLevelDb; },
+    getNoiseFloorDb() { return noiseFloorDb; },
   };
 }

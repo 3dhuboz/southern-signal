@@ -35,6 +35,24 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+/** Format a dBFS reading for compact readouts. Negative-infinity prints as
+ *  an em-dash so the UI doesn't flash "-Infinity dB" before the analyser
+ *  has a real sample. Otherwise: signed integer dB. */
+function formatDb(db: number): string {
+  if (!Number.isFinite(db)) return "—";
+  return `${Math.round(db)} dB`;
+}
+
+/** "Signal − Floor vs activation threshold" — positive when the operator is
+ *  loud enough to trip VAD at the current sensitivity slider. Renders as a
+ *  signed integer with an explicit + so it reads as a gauge. */
+function formatGap(levelDb: number, floorDb: number, sensitivityDb: number): string {
+  if (!Number.isFinite(levelDb) || !Number.isFinite(floorDb)) return "—";
+  const gap = Math.round(levelDb - floorDb - sensitivityDb);
+  if (gap >= 0) return `+${gap} dB`;
+  return `${gap} dB`;
+}
+
 export function Setup() {
   const [prefs, setPrefs] = usePreferences();
   const [onboardingCompletedAt, setOnboardingCompletedAt] = useState<string | null>(() => {
@@ -657,6 +675,10 @@ function SoundCheckCard({ vadConfig }: { vadConfig: AppPreferences["vadConfig"] 
   const [level, setLevel] = useState(0);
   const [vadActive, setVadActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Live dB readouts — polled at 10Hz to avoid 60fps churn. Negative-infinity
+  // sentinel renders as a friendly "—" until the analyser has a real value.
+  const [levelDb, setLevelDb] = useState(-Infinity);
+  const [floorDb, setFloorDb] = useState(-Infinity);
   const streamRef = useRef<MediaStream | null>(null);
   const meterRef  = useRef<MicLevelMeter | null>(null);
   const vadRef    = useRef<VadHandle | null>(null);
@@ -678,6 +700,20 @@ function SoundCheckCard({ vadConfig }: { vadConfig: AppPreferences["vadConfig"] 
     } catch { /* swallow — getLevelDb returns -Infinity, UI just shows inactive */ }
   }, [active, vadConfig.sensitivityDb, vadConfig.attackMs, vadConfig.releaseMs]);
 
+  // Poll VAD's internal dB readouts at 10Hz while the mic test is live. The
+  // interval (not rAF) keeps the readout legible — 60Hz would smear the digits
+  // into illegibility. Tear down with the test.
+  useEffect(() => {
+    if (!active) return;
+    const handle = window.setInterval(() => {
+      const v = vadRef.current;
+      if (!v) return;
+      setLevelDb(v.getLevelDb());
+      setFloorDb(v.getNoiseFloorDb());
+    }, 100);
+    return () => window.clearInterval(handle);
+  }, [active]);
+
   const stop = useCallback(() => {
     vadRef.current?.stop(); vadRef.current = null;
     meterRef.current?.stop(); meterRef.current = null;
@@ -686,6 +722,8 @@ function SoundCheckCard({ vadConfig }: { vadConfig: AppPreferences["vadConfig"] 
     setActive(false);
     setLevel(0);
     setVadActive(false);
+    setLevelDb(-Infinity);
+    setFloorDb(-Infinity);
   }, []);
 
   // Tear down on unmount so a panel close mid-test doesn't leak the mic.
@@ -721,9 +759,25 @@ function SoundCheckCard({ vadConfig }: { vadConfig: AppPreferences["vadConfig"] 
             style={{ transform: `scaleX(${Math.min(1, Math.max(0, level))})` }}
           />
         </div>
-        <span className={st.soundCheckHint}>
-          {active ? "Speak normally — the bar shows your peak level." : "Tap Test mic to confirm the mic is hot and tune VAD live."}
-        </span>
+        {active ? (
+          <span className={st.soundCheckHint}>
+            {/* Live readout: signal dB, adaptive floor, and the threshold gap.
+                A gap >= configured sensitivity means voice is about to trip
+                (or has already tripped) the auto-duck. */}
+            <span>
+              Signal{" "}
+              <strong>{formatDb(levelDb)}</strong>
+              {" · Floor "}
+              <strong>{formatDb(floorDb)}</strong>
+              {" · Gap "}
+              <strong>{formatGap(levelDb, floorDb, vadConfig.sensitivityDb)}</strong>
+            </span>
+          </span>
+        ) : (
+          <span className={st.soundCheckHint}>
+            Tap Test mic to confirm the mic is hot and tune VAD live.
+          </span>
+        )}
       </div>
       <span className={`${st.soundCheckVadDot} ${vadActive ? st.soundCheckVadActive : ""}`.trim()}>
         {vadActive ? "VAD · trips" : "VAD · idle"}

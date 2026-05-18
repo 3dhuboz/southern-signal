@@ -124,6 +124,11 @@
   color: var(--accent-strong);
   border-color: var(--accent-strong);
 }
+.kindChipActive {
+  background: color-mix(in srgb, var(--accent-strong) 18%, var(--bg-inset));
+  color: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
 
 .list {
   list-style: none;
@@ -173,6 +178,20 @@
 .rowTs {
   color: var(--text-muted);
   margin-left: auto;
+}
+
+/* One-line summary surfaced for session_start rows — battery %, free MB,
+   permission states pulled from the embedded preflight snapshot so the
+   operator triages without expanding the JSON payload. */
+.rowSummary {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--accent-strong) 6%, var(--bg-inset));
+  border-left: 2px solid var(--accent-strong);
+  padding: 4px var(--s-8);
+  border-radius: 0 3px 3px 0;
 }
 
 .rowPayload summary {

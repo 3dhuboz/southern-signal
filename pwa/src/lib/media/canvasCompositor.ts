@@ -81,22 +81,19 @@ export interface OverlayChannels {
   audioMeter?: boolean;
 }
 
-export const DEFAULT_OVERLAY_CHANNELS: OverlayChannels = {
-  activityPill: true,
-  posteriorPill: true,
-  edgeGlow: true,
-  sensors: true,
-  itc: true,
-  directionArrow: true,
-  caption: true,
-  timestamp: true,
-  statusPills: true,
-  cornerBrackets: true,
-  kiiMeter: false,
-  remPod: false,
-  nightVision: false,
-  audioMeter: false,
-};
+/**
+ * Default overlay channel set. Derived from the registry at module load so
+ * the source of truth for "is this overlay on by default" stays in one
+ * place (`OVERLAY_REGISTRY`). Used as the fallback when a caller renders a
+ * frame without an explicit `channels` map, and as the target of the
+ * Customise → Reset button in LiveStreamView. Forensic-mandatory channels
+ * are forced on inside `resolveChannels` regardless of what's stored here.
+ */
+export const DEFAULT_OVERLAY_CHANNELS: OverlayChannels = (() => {
+  const out: Partial<Record<OverlayId, boolean>> = {};
+  for (const plugin of OVERLAY_REGISTRY) out[plugin.id] = plugin.defaultEnabled;
+  return out as OverlayChannels;
+})();
 
 /**
  * An ITC (Instrumental Trans-Communication) channel emission — a phoneme
