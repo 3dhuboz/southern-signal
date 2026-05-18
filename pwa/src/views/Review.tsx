@@ -58,6 +58,35 @@ interface PosteriorRow {
   capped: boolean;
 }
 
+interface MarkerRow {
+  id: string;
+  timestamp: string;
+  investigation_id: string;
+  title: string | null;
+  description: string | null;
+  metadata_json: string | null;
+}
+
+interface MarkerView {
+  id: string;
+  timestamp: string;
+  title: string;
+  elapsedLabel: string | null;
+  sceneId: string | null;
+}
+
+function formatMarkerElapsed(meta: string | null): string | null {
+  if (!meta) return null;
+  try {
+    const parsed = JSON.parse(meta) as { sessionElapsedSec?: unknown };
+    const sec = parsed.sessionElapsedSec;
+    if (typeof sec !== "number" || !Number.isFinite(sec)) return null;
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec) % 60;
+    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  } catch { return null; }
+}
+
 export function Review() {
   const [prefs] = usePreferences();
   const isPro = prefs.experienceMode === "pro";
@@ -66,6 +95,7 @@ export function Review() {
   const [chainBrokenSeq, setChainBrokenSeq] = useState<number | null>(null);
   const [merkleRoot, setMerkleRoot] = useState<string | null>(null);
   const [latestBrief, setLatestBrief] = useState<EvidenceBrief | null>(null);
+  const [markers, setMarkers] = useState<MarkerView[]>([]);
 
   useEffect(() => {
     void (async () => {
@@ -87,6 +117,32 @@ export function Review() {
       try {
         const recentId = await findMostRecentInvestigationId();
         if (recentId) setLatestBrief(await buildEvidenceBrief(recentId));
+        // Load moment markers for the most-recent investigation. Markers
+        // ride in the evidence_events table (event_type='marker'); the
+        // audit log carries the hash chain but not the metadata we need
+        // to render elapsed-time + scene id at review time.
+        if (recentId) {
+          const rows = await query<MarkerRow>(
+            "SELECT id, timestamp, investigation_id, title, description, metadata_json FROM evidence_events WHERE investigation_id = ? AND event_type = 'marker' ORDER BY timestamp DESC LIMIT 200",
+            [recentId],
+          );
+          setMarkers(rows.map((row) => {
+            let sceneId: string | null = null;
+            if (row.metadata_json) {
+              try {
+                const parsed = JSON.parse(row.metadata_json) as { sceneId?: unknown };
+                if (typeof parsed.sceneId === "string") sceneId = parsed.sceneId;
+              } catch { /* ignore */ }
+            }
+            return {
+              id: row.id,
+              timestamp: row.timestamp,
+              title: row.title ?? "Moment marked",
+              elapsedLabel: formatMarkerElapsed(row.metadata_json),
+              sceneId,
+            };
+          }));
+        }
       } catch { /* verdict card just won't render */ }
     })();
   }, []);
@@ -388,6 +444,34 @@ export function Review() {
           />
         </div>
       )}
+
+      {/* Moment markers — double-taps the operator dropped during capture.
+          Latest case only; oldest cases are still searchable through the
+          audit log if needed. */}
+      <div className={r.section}>
+        <header className={r.sectionHeader}>
+          <h2>Moment markers ({markers.length})</h2>
+        </header>
+        {markers.length === 0 ? (
+          <p className={r.empty}>
+            No markers yet. Double-tap the camera viewport during a session to drop a moment marker — it lands here with the elapsed time + active scene for one-tap review later.
+          </p>
+        ) : (
+          <ol className={r.incrementList}>
+            {markers.map((m) => (
+              <li key={m.id} className={r.incrementRow}>
+                <span className={r.incrementSeq}>●</span>
+                <span className={r.incrementChannel}>{m.elapsedLabel ?? "—"}</span>
+                <span className={r.incrementMath}>{m.title}</span>
+                {m.sceneId && (
+                  <span className={r.incrementReason}>scene: {m.sceneId}</span>
+                )}
+                <span className={r.incrementTs}>{new Date(m.timestamp).toLocaleTimeString()}</span>
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
 
       {/* Evidence updates / posterior log */}
       <div className={r.section}>
