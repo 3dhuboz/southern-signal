@@ -17,6 +17,7 @@ import { query } from "../db/db";
 import { verifyAuditChain } from "../db/auditLog";
 import { getPreferences } from "../preferences";
 import { buildManifest } from "./manifest";
+import { loadMarkerOverrides } from "../db/markerOverrides";
 import type { Investigation, InterviewRow, ResearchDossierRow, ResearchFindingNoteRow } from "../db/schema";
 import { classifyPosterior, type PosteriorBand } from "../posterior/posterior";
 import { computeAhtVerdict, computeH0Confidence, type AhtVerdictResult } from "../posterior/ahtVerdict";
@@ -85,6 +86,18 @@ export interface BriefInterview {
   linkedEventIds: string[];
 }
 
+/** A moment marker as it appears in the brief — surfaces the reviewer's
+ *  notes alongside the original capture. Dismissed markers are filtered
+ *  out at brief-build time; the original evidence_events row is preserved
+ *  in the full export (the brief is a summary, not the source of truth). */
+export interface BriefMarker {
+  id: string;
+  ts: string;
+  elapsed: string | null;
+  category: "sound" | "movement" | "felt" | null;
+  note: string | null;
+}
+
 export interface EvidenceBrief {
   generatedAt: string;
   investigation: Investigation;
@@ -96,6 +109,11 @@ export interface EvidenceBrief {
   finalPosterior: number;
   contaminationCount: number;
   markerCount: number;
+  /** Markers with notes or non-default categories, scoped to this case.
+   *  Always populated when markerCount > 0 even if notes are empty so the
+   *  brief renderer can decide whether to show a list. Dismissed markers
+   *  are filtered out — the reviewer chose not to carry them forward. */
+  markersWithNotes: BriefMarker[];
   observationCount: number;
   mediaByType: { audio: number; image: number; video: number };
   chainStatus: { ok: true } | { ok: false; brokenAtSeq: number; reason: string };
@@ -354,6 +372,53 @@ export async function buildEvidenceBrief(investigationId: string): Promise<Evide
     merkleRoot = manifest.global_audit_chain.merkle_root;
   } catch { /* ignore */ }
 
+  // Moment markers + reviewer notes. Capped at 50 — a brief is a summary,
+  // not the full transcript; the export bundle carries the unbounded set.
+  // Loaded last so the brief assembly stays sensitive to schema upgrades
+  // (the overrides loader returns an empty result on missing columns).
+  let markersWithNotes: BriefMarker[] = [];
+  if (markerCount > 0) {
+    try {
+      const overrides = await loadMarkerOverrides();
+      const markerRows = await query<{ id: string; timestamp: string; metadata_json: string | null }>(
+        `SELECT id, timestamp, metadata_json FROM evidence_events
+         WHERE investigation_id = ? AND event_type = 'marker'
+         ORDER BY timestamp ASC LIMIT 50`,
+        [investigationId],
+      );
+      markersWithNotes = markerRows
+        .filter((m) => !overrides.dismissed.has(m.id))
+        .map((m) => {
+          const ann = overrides.annotations.get(m.id);
+          let elapsed: string | null = null;
+          let capturedCategory: BriefMarker["category"] = null;
+          if (m.metadata_json) {
+            try {
+              const meta = JSON.parse(m.metadata_json) as { sessionElapsedSec?: unknown; category?: unknown };
+              if (typeof meta.sessionElapsedSec === "number" && Number.isFinite(meta.sessionElapsedSec)) {
+                const mm = Math.floor(meta.sessionElapsedSec / 60);
+                const ss = Math.floor(meta.sessionElapsedSec) % 60;
+                elapsed = `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+              }
+              if (meta.category === "sound" || meta.category === "movement" || meta.category === "felt") {
+                capturedCategory = meta.category;
+              }
+            } catch { /* ignore */ }
+          }
+          // Annotation category overrides the captured one when explicitly
+          // set (including being reset to null = Untagged).
+          const category = ann?.category !== undefined ? ann.category : capturedCategory;
+          return {
+            id: m.id,
+            ts: m.timestamp,
+            elapsed,
+            category,
+            note: ann?.note ?? null,
+          };
+        });
+    } catch { /* swallow — brief just gets an empty notes list */ }
+  }
+
   const prefs = getPreferences();
 
   return {
@@ -367,6 +432,7 @@ export async function buildEvidenceBrief(investigationId: string): Promise<Evide
     finalPosterior,
     contaminationCount,
     markerCount,
+    markersWithNotes,
     observationCount,
     mediaByType,
     chainStatus,

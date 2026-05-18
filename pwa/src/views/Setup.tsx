@@ -831,16 +831,16 @@ function PreflightThresholdsPanel({
  * lives.
  */
 const WHATS_NEW_ITEMS: { title: string; where: string }[] = [
+  { title: "Reviewer notes flow to brief + bundle",     where: "Review → Marker edit notes show in the case brief and bundle cover.html" },
+  { title: "Battery time-remaining estimate",           where: "Camera watchdog toast + Review battery spark — italic chip" },
+  { title: "Snooze watchdog toasts for 10 min",         where: "Camera screen — Snooze button on the device-state degraded toast" },
+  { title: "Live marker tally on the camera HUD",       where: "Camera screen — pill above the dock; tap to open Review" },
+  { title: "Drag the expanded spark to zoom",           where: "Review → Device state → ⛶ — drag across the chart to slice a range" },
   { title: "Silence battery / storage watchdog toasts", where: "Setup → Preflight thresholds → Silence mid-session toasts for…" },
   { title: "Refuse sessions on broken audit chain",     where: "Setup → Preflight thresholds → Refuse to start on broken audit chain" },
   { title: "Edit + delete moment markers",              where: "Review → Moment markers — tap Edit on any row to add a note or dismiss" },
   { title: "Compare chain against last export",         where: "Setup → Audit log → Compare to last export" },
   { title: "Expand sparkline to a readable chart",      where: "Review → Device state — tap the ⛶ icon to enlarge" },
-  { title: "Tag markers by category on drop",           where: "Camera screen — after double-tap, pick Sound / Movement / Felt" },
-  { title: "Filter markers by category in Review",      where: "Review → Moment markers — chip row above the list" },
-  { title: "Tap-to-lock sparkline readout",             where: "Review → Device state — tap a spark to pin a value/time" },
-  { title: "Chain-broken banner with Export now",       where: "Top of every route — fires when verifier finds a chain break" },
-  { title: "Save your room's noise floor",              where: "Setup → Hands-free narration → Auto-baseline (3s)" },
 ];
 
 function WhatsNewCard() {

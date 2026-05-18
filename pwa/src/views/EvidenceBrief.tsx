@@ -367,6 +367,31 @@ export function EvidenceBrief() {
         </ul>
       </section>
 
+      {/* MOMENT MARKERS WITH REVIEWER NOTES — surfaces operator/reviewer
+          context that would otherwise live only in the audit chain. Only
+          renders rows with notes or non-default categories; dismissed
+          markers are filtered out at brief-build time. */}
+      {brief.markersWithNotes.some((m) => m.note || m.category) && (
+        <section className={s.section}>
+          <h2 className={s.sectionTitle}>Reviewer notes on moment markers</h2>
+          <ul className={s.markerNotesList}>
+            {brief.markersWithNotes
+              .filter((m) => m.note || m.category)
+              .map((m) => (
+                <li key={m.id} className={s.markerNoteRow}>
+                  <div className={s.markerNoteHead}>
+                    <span className={s.markerNoteTs}>{m.elapsed ?? new Date(m.ts).toLocaleString()}</span>
+                    {m.category && (
+                      <span className={s.markerNoteCat} data-category={m.category}>{m.category}</span>
+                    )}
+                  </div>
+                  {m.note && <blockquote className={s.markerNoteText}>{m.note}</blockquote>}
+                </li>
+              ))}
+          </ul>
+        </section>
+      )}
+
       {/* FORENSIC INTEGRITY */}
       <section className={s.section}>
         <h2 className={s.sectionTitle}>Forensic integrity</h2>

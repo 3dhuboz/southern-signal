@@ -31,6 +31,7 @@ import { usePushToTalk } from "../lib/audio/usePushToTalk";
 import { startVad, type VadHandle } from "../lib/audio/vad";
 import { useLongPress, useDoubleTap, useHorizontalSwipe, composeHandlers } from "../lib/gestures";
 import { resolvePreflightOverrides, runPreflight, type PreflightCheck, type PreflightLevel, type PreflightReport } from "../lib/system/preflight";
+import { formatTimeToEmpty, projectTimeToEmpty, type BatterySample } from "../lib/system/batteryProjection";
 import { verifyAuditChain } from "../lib/db/auditLog";
 import { usePwaInstall } from "../lib/system/usePwaInstall";
 import { useLiveNarrator } from "../lib/posterior/liveNarrator";
@@ -366,6 +367,11 @@ export function CameraScreen() {
   const MARKER_PICKER_MS = 2200;
   const [markerPicker, setMarkerPicker] = useState<{ until: number; committed: boolean } | null>(null);
   const markerCommittedRef = useRef(false);
+  // Session-scoped marker tally — surfaced as a small pill on the camera HUD
+  // so the operator knows their tag count without leaving the scene. Resets
+  // on session start; bumps on every successful commitMarker call so an
+  // auto-untag (after the picker timeout) counts the same as a category tap.
+  const [sessionMarkerCount, setSessionMarkerCount] = useState(0);
 
   const commitMarker = useCallback((category: MarkerCategory) => {
     if (markerCommittedRef.current) return;
@@ -375,6 +381,7 @@ export function CameraScreen() {
     // race could leave the ref stuck true and suppress the next session's
     // marker commits until dropMarker reset it.
     markerCommittedRef.current = true;
+    setSessionMarkerCount((n) => n + 1);
     const nowMs = Date.now();
     const elapsed = sessionStartRef.current ? Math.floor((nowMs - sessionStartRef.current) / 1000) : 0;
     void recordEvent({
@@ -511,6 +518,21 @@ export function CameraScreen() {
   // treating each notification as an isolated event. Resets when running
   // flips off (alongside the level/failIds refs).
   const [watchdogCount, setWatchdogCount] = useState(0);
+  // Rolling buffer of battery readings the watchdog observed during this
+  // session — fed into projectTimeToEmpty for the toast's "swap in N min"
+  // hint. Keeps the most recent 20 samples (~20 minutes at the 60s tick)
+  // so the regression is a recent-trend estimate, not a session-average.
+  const batterySamplesRef = useRef<BatterySample[]>([]);
+  const BATTERY_SAMPLE_BUFFER = 20;
+  const [batteryProjectionMinutes, setBatteryProjectionMinutes] = useState<number | null>(null);
+  // Watchdog snooze — when set in the future, tick() skips the toast-fire
+  // path entirely until the timestamp has passed. Lighter-touch than the
+  // Setup-level suppression toggle: suppress is "stop nagging me about
+  // this check forever", snooze is "give me ten minutes of quiet". The
+  // operator gets a Snooze button on the toast itself; cleared when the
+  // session stops or the operator dismisses the toast manually.
+  const watchdogSnoozeUntilRef = useRef<number | null>(null);
+  const WATCHDOG_SNOOZE_MS = 10 * 60_000;
   // Suppresses watchdog ticks while the browser install prompt is on screen.
   // Without it, a 60s tick can fire mid-prompt and stack a fresh toast behind
   // the native dialog — confusing the operator when they dismiss the prompt
@@ -539,6 +561,10 @@ export function CameraScreen() {
       lastWatchdogLevelRef.current = "ok";
       lastWatchdogFailIdsRef.current = "";
       setWatchdogCount(0);
+      batterySamplesRef.current = [];
+      setBatteryProjectionMinutes(null);
+      watchdogSnoozeUntilRef.current = null;
+      setSessionMarkerCount(0);
       return;
     }
     const tick = async () => {
@@ -546,6 +572,9 @@ export function CameraScreen() {
       // a fresh toast stacking behind the browser's native dialog would be
       // confusing UX. The next tick after the prompt closes picks up state.
       if (installPromptOpenRef.current) return;
+      // Snooze guard — short-circuit before runPreflight() since the whole
+      // point of snoozing is to stop nagging. We still want sampling to
+      // happen, so flow through after the toast-fire gate instead.
       try {
         // Re-read activeScene each tick so a mid-session swap to a plugged-in
         // scene immediately stops firing battery toasts. Operator-level prefs
@@ -570,11 +599,19 @@ export function CameraScreen() {
           .join("|");
         const severityEscalated = severity[report.overall] > severity[lastWatchdogLevelRef.current];
         const newFail = failIds !== "" && failIds !== lastWatchdogFailIdsRef.current;
-        if (severityEscalated || newFail) {
+        const snoozedUntil = watchdogSnoozeUntilRef.current;
+        const snoozeActive = snoozedUntil !== null && Date.now() < snoozedUntil;
+        if ((severityEscalated || newFail) && !snoozeActive) {
           lastWatchdogLevelRef.current = report.overall;
           lastWatchdogFailIdsRef.current = failIds;
           setWatchdog(report);
           setWatchdogCount((n) => n + 1);
+        } else if (severityEscalated || newFail) {
+          // Snooze swallowed a fire — still update the refs so we don't
+          // re-fire the SAME degradation the moment snooze expires; a new
+          // degradation (different failIds or higher severity) will fire.
+          lastWatchdogLevelRef.current = report.overall;
+          lastWatchdogFailIdsRef.current = failIds;
         }
         // Sample battery + storage into the case file each tick — gives the
         // export bundle a per-minute timeline of device-state degradation
@@ -586,8 +623,30 @@ export function CameraScreen() {
         // review-time spark still has data even when the operator silenced
         // toasts. Suppression is "stop nagging me", not "stop collecting".
         const inv = session.current;
+        const battery = raw.checks.find((c) => c.id === "battery");
+        // Update the in-memory projection buffer first — even when there's no
+        // active investigation we still want the toast to show an ETA, and
+        // the buffer is what feeds projectTimeToEmpty.
+        if (battery?.data?.batteryLevel != null) {
+          const sample: BatterySample = {
+            value: battery.data.batteryLevel,
+            ts: new Date().toISOString(),
+            charging: battery.data.batteryCharging === true,
+          };
+          const buf = batterySamplesRef.current;
+          buf.push(sample);
+          if (buf.length > BATTERY_SAMPLE_BUFFER) buf.splice(0, buf.length - BATTERY_SAMPLE_BUFFER);
+          const projection = projectTimeToEmpty(buf);
+          // Only surface the ETA below a soft threshold (35 min) — a curve
+          // that projects 8 hours doesn't warrant operator attention and
+          // would clutter the toast. The buffer keeps populating regardless.
+          if (projection && projection.minutesToEmpty < 35 * 60) {
+            setBatteryProjectionMinutes(projection.minutesToEmpty);
+          } else {
+            setBatteryProjectionMinutes(null);
+          }
+        }
         if (inv) {
-          const battery = raw.checks.find((c) => c.id === "battery");
           if (battery?.data?.batteryLevel != null) {
             void recordSensorSample({
               investigation_id: inv.id,
@@ -955,6 +1014,26 @@ export function CameraScreen() {
           </div>
         )}
 
+        {/* ── Marker tally pill — bottom-left, low-prominence. Surfaces the
+             session-scoped marker count so the operator knows their tag
+             rhythm without leaving the camera. Tapping navigates to Review;
+             dual-click safe (the navigate is the only interaction). Hidden
+             until the operator drops their first marker so an empty HUD
+             stays clean. */}
+        {running && sessionMarkerCount > 0 && (
+          <button
+            type="button"
+            className={s.markerCountPill}
+            onClick={() => navigate("/review")}
+            title="Tap to open the markers list in Review"
+            aria-label={`${sessionMarkerCount} marker${sessionMarkerCount === 1 ? "" : "s"} this session — open Review`}
+          >
+            <span className={s.markerCountIcon} aria-hidden="true">●</span>
+            <span className={s.markerCountValue}>{sessionMarkerCount}</span>
+            <span className={s.markerCountLabel}>marker{sessionMarkerCount === 1 ? "" : "s"}</span>
+          </button>
+        )}
+
         {/* ── Top-right floating pill: active scene name (opens SceneSheet) ── */}
         <button
           type="button"
@@ -1038,6 +1117,9 @@ export function CameraScreen() {
               </span>
               <span className={s.watchdogToastDetail}>
                 {formatWatchdogChecks(watchdog.checks) || "Tap to dismiss"}
+                {batteryProjectionMinutes != null && watchdog.checks.some((c) => c.id === "battery" && c.level !== "ok") && (
+                  <span className={s.watchdogToastEta}> · ~{formatTimeToEmpty(batteryProjectionMinutes)} until empty</span>
+                )}
               </span>
             </button>
             {watchdogStorageWarn(watchdog) && installStatus.kind === "ready" && (
@@ -1057,6 +1139,17 @@ export function CameraScreen() {
                 Install
               </button>
             )}
+            <button
+              type="button"
+              className={s.watchdogToastSnooze}
+              onClick={() => {
+                watchdogSnoozeUntilRef.current = Date.now() + WATCHDOG_SNOOZE_MS;
+                setWatchdog(null);
+              }}
+              title="Suppress watchdog toasts for the next 10 minutes. A worsening degradation will still fire."
+            >
+              Snooze 10m
+            </button>
           </div>
         )}
 

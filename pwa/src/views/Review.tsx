@@ -7,9 +7,11 @@ import { CaseManager } from "../components/CaseManager";
 import { InterviewsList } from "../components/InterviewsList";
 import { query } from "../lib/db/db";
 import { verifyAuditChain, appendAuditEntry } from "../lib/db/auditLog";
+import { loadMarkerOverrides } from "../lib/db/markerOverrides";
 import { buildManifest } from "../lib/forensic/manifest";
 import { buildExportBundle, downloadBlob } from "../lib/forensic/exportBundle";
 import { usePreferences } from "../lib/preferences";
+import { formatTimeToEmpty, projectTimeToEmpty } from "../lib/system/batteryProjection";
 import { getScene } from "../lib/overlays/scenes";
 import s from "./View.module.css";
 import r from "./Review.module.css";
@@ -99,54 +101,22 @@ function matchesMarkerFilter(m: { category: MarkerCategory }, filter: MarkerFilt
   return m.category === filter;
 }
 
-interface MarkerOverrides {
-  /** Marker ids the operator dismissed during review. */
-  dismissed: Set<string>;
-  /** Latest annotation per marker id (note + category override). */
-  annotations: Map<string, { note: string | null; category: MarkerCategory | undefined }>;
-}
-
-/**
- * Fold marker.annotated + marker.dismissed audit rows into a fast-lookup
- * structure. Rows arrive in seq order so latest annotation overwrites
- * earlier ones; dismissals are absorbing. The audit chain is the source of
- * truth — the original evidence_events row is never mutated, so the
- * forensic capture is preserved even when a reviewer dismisses the marker.
- */
-function collectMarkerOverrides(rows: readonly { payload_json: string; kind: string }[]): MarkerOverrides {
-  const dismissed = new Set<string>();
-  const annotations = new Map<string, { note: string | null; category: MarkerCategory | undefined }>();
-  for (const row of rows) {
-    let parsed: { marker_id?: unknown; note?: unknown; category?: unknown };
-    try { parsed = JSON.parse(row.payload_json); } catch { continue; }
-    if (typeof parsed.marker_id !== "string") continue;
-    if (row.kind === "marker.dismissed") {
-      dismissed.add(parsed.marker_id);
-      continue;
-    }
-    // marker.annotated — merge with any previous annotation for the same id.
-    const prev = annotations.get(parsed.marker_id);
-    let category: MarkerCategory | undefined = prev?.category;
-    if (parsed.category === "sound" || parsed.category === "movement" || parsed.category === "felt" || parsed.category === null) {
-      category = parsed.category;
-    }
-    const note = typeof parsed.note === "string" ? parsed.note : prev?.note ?? null;
-    annotations.set(parsed.marker_id, { note, category });
-  }
-  return { dismissed, annotations };
-}
 
 interface DeviceSampleRow {
   timestamp: string;
   sensor_type: string;
   value: number | null;
+  metadata_json: string | null;
 }
 
 interface DeviceTimeline {
   /** Each entry pairs a numeric value with its ISO timestamp so marker
    *  positions can be derived against the same time axis the sparkline
-   *  uses — otherwise battery samples and markers would drift apart. */
-  battery: { value: number; ts: string }[];
+   *  uses — otherwise battery samples and markers would drift apart.
+   *  Battery samples additionally carry the charging flag from the
+   *  watchdog so the spark can refuse to project a time-to-empty during
+   *  plugged-in stretches. */
+  battery: { value: number; ts: string; charging?: boolean }[];
   storageMb: { value: number; ts: string }[];
   /** Earliest sample timestamp, for the rangelabel. */
   startTs: string | null;
@@ -217,16 +187,29 @@ export function Review() {
           // side so the chart renders the device-state decay alongside the
           // markers without two round-trips.
           const deviceRows = await query<DeviceSampleRow>(
-            "SELECT timestamp, sensor_type, value FROM sensor_samples WHERE investigation_id = ? AND sensor_type IN ('battery', 'storage_free') ORDER BY timestamp ASC",
+            "SELECT timestamp, sensor_type, value, metadata_json FROM sensor_samples WHERE investigation_id = ? AND sensor_type IN ('battery', 'storage_free') ORDER BY timestamp ASC",
             [recentId],
           );
           if (deviceRows.length > 0) {
-            const battery: { value: number; ts: string }[] = [];
+            const battery: { value: number; ts: string; charging?: boolean }[] = [];
             const storageMb: { value: number; ts: string }[] = [];
             for (const r of deviceRows) {
               if (r.value == null) continue;
-              if (r.sensor_type === "battery") battery.push({ value: r.value, ts: r.timestamp });
-              else if (r.sensor_type === "storage_free") storageMb.push({ value: r.value / (1024 * 1024), ts: r.timestamp });
+              if (r.sensor_type === "battery") {
+                // metadata_json carries { charging: boolean } from the
+                // watchdog — surfaced so the spark's projectTimeToEmpty
+                // returns null for plugged-in stretches.
+                let charging: boolean | undefined;
+                if (r.metadata_json) {
+                  try {
+                    const meta = JSON.parse(r.metadata_json) as { charging?: unknown };
+                    if (typeof meta.charging === "boolean") charging = meta.charging;
+                  } catch { /* ignore */ }
+                }
+                battery.push({ value: r.value, ts: r.timestamp, charging });
+              } else if (r.sensor_type === "storage_free") {
+                storageMb.push({ value: r.value / (1024 * 1024), ts: r.timestamp });
+              }
             }
             setTimeline({
               battery,
@@ -241,13 +224,9 @@ export function Review() {
           );
           // Marker edits/dismissals are append-only audit entries — the
           // original evidence_events row is never mutated, so we can prove
-          // the original capture happened. Read overrides in seq order so
-          // the latest annotation wins; dismissals are absorbing (a marker
-          // dismissed at any point stays dismissed even if later annotated).
-          const overrideRows = await query<{ payload_json: string; kind: string }>(
-            "SELECT payload_json, kind FROM audit_log WHERE kind IN ('marker.annotated', 'marker.dismissed') ORDER BY seq ASC",
-          );
-          const overrides = collectMarkerOverrides(overrideRows);
+          // the original capture happened. The shared loader hits audit_log
+          // once and folds latest-wins; dismissals are absorbing.
+          const overrides = await loadMarkerOverrides();
           setMarkers(rows
             .filter((row) => !overrides.dismissed.has(row.id))
             .map((row) => {
@@ -858,7 +837,7 @@ function DeviceSpark({
   label, samples, format, domain, tone, markerTimestamps,
 }: {
   label: string;
-  samples: readonly { value: number; ts: string }[];
+  samples: readonly { value: number; ts: string; charging?: boolean }[];
   format: (v: number) => string;
   domain?: { min: number; max: number };
   tone: "battery" | "storage";
@@ -950,11 +929,24 @@ function DeviceSpark({
     .map((iso) => ({ iso, ms: Date.parse(iso) }))
     .filter(({ ms }) => Number.isFinite(ms) && ms >= startMs && ms <= endMs)
     .map(({ iso, ms }) => ({ iso, x: ((ms - startMs) / rangeMs) * W }));
+  // Battery time-to-empty projection on the spark headline — a recent-trend
+  // estimate of when the charge would hit 0% at the current discharge slope.
+  // Refuses to project when charging, flat-slope, or short windows so the
+  // hint never lies; the helper returns null in those cases.
+  const batteryEta = tone === "battery"
+    ? projectTimeToEmpty(samples as readonly { value: number; ts: string; charging?: boolean }[])
+    : null;
+
   return (
     <div className={r.deviceSpark} data-tone={tone}>
       <div className={r.deviceSparkHead}>
         <span className={r.deviceSparkLabel}>{label}</span>
         <span className={r.deviceSparkValue}>{format(displayValue.value)}</span>
+        {batteryEta && batteryEta.minutesToEmpty < 24 * 60 && (
+          <span className={r.deviceSparkEta} title={`Projected from the last ${batteryEta.windowMinutes.toFixed(0)} min of samples — informational, not a guarantee.`}>
+            ~{formatTimeToEmpty(batteryEta.minutesToEmpty)}
+          </span>
+        )}
         <button
           type="button"
           className={r.deviceSparkExpand}
@@ -1051,7 +1043,7 @@ function SparkExpandedModal({
   label, samples, format, domain, tone, markerTimestamps, onClose,
 }: {
   label: string;
-  samples: readonly { value: number; ts: string }[];
+  samples: readonly { value: number; ts: string; charging?: boolean }[];
   format: (v: number) => string;
   domain?: { min: number; max: number };
   tone: "battery" | "storage";
@@ -1060,20 +1052,33 @@ function SparkExpandedModal({
 }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  // Drag-to-zoom — the user drags across the SVG to select a time range,
+  // and the modal re-renders showing only that slice. Tracked as [startIdx,
+  // endIdx] into the original samples array. `dragging` holds the in-flight
+  // selection while the operator's pointer is down. A min-width threshold
+  // (≥5 sample-stops) prevents a stray tap from collapsing the view.
+  const [zoomRange, setZoomRange] = useState<[number, number] | null>(null);
+  const [dragging, setDragging] = useState<{ fromIdx: number; toIdx: number } | null>(null);
+  // Compute the visible slice (zoom-aware), then derive the polyline math
+  // from the slice. Hover/markers/min-max all re-derive against the slice
+  // so the modal reads as a coherent zoomed view, not a half-zoomed mess.
+  const visibleStart = zoomRange?.[0] ?? 0;
+  const visibleEnd = zoomRange?.[1] ?? samples.length - 1;
+  const visibleSamples = samples.slice(visibleStart, visibleEnd + 1);
   const W = 480;
   const H = 160;
-  const values = samples.map((s) => s.value);
+  const values = visibleSamples.map((s) => s.value);
   const min = domain?.min ?? Math.min(...values);
   const max = domain?.max ?? Math.max(...values);
   const span = Math.max(0.0001, max - min);
-  const stepX = W / Math.max(1, samples.length - 1);
-  const points = samples.map((s, i) => {
+  const stepX = W / Math.max(1, visibleSamples.length - 1);
+  const points = visibleSamples.map((s, i) => {
     const x = i * stepX;
     const y = H - ((s.value - min) / span) * H;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(" ");
-  const first = samples[0];
-  const last = samples[samples.length - 1];
+  const first = visibleSamples[0];
+  const last = visibleSamples[visibleSamples.length - 1];
   const startMs = Date.parse(first.ts);
   const endMs = Date.parse(last.ts);
   const rangeMs = Math.max(1, endMs - startMs);
@@ -1087,18 +1092,38 @@ function SparkExpandedModal({
     const rect = svg.getBoundingClientRect();
     if (rect.width === 0) return null;
     const xInViewBox = ((clientX - rect.left) / rect.width) * W;
-    const idx = Math.round(xInViewBox / stepX);
-    if (idx < 0 || idx >= samples.length) return null;
-    return idx;
+    const localIdx = Math.round(xInViewBox / stepX);
+    if (localIdx < 0 || localIdx >= visibleSamples.length) return null;
+    // Translate slice-local idx back to the original samples array so the
+    // caller works in a single index namespace whether zoomed or not.
+    return visibleStart + localIdx;
   };
   const hovered = hoverIdx != null ? samples[hoverIdx] : null;
-  const hoveredX = hoverIdx != null ? hoverIdx * stepX : null;
+  const hoveredX = hoverIdx != null && hoverIdx >= visibleStart && hoverIdx <= visibleEnd
+    ? (hoverIdx - visibleStart) * stepX
+    : null;
+  // Translate an in-flight drag (original-idx) to viewBox X for the marquee.
+  // Clamp the upper bound at the visible window so a drag past the edge
+  // doesn't draw outside the SVG.
+  const dragXs = dragging
+    ? (() => {
+        const a = Math.max(visibleStart, Math.min(visibleEnd, dragging.fromIdx));
+        const b = Math.max(visibleStart, Math.min(visibleEnd, dragging.toIdx));
+        const [lo, hi] = a < b ? [a, b] : [b, a];
+        return { x1: (lo - visibleStart) * stepX, x2: (hi - visibleStart) * stepX };
+      })()
+    : null;
   return (
     <div className={r.sparkModalBackdrop} role="dialog" aria-modal="true" aria-label={`${label} expanded chart`} onPointerDown={onClose}>
       <div className={r.sparkModalCard} data-tone={tone} onPointerDown={(e) => e.stopPropagation()}>
         <div className={r.sparkModalHead}>
           <span className={r.deviceSparkLabel}>{label}</span>
           <span className={r.deviceSparkValue}>{format(hovered?.value ?? last.value)}</span>
+          {zoomRange && (
+            <button type="button" className={r.sparkModalResetZoom} onClick={() => setZoomRange(null)} title="Show the full range again">
+              Reset zoom
+            </button>
+          )}
           <button type="button" className={r.sparkModalClose} onClick={onClose} aria-label="Close expanded chart">×</button>
         </div>
         <svg
@@ -1107,8 +1132,32 @@ function SparkExpandedModal({
           className={r.sparkModalSvg}
           role="img"
           aria-label={`${label} expanded timeline${markerPoints.length ? ` with ${markerPoints.length} markers` : ""}`}
-          onPointerMove={(e) => setHoverIdx(pointerToIdx(e.clientX))}
-          onPointerLeave={() => setHoverIdx(null)}
+          onPointerMove={(e) => {
+            const idx = pointerToIdx(e.clientX);
+            setHoverIdx(idx);
+            if (dragging && idx != null) setDragging({ fromIdx: dragging.fromIdx, toIdx: idx });
+          }}
+          onPointerLeave={() => {
+            setHoverIdx(null);
+            // Don't cancel a drag on leave — the operator might be sweeping
+            // off the SVG to reach the edge. Pointer-up still commits.
+          }}
+          onPointerDown={(e) => {
+            const idx = pointerToIdx(e.clientX);
+            if (idx == null) return;
+            (e.target as Element).setPointerCapture?.(e.pointerId);
+            setDragging({ fromIdx: idx, toIdx: idx });
+          }}
+          onPointerUp={(e) => {
+            if (!dragging) return;
+            const idx = pointerToIdx(e.clientX) ?? dragging.toIdx;
+            const lo = Math.min(dragging.fromIdx, idx);
+            const hi = Math.max(dragging.fromIdx, idx);
+            setDragging(null);
+            // Minimum drag width — a stray tap collapses to lo===hi, which
+            // we don't want to interpret as a zoom-to-single-point.
+            if (hi - lo >= 4) setZoomRange([lo, hi]);
+          }}
         >
           {markerPoints.map((m) => (
             <line key={m.iso} x1={m.x} x2={m.x} y1={0} y2={H} stroke="var(--text-dim)" strokeWidth={1} strokeDasharray="3 3" opacity={0.6} />
@@ -1119,6 +1168,16 @@ function SparkExpandedModal({
               <line x1={hoveredX} x2={hoveredX} y1={0} y2={H} stroke="currentColor" strokeWidth={1} opacity={0.4} />
               <circle cx={hoveredX} cy={H - ((hovered.value - min) / span) * H} r={4} fill="currentColor" />
             </>
+          )}
+          {dragXs && (
+            <rect
+              x={dragXs.x1}
+              y={0}
+              width={Math.max(0, dragXs.x2 - dragXs.x1)}
+              height={H}
+              fill="currentColor"
+              opacity={0.15}
+            />
           )}
         </svg>
         <div className={r.sparkModalAxis}>
@@ -1131,7 +1190,15 @@ function SparkExpandedModal({
               ? `${new Date(hovered.ts).toLocaleString()} · ${format(hovered.value)}`
               : `${new Date(first.ts).toLocaleString()} → ${new Date(last.ts).toLocaleString()}`}
           </span>
-          <span>{samples.length} samples · {markerPoints.length} marker{markerPoints.length === 1 ? "" : "s"}</span>
+          <span>
+            {visibleSamples.length}
+            {zoomRange ? ` / ${samples.length}` : ""}
+            {" samples · "}
+            {markerPoints.length} marker{markerPoints.length === 1 ? "" : "s"}
+            {!zoomRange && samples.length > 8 && (
+              <span className={r.sparkModalHint}> · drag to zoom</span>
+            )}
+          </span>
         </div>
       </div>
     </div>

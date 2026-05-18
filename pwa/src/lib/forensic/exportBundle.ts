@@ -33,6 +33,7 @@ import { getOrCreateSigningKey, signBytes } from "./signingKeyStore";
 import { buildCoseSign1, toBase64 } from "./coseSign1";
 import { sendTsaRequest, tsaResponseOk } from "./tsaClient";
 import { saveBundleSignature } from "../db/bundleSignatureRepo";
+import { loadMarkerOverrides } from "../db/markerOverrides";
 import { saveLastExportSnapshot } from "./lastExportSnapshot";
 import { VERIFY_DENO_SCRIPT } from "./verifyDeno";
 import type { TsaStatus } from "../db/schema";
@@ -200,6 +201,14 @@ interface CoverData {
     storageMb: { value: number; ts: string }[];
     markerTimestamps: string[];
   };
+  /**
+   * Reviewer-side notes on moment markers (event_type='marker'). Captured
+   * via Review → Marker edit; folded from the marker.annotated /
+   * marker.dismissed audit entries at export time. Empty array suppresses
+   * the section entirely. Dismissed markers are filtered out of this list
+   * — the reviewer's verdict is "this isn't worth carrying forward".
+   */
+  markerNotes?: { ts: string; elapsed: string | null; category: string | null; note: string }[];
 }
 
 function escapeHtml(s: string): string {
@@ -342,6 +351,15 @@ const COVER_HTML_TEMPLATE = (d: CoverData): string => {
   ul.reviewers .rmeta { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 9pt; color: #666; margin-top: 4px; }
   ul.reviewers blockquote { margin-top: 8px; }
   ul.reviewers .rrefs { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 9pt; color: #666; margin-top: 6px; word-break: break-all; }
+  ul.markerNotes { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+  ul.markerNotes li { padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; background: #fafafa; }
+  ul.markerNotes .mnHead { display: flex; align-items: baseline; gap: 10px; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 9.5pt; color: #555; }
+  ul.markerNotes .mnTs { font-weight: 700; color: #333; }
+  ul.markerNotes .mnCat { padding: 1px 6px; border: 1px solid currentColor; border-radius: 3px; font-size: 9pt; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+  ul.markerNotes .mnCat[data-category="sound"]    { color: #0a6c3f; }
+  ul.markerNotes .mnCat[data-category="movement"] { color: #b87600; }
+  ul.markerNotes .mnCat[data-category="felt"]     { color: #b03050; }
+  ul.markerNotes blockquote { margin: 6px 0 0; padding: 8px 12px; border-left: 3px solid #888; background: #fff; font-style: italic; font-size: 11pt; }
   .sparks { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .spark { border: 1px solid #ddd; border-radius: 4px; padding: 8px 12px; background: #fafafa; }
   .sparkHead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 4px; }
@@ -414,6 +432,21 @@ ${(() => {
   return `<section><h2>Device state — battery + storage</h2>
     <div class="sparks">${batterySvg}${storageSvg}</div>
     <p class="muted">Watchdog samples taken every 60s during capture. Dashed vertical ticks mark double-tap moments dropped by the operator.</p>
+  </section>`;
+})()}
+${(() => {
+  const notes = d.markerNotes ?? [];
+  if (notes.length === 0) return "";
+  return `<section><h2>Reviewer notes on markers</h2>
+    <ul class="markerNotes">${notes.map((n) => `
+      <li>
+        <div class="mnHead">
+          <span class="mnTs">${escapeHtml(n.elapsed ?? new Date(n.ts).toLocaleString())}</span>
+          ${n.category ? `<span class="mnCat" data-category="${escapeHtml(n.category)}">${escapeHtml(n.category)}</span>` : ""}
+        </div>
+        <blockquote>${escapeHtml(n.note)}</blockquote>
+      </li>`).join("")}</ul>
+    <p class="muted">Notes were added post-capture in Review → Marker edit. The original markers stay in <code>evidence_events.json</code>; the notes themselves live in <code>marker_overrides.json</code> and the audit chain.</p>
   </section>`;
 })()}
 <section><h2>Pre-air readiness</h2>${readinessBlock}</section>
@@ -744,6 +777,24 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
   entries.push(jsonEntry("evidence_events.json", events));
   entries.push(jsonEntry("transcripts.json", transcripts));
 
+  // 3a. Marker overrides — reviewer-side note/category/dismiss decisions
+  // folded from the marker.annotated + marker.dismissed audit entries. Kept
+  // as a separate file (vs mutating evidence_events.json) so the original
+  // forensic capture is preserved byte-for-byte and any reviewer-side state
+  // is clearly identified as such. Empty when the operator hasn't touched
+  // any marker in Review.
+  const markerOverrides = await loadMarkerOverrides();
+  const markerOverridesJson = {
+    schema: "southern-signal.marker_overrides.v1",
+    generated_at: new Date().toISOString(),
+    dismissed: Array.from(markerOverrides.dismissed),
+    annotations: Object.fromEntries(
+      Array.from(markerOverrides.annotations.entries())
+        .map(([id, ann]) => [id, { note: ann.note, category: ann.category ?? null }] as const),
+    ),
+  };
+  entries.push(jsonEntry("marker_overrides.json", markerOverridesJson));
+
   // Research dossiers + reviewer notes (v4 + v5). The manifest already
   // anchors each dossier with a SHA-256; we include raw rows here so
   // reviewers with both the bundle and the manifest can re-hash and
@@ -893,6 +944,38 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
       coverDeviceState = { battery, storageMb, markerTimestamps };
     }
   }
+  // Marker notes for the cover sheet — only those with actual note text,
+  // filtered to the export's scope, dismissed markers excluded. Pull the
+  // marker rows we already have in `events` and join with the overrides.
+  // Elapsed-time labels come from each marker's own metadata, the same
+  // representation the Review screen renders against.
+  const markerNotesForCover: { ts: string; elapsed: string | null; category: string | null; note: string }[] = [];
+  for (const ev of events) {
+    if (ev.event_type !== "marker") continue;
+    if (markerOverrides.dismissed.has(ev.id)) continue;
+    const ann = markerOverrides.annotations.get(ev.id);
+    if (!ann?.note) continue;
+    let elapsed: string | null = null;
+    let category: string | null = ann.category ?? null;
+    if (ev.metadata_json) {
+      try {
+        const meta = JSON.parse(ev.metadata_json) as { sessionElapsedSec?: unknown; category?: unknown };
+        if (typeof meta.sessionElapsedSec === "number" && Number.isFinite(meta.sessionElapsedSec)) {
+          const m = Math.floor(meta.sessionElapsedSec / 60);
+          const sec = Math.floor(meta.sessionElapsedSec) % 60;
+          elapsed = `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+        }
+        // Fall back to the captured category if the operator didn't change
+        // it via the editor — annotation.category===undefined means "no
+        // override on category", not "set to null".
+        if (category === null && ann.category === undefined && typeof meta.category === "string") {
+          category = meta.category;
+        }
+      } catch { /* ignore */ }
+    }
+    markerNotesForCover.push({ ts: ev.timestamp, elapsed, category, note: ann.note });
+  }
+
   const coverHtml = COVER_HTML_TEMPLATE({
     generatedAt: new Date().toISOString(),
     scope,
@@ -932,6 +1015,7 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
       checks: readiness.checks,
     },
     deviceState: coverDeviceState,
+    markerNotes: markerNotesForCover,
   });
   entries.push(textEntry("cover.html", coverHtml));
 

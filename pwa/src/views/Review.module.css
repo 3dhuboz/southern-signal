@@ -520,6 +520,21 @@
 }
 .deviceSparkMeta { white-space: nowrap; }
 
+/* Battery time-to-empty hint next to the headline value. Italicised to read
+   as a projection rather than a hard fact; uses the same tone colour as the
+   spark so the connection is obvious. Only shown for the battery spark when
+   the curve is steep enough to estimate. */
+.deviceSparkEta {
+  font-size: 10.5px;
+  font-style: italic;
+  letter-spacing: 0.3px;
+  color: currentColor;
+  opacity: 0.85;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+
 /* Compact glyph button that opens the spark in a larger modal — affords
    "make this big enough to read individual samples" without adding chart
    chrome to the inline card. */
@@ -588,6 +603,34 @@
   cursor: pointer;
 }
 .sparkModalClose:hover { color: var(--text-primary); border-color: var(--border-default); }
+
+/* Reset-zoom button — only renders while a zoom range is active. Sits to
+   the left of the close button; same chrome at a slightly larger padding
+   so it reads as a chip. */
+.sparkModalResetZoom {
+  appearance: none;
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  padding: 3px 10px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.sparkModalResetZoom:hover { color: var(--signal); border-color: var(--signal-dim); }
+/* When ResetZoom takes the auto-margin, push Close back to its natural slot. */
+.sparkModalResetZoom + .sparkModalClose { margin-left: 6px; }
+
+/* Drag-to-zoom hint that disappears once the operator zooms in. Italic so it
+   reads as a tip rather than a control. */
+.sparkModalHint {
+  font-style: italic;
+  opacity: 0.75;
+}
 
 .sparkModalSvg {
   width: 100%;

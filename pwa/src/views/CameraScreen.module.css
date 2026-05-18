@@ -201,6 +201,27 @@
 }
 .watchdogToastCta:hover  { background: rgba(0, 0, 0, 0.32); }
 .watchdogToastCta:active { background: rgba(0, 0, 0, 0.42); }
+
+/* Snooze button — same chrome as the install CTA but quieter so it doesn't
+   compete visually with the primary action. 10 min of silence is a soft
+   ask, not a primary call to action. */
+.watchdogToastSnooze {
+  flex: 0 0 auto;
+  padding: 0 12px;
+  background: transparent;
+  border: none;
+  border-left: 1px solid rgba(255, 255, 255, 0.3);
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: inherit;
+  opacity: 0.78;
+  cursor: pointer;
+}
+.watchdogToastSnooze:hover  { background: rgba(0, 0, 0, 0.16); opacity: 1; }
+.watchdogToastSnooze:active { background: rgba(0, 0, 0, 0.28); }
 .watchdogToastWarn {
   background: rgba(212, 192, 38, 0.92);
   box-shadow: 0 4px 16px rgba(212, 192, 38, 0.35);
@@ -239,6 +260,12 @@
   letter-spacing: 0.2px;
   line-height: 1.35;
   opacity: 0.95;
+}
+/* Battery time-to-empty hint appended to the watchdog detail line. Slightly
+   dimmed so it reads as supplementary projection rather than a hard fact. */
+.watchdogToastEta {
+  opacity: 0.78;
+  font-style: italic;
 }
 
 /* ── Tap-to-focus ring ────────────────────────────────────────────────────
@@ -408,6 +435,48 @@
   gap: 3px;
   z-index: 5;
   pointer-events: none;
+}
+
+/* Marker-count tally pill — sits in the bottom-left HUD safe-area corner,
+   well clear of the BIG SHUTTER and dock buttons. Glanceable but quiet so
+   it doesn't compete with the REC pill for the operator's attention. Tap
+   to open Review where the editor lives. */
+.markerCountPill {
+  position: absolute;
+  bottom: calc(120px + var(--safe-bottom, 0px));
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  color: #f4f4f4;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  cursor: pointer;
+  z-index: 5;
+}
+.markerCountPill:hover  { background: rgba(0, 0, 0, 0.72); }
+.markerCountPill:active { background: rgba(0, 0, 0, 0.85); }
+.markerCountIcon {
+  color: var(--signal, #5DF2C7);
+  font-size: 7px;
+  line-height: 1;
+}
+.markerCountValue {
+  font-weight: 800;
+  letter-spacing: 0.8px;
+}
+.markerCountLabel {
+  text-transform: uppercase;
+  letter-spacing: 1.1px;
+  opacity: 0.78;
 }
 
 .micMeterBar {
