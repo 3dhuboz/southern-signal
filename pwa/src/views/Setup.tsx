@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { applyTheme, usePreferences } from "../lib/preferences";
+import { applyTheme, usePreferences, type AppPreferences } from "../lib/preferences";
+import { MicLevelMeter } from "../lib/audio/micLevel";
+import { startVad, type VadHandle } from "../lib/audio/vad";
 import { usePwaInstall } from "../lib/system/usePwaInstall";
 import { WHIP_URL_KEY, WHIP_BEARER_KEY, WHIP_PROVIDER_KEY, WHIP_PROVIDERS } from "../lib/media/whipStorage";
 import { AuditLogInspector } from "../components/AuditLogInspector";
@@ -271,6 +273,7 @@ export function Setup() {
               />
               <span className={st.toggleHint}>How long silence must persist before tones come back. Longer = smoother re-entry between phrases.</span>
             </label>
+            <SoundCheckCard vadConfig={prefs.vadConfig} />
           </div>
         )}
       </section>
@@ -634,6 +637,99 @@ export function Setup() {
       </section>
 
     </section>
+  );
+}
+
+/**
+ * Sound-check — inline mic test wired against the operator's *current* VAD
+ * config. Grabs getUserMedia({audio:true}) on demand, runs MicLevelMeter for
+ * the visible peak bar AND startVad with the live thresholds so the operator
+ * can see exactly when their voice will trip the auto-duck. Tearing the test
+ * down releases the stream so we're not holding the mic open after the
+ * operator leaves the panel.
+ *
+ * Lives inside the VAD config row, only rendered when prefs.vadAutoDuck is
+ * ON — Setup.tsx gates the wrapper so the mic-test surface only appears when
+ * it's relevant to the feature being configured.
+ */
+function SoundCheckCard({ vadConfig }: { vadConfig: AppPreferences["vadConfig"] }) {
+  const [active, setActive] = useState(false);
+  const [level, setLevel] = useState(0);
+  const [vadActive, setVadActive] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const meterRef  = useRef<MicLevelMeter | null>(null);
+  const vadRef    = useRef<VadHandle | null>(null);
+
+  // Restart VAD whenever the thresholds change while the mic test is live so
+  // the operator can drag the sensitivity slider and see the result. The
+  // MicLevelMeter doesn't depend on config so it isn't recreated.
+  useEffect(() => {
+    if (!active || !streamRef.current) return;
+    vadRef.current?.stop();
+    setVadActive(false);
+    try {
+      vadRef.current = startVad(streamRef.current, setVadActive, {
+        activationDb: vadConfig.sensitivityDb,
+        deactivationDb: Math.max(2, vadConfig.sensitivityDb / 2),
+        attackMs: vadConfig.attackMs,
+        releaseMs: vadConfig.releaseMs,
+      });
+    } catch { /* swallow — getLevelDb returns -Infinity, UI just shows inactive */ }
+  }, [active, vadConfig.sensitivityDb, vadConfig.attackMs, vadConfig.releaseMs]);
+
+  const stop = useCallback(() => {
+    vadRef.current?.stop(); vadRef.current = null;
+    meterRef.current?.stop(); meterRef.current = null;
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    setActive(false);
+    setLevel(0);
+    setVadActive(false);
+  }, []);
+
+  // Tear down on unmount so a panel close mid-test doesn't leak the mic.
+  useEffect(() => () => { stop(); }, [stop]);
+
+  const start = useCallback(async () => {
+    setError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const meter = new MicLevelMeter(stream);
+      meter.start(setLevel);
+      meterRef.current = meter;
+      setActive(true); // the effect above wires startVad once active flips
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Microphone unavailable");
+    }
+  }, []);
+
+  return (
+    <div className={st.soundCheckRow}>
+      <button
+        type="button"
+        className={st.linkBtn}
+        onClick={active ? stop : start}
+      >
+        {active ? "Stop test" : "Test mic"}
+      </button>
+      <div className={st.soundCheckMeterWrap}>
+        <div className={st.soundCheckMeterBar} aria-hidden="true">
+          <span
+            className={st.soundCheckMeterFill}
+            style={{ transform: `scaleX(${Math.min(1, Math.max(0, level))})` }}
+          />
+        </div>
+        <span className={st.soundCheckHint}>
+          {active ? "Speak normally — the bar shows your peak level." : "Tap Test mic to confirm the mic is hot and tune VAD live."}
+        </span>
+      </div>
+      <span className={`${st.soundCheckVadDot} ${vadActive ? st.soundCheckVadActive : ""}`.trim()}>
+        {vadActive ? "VAD · trips" : "VAD · idle"}
+      </span>
+      {error && <p className={st.soundCheckError}>{error}</p>}
+    </div>
   );
 }
 

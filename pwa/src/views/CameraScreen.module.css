@@ -259,6 +259,72 @@
   flex-shrink: 0;
 }
 
+/* ── Mic peak meter ───────────────────────────────────────────────────────
+   Tiny on-screen confirmation that the mic is hot — sits directly below the
+   top-left REC pill. The fill bar is driven via inline transform:scaleX(rms)
+   so we don't trigger React renders on every audio tick beyond what the
+   LiveAnalyzer's setAudioRms callback already costs. Pointer-events:none so
+   gestures pass through. Hidden until the analyzer reports a level (running). */
+
+.micMeter {
+  position: absolute;
+  top: calc(44px + var(--safe-top, 0px));
+  left: 12px;
+  width: 92px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.micMeterBar {
+  width: 100%;
+  height: 4px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.micMeterFill {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(
+    90deg,
+    #48c882 0%,
+    #48c882 55%,
+    #d4c026 75%,
+    #d8392c 100%
+  );
+  transform-origin: left center;
+  transform: scaleX(0);
+  transition: transform 70ms linear;
+}
+
+.micMeterLabel {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.7);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  line-height: 1;
+}
+
+/* When VAD trips the bar's rim glows green — confirms the auto-duck fired. */
+.micMeterActive .micMeterBar {
+  border-color: rgba(72, 200, 130, 0.6);
+  box-shadow: 0 0 8px rgba(72, 200, 130, 0.4);
+}
+.micMeterActive .micMeterLabel {
+  color: rgba(120, 230, 175, 0.95);
+}
+
 /* REC variant — solid red dot, faint red rim */
 .cornerPillRec {
   border-color: rgba(216, 57, 44, 0.65);

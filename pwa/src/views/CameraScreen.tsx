@@ -507,8 +507,12 @@ export function CameraScreen() {
     void startCameraRef.current?.();
     // Run pre-flight in parallel with the camera open. A blocking failure
     // (camera denied, storage full) surfaces a dialog the operator can
-    // resolve before any session state is written.
-    void runPreflight().then((report) => {
+    // resolve before any session state is written. We capture the promise
+    // so the session_start audit event can splice in the resolved telemetry
+    // (battery %, free storage bytes, permission states) without having to
+    // re-run the checks.
+    const preflightPromise = runPreflight();
+    void preflightPromise.then((report) => {
       if (report.overall === "block") {
         setPreflight(report);
         setPreflightDismissed(false);
@@ -529,7 +533,27 @@ export function CameraScreen() {
         await lockProtocol(inv.id).catch(() => { /* non-blocking */ });
       }
       await startInvestigation(inv.id);
-      await recordEvent({ investigation_id: inv.id, source: "system", event_type: "session_start", title: "Session started" });
+      // Await the pre-flight report so the session_start event records the
+      // telemetry that was observed at the moment the operator pressed Begin.
+      // The shape is intentionally JSON-flat — every audit-log consumer
+      // (export, hash chain, sync) treats metadata as opaque storage.
+      const report = await preflightPromise;
+      await recordEvent({
+        investigation_id: inv.id,
+        source: "system",
+        event_type: "session_start",
+        title: "Session started",
+        metadata: {
+          preflight: {
+            overall: report.overall,
+            checks: report.checks.map((c) => ({
+              id: c.id,
+              level: c.level,
+              ...(c.data ? { data: c.data } : {}),
+            })),
+          },
+        },
+      });
       setSiteSession(createSiteSession());
       setRunning(true);
       void startLiveAnalyzer();
@@ -625,6 +649,27 @@ export function CameraScreen() {
           <span className={s.cornerPillDot} aria-hidden="true" />
           <span className={s.cornerPillText}>{topPillLabel}</span>
         </div>
+
+        {/* ── Mic peak meter — sits below the REC pill so the operator can
+             confirm the mic is hot at a glance. Hidden until the live
+             analyzer is reporting levels; the fill is driven via inline
+             scaleX so each audio tick doesn't churn React state. The active
+             rim turns green when VAD detects voice (so the operator sees
+             the auto-duck fired without watching the ITC tones). */}
+        {running && (
+          <div
+            className={`${s.micMeter} ${vadActive ? s.micMeterActive : ""}`.trim()}
+            aria-hidden="true"
+          >
+            <span className={s.micMeterLabel}>{vadActive ? "MIC · LIVE" : "MIC"}</span>
+            <div className={s.micMeterBar}>
+              <span
+                className={s.micMeterFill}
+                style={{ transform: `scaleX(${Math.min(1, Math.max(0, audioRms))})` }}
+              />
+            </div>
+          </div>
+        )}
 
         {/* ── Top-right floating pill: active scene name (opens SceneSheet) ── */}
         <button
