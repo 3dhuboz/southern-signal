@@ -685,6 +685,39 @@ function SoundCheckCard({ vadConfig }: { vadConfig: AppPreferences["vadConfig"] 
     setPreferences({ vadConfig: { ...vadConfig, noiseFloorDb: null } });
   }, [vadConfig]);
 
+  // Auto-baseline — capture 15 samples of floorDb over 3 seconds, take the
+  // median (robust against a transient HVAC kick), and save. The single-tap
+  // alternative to the manual Save-baseline button is the right default
+  // workflow: operator silent for a few seconds, app picks the floor itself.
+  const [probing, setProbing] = useState(false);
+  const probeTimerRef = useRef<number | null>(null);
+  // Cancel an in-flight probe on unmount so the timer doesn't outlive the
+  // component and fire setState on an unmounted tree.
+  useEffect(() => () => {
+    if (probeTimerRef.current) window.clearInterval(probeTimerRef.current);
+  }, []);
+  const probeBaseline = useCallback(() => {
+    if (probing) return;
+    if (!vadRef.current) return;
+    setProbing(true);
+    const samples: number[] = [];
+    const start = Date.now();
+    const handle = window.setInterval(() => {
+      const v = vadRef.current?.getNoiseFloorDb();
+      if (v != null && Number.isFinite(v)) samples.push(v);
+      if (Date.now() - start >= 3000) {
+        window.clearInterval(handle);
+        probeTimerRef.current = null;
+        if (samples.length > 0) {
+          const sorted = [...samples].sort((a, b) => a - b);
+          saveBaseline(sorted[Math.floor(sorted.length / 2)]);
+        }
+        setProbing(false);
+      }
+    }, 200);
+    probeTimerRef.current = handle;
+  }, [probing, saveBaseline]);
+
   const [active, setActive] = useState(false);
   const [level, setLevel] = useState(0);
   const [vadActive, setVadActive] = useState(false);
@@ -774,6 +807,17 @@ function SoundCheckCard({ vadConfig }: { vadConfig: AppPreferences["vadConfig"] 
           title="Saves the current adaptive floor so a fresh hunt skips the warmup window."
         >
           Save baseline
+        </button>
+      )}
+      {active && (
+        <button
+          type="button"
+          className={st.linkBtn}
+          onClick={probeBaseline}
+          disabled={probing}
+          title="Samples the floor for 3 seconds and saves the median — more robust than a single snapshot."
+        >
+          {probing ? "Probing…" : "Auto-baseline (3s)"}
         </button>
       )}
       {vadConfig.noiseFloorDb != null && (

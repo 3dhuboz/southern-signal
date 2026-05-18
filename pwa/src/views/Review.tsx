@@ -76,6 +76,20 @@ interface MarkerView {
   sceneId: string | null;
 }
 
+interface DeviceSampleRow {
+  timestamp: string;
+  sensor_type: string;
+  value: number | null;
+}
+
+interface DeviceTimeline {
+  battery: number[];
+  storageMb: number[];
+  /** Earliest sample timestamp, for the rangelabel. */
+  startTs: string | null;
+  endTs: string | null;
+}
+
 function formatMarkerElapsed(meta: string | null): string | null {
   if (!meta) return null;
   try {
@@ -97,6 +111,7 @@ export function Review() {
   const [merkleRoot, setMerkleRoot] = useState<string | null>(null);
   const [latestBrief, setLatestBrief] = useState<EvidenceBrief | null>(null);
   const [markers, setMarkers] = useState<MarkerView[]>([]);
+  const [timeline, setTimeline] = useState<DeviceTimeline | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -123,6 +138,29 @@ export function Review() {
         // audit log carries the hash chain but not the metadata we need
         // to render elapsed-time + scene id at review time.
         if (recentId) {
+          // Watchdog-sourced battery + storage samples — written every minute
+          // while running. Pull both series in one query, then split client-
+          // side so the chart renders the device-state decay alongside the
+          // markers without two round-trips.
+          const deviceRows = await query<DeviceSampleRow>(
+            "SELECT timestamp, sensor_type, value FROM sensor_samples WHERE investigation_id = ? AND sensor_type IN ('battery', 'storage_free') ORDER BY timestamp ASC",
+            [recentId],
+          );
+          if (deviceRows.length > 0) {
+            const battery: number[] = [];
+            const storageMb: number[] = [];
+            for (const r of deviceRows) {
+              if (r.value == null) continue;
+              if (r.sensor_type === "battery") battery.push(r.value);
+              else if (r.sensor_type === "storage_free") storageMb.push(r.value / (1024 * 1024));
+            }
+            setTimeline({
+              battery,
+              storageMb,
+              startTs: deviceRows[0]?.timestamp ?? null,
+              endTs: deviceRows[deviceRows.length - 1]?.timestamp ?? null,
+            });
+          }
           const rows = await query<MarkerRow>(
             "SELECT id, timestamp, investigation_id, title, description, metadata_json FROM evidence_events WHERE investigation_id = ? AND event_type = 'marker' ORDER BY timestamp DESC LIMIT 200",
             [recentId],
@@ -446,6 +484,37 @@ export function Review() {
         </div>
       )}
 
+      {/* Device-state timeline — battery + free-storage decay sampled by the
+          mid-session watchdog every 60s. Tiny SVG sparklines so the reviewer
+          can eyeball "did the device run low partway through?" without
+          opening a chart library. */}
+      {timeline && (timeline.battery.length > 1 || timeline.storageMb.length > 1) && (
+        <div className={r.section}>
+          <header className={r.sectionHeader}>
+            <h2>Device state — battery + storage</h2>
+          </header>
+          <div className={r.deviceSparkRow}>
+            {timeline.battery.length > 1 && (
+              <DeviceSpark
+                label="Battery"
+                values={timeline.battery}
+                domain={{ min: 0, max: 1 }}
+                format={(v) => `${Math.round(v * 100)}%`}
+                tone="battery"
+              />
+            )}
+            {timeline.storageMb.length > 1 && (
+              <DeviceSpark
+                label="Storage free"
+                values={timeline.storageMb}
+                format={(v) => `${Math.round(v)} MB`}
+                tone="storage"
+              />
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Moment markers — double-taps the operator dropped during capture.
           Latest case only; oldest cases are still searchable through the
           audit log if needed. */}
@@ -533,6 +602,55 @@ export function Review() {
           : <>The downloadable bundle is a single .zip with all your recordings, a printable cover sheet, and a small <code>verify.html</code> file anyone can open in a browser to confirm nothing's been edited. We try to disprove the paranormal first; the app never confirms one.</>}
       </p>
     </section>
+  );
+}
+
+/**
+ * Tiny inline sparkline — no chart-library dependency, just an SVG polyline
+ * sized to a fixed 120×28 viewbox so it scales cleanly inside the section.
+ *
+ * `domain` lets battery clamp to 0..1 (so the curve doesn't auto-stretch when
+ * the device never went under 80%). Storage doesn't pass a domain because the
+ * meaningful range varies per device; we autoscale from min..max of the
+ * series.
+ */
+function DeviceSpark({
+  label, values, format, domain, tone,
+}: {
+  label: string;
+  values: readonly number[];
+  format: (v: number) => string;
+  domain?: { min: number; max: number };
+  tone: "battery" | "storage";
+}) {
+  if (values.length < 2) return null;
+  const W = 120;
+  const H = 28;
+  const min = domain?.min ?? Math.min(...values);
+  const max = domain?.max ?? Math.max(...values);
+  const span = Math.max(0.0001, max - min);
+  const stepX = W / (values.length - 1);
+  const points = values.map((v, i) => {
+    const x = i * stepX;
+    const y = H - ((v - min) / span) * H;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  const last = values[values.length - 1];
+  const first = values[0];
+  return (
+    <div className={r.deviceSpark} data-tone={tone}>
+      <div className={r.deviceSparkHead}>
+        <span className={r.deviceSparkLabel}>{label}</span>
+        <span className={r.deviceSparkValue}>{format(last)}</span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className={r.deviceSparkSvg} role="img" aria-label={`${label} timeline`}>
+        <polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+      </svg>
+      <div className={r.deviceSparkFoot}>
+        <span className={r.deviceSparkMeta}>start {format(first)}</span>
+        <span className={r.deviceSparkMeta}>{values.length} samples</span>
+      </div>
+    </div>
   );
 }
 

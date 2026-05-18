@@ -46,6 +46,24 @@ export interface PreflightReport {
 const MIN_STORAGE_BYTES = 200 * 1024 * 1024; // 200MB — roughly 10 min of WebM
 const LOW_BATTERY_PCT = 0.20;
 
+/**
+ * Per-scene preflight tuning. Scenes can opt out of checks that don't apply
+ * (e.g. Calibration is plugged-in benchwork, so the battery check is noise)
+ * or adjust thresholds when the scene's risk profile differs from the
+ * defaults (Walkthrough warns earlier on battery because the operator is
+ * moving and can't charge mid-hunt).
+ *
+ * Undefined fields fall back to the module defaults; passing an empty
+ * object is equivalent to passing none.
+ */
+export interface PreflightOverrides {
+  skipBattery?: boolean;
+  /** Battery level (0..1) under which we WARN. Default 0.20. */
+  lowBatteryFraction?: number;
+  /** Free storage in bytes under which we BLOCK. Default 200MB. */
+  minStorageBytes?: number;
+}
+
 async function checkCamera(): Promise<PreflightCheck> {
   if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
     return { id: "camera", level: "block", message: "This browser doesn't expose a camera. HTTPS is required and the site must be opened in a real browser, not an in-app webview.", data: { permission: "unknown" } };
@@ -76,7 +94,7 @@ async function checkMic(): Promise<PreflightCheck> {
   return { id: "mic", level: "ok", message: "Microphone API available.", data: { permission: "unknown" } };
 }
 
-async function checkStorage(): Promise<PreflightCheck> {
+async function checkStorage(minBytes: number): Promise<PreflightCheck> {
   if (typeof navigator === "undefined" || !navigator.storage?.estimate) {
     return { id: "storage", level: "warn", message: "Can't read storage quota on this browser — recordings will land on the device but the safety check is skipped." };
   }
@@ -90,7 +108,7 @@ async function checkStorage(): Promise<PreflightCheck> {
     // but using the quota is more meaningful when present.
     const freeForAudit = Number.isFinite(free) ? free : (quota || 0);
     const data: PreflightCheckData = { storageFreeBytes: freeForAudit, storageQuotaBytes: quota };
-    if (free < MIN_STORAGE_BYTES) {
+    if (free < minBytes) {
       const freeMb = Math.round(free / (1024 * 1024));
       return { id: "storage", level: "block", message: `Only ${freeMb}MB free for recordings. Clear out old captures or free device storage before starting.`, data };
     }
@@ -100,7 +118,7 @@ async function checkStorage(): Promise<PreflightCheck> {
   }
 }
 
-async function checkBattery(): Promise<PreflightCheck> {
+async function checkBattery(lowFraction: number): Promise<PreflightCheck> {
   type BatteryManager = { level: number; charging: boolean };
   const navWithBattery = navigator as Navigator & { getBattery?: () => Promise<BatteryManager> };
   if (!navWithBattery.getBattery) {
@@ -111,7 +129,7 @@ async function checkBattery(): Promise<PreflightCheck> {
     const pct = Math.round(b.level * 100);
     const data: PreflightCheckData = { batteryLevel: b.level, batteryCharging: b.charging };
     if (b.charging) return { id: "battery", level: "ok", message: `Battery ${pct}% — charging.`, data };
-    if (b.level < LOW_BATTERY_PCT) {
+    if (b.level < lowFraction) {
       return { id: "battery", level: "warn", message: `Battery at ${pct}%. Long hunts may exhaust it — plug in if possible.`, data };
     }
     return { id: "battery", level: "ok", message: `Battery ${pct}%.`, data };
@@ -124,14 +142,21 @@ async function checkBattery(): Promise<PreflightCheck> {
  * Run all checks in parallel. The overall level is the highest severity of
  * any individual check (block > warn > ok), so the UI can decide whether
  * to surface a blocker or just kick off the session.
+ *
+ * Scene-driven overrides let callers drop checks that don't apply (e.g.
+ * Calibration is plugged-in benchwork) or adjust thresholds when the
+ * scene's risk profile differs (Walkthrough warns earlier on battery).
  */
-export async function runPreflight(): Promise<PreflightReport> {
-  const checks = await Promise.all([
+export async function runPreflight(overrides?: PreflightOverrides): Promise<PreflightReport> {
+  const minStorage = overrides?.minStorageBytes ?? MIN_STORAGE_BYTES;
+  const lowBattery = overrides?.lowBatteryFraction ?? LOW_BATTERY_PCT;
+  const pending: Promise<PreflightCheck>[] = [
     checkCamera(),
     checkMic(),
-    checkStorage(),
-    checkBattery(),
-  ]);
+    checkStorage(minStorage),
+  ];
+  if (!overrides?.skipBattery) pending.push(checkBattery(lowBattery));
+  const checks = await Promise.all(pending);
   const overall: PreflightLevel = checks.some((c) => c.level === "block")
     ? "block"
     : checks.some((c) => c.level === "warn")

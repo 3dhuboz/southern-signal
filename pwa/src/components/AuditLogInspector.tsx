@@ -13,7 +13,7 @@
  * via export) helps the operator catch problems sooner.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { query } from "../lib/db/db";
 import { verifyAuditChain } from "../lib/db/auditLog";
 import s from "./AuditLogInspector.module.css";
@@ -60,6 +60,12 @@ export function AuditLogInspector() {
   const [filter, setFilter] = useState<string>(() => {
     try { return localStorage.getItem(FILTER_STORAGE_KEY) ?? ""; } catch { return ""; }
   });
+  // Track the row that the chain verifier flagged as broken so the "Jump to
+  // broken row" button can scroll it into view. We brief-flash a highlight
+  // class so the operator's eye lands on the failed entry instead of having
+  // to scan the list.
+  const listRef = useRef<HTMLUListElement | null>(null);
+  const [flashSeq, setFlashSeq] = useState<number | null>(null);
   // Persist the operator's filter across reloads. Empty string clears storage
   // so we don't keep a stale value pinned forever.
   useEffect(() => {
@@ -68,6 +74,13 @@ export function AuditLogInspector() {
       else localStorage.removeItem(FILTER_STORAGE_KEY);
     } catch { /* swallow — localStorage unavailable */ }
   }, [filter]);
+
+  // Clear the broken-row flash after 2s so it doesn't strobe forever.
+  useEffect(() => {
+    if (flashSeq == null) return;
+    const h = window.setTimeout(() => setFlashSeq(null), 2000);
+    return () => window.clearTimeout(h);
+  }, [flashSeq]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -140,6 +153,24 @@ export function AuditLogInspector() {
             <>
               <span className={s.statusLabel}>BROKEN</span>
               <span className={s.statusDetail}>Entry seq {chain.brokenAtSeq} failed: {chain.reason}</span>
+              <button
+                type="button"
+                className={s.statusJumpBtn}
+                onClick={() => {
+                  // Clear filter so the broken row is guaranteed to be visible
+                  // even if the operator had narrowed the view to a quick-filter.
+                  setFilter("");
+                  setFlashSeq(chain.brokenAtSeq);
+                  // requestAnimationFrame so the DOM has rerendered with the
+                  // cleared filter before we look up the row.
+                  requestAnimationFrame(() => {
+                    const el = listRef.current?.querySelector<HTMLLIElement>(`[data-seq="${chain.brokenAtSeq}"]`);
+                    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  });
+                }}
+              >
+                Jump to row
+              </button>
             </>
           )}
         </div>
@@ -203,11 +234,16 @@ export function AuditLogInspector() {
         </div>
       )}
 
-      <ul className={s.list}>
+      <ul className={s.list} ref={listRef}>
         {filtered.map((e) => {
           const preflightSummary = preflightSummaries.get(e.seq) ?? null;
+          const flashed = flashSeq === e.seq;
           return (
-            <li key={e.seq} className={s.row}>
+            <li
+              key={e.seq}
+              data-seq={e.seq}
+              className={`${s.row} ${flashed ? s.rowFlash : ""}`.trim()}
+            >
               <div className={s.rowHead}>
                 <span className={s.rowSeq}>#{e.seq}</span>
                 <span className={s.rowKind}>{e.kind}</span>

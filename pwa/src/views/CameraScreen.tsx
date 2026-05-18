@@ -159,6 +159,11 @@ function watchdogStorageWarn(report: PreflightReport): boolean {
   return report.checks.some((c) => c.id === "storage" && c.level !== "ok");
 }
 
+// `mergeWatchdogReports` USED to keep the worst-severity check per id across
+// reports — but each preflight is already a full snapshot, so the new report
+// always contains current state for every active check. Merging just stalled
+// recovered checks at their stale warn level. Use the new report directly.
+
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -266,6 +271,11 @@ export function CameraScreen() {
   // toggle individual channels for the session, but the next session reload
   // will re-resolve from whichever scene is active in localStorage.
   const [activeSceneId, setActiveSceneId] = useState<SceneId>(() => loadActiveSceneId());
+  // Mirror the active scene id into a ref so watchdog ticks read the current
+  // value at fire time without re-binding the effect every scene swap. The
+  // effect itself only depends on `running`.
+  const activeSceneIdRef = useRef<SceneId>(activeSceneId);
+  useEffect(() => { activeSceneIdRef.current = activeSceneId; }, [activeSceneId]);
   const activeScene = getScene(activeSceneId);
   const [channels, setChannels] = useState<OverlayChannels>(() =>
     resolveOverlaysFromScene({ ...(activeScene?.overlays ?? {}), ...loadSceneOverrides(activeSceneId) }, { proMode }),
@@ -420,6 +430,11 @@ export function CameraScreen() {
   const WATCHDOG_TOAST_MS = 7000;
   const [watchdog, setWatchdog] = useState<PreflightReport | null>(null);
   const lastWatchdogLevelRef = useRef<"ok" | "warn" | "block">("ok");
+  // Track the set of failing check ids we've already toasted about so a new
+  // failing check (e.g. storage drops while battery is already warn) refires
+  // the toast even though `overall` stayed at warn. Without this, a same-level
+  // re-degradation goes unsurfaced.
+  const lastWatchdogFailIdsRef = useRef<string>("");
   // Suppresses watchdog ticks while the browser install prompt is on screen.
   // Without it, a 60s tick can fire mid-prompt and stack a fresh toast behind
   // the native dialog — confusing the operator when they dismiss the prompt
@@ -446,6 +461,7 @@ export function CameraScreen() {
       // session unable to fire warn-tier toasts. handleBegin re-seeds this
       // from the Begin preflight, but the explicit reset here is defensive.
       lastWatchdogLevelRef.current = "ok";
+      lastWatchdogFailIdsRef.current = "";
       return;
     }
     const tick = async () => {
@@ -454,10 +470,25 @@ export function CameraScreen() {
       // confusing UX. The next tick after the prompt closes picks up state.
       if (installPromptOpenRef.current) return;
       try {
-        const report = await runPreflight();
+        // Re-read activeScene each tick so a mid-session swap to a plugged-in
+        // scene immediately stops firing battery toasts.
+        const overrides = getScene(activeSceneIdRef.current)?.preflightOverrides;
+        const report = await runPreflight(overrides);
         const severity = { ok: 0, warn: 1, block: 2 } as const;
-        if (severity[report.overall] > severity[lastWatchdogLevelRef.current]) {
+        // Fire the toast when (a) the overall severity escalated OR
+        // (b) a new check id started failing while severity stayed the same
+        // (e.g. battery already warn, storage drops to warn — operator
+        // wouldn't see it without this branch).
+        const failIds = report.checks
+          .filter((c) => c.level !== "ok")
+          .map((c) => `${c.id}:${c.level}`)
+          .sort()
+          .join("|");
+        const severityEscalated = severity[report.overall] > severity[lastWatchdogLevelRef.current];
+        const newFail = failIds !== "" && failIds !== lastWatchdogFailIdsRef.current;
+        if (severityEscalated || newFail) {
           lastWatchdogLevelRef.current = report.overall;
+          lastWatchdogFailIdsRef.current = failIds;
           setWatchdog(report);
         }
         // Sample battery + storage into the case file each tick — gives the
@@ -640,7 +671,10 @@ export function CameraScreen() {
     // so the session_start audit event can splice in the resolved telemetry
     // (battery %, free storage bytes, permission states) without having to
     // re-run the checks.
-    const preflightPromise = runPreflight();
+    // Read the active scene through the ref so handleBegin doesn't need to
+    // re-bind every scene change (it's a stable callback with [] deps).
+    const sceneOverrides = getScene(activeSceneIdRef.current)?.preflightOverrides;
+    const preflightPromise = runPreflight(sceneOverrides);
     void preflightPromise.then((report) => {
       if (report.overall === "block") {
         setPreflight(report);

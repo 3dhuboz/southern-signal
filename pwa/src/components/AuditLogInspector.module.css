@@ -24,6 +24,25 @@
 }
 .statusOk { color: var(--signal); background: color-mix(in srgb, var(--signal) 6%, transparent); }
 .statusBad { color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); }
+
+/* "Jump to row" button next to a BROKEN chain status. Inline so it sits
+   right after the brokenAtSeq message — clearing the filter + scrolling
+   the row into view lets the operator land on the bad entry in one tap. */
+.statusJumpBtn {
+  margin-left: auto;
+  appearance: none;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: var(--r-sm);
+  padding: 2px 8px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: inherit;
+  cursor: pointer;
+}
+.statusJumpBtn:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
 .statusDot {
   width: 10px;
   height: 10px;
@@ -151,6 +170,19 @@
   gap: 4px;
 }
 .row:last-child { border-bottom: none; }
+
+/* Brief flash applied when "Jump to row" lands the operator on the broken
+   entry — pulses the danger colour for 2s so the eye anchors immediately. */
+.rowFlash {
+  animation: rowFlashPulse 2s ease-out;
+  outline: 2px solid var(--danger);
+  outline-offset: -2px;
+}
+@keyframes rowFlashPulse {
+  0%   { background: color-mix(in srgb, var(--danger) 22%, var(--bg-surface)); }
+  60%  { background: color-mix(in srgb, var(--danger) 8%, var(--bg-surface)); }
+  100% { background: var(--bg-surface); }
+}
 
 .rowHead {
   display: flex;

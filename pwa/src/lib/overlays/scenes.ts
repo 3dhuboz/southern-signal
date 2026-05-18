@@ -12,6 +12,7 @@
  */
 
 import type { OverlayId } from "./registry";
+import type { PreflightOverrides } from "../system/preflight";
 
 export type SceneId =
   | "walkthrough"
@@ -41,6 +42,13 @@ export interface Scene {
   overlays: Partial<Record<OverlayId, boolean>>;
   tools: SceneToolConfig;
   cameraDefaults: SceneCameraDefaults;
+  /**
+   * Preflight tuning. Plugged-in benchwork scenes (Calibration, Pro/Lab)
+   * skip the battery check; mobile scenes (Walkthrough) tighten the warn
+   * threshold because there's no opportunity to charge mid-hunt. Undefined
+   * = use module defaults.
+   */
+  preflightOverrides?: PreflightOverrides;
 }
 
 /**
@@ -62,6 +70,9 @@ export const BUILT_IN_SCENES: readonly Scene[] = [
     },
     tools: { spiritBox: false, ovilus: false },
     cameraDefaults: { torch: false, facing: "environment" },
+    // Walkthroughs are mobile — the operator can't charge mid-hunt, so warn
+    // earlier (30%) to give time to wrap up before the device cuts out.
+    preflightOverrides: { lowBatteryFraction: 0.30 },
   },
 
   {
@@ -114,6 +125,10 @@ export const BUILT_IN_SCENES: readonly Scene[] = [
     },
     tools: { spiritBox: false, ovilus: false },
     cameraDefaults: { torch: false, facing: "environment" },
+    // Calibration is pre-session benchwork — typically plugged in for the
+    // walkaround. Skip the battery check so a low charge doesn't fire warn
+    // toasts while the operator's literally next to the wall outlet.
+    preflightOverrides: { skipBattery: true },
   },
 
   {
@@ -135,6 +150,9 @@ export const BUILT_IN_SCENES: readonly Scene[] = [
     },
     tools: { spiritBox: false, ovilus: false },
     cameraDefaults: { torch: false, facing: "environment" },
+    // Pro / Lab is review-grade analysis — operator is at a desk, plugged in.
+    // Same as Calibration: skip battery checks.
+    preflightOverrides: { skipBattery: true },
   },
 ];
 
