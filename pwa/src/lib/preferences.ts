@@ -125,6 +125,14 @@ export interface AppPreferences {
    * this when monitoring through headphones.
    */
   itcMonitor: boolean;
+  /**
+   * Voice-activity-driven auto-ducking of the ITC mixer. When ON, the camera
+   * surface watches the mic stream and ducks the tones whenever the operator
+   * is speaking — no long-press required. Long-press PTT still works as a
+   * manual override. Default OFF because VAD thresholds aren't a one-size-
+   * fits-all proposition (noisy outdoor hunts vs quiet attics).
+   */
+  vadAutoDuck: boolean;
 }
 
 const DEFAULTS: AppPreferences = {
@@ -155,6 +163,7 @@ const DEFAULTS: AppPreferences = {
   community: { enabled: true, anonymousId: null },
   proMode: false,
   itcMonitor: false,
+  vadAutoDuck: false,
 };
 
 const KEY = "ss-preferences-v1";

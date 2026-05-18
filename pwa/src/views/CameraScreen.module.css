@@ -109,6 +109,124 @@
   to   { opacity: 0; transform: translate(-50%, -8px); }
 }
 
+/* ── Tap-to-focus ring ────────────────────────────────────────────────────
+   Anchored at the tap point. Scales from 1.6 → 1 over ~250ms, then fades.
+   Pure CSS animation so the gesture feels instant — no React re-render gate. */
+
+.focusPulse {
+  position: absolute;
+  width: 64px;
+  height: 64px;
+  margin-left: -32px;
+  margin-top: -32px;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.5);
+  pointer-events: none;
+  z-index: 4;
+  animation: focusPulseIn 250ms ease-out, focusPulseFade 420ms ease-in 280ms forwards;
+}
+
+@keyframes focusPulseIn {
+  from { transform: scale(1.6); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
+}
+@keyframes focusPulseFade {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+/* ── Pre-flight blocker ───────────────────────────────────────────────────
+   Modal overlay shown when a critical permission/storage check fails. Black
+   backdrop + a single card with the failing checks. The Got-it button just
+   dismisses; the operator has to actually fix the issue elsewhere (browser
+   settings, free storage, etc.) before another Begin will succeed.            */
+
+.preflightBlocker {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 12;
+  padding: 24px;
+}
+
+.preflightCard {
+  width: 100%;
+  max-width: 480px;
+  background: #181a1d;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 20px 22px;
+  color: #fff;
+}
+
+.preflightTitle {
+  margin: 0 0 12px;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+.preflightList {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preflightRowBlock,
+.preflightRowWarn {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  gap: 8px;
+  align-items: start;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.preflightRowBlock {
+  background: rgba(220, 50, 50, 0.14);
+  border: 1px solid rgba(220, 50, 50, 0.4);
+}
+
+.preflightRowWarn {
+  background: rgba(220, 170, 50, 0.10);
+  border: 1px solid rgba(220, 170, 50, 0.3);
+}
+
+.preflightRowLabel {
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: rgba(255, 255, 255, 0.55);
+  padding-top: 1px;
+}
+
+.preflightDismiss {
+  width: 100%;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.preflightDismiss:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
 .cornerPillTopRight {
   right: 12px;
   cursor: pointer;

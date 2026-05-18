@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { applyTheme, usePreferences } from "../lib/preferences";
+import { usePwaInstall } from "../lib/system/usePwaInstall";
 import { WHIP_URL_KEY, WHIP_BEARER_KEY, WHIP_PROVIDER_KEY, WHIP_PROVIDERS } from "../lib/media/whipStorage";
 import { AuditLogInspector } from "../components/AuditLogInspector";
 import { CaseManager } from "../components/CaseManager";
@@ -225,7 +226,25 @@ export function Setup() {
             onChange={(e) => setPrefs({ itcMonitor: e.target.checked })}
           />
         </label>
+        <label className={st.toggleRow}>
+          <span>
+            <strong>Hands-free narration (voice-activity ducking)</strong>
+            <span className={st.toggleHint}>
+              When you start speaking, the ITC tones automatically duck −18dB so your voice lands cleanly on the recording. Releases when you stop. The long-press-anywhere push-to-talk still works as a manual override. Threshold adapts to the room's noise floor over the first few seconds — wait a beat before talking after a noisy moment.
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            checked={prefs.vadAutoDuck}
+            onChange={(e) => setPrefs({ vadAutoDuck: e.target.checked })}
+          />
+        </label>
       </section>
+
+      {/* PWA install card — only renders when the browser exposed an install
+          prompt OR we're on iOS (manual A2HS guidance). Hides when already
+          installed so we don't pester forever. */}
+      <PwaInstallCard />
 
       {/* Broadcast — WHIP live-stream destination */}
       <section className={st.panel}>
@@ -580,6 +599,51 @@ export function Setup() {
         )}
       </section>
 
+    </section>
+  );
+}
+
+/**
+ * Install-this-PWA card. Renders only when the browser exposed an install
+ * prompt (Android / desktop Chrome / Edge) or we're on iOS Safari (manual
+ * A2HS guidance). Hides when already installed or on browsers that don't
+ * support installation (Firefox).
+ */
+function PwaInstallCard() {
+  const status = usePwaInstall();
+  const [busy, setBusy] = useState(false);
+  if (status.kind === "installed" || status.kind === "unavailable") return null;
+  return (
+    <section className={st.panel}>
+      <header className={st.panelHeader}>
+        <h2 className={st.panelTitle}>Install Southern Signal</h2>
+      </header>
+      <p className={st.panelLede}>
+        Installing as a standalone app gives you fullscreen capture without
+        the browser chrome, a proper app icon on your home screen, and
+        keeps the camera permission grant across launches. Recordings still
+        live in the same OPFS storage either way.
+      </p>
+      {status.kind === "ready" ? (
+        <button
+          type="button"
+          className={st.fileBtn}
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            await status.prompt();
+            setBusy(false);
+          }}
+        >
+          {busy ? "Installing…" : "Install"}
+        </button>
+      ) : (
+        <p className={st.toggleHint}>
+          <strong>iOS:</strong> tap the Share button at the bottom of Safari,
+          then choose <strong>Add to Home Screen</strong>. The icon will
+          launch the camera surface directly into fullscreen.
+        </p>
+      )}
     </section>
   );
 }

@@ -28,7 +28,9 @@ import { ScreenRecordButton } from "../components/ScreenRecordButton";
 import { SceneSheet } from "../components/SceneSheet";
 import { useLiveBroadcastState } from "../lib/system/liveBroadcast";
 import { usePushToTalk } from "../lib/audio/usePushToTalk";
+import { startVad, type VadHandle } from "../lib/audio/vad";
 import { useLongPress, useDoubleTap, useHorizontalSwipe, composeHandlers } from "../lib/gestures";
+import { runPreflight, type PreflightReport } from "../lib/system/preflight";
 import { useLiveNarrator } from "../lib/posterior/liveNarrator";
 import { LiveAnalyzer } from "../lib/audio/liveAnalyzer";
 import { type SectorReading } from "../lib/audio/sectorIndicator";
@@ -149,6 +151,7 @@ export function CameraScreen() {
   const liveToggleRef   = useRef<(() => void) | null>(null);
   const flipCameraRef   = useRef<(() => void) | null>(null);
   const torchToggleRef  = useRef<(() => void) | null>(null);
+  const refocusRef      = useRef<(() => void) | null>(null);
   const startCameraRef  = useRef<(() => Promise<void>) | null>(null);
   const [cameraState, setCameraState] = useState({
     streamOn: false, whipConfigured: false,
@@ -256,7 +259,8 @@ export function CameraScreen() {
   // Double-tap drops a moment marker into the audit chain (a transient toast
   // confirms). Horizontal swipe cycles to the previous/next scene.
   const [pttActive, setPttActive] = useState(false);
-  usePushToTalk(pttActive);
+  // usePushToTalk is called once further down with `pttActive || vadActive`
+  // so manual PTT and hands-free VAD share a single ducking pipeline.
   const longPressProps = useLongPress(setPttActive);
 
   // Marker drop — fires a recordEvent into the current investigation +
@@ -303,6 +307,47 @@ export function CameraScreen() {
     const handle = window.setTimeout(() => setMarkerToastUntil(0), Math.max(0, markerToastUntil - Date.now()));
     return () => window.clearTimeout(handle);
   }, [markerToastVisible, markerToastUntil]);
+
+  // ── Tap-to-focus — single click on the viewport re-triggers autofocus
+  //    and pulses a small ring at the tap point as visual confirmation.
+  //    The handler is `onClick` (not pointerdown) so it doesn't race with
+  //    the long-press / double-tap / swipe pipeline above — onClick fires
+  //    AFTER those have resolved, and is idempotent so a double-tap just
+  //    refocuses twice (cheap).
+  const [focusPulse, setFocusPulse] = useState<{ x: number; y: number; key: number } | null>(null);
+  const handleFocusTap = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!cameraState.streamOn) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    setFocusPulse({ x: e.clientX - rect.left, y: e.clientY - rect.top, key: Date.now() });
+    void refocusRef.current?.();
+  }, [cameraState.streamOn]);
+  useEffect(() => {
+    if (!focusPulse) return;
+    const handle = window.setTimeout(() => setFocusPulse(null), 700);
+    return () => window.clearTimeout(handle);
+  }, [focusPulse]);
+
+  // ── VAD auto-duck — when prefs.vadAutoDuck is ON, watch the mic stream
+  //    and feed its voice-activity boolean into usePushToTalk so the ITC
+  //    mixer ducks hands-free. Long-press PTT remains as a manual override
+  //    that wins (state OR).
+  const [micStream, setMicStream] = useState<MediaStream | null>(null);
+  const [vadActive, setVadActive] = useState(false);
+  useEffect(() => {
+    if (!prefs.vadAutoDuck || !micStream) { setVadActive(false); return; }
+    let handle: VadHandle | null = null;
+    try { handle = startVad(micStream, setVadActive); }
+    catch { setVadActive(false); }
+    return () => { handle?.stop(); setVadActive(false); };
+  }, [prefs.vadAutoDuck, micStream]);
+  usePushToTalk(pttActive || vadActive);
+
+  // ── Pre-flight blocker — runs at mount + on every Begin tap. If anything
+  //    critical fails (camera/mic/storage), surface a blocker dialog with
+  //    actionable hints instead of letting getUserMedia bury the error
+  //    10 minutes into a hunt.
+  const [preflight, setPreflight] = useState<PreflightReport | null>(null);
+  const [preflightDismissed, setPreflightDismissed] = useState(false);
 
   // ITC hooks read the scene's tools config — Spirit Box Session auto-starts
   // the spirit box; Pro/Lab leaves Ovilus to manual. Output is consumed via
@@ -443,6 +488,19 @@ export function CameraScreen() {
     // and the camera permission request silently fails ("no permission dialog").
     // We don't await this; LiveStreamView's `start` sets its own busy/error state.
     void startCameraRef.current?.();
+    // Run pre-flight in parallel with the camera open. A blocking failure
+    // (camera denied, storage full) surfaces a dialog the operator can
+    // resolve before any session state is written.
+    void runPreflight().then((report) => {
+      if (report.overall === "block") {
+        setPreflight(report);
+        setPreflightDismissed(false);
+      } else if (report.overall === "warn") {
+        // Warnings still kick the session off — the report stays around
+        // so the UI can surface a non-blocking hint if it wants.
+        setPreflight(report);
+      }
+    });
     try {
       const perm = await requestSensorPermissionsForUserGesture();
       if (perm.motion === "denied" || perm.orientation === "denied") { setBusy(false); return; }
@@ -509,6 +567,7 @@ export function CameraScreen() {
         onPointerUp={composeHandlers(longPressProps.onPointerUp, swipeProps.onPointerUp)}
         onPointerCancel={longPressProps.onPointerCancel}
         onPointerLeave={longPressProps.onPointerLeave}
+        onClick={handleFocusTap}
       >
         <LiveStreamView
           investigationId={session.current?.id ?? null}
@@ -530,6 +589,8 @@ export function CameraScreen() {
           liveToggleRef={liveToggleRef}
           flipCameraRef={flipCameraRef}
           torchToggleRef={torchToggleRef}
+          refocusRef={refocusRef}
+          onSourceStream={setMicStream}
           startCameraRef={startCameraRef}
           defaultFacing={activeScene?.cameraDefaults.facing}
           defaultTorch={activeScene?.cameraDefaults.torch}
@@ -567,6 +628,52 @@ export function CameraScreen() {
           <div className={s.markerToast} role="status" aria-live="polite">
             ✓ MARKED
           </div>
+        )}
+
+        {/* ── Pre-flight blocker — only shown when a critical check failed
+             (camera/mic permission denied, storage critically low). The
+             operator must resolve the underlying issue + dismiss; we don't
+             auto-retry because most blockers require leaving the page. */}
+        {preflight && preflight.overall === "block" && !preflightDismissed && (
+          <div className={s.preflightBlocker} role="alertdialog" aria-label="Pre-flight check failed">
+            <div className={s.preflightCard}>
+              <h2 className={s.preflightTitle}>Can't start session</h2>
+              <ul className={s.preflightList}>
+                {preflight.checks.filter((c) => c.level === "block").map((c) => (
+                  <li key={c.id} className={s.preflightRowBlock}>
+                    <span className={s.preflightRowLabel}>{c.id}</span>
+                    <span>{c.message}</span>
+                  </li>
+                ))}
+                {preflight.checks.filter((c) => c.level === "warn").map((c) => (
+                  <li key={c.id} className={s.preflightRowWarn}>
+                    <span className={s.preflightRowLabel}>{c.id}</span>
+                    <span>{c.message}</span>
+                  </li>
+                ))}
+              </ul>
+              <button
+                type="button"
+                className={s.preflightDismiss}
+                onClick={() => setPreflightDismissed(true)}
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Tap-to-focus ring — 700ms pulse at the tap point. Visual
+             confirmation that the tap registered + which point was targeted.
+             The actual autofocus might or might not honour the constraint
+             (hardware-dependent); the ring just confirms the gesture. */}
+        {focusPulse && (
+          <div
+            key={focusPulse.key}
+            className={s.focusPulse}
+            style={{ left: focusPulse.x, top: focusPulse.y }}
+            aria-hidden="true"
+          />
         )}
 
         {/* ── BIG SHUTTER — primary action, Snapchat-grade. ─────────────

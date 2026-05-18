@@ -129,6 +129,14 @@ interface LiveStreamViewProps {
    *  toggleTorch callback so a dock button can drive it. Only meaningful
    *  on devices where the active camera reports torch support. */
   torchToggleRef?: React.MutableRefObject<(() => void) | null>;
+  /** When provided, CameraScreen fills this ref with the refocus()
+   *  callback so a tap-to-focus gesture can re-trigger autofocus without
+   *  reaching into the camera track directly. */
+  refocusRef?: React.MutableRefObject<(() => void) | null>;
+  /** Notified when the source MediaStream (camera+mic) opens or closes,
+   *  with a reference to the stream itself. The VAD module attaches an
+   *  AnalyserNode to the mic track via this hand-off. */
+  onSourceStream?: (stream: MediaStream | null) => void;
   /**
    * Same pattern — exposes the camera-open `start` callback so CameraScreen
    * can fire it from inside the Begin button's gesture handler. The browser
@@ -153,7 +161,7 @@ export function LiveStreamView(props: LiveStreamViewProps) {
     lightLux, magnetometerUt, motionMs2, temperatureC, emfZScore, onStateChange,
     externalChannels, onExternalChannelChange, fullscreen,
     recordToggleRef, liveToggleRef, onCameraState,
-    flipCameraRef, startCameraRef, torchToggleRef,
+    flipCameraRef, startCameraRef, torchToggleRef, refocusRef, onSourceStream,
     defaultFacing, defaultTorch,
   } = props;
 
@@ -404,6 +412,30 @@ export function LiveStreamView(props: LiveStreamViewProps) {
       setBusy(false);
     }
   }, [streamOn, busy, facingMode, openCamera, detectTorchSupport]);
+
+  // Tap-to-focus — re-trigger autofocus on the active camera track. The
+  // pointsOfInterest API exists in the spec but isn't widely implemented;
+  // single-shot autofocus is the broadly-supported fallback and visually
+  // does what the operator expects ("tap = re-focus").
+  const refocus = useCallback(async () => {
+    const track = sourceStreamRef.current?.getVideoTracks()[0];
+    if (!track) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const caps = (track.getCapabilities?.() ?? {}) as any;
+    const modes: string[] = Array.isArray(caps.focusMode) ? caps.focusMode : [];
+    try {
+      if (modes.includes("single-shot")) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await track.applyConstraints({ advanced: [{ focusMode: "single-shot" }] as any });
+      } else if (modes.includes("continuous")) {
+        // Toggling continuous mode forces most implementations to re-focus.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await track.applyConstraints({ advanced: [{ focusMode: "continuous" }] as any });
+      }
+      // Else: track doesn't expose focusMode (front cameras, laptops) —
+      // silently no-op; the visual tap ring still confirms the gesture.
+    } catch { /* hardware refused — ignore */ }
+  }, []);
 
   const toggleTorch = useCallback(async () => {
     const track = sourceStreamRef.current?.getVideoTracks()[0];
@@ -689,14 +721,24 @@ export function LiveStreamView(props: LiveStreamViewProps) {
   }, []);
 
   // Fill parent-owned refs so CameraScreen can drive recording/live/flip/
-  // torch/start without LiveStreamView exposing its internal state.
+  // torch/focus/start without LiveStreamView exposing its internal state.
   useEffect(() => {
     if (recordToggleRef) recordToggleRef.current = toggleRecording;
     if (liveToggleRef)   liveToggleRef.current   = toggleLive;
     if (flipCameraRef)   flipCameraRef.current   = flipCamera;
     if (torchToggleRef)  torchToggleRef.current  = toggleTorch;
+    if (refocusRef)      refocusRef.current      = refocus;
     if (startCameraRef)  startCameraRef.current  = start;
-  }, [recordToggleRef, liveToggleRef, toggleRecording, toggleLive, flipCameraRef, flipCamera, torchToggleRef, toggleTorch, startCameraRef, start]);
+  }, [recordToggleRef, liveToggleRef, toggleRecording, toggleLive, flipCameraRef, flipCamera, torchToggleRef, toggleTorch, refocusRef, refocus, startCameraRef, start]);
+
+  // Hand the source stream to the parent so it can attach a VAD analyser to
+  // the mic track. Fires once each open/close — the parent compares by ref
+  // identity to avoid re-wiring on every render.
+  useEffect(() => {
+    if (!onSourceStream) return;
+    if (streamOn && sourceStreamRef.current) onSourceStream(sourceStreamRef.current);
+    else onSourceStream(null);
+  }, [streamOn, onSourceStream]);
 
   // Notify parent when the stream opens/closes or WHIP config changes
   // so the dock buttons can show correct enabled/disabled state.
