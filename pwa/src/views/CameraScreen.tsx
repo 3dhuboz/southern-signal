@@ -315,7 +315,16 @@ export function CameraScreen() {
   // Audio analyzer → sector / coherence / rms
   const analyzerRef = useRef<LiveAnalyzer | null>(null);
   const [sectorReading, setSectorReading] = useState<SectorReading | null>(null);
-  const [audioRms, setAudioRms] = useState<number>(0.05);
+  // audioRms updates at 94 Hz (48 kHz / 512 samples). Avoid a React render
+  // every frame: keep the always-current level in a ref + an off-render RAF
+  // writer for the mic-meter's transform, and surface a coarse ~5 Hz copy
+  // through state for consumers (LiveStreamView's overlay-state effect) that
+  // do read the value.
+  const audioRmsRef = useRef<number>(0.05);
+  const audioRmsRafRef = useRef<number | null>(null);
+  const micMeterFillRef = useRef<HTMLSpanElement | null>(null);
+  const [audioRmsCoarse, setAudioRmsCoarse] = useState<number>(0.05);
+  const lastRmsCoarseEmitRef = useRef<number>(0);
 
   // Debounce refs for likelihood emission
   const lastAcousticEmitTsRef = useRef<number>(0);
@@ -1007,7 +1016,29 @@ export function CameraScreen() {
     if (analyzerRef.current) return;
     const analyzer = new LiveAnalyzer({
       onSectorReading: (r) => setSectorReading(r),
-      onLevel: (rms) => setAudioRms(rms),
+      onLevel: (rms) => {
+        // 94 Hz callback. Stash the value in a ref (no render) and schedule
+        // a RAF that imperatively writes the meter transform. Emit a coarse
+        // 5 Hz state copy so the prop-driven consumer (LiveStreamView's
+        // overlay effect) can stay in React's tree without forcing 94
+        // renders/sec on the parent.
+        audioRmsRef.current = rms;
+        if (audioRmsRafRef.current == null) {
+          audioRmsRafRef.current = requestAnimationFrame(() => {
+            audioRmsRafRef.current = null;
+            const el = micMeterFillRef.current;
+            if (el) {
+              const level = Math.min(1, Math.max(0, audioRmsRef.current));
+              el.style.transform = `scaleX(${level})`;
+            }
+          });
+        }
+        const now = performance.now();
+        if (now - lastRmsCoarseEmitRef.current >= 200) {
+          lastRmsCoarseEmitRef.current = now;
+          setAudioRmsCoarse(rms);
+        }
+      },
       onAcousticTransient: (r, rms) => {
         const now = Date.now();
         if (now - lastAcousticEmitTsRef.current < 2000) return;
@@ -1037,7 +1068,14 @@ export function CameraScreen() {
     analyzerRef.current = null;
     await a.stop();
     setSectorReading(null);
-    setAudioRms(0.05);
+    audioRmsRef.current = 0.05;
+    setAudioRmsCoarse(0.05);
+    if (audioRmsRafRef.current != null) {
+      cancelAnimationFrame(audioRmsRafRef.current);
+      audioRmsRafRef.current = null;
+    }
+    const el = micMeterFillRef.current;
+    if (el) el.style.transform = "scaleX(0.05)";
   }, []);
 
   useEffect(() => () => { void stopLiveAnalyzer(); }, [stopLiveAnalyzer]);
@@ -1213,7 +1251,7 @@ export function CameraScreen() {
           investigationId={session.current?.id ?? null}
           running={running}
           posterior={posterior}
-          audioRms={audioRms}
+          audioRms={audioRmsCoarse}
           sector={sectorReading?.sector ?? null}
           coherence={sectorReading?.coherence ?? 0}
           caseId={session.current?.id ?? null}
@@ -1264,8 +1302,9 @@ export function CameraScreen() {
             <span className={s.micMeterLabel}>{vadActive ? "MIC · LIVE" : "MIC"}</span>
             <div className={s.micMeterBar}>
               <span
+                ref={micMeterFillRef}
                 className={s.micMeterFill}
-                style={{ transform: `scaleX(${Math.min(1, Math.max(0, audioRms))})` }}
+                style={{ transform: `scaleX(${Math.min(1, Math.max(0, audioRmsRef.current))})` }}
               />
             </div>
           </div>
