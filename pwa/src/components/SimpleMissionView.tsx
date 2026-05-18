@@ -31,6 +31,7 @@ import {
 import { emitContamination } from "../lib/posterior/likelihoods";
 import { appendAuditEntry } from "../lib/db/auditLog";
 import { recordEvent } from "../lib/db/repo";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import s from "./SimpleMissionView.module.css";
 
 interface ContaminationOpt {
@@ -197,6 +198,12 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
   const [prefs] = usePreferences();
   const researchEnabled = prefs.research.enabled;
   const [markSheetOpen, setMarkSheetOpen] = useState(false);
+  // a11y: trap focus in the mark-interference sheet while it's open; Escape
+  // closes. The dialog role moves from the backdrop (also the click-to-close
+  // target — anti-pattern) onto the actual sheet element below.
+  const markSheetTrapRef = useFocusTrap<HTMLDivElement>(markSheetOpen, {
+    onEscape: () => setMarkSheetOpen(false),
+  });
   const [latched, setLatched] = useState<string | null>(null);
   const [spectrum, setSpectrum] = useState<number[]>(() => Array(24).fill(0.04));
 
@@ -583,10 +590,18 @@ export function SimpleMissionView(props: SimpleMissionViewProps) {
 
       {/* MARK INTERFERENCE SHEET */}
       {markSheetOpen && (
-        <div className={s.sheetBackdrop} role="dialog" aria-modal="true" aria-label="Mark interference" onClick={() => setMarkSheetOpen(false)}>
-          <div className={s.sheet} onClick={(e) => e.stopPropagation()}>
+        <div className={s.sheetBackdrop} role="presentation" onClick={() => setMarkSheetOpen(false)}>
+          <div
+            className={s.sheet}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ss-mark-interference-title"
+            ref={markSheetTrapRef}
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+          >
             <header className={s.sheetHead}>
-              <span className={s.sheetTitle}>Mark interference</span>
+              <span id="ss-mark-interference-title" className={s.sheetTitle}>Mark interference</span>
               <button type="button" className={s.sheetClose} onClick={() => setMarkSheetOpen(false)} aria-label="Close">×</button>
             </header>
             <p className={s.sheetLede}>

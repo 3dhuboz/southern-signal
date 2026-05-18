@@ -5,6 +5,18 @@
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 
+/* Global :focus-visible — every keyboard user needs a visible focus ring on
+   every interactive element. Previously only `.btn` (in buttons.css) had a
+   ring, leaving the camera shutter, dock buttons, snooze chip, marker pill,
+   scene pill, nav tabs, sheet items, and modal dismiss buttons all silently
+   un-focusable from the keyboard perspective. WCAG 2.4.7 (Focus Visible).
+   Uses outline + offset so it stacks over rounded chrome without clipping. */
+:where(button, [role="button"], a, [tabindex]:not([tabindex="-1"]), input, select, textarea):focus-visible {
+  outline: 2px solid var(--signal, #5DF2C7);
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+
 /* Global animation primitives — used by hero card, AR overlay, etc. */
 @keyframes ss-aurora-drift {
   0%   { transform: translate(0, 0) rotate(0deg)   scale(1.0); opacity: 0.55; }

@@ -108,7 +108,7 @@ export function ChainBrokenBanner() {
           type="button"
           className={s.dismissBtn}
           onClick={() => setDismissed(true)}
-          aria-label="Dismiss for this session"
+          title="Dismiss for this session"
         >
           Later
         </button>

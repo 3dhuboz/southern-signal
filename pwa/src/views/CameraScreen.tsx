@@ -33,6 +33,7 @@ import { usePushToTalk } from "../lib/audio/usePushToTalk";
 import { startVad, type VadHandle } from "../lib/audio/vad";
 import { useLongPress, useDoubleTap, useHorizontalSwipe, composeHandlers } from "../lib/gestures";
 import { CAMERA_WELCOME_KEY } from "../lib/version";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import { resolvePreflightOverrides, runPreflight, type PreflightCheck, type PreflightLevel, type PreflightReport } from "../lib/system/preflight";
 import { formatTimeToEmpty, projectTimeToEmpty, projectTimeToZero, type BatterySample } from "../lib/system/batteryProjection";
 import { verifyAuditChain, appendAuditEntry } from "../lib/db/auditLog";
@@ -423,6 +424,11 @@ export function CameraScreen() {
   // doesn't yank the operator off the camera mid-session.
   const [markerPillOpen, setMarkerPillOpen] = useState(false);
   const markerPillWrapRef = useRef<HTMLDivElement | null>(null);
+  // a11y: trap focus in the popover dialog while it's open. Escape closes,
+  // restore-focus returns the operator to the pill button on dismiss.
+  const markerPillTrapRef = useFocusTrap<HTMLDivElement>(markerPillOpen, {
+    onEscape: () => setMarkerPillOpen(false),
+  });
   // After a session stops on the Camera surface, hold the investigation id
   // here so the DispositionPicker can prompt the operator to classify it.
   // Without this, the base-rate dashboard silently miscounts (Pro/Lab
@@ -460,6 +466,11 @@ export function CameraScreen() {
     catch { /* private mode — in-memory dismiss still works for the session */ }
     setWelcomeVisible(false);
   }, []);
+  // a11y: trap focus while the welcome card is on screen so an external-
+  // keyboard user can't tab into the camera chrome behind. Escape dismisses.
+  const welcomeTrapRef = useFocusTrap<HTMLDivElement>(welcomeVisible && !running, {
+    onEscape: dismissWelcome,
+  });
 
   const commitMarker = useCallback((category: MarkerCategory, note?: string) => {
     if (markerCommittedRef.current) return;
@@ -1334,7 +1345,14 @@ export function CameraScreen() {
               <span className={s.markerCountLabel}>marker{sessionMarkerCount === 1 ? "" : "s"}</span>
             </button>
             {markerPillOpen && (
-              <div className={s.markerCountPopover} role="dialog" aria-label="Marker breakdown by category">
+              <div
+                className={s.markerCountPopover}
+                role="dialog"
+                aria-modal="true"
+                aria-label="Marker breakdown by category"
+                ref={markerPillTrapRef}
+                tabIndex={-1}
+              >
                 <ul className={s.markerCountList}>
                   {MARKER_BREAKDOWN.filter((row) => sessionMarkerByCat[row.id] > 0).map((row) => (
                     <li key={row.id}>
@@ -1363,9 +1381,16 @@ export function CameraScreen() {
              while a session is running so the operator's eye lands on the
              feed. */}
         {welcomeVisible && !running && (
-          <div className={s.welcomeCard} role="dialog" aria-label="Welcome to the camera">
+          <div
+            className={s.welcomeCard}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ss-welcome-title"
+            ref={welcomeTrapRef}
+            tabIndex={-1}
+          >
             <header className={s.welcomeHead}>
-              <span className={s.welcomeEyebrow}>Welcome</span>
+              <span id="ss-welcome-title" className={s.welcomeEyebrow}>Welcome</span>
               <button
                 type="button"
                 className={s.welcomeDismiss}
