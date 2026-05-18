@@ -13,7 +13,7 @@
  * per frame for editing-room defensibility.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { writeBytes } from "../lib/opfs";
 import { registerMedia, recordEvent } from "../lib/db/repo";
 import { appendAuditEntry } from "../lib/db/auditLog";
@@ -165,7 +165,7 @@ interface LiveStreamViewProps {
   defaultTorch?: boolean;
 }
 
-export function LiveStreamView(props: LiveStreamViewProps) {
+function LiveStreamViewImpl(props: LiveStreamViewProps) {
   const {
     investigationId, running, posterior, audioRms, sector, coherence, caseId, caseTitle, caption,
     lightLux, magnetometerUt, motionMs2, temperatureC, emfZScore, onStateChange,
@@ -1113,6 +1113,15 @@ export function LiveStreamView(props: LiveStreamViewProps) {
     </div>
   );
 }
+
+/**
+ * Memoised public export. The parent (CameraScreen) re-renders frequently
+ * on every sensor / posterior tick (1-50 Hz) and on the 5 Hz audioRms
+ * coarse copy. Without memo, this 1300+ line component re-runs end to end
+ * each time. All callback props are useCallback-stable and ref props are
+ * useRef-stable, so the default shallow-prop check is sufficient.
+ */
+export const LiveStreamView = memo(LiveStreamViewImpl);
 
 /**
  * Operator-friendly per-provider input. The PROVIDER TEMPLATE dropdown
