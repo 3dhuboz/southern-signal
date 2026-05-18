@@ -134,6 +134,20 @@ export interface AppPreferences {
    */
   vadAutoDuck: boolean;
   /**
+   * Operator-level overrides for the mid-session preflight watchdog. When
+   * non-null, these supersede the module defaults for ALL scenes —
+   * useful for power users running on devices with a different
+   * risk profile than the canned defaults assume. Scenes that explicitly
+   * set their own override still win (scene > pref > module default).
+   *
+   * lowBatteryFraction: battery level (0..1) under which the watchdog warns.
+   * minStorageMb: free storage (MB) under which the watchdog blocks.
+   */
+  preflight: {
+    lowBatteryFraction: number | null;
+    minStorageMb: number | null;
+  };
+  /**
    * Tuning for the VAD detector. All thresholds are relative to the adaptive
    * noise floor — sensitivity is the activation threshold in dB above the
    * floor (lower = more sensitive, fires on quieter voices but more prone to
@@ -185,6 +199,7 @@ const DEFAULTS: AppPreferences = {
   proMode: false,
   itcMonitor: false,
   vadAutoDuck: false,
+  preflight: { lowBatteryFraction: null, minStorageMb: null },
   vadConfig: { sensitivityDb: 12, attackMs: 120, releaseMs: 350, noiseFloorDb: null },
 };
 
@@ -208,6 +223,7 @@ function read(): AppPreferences {
         modules: { ...DEFAULTS.rig.modules, ...(parsed.rig?.modules ?? {}) },
       },
       community: { ...DEFAULTS.community, ...(parsed.community ?? {}) },
+      preflight: { ...DEFAULTS.preflight, ...(parsed.preflight ?? {}) },
       vadConfig: { ...DEFAULTS.vadConfig, ...(parsed.vadConfig ?? {}) },
     };
   } catch {
@@ -238,6 +254,7 @@ export function setPreferences(patch: Partial<AppPreferences>): AppPreferences {
       modules: { ...current.rig.modules, ...(patch.rig?.modules ?? {}) },
     },
     community: { ...current.community, ...(patch.community ?? {}) },
+    preflight: { ...current.preflight, ...(patch.preflight ?? {}) },
     vadConfig: { ...current.vadConfig, ...(patch.vadConfig ?? {}) },
   };
   write(next);

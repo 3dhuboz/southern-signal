@@ -383,6 +383,37 @@
   margin: 4px 0 0;
 }
 
+/* "What's new" panel list — terse one-liner per recent feature, with the
+   surface where it lives so the operator can find it. The whole card hides
+   after "Got it" via WHATS_NEW_KEY in localStorage. */
+.whatsNewList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.whatsNewItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  background: var(--bg-inset);
+  border-left: 2px solid var(--signal-dim);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+}
+.whatsNewItem strong {
+  font-size: 12.5px;
+  color: var(--text-primary);
+}
+.whatsNewWhere {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  letter-spacing: 0.2px;
+}
+
 /* Inline × button next to the "Saved floor: -38 dB" chip — clears the
    persisted baseline so a fresh hunt falls back to the -50 default. */
 .soundCheckClear {

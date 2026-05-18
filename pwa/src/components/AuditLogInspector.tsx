@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { query } from "../lib/db/db";
 import { verifyAuditChain } from "../lib/db/auditLog";
+import { sha256Hex } from "../lib/forensic/canonicalJson";
 import s from "./AuditLogInspector.module.css";
 
 interface AuditRow {
@@ -66,6 +67,24 @@ export function AuditLogInspector() {
   // to scan the list.
   const listRef = useRef<HTMLUListElement | null>(null);
   const [flashSeq, setFlashSeq] = useState<number | null>(null);
+  // Diagnostic report for the broken row — populated by the Diagnose button.
+  // Reads the row + its predecessor, recomputes the expected entry_hash, and
+  // tells the operator which step of the chain check actually failed. We
+  // never auto-repair: rewriting a hash chain would defeat the chain's
+  // purpose. The report is for forensic triage, not modification.
+  interface ChainDiagnosis {
+    seq: number;
+    storedEntryHash: string;
+    recomputedEntryHash: string;
+    storedPrevHash: string;
+    expectedPrevHash: string;
+    issue:
+      | "missing_predecessor"
+      | "prev_hash_mismatch"
+      | "entry_hash_mismatch"
+      | "no_issue_found";
+  }
+  const [diagnosis, setDiagnosis] = useState<ChainDiagnosis | null>(null);
   // Persist the operator's filter across reloads. Empty string clears storage
   // so we don't keep a stale value pinned forever.
   useEffect(() => {
@@ -105,6 +124,52 @@ export function AuditLogInspector() {
   }, []);
 
   useEffect(() => { void reload(); }, [reload]);
+
+  // Diagnose a broken chain row — recomputes the expected entry_hash from
+  // the row's own payload and the previous row's hash, surfaces which check
+  // failed. Pure read-only inspection; the chain itself is untouched.
+  const diagnose = useCallback(async (brokenAtSeq: number) => {
+    const GENESIS_HASH = "0".repeat(64);
+    const broken = (await query<AuditRow & { prev_hash: string }>(
+      "SELECT seq, ts_utc, actor, kind, payload_json, prev_hash, entry_hash FROM audit_log WHERE seq = ?",
+      [brokenAtSeq],
+    ))[0];
+    if (!broken) return;
+    // Expected prev_hash = previous row's entry_hash, or GENESIS for seq=1
+    let expectedPrev = GENESIS_HASH;
+    if (brokenAtSeq > 1) {
+      const prev = (await query<{ entry_hash: string }>(
+        "SELECT entry_hash FROM audit_log WHERE seq = ?",
+        [brokenAtSeq - 1],
+      ))[0];
+      if (!prev) {
+        setDiagnosis({
+          seq: brokenAtSeq,
+          storedEntryHash: broken.entry_hash,
+          recomputedEntryHash: "",
+          storedPrevHash: broken.prev_hash,
+          expectedPrevHash: "(missing — predecessor row absent)",
+          issue: "missing_predecessor",
+        });
+        return;
+      }
+      expectedPrev = prev.entry_hash;
+    }
+    const recomputed = await sha256Hex(
+      `${broken.seq}|${broken.ts_utc}|${broken.actor}|${broken.kind}|${broken.payload_json}|${broken.prev_hash}`,
+    );
+    let issue: ChainDiagnosis["issue"] = "no_issue_found";
+    if (broken.prev_hash !== expectedPrev) issue = "prev_hash_mismatch";
+    else if (recomputed !== broken.entry_hash) issue = "entry_hash_mismatch";
+    setDiagnosis({
+      seq: brokenAtSeq,
+      storedEntryHash: broken.entry_hash,
+      recomputedEntryHash: recomputed,
+      storedPrevHash: broken.prev_hash,
+      expectedPrevHash: expectedPrev,
+      issue,
+    });
+  }, []);
 
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -159,6 +224,9 @@ export function AuditLogInspector() {
                 onClick={() => {
                   // Clear filter so the broken row is guaranteed to be visible
                   // even if the operator had narrowed the view to a quick-filter.
+                  // The persisted-filter effect will mirror "" into localStorage,
+                  // which is the intent here — chain-repair mode supersedes a
+                  // saved filter selection.
                   setFilter("");
                   setFlashSeq(chain.brokenAtSeq);
                   // requestAnimationFrame so the DOM has rerendered with the
@@ -171,8 +239,50 @@ export function AuditLogInspector() {
               >
                 Jump to row
               </button>
+              <button
+                type="button"
+                className={s.statusJumpBtn}
+                onClick={() => { void diagnose(chain.brokenAtSeq); }}
+              >
+                Diagnose
+              </button>
             </>
           )}
+        </div>
+      )}
+
+      {/* Diagnostic readout — only when the operator tapped Diagnose. Pure
+           inspection; never auto-repairs the chain (that would defeat its
+           purpose). The recomputed hash + expected predecessor tell the
+           operator exactly which step of the verification failed so a
+           tampered row can be distinguished from a missing predecessor or
+           a swapped pointer. */}
+      {diagnosis && (
+        <div className={s.diagnosis} role="region" aria-label={`Chain diagnosis for entry ${diagnosis.seq}`}>
+          <div className={s.diagnosisHead}>
+            <span className={s.diagnosisTitle}>Diagnosis · seq {diagnosis.seq}</span>
+            <button
+              type="button"
+              className={s.diagnosisClose}
+              onClick={() => setDiagnosis(null)}
+              aria-label="Dismiss diagnosis"
+            >×</button>
+          </div>
+          <p className={s.diagnosisIssue} data-issue={diagnosis.issue}>
+            {diagnosis.issue === "missing_predecessor" && "Predecessor row is missing — chain integrity cannot be confirmed past this break."}
+            {diagnosis.issue === "prev_hash_mismatch" && "prev_hash doesn't match the previous row's entry_hash — the chain pointer was rewritten or the predecessor was altered."}
+            {diagnosis.issue === "entry_hash_mismatch" && "Stored entry_hash doesn't match the recomputed hash of this row's payload — the row's data was modified after appending."}
+            {diagnosis.issue === "no_issue_found" && "Recomputed hash matches stored hash. The verifier may have flagged this seq due to an earlier break — check the predecessor."}
+          </p>
+          <dl className={s.diagnosisGrid}>
+            <dt>Stored entry hash</dt><dd><code>{diagnosis.storedEntryHash.slice(0, 24)}…</code></dd>
+            <dt>Recomputed entry hash</dt><dd><code>{diagnosis.recomputedEntryHash ? `${diagnosis.recomputedEntryHash.slice(0, 24)}…` : "—"}</code></dd>
+            <dt>Stored prev_hash</dt><dd><code>{diagnosis.storedPrevHash.slice(0, 24)}…</code></dd>
+            <dt>Expected prev_hash</dt><dd><code>{diagnosis.expectedPrevHash.startsWith("(") ? diagnosis.expectedPrevHash : `${diagnosis.expectedPrevHash.slice(0, 24)}…`}</code></dd>
+          </dl>
+          <p className={s.diagnosisFoot}>
+            Read-only inspection. Export the full bundle for offline forensic review — don't edit the chain in place.
+          </p>
         </div>
       )}
 

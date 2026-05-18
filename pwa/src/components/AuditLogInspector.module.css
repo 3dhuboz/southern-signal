@@ -43,6 +43,84 @@
   cursor: pointer;
 }
 .statusJumpBtn:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
+
+/* Inline diagnostic readout shown when the operator taps Diagnose on a
+   broken chain row. Read-only forensic surface — recomputed hash side-by-
+   side with the stored value so the operator can see WHICH step failed. */
+.diagnosis {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-8);
+  background: color-mix(in srgb, var(--danger) 6%, var(--bg-elevated));
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border-subtle));
+  border-radius: var(--r-md);
+  padding: var(--s-12);
+}
+.diagnosisHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.diagnosisTitle {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  font-weight: 800;
+  color: var(--danger);
+}
+.diagnosisClose {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  width: 22px; height: 22px;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  cursor: pointer;
+  line-height: 1;
+}
+.diagnosisClose:hover { color: var(--danger); border-color: var(--danger); }
+
+.diagnosisIssue {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+.diagnosisIssue[data-issue="no_issue_found"] { color: var(--text-secondary); }
+
+.diagnosisGrid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.diagnosisGrid dt {
+  color: var(--text-muted);
+  letter-spacing: 0.4px;
+}
+.diagnosisGrid dd {
+  margin: 0;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+.diagnosisGrid code {
+  font-family: inherit;
+  background: var(--bg-inset);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10.5px;
+}
+
+.diagnosisFoot {
+  margin: 0;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--text-muted);
+}
 .statusDot {
   width: 10px;
   height: 10px;

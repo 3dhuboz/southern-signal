@@ -30,7 +30,7 @@ import { useLiveBroadcastState } from "../lib/system/liveBroadcast";
 import { usePushToTalk } from "../lib/audio/usePushToTalk";
 import { startVad, type VadHandle } from "../lib/audio/vad";
 import { useLongPress, useDoubleTap, useHorizontalSwipe, composeHandlers } from "../lib/gestures";
-import { runPreflight, type PreflightCheck, type PreflightReport } from "../lib/system/preflight";
+import { resolvePreflightOverrides, runPreflight, type PreflightCheck, type PreflightReport } from "../lib/system/preflight";
 import { usePwaInstall } from "../lib/system/usePwaInstall";
 import { useLiveNarrator } from "../lib/posterior/liveNarrator";
 import { LiveAnalyzer } from "../lib/audio/liveAnalyzer";
@@ -276,6 +276,11 @@ export function CameraScreen() {
   // effect itself only depends on `running`.
   const activeSceneIdRef = useRef<SceneId>(activeSceneId);
   useEffect(() => { activeSceneIdRef.current = activeSceneId; }, [activeSceneId]);
+  // Same pattern for the operator-level preflight pref: a Setup edit during
+  // a running session needs to be visible to the next watchdog tick without
+  // re-binding the 60s interval.
+  const preflightPrefRef = useRef(prefs.preflight);
+  useEffect(() => { preflightPrefRef.current = prefs.preflight; }, [prefs.preflight]);
   const activeScene = getScene(activeSceneId);
   const [channels, setChannels] = useState<OverlayChannels>(() =>
     resolveOverlaysFromScene({ ...(activeScene?.overlays ?? {}), ...loadSceneOverrides(activeSceneId) }, { proMode }),
@@ -471,9 +476,11 @@ export function CameraScreen() {
       if (installPromptOpenRef.current) return;
       try {
         // Re-read activeScene each tick so a mid-session swap to a plugged-in
-        // scene immediately stops firing battery toasts.
-        const overrides = getScene(activeSceneIdRef.current)?.preflightOverrides;
-        const report = await runPreflight(overrides);
+        // scene immediately stops firing battery toasts. Operator-level prefs
+        // sit BELOW scene overrides: a scene-specific tightening wins, but
+        // otherwise an operator's global pref applies on top of the module
+        // defaults.
+        const report = await runPreflight(resolvePreflightOverrides(preflightPrefRef.current, getScene(activeSceneIdRef.current)?.preflightOverrides));
         const severity = { ok: 0, warn: 1, block: 2 } as const;
         // Fire the toast when (a) the overall severity escalated OR
         // (b) a new check id started failing while severity stayed the same
@@ -674,7 +681,7 @@ export function CameraScreen() {
     // Read the active scene through the ref so handleBegin doesn't need to
     // re-bind every scene change (it's a stable callback with [] deps).
     const sceneOverrides = getScene(activeSceneIdRef.current)?.preflightOverrides;
-    const preflightPromise = runPreflight(sceneOverrides);
+    const preflightPromise = runPreflight(resolvePreflightOverrides(preflightPrefRef.current, sceneOverrides));
     void preflightPromise.then((report) => {
       if (report.overall === "block") {
         setPreflight(report);
@@ -971,8 +978,15 @@ export function CameraScreen() {
 
         {/* ── Slim secondary dock — Scenes · Settings · Clip Rec ────────
              Sits BETWEEN the shutter and the BottomNav. Semi-transparent
-             gradient so the camera feed bleeds through. */}
-        <div className={s.dockSlim} role="toolbar" aria-label="Camera secondary controls">
+             gradient so the camera feed bleeds through. When the active
+             scene asks for a simplified dock (Vigil) we drop the
+             modifier class that centres the remaining two buttons so they
+             don't end up stranded at opposite edges of the 56px bar. */}
+        <div
+          className={`${s.dockSlim} ${activeScene?.simplifiedDock ? s.dockSlimSimplified : ""}`.trim()}
+          role="toolbar"
+          aria-label="Camera secondary controls"
+        >
           <button
             type="button"
             className={s.dockSlimBtn}
@@ -993,60 +1007,68 @@ export function CameraScreen() {
             <span className={s.dockSlimIcon} aria-hidden="true"><IconSettings /></span>
           </button>
 
-          <ScreenRecordButton
-            investigationId={session.current?.id ?? null}
-            classNames={{
-              idle:   s.dockSlimBtn,
-              active: `${s.dockSlimBtn} ${s.dockSlimBtnRec}`,
-              icon:   s.dockSlimIcon,
-              label:  s.dockSlimLabel,
-            }}
-          />
+          {/* Simplified-dock scenes (Vigil) hide the secondary buttons so
+              the cinematic framing isn't broken by chip-shaped chrome. The
+              BIG SHUTTER still handles start/stop; everything else lives one
+              tap away via Scenes or Settings. */}
+          {!activeScene?.simplifiedDock && (
+            <>
+              <ScreenRecordButton
+                investigationId={session.current?.id ?? null}
+                classNames={{
+                  idle:   s.dockSlimBtn,
+                  active: `${s.dockSlimBtn} ${s.dockSlimBtnRec}`,
+                  icon:   s.dockSlimIcon,
+                  label:  s.dockSlimLabel,
+                }}
+              />
 
-          {/* Inline compositor clip-record — small (not the primary button).
-              Honours the same recordToggleRef the shutter would use if the
-              operator wanted a clip without ending the session. */}
-          <button
-            type="button"
-            className={`${s.dockSlimBtn} ${broadcastState.recording ? s.dockSlimBtnRec : ""}`.trim()}
-            onClick={() => recordToggleRef.current?.()}
-            disabled={!cameraState.streamOn}
-            aria-pressed={broadcastState.recording}
-            aria-label={broadcastState.recording ? "Stop clip recording" : "Record clip"}
-            title={broadcastState.recording ? "Stop clip" : "Clip Rec"}
-          >
-            <span className={s.dockSlimIcon} aria-hidden="true"><IconRecord /></span>
-            <span className={s.dockSlimLabel}>{broadcastState.recording ? "Stop" : "Clip"}</span>
-          </button>
+              {/* Inline compositor clip-record — small (not the primary button).
+                  Honours the same recordToggleRef the shutter would use if the
+                  operator wanted a clip without ending the session. */}
+              <button
+                type="button"
+                className={`${s.dockSlimBtn} ${broadcastState.recording ? s.dockSlimBtnRec : ""}`.trim()}
+                onClick={() => recordToggleRef.current?.()}
+                disabled={!cameraState.streamOn}
+                aria-pressed={broadcastState.recording}
+                aria-label={broadcastState.recording ? "Stop clip recording" : "Record clip"}
+                title={broadcastState.recording ? "Stop clip" : "Clip Rec"}
+              >
+                <span className={s.dockSlimIcon} aria-hidden="true"><IconRecord /></span>
+                <span className={s.dockSlimLabel}>{broadcastState.recording ? "Stop" : "Clip"}</span>
+              </button>
 
-          {/* Flip camera — single tap toggles rear ↔ front. (Was previously
-              wired as a double-tap gesture; double-tap is now marker drop.) */}
-          <button
-            type="button"
-            className={s.dockSlimBtn}
-            onClick={() => flipCameraRef.current?.()}
-            disabled={!cameraState.streamOn}
-            aria-label={cameraState.facingMode === "environment" ? "Switch to front camera" : "Switch to rear camera"}
-            title="Flip camera"
-          >
-            <span className={s.dockSlimIcon} aria-hidden="true"><IconFlip /></span>
-            <span className={s.dockSlimLabel}>{cameraState.facingMode === "environment" ? "Rear" : "Front"}</span>
-          </button>
+              {/* Flip camera — single tap toggles rear ↔ front. (Was previously
+                  wired as a double-tap gesture; double-tap is now marker drop.) */}
+              <button
+                type="button"
+                className={s.dockSlimBtn}
+                onClick={() => flipCameraRef.current?.()}
+                disabled={!cameraState.streamOn}
+                aria-label={cameraState.facingMode === "environment" ? "Switch to front camera" : "Switch to rear camera"}
+                title="Flip camera"
+              >
+                <span className={s.dockSlimIcon} aria-hidden="true"><IconFlip /></span>
+                <span className={s.dockSlimLabel}>{cameraState.facingMode === "environment" ? "Rear" : "Front"}</span>
+              </button>
 
-          {/* Torch — only rendered when the active camera reports torch
-              support. Front cameras and most laptops won't expose it. */}
-          {cameraState.torchSupported && (
-            <button
-              type="button"
-              className={`${s.dockSlimBtn} ${cameraState.torchOn ? s.dockSlimBtnRec : ""}`.trim()}
-              onClick={() => torchToggleRef.current?.()}
-              aria-pressed={cameraState.torchOn}
-              aria-label={cameraState.torchOn ? "Turn torch off" : "Turn torch on"}
-              title="Torch"
-            >
-              <span className={s.dockSlimIcon} aria-hidden="true"><IconTorch /></span>
-              <span className={s.dockSlimLabel}>Torch</span>
-            </button>
+              {/* Torch — only rendered when the active camera reports torch
+                  support. Front cameras and most laptops won't expose it. */}
+              {cameraState.torchSupported && (
+                <button
+                  type="button"
+                  className={`${s.dockSlimBtn} ${cameraState.torchOn ? s.dockSlimBtnRec : ""}`.trim()}
+                  onClick={() => torchToggleRef.current?.()}
+                  aria-pressed={cameraState.torchOn}
+                  aria-label={cameraState.torchOn ? "Turn torch off" : "Turn torch on"}
+                  title="Torch"
+                >
+                  <span className={s.dockSlimIcon} aria-hidden="true"><IconTorch /></span>
+                  <span className={s.dockSlimLabel}>Torch</span>
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>

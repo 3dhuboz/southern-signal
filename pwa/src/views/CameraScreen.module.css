@@ -502,6 +502,14 @@
   z-index: 4;
 }
 
+/* Simplified-dock scenes (Vigil) render only Scenes + Settings. Centre them
+   with a comfortable gap so they don't end up stranded at opposite ends of
+   the 56px-wide toolbar. */
+.dockSlimSimplified {
+  justify-content: center;
+  gap: 24px;
+}
+
 .dockSlimBtn {
   pointer-events: auto;
   display: inline-flex;

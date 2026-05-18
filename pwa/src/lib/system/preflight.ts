@@ -139,6 +139,32 @@ async function checkBattery(lowFraction: number): Promise<PreflightCheck> {
 }
 
 /**
+ * Compose preflight overrides from an operator-level pref + a scene-level
+ * override. Precedence: scene > pref > module default. Scene wins when both
+ * specify the same field — a scene that explicitly skips battery (e.g.
+ * Pro/Lab plugged in at the desk) overrides the operator's global
+ * lowBatteryFraction preference. Pref applies otherwise.
+ *
+ * Accepts looser input shapes (number | null) than `PreflightOverrides`
+ * itself so a UI pref representation can pass through directly.
+ */
+export function resolvePreflightOverrides(
+  pref?: { lowBatteryFraction?: number | null; minStorageMb?: number | null } | null,
+  scene?: PreflightOverrides | null,
+): PreflightOverrides | undefined {
+  const out: PreflightOverrides = {};
+  if (pref?.lowBatteryFraction != null) out.lowBatteryFraction = pref.lowBatteryFraction;
+  if (pref?.minStorageMb != null) out.minStorageBytes = Math.round(pref.minStorageMb * 1024 * 1024);
+  if (scene?.lowBatteryFraction != null) out.lowBatteryFraction = scene.lowBatteryFraction;
+  if (scene?.minStorageBytes != null) out.minStorageBytes = scene.minStorageBytes;
+  if (scene?.skipBattery === true) out.skipBattery = true;
+  // Return undefined when no overrides apply — keeps runPreflight's defaults
+  // in the hot path and avoids spreading an empty object on every tick.
+  if (Object.keys(out).length === 0) return undefined;
+  return out;
+}
+
+/**
  * Run all checks in parallel. The overall level is the highest severity of
  * any individual check (block > warn > ok), so the UI can decide whether
  * to surface a blocker or just kick off the session.

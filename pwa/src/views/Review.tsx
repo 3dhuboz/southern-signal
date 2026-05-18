@@ -83,8 +83,11 @@ interface DeviceSampleRow {
 }
 
 interface DeviceTimeline {
-  battery: number[];
-  storageMb: number[];
+  /** Each entry pairs a numeric value with its ISO timestamp so marker
+   *  positions can be derived against the same time axis the sparkline
+   *  uses — otherwise battery samples and markers would drift apart. */
+  battery: { value: number; ts: string }[];
+  storageMb: { value: number; ts: string }[];
   /** Earliest sample timestamp, for the rangelabel. */
   startTs: string | null;
   endTs: string | null;
@@ -147,12 +150,12 @@ export function Review() {
             [recentId],
           );
           if (deviceRows.length > 0) {
-            const battery: number[] = [];
-            const storageMb: number[] = [];
+            const battery: { value: number; ts: string }[] = [];
+            const storageMb: { value: number; ts: string }[] = [];
             for (const r of deviceRows) {
               if (r.value == null) continue;
-              if (r.sensor_type === "battery") battery.push(r.value);
-              else if (r.sensor_type === "storage_free") storageMb.push(r.value / (1024 * 1024));
+              if (r.sensor_type === "battery") battery.push({ value: r.value, ts: r.timestamp });
+              else if (r.sensor_type === "storage_free") storageMb.push({ value: r.value / (1024 * 1024), ts: r.timestamp });
             }
             setTimeline({
               battery,
@@ -497,7 +500,8 @@ export function Review() {
             {timeline.battery.length > 1 && (
               <DeviceSpark
                 label="Battery"
-                values={timeline.battery}
+                samples={timeline.battery}
+                markerTimestamps={markers.map((m) => m.timestamp)}
                 domain={{ min: 0, max: 1 }}
                 format={(v) => `${Math.round(v * 100)}%`}
                 tone="battery"
@@ -506,7 +510,8 @@ export function Review() {
             {timeline.storageMb.length > 1 && (
               <DeviceSpark
                 label="Storage free"
-                values={timeline.storageMb}
+                samples={timeline.storageMb}
+                markerTimestamps={markers.map((m) => m.timestamp)}
                 format={(v) => `${Math.round(v)} MB`}
                 tone="storage"
               />
@@ -615,40 +620,69 @@ export function Review() {
  * series.
  */
 function DeviceSpark({
-  label, values, format, domain, tone,
+  label, samples, format, domain, tone, markerTimestamps,
 }: {
   label: string;
-  values: readonly number[];
+  samples: readonly { value: number; ts: string }[];
   format: (v: number) => string;
   domain?: { min: number; max: number };
   tone: "battery" | "storage";
+  /** ISO timestamps of moment markers — rendered as faint vertical ticks so
+   *  the reviewer sees where the operator flagged moments against the
+   *  device-state curve. Markers outside [first..last] sample range clip. */
+  markerTimestamps?: readonly string[];
 }) {
-  if (values.length < 2) return null;
+  if (samples.length < 2) return null;
   const W = 120;
   const H = 28;
+  const values = samples.map((s) => s.value);
   const min = domain?.min ?? Math.min(...values);
   const max = domain?.max ?? Math.max(...values);
   const span = Math.max(0.0001, max - min);
-  const stepX = W / (values.length - 1);
-  const points = values.map((v, i) => {
+  const stepX = W / (samples.length - 1);
+  const points = samples.map((s, i) => {
     const x = i * stepX;
-    const y = H - ((v - min) / span) * H;
+    const y = H - ((s.value - min) / span) * H;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(" ");
-  const last = values[values.length - 1];
-  const first = values[0];
+  const last = samples[samples.length - 1];
+  const first = samples[0];
+  // Map markers to x-positions on the spark's time axis. Clip anything that
+  // falls outside the sample range (e.g. markers from before the watchdog
+  // started writing samples).
+  const startMs = Date.parse(first.ts);
+  const endMs = Date.parse(last.ts);
+  const rangeMs = Math.max(1, endMs - startMs);
+  // Keep timestamp + x together so we can key the rendered <line> by the
+  // stable timestamp instead of array index — append-only markers shouldn't
+  // shift keys, but ts-keyed is the defensive choice.
+  const markerPoints = (markerTimestamps ?? [])
+    .map((iso) => ({ iso, ms: Date.parse(iso) }))
+    .filter(({ ms }) => Number.isFinite(ms) && ms >= startMs && ms <= endMs)
+    .map(({ iso, ms }) => ({ iso, x: ((ms - startMs) / rangeMs) * W }));
   return (
     <div className={r.deviceSpark} data-tone={tone}>
       <div className={r.deviceSparkHead}>
         <span className={r.deviceSparkLabel}>{label}</span>
-        <span className={r.deviceSparkValue}>{format(last)}</span>
+        <span className={r.deviceSparkValue}>{format(last.value)}</span>
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className={r.deviceSparkSvg} role="img" aria-label={`${label} timeline`}>
+      <svg viewBox={`0 0 ${W} ${H}`} className={r.deviceSparkSvg} role="img" aria-label={`${label} timeline${markerPoints.length ? ` with ${markerPoints.length} markers` : ""}`}>
+        {/* Markers behind the polyline so the curve reads over the ticks. */}
+        {markerPoints.map((m) => (
+          <line
+            key={m.iso}
+            x1={m.x} x2={m.x} y1={0} y2={H}
+            stroke="var(--text-dim)" strokeWidth={0.6} strokeDasharray="1.5 1.5" opacity={0.55}
+          />
+        ))}
         <polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
       </svg>
       <div className={r.deviceSparkFoot}>
-        <span className={r.deviceSparkMeta}>start {format(first)}</span>
-        <span className={r.deviceSparkMeta}>{values.length} samples</span>
+        <span className={r.deviceSparkMeta}>start {format(first.value)}</span>
+        <span className={r.deviceSparkMeta}>
+          {samples.length} samples
+          {markerPoints.length > 0 ? ` · ${markerPoints.length} marker${markerPoints.length === 1 ? "" : "s"}` : ""}
+        </span>
       </div>
     </div>
   );

@@ -49,6 +49,13 @@ export interface Scene {
    * = use module defaults.
    */
   preflightOverrides?: PreflightOverrides;
+  /**
+   * Strip the camera dock down to Scenes + Settings only — hides Clip Rec,
+   * Flip, and Torch buttons. The Vigil scene uses this to preserve the
+   * "cinematic, hands-off" framing the panel called for; the BIG SHUTTER
+   * still works as the primary action so the operator can start/stop.
+   */
+  simplifiedDock?: boolean;
 }
 
 /**
@@ -108,6 +115,9 @@ export const BUILT_IN_SCENES: readonly Scene[] = [
     },
     tools: { spiritBox: false, ovilus: false },
     cameraDefaults: { torch: false, facing: "environment" },
+    // Vigil is cinematic — strip the dock down so nothing competes with the
+    // frame. Shutter still anchors the bottom for start/stop.
+    simplifiedDock: true,
   },
 
   {

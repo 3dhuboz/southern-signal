@@ -170,6 +170,8 @@ export function Setup() {
         <p className={s.lede}>Manage investigations, configure live broadcast (WHIP), tune on-device transcription and AI, set rig loadout, and manage privacy posture. All data stays on this device unless you explicitly enable cloud sync.</p>
       </div>
 
+      <WhatsNewCard />
+
       {/* CASE MANAGER */}
       <section className={st.panel}>
         <CaseManager />
@@ -294,6 +296,49 @@ export function Setup() {
             <SoundCheckCard vadConfig={prefs.vadConfig} />
           </div>
         )}
+      </section>
+
+      {/* Mid-session preflight watchdog tuning. Scene-level overrides still
+          trump these (e.g. Pro/Lab always skips battery); think of these as
+          the FLOOR an operator wants for any scene without its own opinion. */}
+      <section className={st.panel}>
+        <header className={st.panelHeader}>
+          <h2 className={st.panelTitle}>Preflight thresholds</h2>
+          <span className={st.panelBadge}>
+            {(prefs.preflight.lowBatteryFraction != null || prefs.preflight.minStorageMb != null) ? "Customised" : "Defaults"}
+          </span>
+        </header>
+        <p className={st.panelLede}>
+          The watchdog re-runs preflight every 60s during a session and surfaces a toast when device state degrades vs the start. Tune the thresholds here if the canned defaults (battery 20%, storage 200MB) don't match your device. Scene-specific tunings still win — Walkthrough warns earlier on battery, Calibration/Pro-Lab skip the battery check.
+        </p>
+        <label className={st.fieldLabel}>
+          Battery warn threshold: {prefs.preflight.lowBatteryFraction != null ? `${Math.round(prefs.preflight.lowBatteryFraction * 100)}%` : "default (20%)"}
+          <input
+            type="range"
+            min={5} max={50} step={1}
+            value={prefs.preflight.lowBatteryFraction != null ? Math.round(prefs.preflight.lowBatteryFraction * 100) : 20}
+            onChange={(e) => setPrefs({ preflight: { ...prefs.preflight, lowBatteryFraction: Number(e.target.value) / 100 } })}
+          />
+          {prefs.preflight.lowBatteryFraction != null && (
+            <button type="button" className={st.linkBtn} onClick={() => setPrefs({ preflight: { ...prefs.preflight, lowBatteryFraction: null } })}>
+              Reset to default
+            </button>
+          )}
+        </label>
+        <label className={st.fieldLabel}>
+          Storage block threshold: {prefs.preflight.minStorageMb != null ? `${prefs.preflight.minStorageMb} MB` : "default (200 MB)"}
+          <input
+            type="range"
+            min={50} max={1000} step={50}
+            value={prefs.preflight.minStorageMb ?? 200}
+            onChange={(e) => setPrefs({ preflight: { ...prefs.preflight, minStorageMb: Number(e.target.value) } })}
+          />
+          {prefs.preflight.minStorageMb != null && (
+            <button type="button" className={st.linkBtn} onClick={() => setPrefs({ preflight: { ...prefs.preflight, minStorageMb: null } })}>
+              Reset to default
+            </button>
+          )}
+        </label>
       </section>
 
       {/* PWA install card — only renders when the browser exposed an install
@@ -654,6 +699,55 @@ export function Setup() {
         )}
       </section>
 
+    </section>
+  );
+}
+
+/**
+ * What's new — surfaces recent feature additions so operators discover them
+ * without needing release notes. Versioned via WHATS_NEW_KEY so each release
+ * can ship a fresh card; the dismissal state is keyed to the version, so the
+ * next release's card reappears for everyone. Keep entries terse — one line
+ * per feature, point at the surface where it lives.
+ */
+const WHATS_NEW_KEY = "ss-whats-new-seen-2026-05-18";
+const WHATS_NEW_ITEMS: { title: string; where: string }[] = [
+  { title: "Save your room's noise floor",            where: "Setup → Hands-free narration → Auto-baseline (3s)" },
+  { title: "Live mic + VAD meter on the camera HUD",  where: "Camera screen, top-left below the REC pill" },
+  { title: "Battery & storage timeline in Review",    where: "Review → Device state · battery + storage" },
+  { title: "Mid-session degradation toasts",          where: "Camera screen — appears when device state worsens" },
+  { title: "Per-scene preflight tuning",              where: "Vigil = simplified dock · Calibration / Pro-Lab skip battery · Walkthrough warns early" },
+  { title: "Diagnose broken audit chain rows",        where: "Setup → Audit log → Chain status BROKEN → Diagnose" },
+];
+
+function WhatsNewCard() {
+  const [seen, setSeen] = useState<boolean>(() => {
+    try { return localStorage.getItem(WHATS_NEW_KEY) === "1"; } catch { return false; }
+  });
+  if (seen) return null;
+  return (
+    <section className={st.panel}>
+      <header className={st.panelHeader}>
+        <h2 className={st.panelTitle}>What's new</h2>
+        <button
+          type="button"
+          className={st.linkBtn}
+          onClick={() => {
+            try { localStorage.setItem(WHATS_NEW_KEY, "1"); } catch { /* swallow */ }
+            setSeen(true);
+          }}
+        >
+          Got it
+        </button>
+      </header>
+      <ul className={st.whatsNewList}>
+        {WHATS_NEW_ITEMS.map((it) => (
+          <li key={it.title} className={st.whatsNewItem}>
+            <strong>{it.title}</strong>
+            <span className={st.whatsNewWhere}>{it.where}</span>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
