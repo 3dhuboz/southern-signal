@@ -82,6 +82,7 @@ interface MarkerView {
   elapsedLabel: string | null;
   sceneId: string | null;
   category: MarkerCategory;
+  note: string | null;
 }
 
 const MARKER_CATEGORIES: { id: Exclude<MarkerCategory, null>; label: string }[] = [
@@ -96,6 +97,43 @@ function matchesMarkerFilter(m: { category: MarkerCategory }, filter: MarkerFilt
   if (filter === null) return true;
   if (filter === "untagged") return m.category === null;
   return m.category === filter;
+}
+
+interface MarkerOverrides {
+  /** Marker ids the operator dismissed during review. */
+  dismissed: Set<string>;
+  /** Latest annotation per marker id (note + category override). */
+  annotations: Map<string, { note: string | null; category: MarkerCategory | undefined }>;
+}
+
+/**
+ * Fold marker.annotated + marker.dismissed audit rows into a fast-lookup
+ * structure. Rows arrive in seq order so latest annotation overwrites
+ * earlier ones; dismissals are absorbing. The audit chain is the source of
+ * truth — the original evidence_events row is never mutated, so the
+ * forensic capture is preserved even when a reviewer dismisses the marker.
+ */
+function collectMarkerOverrides(rows: readonly { payload_json: string; kind: string }[]): MarkerOverrides {
+  const dismissed = new Set<string>();
+  const annotations = new Map<string, { note: string | null; category: MarkerCategory | undefined }>();
+  for (const row of rows) {
+    let parsed: { marker_id?: unknown; note?: unknown; category?: unknown };
+    try { parsed = JSON.parse(row.payload_json); } catch { continue; }
+    if (typeof parsed.marker_id !== "string") continue;
+    if (row.kind === "marker.dismissed") {
+      dismissed.add(parsed.marker_id);
+      continue;
+    }
+    // marker.annotated — merge with any previous annotation for the same id.
+    const prev = annotations.get(parsed.marker_id);
+    let category: MarkerCategory | undefined = prev?.category;
+    if (parsed.category === "sound" || parsed.category === "movement" || parsed.category === "felt" || parsed.category === null) {
+      category = parsed.category;
+    }
+    const note = typeof parsed.note === "string" ? parsed.note : prev?.note ?? null;
+    annotations.set(parsed.marker_id, { note, category });
+  }
+  return { dismissed, annotations };
 }
 
 interface DeviceSampleRow {
@@ -140,6 +178,13 @@ export function Review() {
   // Selecting a chip restricts the visible markers; chip stays sticky
   // through reload? No — case-by-case workflow, in-session state is fine.
   const [markerCategoryFilter, setMarkerCategoryFilter] = useState<MarkerFilter>(null);
+  // Marker editing — one editor open at a time. Persisting an edit appends a
+  // marker.annotated audit entry (note + category override) and updates the
+  // local state optimistically. Dismissal appends marker.dismissed and drops
+  // the row. Original evidence_events row is never mutated either way.
+  const [editingMarkerId, setEditingMarkerId] = useState<string | null>(null);
+  const [draftNote, setDraftNote] = useState("");
+  const [draftCategory, setDraftCategory] = useState<MarkerCategory>(null);
   const [timeline, setTimeline] = useState<DeviceTimeline | null>(null);
 
   useEffect(() => {
@@ -194,27 +239,40 @@ export function Review() {
             "SELECT id, timestamp, investigation_id, title, description, metadata_json FROM evidence_events WHERE investigation_id = ? AND event_type = 'marker' ORDER BY timestamp DESC LIMIT 200",
             [recentId],
           );
-          setMarkers(rows.map((row) => {
-            let sceneId: string | null = null;
-            let category: MarkerCategory = null;
-            if (row.metadata_json) {
-              try {
-                const parsed = JSON.parse(row.metadata_json) as { sceneId?: unknown; category?: unknown };
-                if (typeof parsed.sceneId === "string") sceneId = parsed.sceneId;
-                if (parsed.category === "sound" || parsed.category === "movement" || parsed.category === "felt") {
-                  category = parsed.category;
-                }
-              } catch { /* ignore */ }
-            }
-            return {
-              id: row.id,
-              timestamp: row.timestamp,
-              title: row.title ?? "Moment marked",
-              elapsedLabel: formatMarkerElapsed(row.metadata_json),
-              sceneId,
-              category,
-            };
-          }));
+          // Marker edits/dismissals are append-only audit entries — the
+          // original evidence_events row is never mutated, so we can prove
+          // the original capture happened. Read overrides in seq order so
+          // the latest annotation wins; dismissals are absorbing (a marker
+          // dismissed at any point stays dismissed even if later annotated).
+          const overrideRows = await query<{ payload_json: string; kind: string }>(
+            "SELECT payload_json, kind FROM audit_log WHERE kind IN ('marker.annotated', 'marker.dismissed') ORDER BY seq ASC",
+          );
+          const overrides = collectMarkerOverrides(overrideRows);
+          setMarkers(rows
+            .filter((row) => !overrides.dismissed.has(row.id))
+            .map((row) => {
+              let sceneId: string | null = null;
+              let category: MarkerCategory = null;
+              if (row.metadata_json) {
+                try {
+                  const parsed = JSON.parse(row.metadata_json) as { sceneId?: unknown; category?: unknown };
+                  if (typeof parsed.sceneId === "string") sceneId = parsed.sceneId;
+                  if (parsed.category === "sound" || parsed.category === "movement" || parsed.category === "felt") {
+                    category = parsed.category;
+                  }
+                } catch { /* ignore */ }
+              }
+              const ann = overrides.annotations.get(row.id);
+              return {
+                id: row.id,
+                timestamp: row.timestamp,
+                title: row.title ?? "Moment marked",
+                elapsedLabel: formatMarkerElapsed(row.metadata_json),
+                sceneId,
+                category: ann?.category !== undefined ? ann.category : category,
+                note: ann?.note ?? null,
+              };
+            }));
         }
       } catch { /* verdict card just won't render */ }
     })();
@@ -281,6 +339,48 @@ export function Review() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }, []);
+
+  // Open the inline editor for a marker — pre-seed the draft from the
+  // marker's current values so an operator who just wants to fix the
+  // category doesn't have to re-type the note (and vice versa).
+  const openMarkerEditor = useCallback((m: MarkerView) => {
+    setEditingMarkerId(m.id);
+    setDraftNote(m.note ?? "");
+    setDraftCategory(m.category);
+  }, []);
+
+  const closeMarkerEditor = useCallback(() => {
+    setEditingMarkerId(null);
+    setDraftNote("");
+    setDraftCategory(null);
+  }, []);
+
+  const saveMarkerEdit = useCallback(async (markerId: string) => {
+    const trimmed = draftNote.trim();
+    try {
+      await appendAuditEntry({
+        actor: "user",
+        kind: "marker.annotated",
+        payload: { marker_id: markerId, note: trimmed || null, category: draftCategory },
+      });
+      setMarkers((cur) => cur.map((m) =>
+        m.id === markerId ? { ...m, note: trimmed || null, category: draftCategory } : m,
+      ));
+      closeMarkerEditor();
+    } catch { /* swallow — audit append failures are surfaced via the chain banner */ }
+  }, [draftNote, draftCategory, closeMarkerEditor]);
+
+  const dismissMarker = useCallback(async (markerId: string) => {
+    try {
+      await appendAuditEntry({
+        actor: "user",
+        kind: "marker.dismissed",
+        payload: { marker_id: markerId },
+      });
+      setMarkers((cur) => cur.filter((m) => m.id !== markerId));
+      if (editingMarkerId === markerId) closeMarkerEditor();
+    } catch { /* swallow */ }
+  }, [editingMarkerId, closeMarkerEditor]);
 
   const handleExportZip = useCallback(async () => {
     if (exporting) return;
@@ -609,26 +709,82 @@ export function Review() {
           <ol className={r.incrementList}>
             {markers
               .filter((m) => matchesMarkerFilter(m, markerCategoryFilter))
-              .map((m) => (
-                <li key={m.id} className={r.incrementRow}>
-                  <span className={r.incrementSeq}>●</span>
-                  <span className={r.incrementChannel}>{m.elapsedLabel ?? "—"}</span>
-                  <span className={r.incrementMath}>{m.title}</span>
-                  {m.category && (
-                    <span className={r.markerCategoryTag} data-category={m.category}>{m.category}</span>
-                  )}
-                  {m.sceneId && (
-                    <span className={r.incrementReason}>
-                      {/* Pretty-print scene id → display name (e.g.
-                          "walkthrough" → "Walkthrough"). Falls back to the
-                          raw id if the scene was deleted/renamed between
-                          capture and review. */}
-                      scene: {getScene(m.sceneId as never)?.name ?? m.sceneId}
-                    </span>
-                  )}
-                  <span className={r.incrementTs}>{new Date(m.timestamp).toLocaleTimeString()}</span>
-                </li>
-              ))}
+              .map((m) => {
+                const isEditing = editingMarkerId === m.id;
+                return (
+                  <li key={m.id} className={r.markerRow}>
+                    <div className={r.incrementRow}>
+                      <span className={r.incrementSeq}>●</span>
+                      <span className={r.incrementChannel}>{m.elapsedLabel ?? "—"}</span>
+                      <span className={r.incrementMath}>{m.title}</span>
+                      {m.category && (
+                        <span className={r.markerCategoryTag} data-category={m.category}>{m.category}</span>
+                      )}
+                      {m.sceneId && (
+                        <span className={r.incrementReason}>
+                          {/* Pretty-print scene id → display name (e.g.
+                              "walkthrough" → "Walkthrough"). Falls back to the
+                              raw id if the scene was deleted/renamed between
+                              capture and review. */}
+                          scene: {getScene(m.sceneId as never)?.name ?? m.sceneId}
+                        </span>
+                      )}
+                      <span className={r.incrementTs}>{new Date(m.timestamp).toLocaleTimeString()}</span>
+                      <button
+                        type="button"
+                        className={r.markerEditBtn}
+                        onClick={() => (isEditing ? closeMarkerEditor() : openMarkerEditor(m))}
+                        aria-expanded={isEditing}
+                        aria-controls={isEditing ? `marker-edit-${m.id}` : undefined}
+                      >
+                        {isEditing ? "Cancel" : "Edit"}
+                      </button>
+                    </div>
+                    {m.note && !isEditing && (
+                      <p className={r.markerNote}>{m.note}</p>
+                    )}
+                    {isEditing && (
+                      <div className={r.markerEditor} id={`marker-edit-${m.id}`}>
+                        <label className={r.markerEditField}>
+                          <span>Category</span>
+                          <select
+                            value={draftCategory ?? ""}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setDraftCategory(v === "sound" || v === "movement" || v === "felt" ? v : null);
+                            }}
+                          >
+                            <option value="">Untagged</option>
+                            {MARKER_CATEGORIES.map((c) => (
+                              <option key={c.id} value={c.id}>{c.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className={r.markerEditField}>
+                          <span>Note</span>
+                          <textarea
+                            value={draftNote}
+                            onChange={(e) => setDraftNote(e.target.value)}
+                            placeholder="e.g. doorbell rang at this moment — explains the audio spike"
+                            rows={2}
+                          />
+                        </label>
+                        <div className={r.markerEditActions}>
+                          <button type="button" className={r.markerEditSave} onClick={() => void saveMarkerEdit(m.id)}>
+                            Save
+                          </button>
+                          <button type="button" className={r.markerEditDismiss} onClick={() => void dismissMarker(m.id)}>
+                            Delete marker
+                          </button>
+                        </div>
+                        <p className={r.markerEditFoot}>
+                          Edits append a new audit entry. The original capture stays intact in the chain — this is a forensic record, not an in-place mutation.
+                        </p>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
           </ol>
         )}
       </div>
@@ -719,6 +875,20 @@ function DeviceSpark({
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [locked, setLocked] = useState(false);
+  // Expand-to-modal — a larger render of the same data so a reviewer can
+  // read individual samples on a desktop screen without resorting to dev
+  // tools. The expanded view shares the same hover/lock readout pattern;
+  // the unexpanded card stays for the at-a-glance use case.
+  const [expanded, setExpanded] = useState(false);
+  // Escape closes the expanded modal — standard browser-modal expectation.
+  // The expanded SVG remains mounted while collapsed so the hover/lock
+  // listener attached above already handles outside-click for both views.
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setExpanded(false); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [expanded]);
   useEffect(() => {
     if (!locked) return;
     const onDocPointer = (e: PointerEvent) => {
@@ -785,6 +955,13 @@ function DeviceSpark({
       <div className={r.deviceSparkHead}>
         <span className={r.deviceSparkLabel}>{label}</span>
         <span className={r.deviceSparkValue}>{format(displayValue.value)}</span>
+        <button
+          type="button"
+          className={r.deviceSparkExpand}
+          onClick={() => setExpanded(true)}
+          aria-label={`Expand ${label} chart`}
+          title="Expand to read individual samples"
+        >⛶</button>
       </div>
       <svg
         ref={svgRef}
@@ -842,6 +1019,120 @@ function DeviceSpark({
           {samples.length} samples
           {markerPoints.length > 0 ? ` · ${markerPoints.length} marker${markerPoints.length === 1 ? "" : "s"}` : ""}
         </span>
+      </div>
+      {expanded && (
+        <SparkExpandedModal
+          label={label}
+          samples={samples}
+          format={format}
+          domain={domain}
+          tone={tone}
+          markerTimestamps={markerTimestamps}
+          onClose={() => setExpanded(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Larger readable version of DeviceSpark rendered as a viewport-anchored
+ * modal. Same data, bigger viewBox (480×160), the same hover/lock readout
+ * pattern, plus min/max labels so a reviewer reading on desktop can pin
+ * specific samples without squinting. Closes via X button, Escape key, or
+ * backdrop click.
+ *
+ * Kept as a sibling component instead of a flag inside DeviceSpark because
+ * the modal owns its own hover/lock state — bleeding the trigger card's
+ * hover state into the modal would make the dismiss-on-outside-click logic
+ * tangled (both SVGs would be valid "inside" targets for each other).
+ */
+function SparkExpandedModal({
+  label, samples, format, domain, tone, markerTimestamps, onClose,
+}: {
+  label: string;
+  samples: readonly { value: number; ts: string }[];
+  format: (v: number) => string;
+  domain?: { min: number; max: number };
+  tone: "battery" | "storage";
+  markerTimestamps?: readonly string[];
+  onClose: () => void;
+}) {
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const W = 480;
+  const H = 160;
+  const values = samples.map((s) => s.value);
+  const min = domain?.min ?? Math.min(...values);
+  const max = domain?.max ?? Math.max(...values);
+  const span = Math.max(0.0001, max - min);
+  const stepX = W / Math.max(1, samples.length - 1);
+  const points = samples.map((s, i) => {
+    const x = i * stepX;
+    const y = H - ((s.value - min) / span) * H;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  const first = samples[0];
+  const last = samples[samples.length - 1];
+  const startMs = Date.parse(first.ts);
+  const endMs = Date.parse(last.ts);
+  const rangeMs = Math.max(1, endMs - startMs);
+  const markerPoints = (markerTimestamps ?? [])
+    .map((iso) => ({ iso, ms: Date.parse(iso) }))
+    .filter(({ ms }) => Number.isFinite(ms) && ms >= startMs && ms <= endMs)
+    .map(({ iso, ms }) => ({ iso, x: ((ms - startMs) / rangeMs) * W }));
+  const pointerToIdx = (clientX: number): number | null => {
+    const svg = svgRef.current;
+    if (!svg) return null;
+    const rect = svg.getBoundingClientRect();
+    if (rect.width === 0) return null;
+    const xInViewBox = ((clientX - rect.left) / rect.width) * W;
+    const idx = Math.round(xInViewBox / stepX);
+    if (idx < 0 || idx >= samples.length) return null;
+    return idx;
+  };
+  const hovered = hoverIdx != null ? samples[hoverIdx] : null;
+  const hoveredX = hoverIdx != null ? hoverIdx * stepX : null;
+  return (
+    <div className={r.sparkModalBackdrop} role="dialog" aria-modal="true" aria-label={`${label} expanded chart`} onPointerDown={onClose}>
+      <div className={r.sparkModalCard} data-tone={tone} onPointerDown={(e) => e.stopPropagation()}>
+        <div className={r.sparkModalHead}>
+          <span className={r.deviceSparkLabel}>{label}</span>
+          <span className={r.deviceSparkValue}>{format(hovered?.value ?? last.value)}</span>
+          <button type="button" className={r.sparkModalClose} onClick={onClose} aria-label="Close expanded chart">×</button>
+        </div>
+        <svg
+          ref={svgRef}
+          viewBox={`0 0 ${W} ${H}`}
+          className={r.sparkModalSvg}
+          role="img"
+          aria-label={`${label} expanded timeline${markerPoints.length ? ` with ${markerPoints.length} markers` : ""}`}
+          onPointerMove={(e) => setHoverIdx(pointerToIdx(e.clientX))}
+          onPointerLeave={() => setHoverIdx(null)}
+        >
+          {markerPoints.map((m) => (
+            <line key={m.iso} x1={m.x} x2={m.x} y1={0} y2={H} stroke="var(--text-dim)" strokeWidth={1} strokeDasharray="3 3" opacity={0.6} />
+          ))}
+          <polyline points={points} fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+          {hoveredX != null && hovered && (
+            <>
+              <line x1={hoveredX} x2={hoveredX} y1={0} y2={H} stroke="currentColor" strokeWidth={1} opacity={0.4} />
+              <circle cx={hoveredX} cy={H - ((hovered.value - min) / span) * H} r={4} fill="currentColor" />
+            </>
+          )}
+        </svg>
+        <div className={r.sparkModalAxis}>
+          <span>{format(min)}</span>
+          <span className={r.sparkModalAxisRight}>{format(max)}</span>
+        </div>
+        <div className={r.sparkModalFoot}>
+          <span>
+            {hovered
+              ? `${new Date(hovered.ts).toLocaleString()} · ${format(hovered.value)}`
+              : `${new Date(first.ts).toLocaleString()} → ${new Date(last.ts).toLocaleString()}`}
+          </span>
+          <span>{samples.length} samples · {markerPoints.length} marker{markerPoints.length === 1 ? "" : "s"}</span>
+        </div>
       </div>
     </div>
   );

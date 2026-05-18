@@ -32,7 +32,10 @@ export interface PreflightCheckData {
 }
 
 export interface PreflightCheck {
-  id: "camera" | "mic" | "storage" | "battery";
+  /** "chain" is a synthetic check used only when an integrity gate (e.g. the
+   *  "refuse new session on broken audit chain" pref) is layered on top of
+   *  the regular preflight; runPreflight itself never emits it. */
+  id: "camera" | "mic" | "storage" | "battery" | "chain";
   level: PreflightLevel;
   message: string;
   data?: PreflightCheckData;

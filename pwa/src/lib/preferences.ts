@@ -142,10 +142,23 @@ export interface AppPreferences {
    *
    * lowBatteryFraction: battery level (0..1) under which the watchdog warns.
    * minStorageMb: free storage (MB) under which the watchdog blocks.
+   *
+   * watchdogSuppress: silence specific checks in the mid-session watchdog
+   * only — pre-start preflight still runs the full set so an operator
+   * can't accidentally silence a critical check at startup. Useful when
+   * the operator's device legitimately runs hot on battery and they
+   * don't want repeated 60-second toasts.
+   *
+   * blockOnChainBreak: refuse to start a fresh session if the local audit
+   * chain is broken. Forensic-strict — guards against capturing new
+   * evidence onto a chain that already failed verification, which would
+   * make the new captures hard to authenticate in review.
    */
   preflight: {
     lowBatteryFraction: number | null;
     minStorageMb: number | null;
+    watchdogSuppress: { battery: boolean; storage: boolean };
+    blockOnChainBreak: boolean;
   };
   /**
    * Tuning for the VAD detector. All thresholds are relative to the adaptive
@@ -199,7 +212,12 @@ const DEFAULTS: AppPreferences = {
   proMode: false,
   itcMonitor: false,
   vadAutoDuck: false,
-  preflight: { lowBatteryFraction: null, minStorageMb: null },
+  preflight: {
+    lowBatteryFraction: null,
+    minStorageMb: null,
+    watchdogSuppress: { battery: false, storage: false },
+    blockOnChainBreak: false,
+  },
   vadConfig: { sensitivityDb: 12, attackMs: 120, releaseMs: 350, noiseFloorDb: null },
 };
 
@@ -223,7 +241,11 @@ function read(): AppPreferences {
         modules: { ...DEFAULTS.rig.modules, ...(parsed.rig?.modules ?? {}) },
       },
       community: { ...DEFAULTS.community, ...(parsed.community ?? {}) },
-      preflight: { ...DEFAULTS.preflight, ...(parsed.preflight ?? {}) },
+      preflight: {
+        ...DEFAULTS.preflight,
+        ...(parsed.preflight ?? {}),
+        watchdogSuppress: { ...DEFAULTS.preflight.watchdogSuppress, ...(parsed.preflight?.watchdogSuppress ?? {}) },
+      },
       vadConfig: { ...DEFAULTS.vadConfig, ...(parsed.vadConfig ?? {}) },
     };
   } catch {
@@ -254,7 +276,11 @@ export function setPreferences(patch: Partial<AppPreferences>): AppPreferences {
       modules: { ...current.rig.modules, ...(patch.rig?.modules ?? {}) },
     },
     community: { ...current.community, ...(patch.community ?? {}) },
-    preflight: { ...current.preflight, ...(patch.preflight ?? {}) },
+    preflight: {
+      ...current.preflight,
+      ...(patch.preflight ?? {}),
+      watchdogSuppress: { ...current.preflight.watchdogSuppress, ...(patch.preflight?.watchdogSuppress ?? {}) },
+    },
     vadConfig: { ...current.vadConfig, ...(patch.vadConfig ?? {}) },
   };
   write(next);

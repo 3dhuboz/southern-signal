@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { query } from "../lib/db/db";
 import { verifyAuditChain } from "../lib/db/auditLog";
 import { sha256Hex } from "../lib/forensic/canonicalJson";
+import { compareAgainstSnapshot, loadLastExportSnapshot, type ChainComparison, type LastExportSnapshot } from "../lib/forensic/lastExportSnapshot";
 import s from "./AuditLogInspector.module.css";
 
 interface AuditRow {
@@ -85,6 +86,14 @@ export function AuditLogInspector() {
       | "no_issue_found";
   }
   const [diagnosis, setDiagnosis] = useState<ChainDiagnosis | null>(null);
+  // Last-export comparison — populated lazily via the "Compare to last export"
+  // button. The snapshot itself is persisted in localStorage by buildExportBundle
+  // and contains seq→entry_hash; we walk the current chain against it.
+  const [exportComparison, setExportComparison] = useState<
+    | { snapshot: LastExportSnapshot; comparison: ChainComparison; ranAt: string }
+    | { snapshot: null }
+    | null
+  >(null);
   // Persist the operator's filter across reloads. Empty string clears storage
   // so we don't keep a stale value pinned forever.
   useEffect(() => {
@@ -171,6 +180,25 @@ export function AuditLogInspector() {
     });
   }, []);
 
+  // Compare the live chain against the snapshot saved at the last export.
+  // Surfaces append-since-export (the normal case) AND first-divergence-seq
+  // (the forensic case — "an entry we exported now hashes differently").
+  // Storage cost is bounded by chain length × 64 chars; ~10KB for 100 entries.
+  const compareToLastExport = useCallback(async () => {
+    const snapshot = loadLastExportSnapshot();
+    if (!snapshot) {
+      setExportComparison({ snapshot: null });
+      return;
+    }
+    const rows = await query<{ seq: number; entry_hash: string }>(
+      "SELECT seq, entry_hash FROM audit_log",
+    );
+    const current = new Map<number, string>();
+    for (const r of rows) current.set(r.seq, r.entry_hash);
+    const comparison = compareAgainstSnapshot(snapshot, current);
+    setExportComparison({ snapshot, comparison, ranAt: new Date().toISOString() });
+  }, []);
+
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
     if (!q) return entries;
@@ -213,6 +241,14 @@ export function AuditLogInspector() {
             <>
               <span className={s.statusLabel}>VERIFIED</span>
               <span className={s.statusDetail}>{total} entries, chain intact.</span>
+              <button
+                type="button"
+                className={s.statusJumpBtn}
+                onClick={() => { void compareToLastExport(); }}
+                title="Compare the current chain against the snapshot saved at the most recent export — surfaces append-since-export and any after-the-fact tampering."
+              >
+                Compare to last export
+              </button>
             </>
           ) : (
             <>
@@ -246,6 +282,75 @@ export function AuditLogInspector() {
               >
                 Diagnose
               </button>
+              <button
+                type="button"
+                className={s.statusJumpBtn}
+                onClick={() => { void compareToLastExport(); }}
+                title="Compare the current chain against the snapshot saved at the most recent export."
+              >
+                Compare to last export
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Last-export comparison readout — only when the operator has clicked
+           the button. Forensic-aid: when the snapshot exists, surfaces both
+           the normal case (entries appended since export) and the alarming
+           one (a seq we ALREADY exported now hashes differently). */}
+      {exportComparison && (
+        <div className={s.diagnosis} role="region" aria-label="Export comparison">
+          <div className={s.diagnosisHead}>
+            <span className={s.diagnosisTitle}>Compare · last export</span>
+            <button
+              type="button"
+              className={s.diagnosisClose}
+              onClick={() => setExportComparison(null)}
+              aria-label="Dismiss comparison"
+            >×</button>
+          </div>
+          {exportComparison.snapshot === null ? (
+            <p className={s.diagnosisIssue} data-issue="no_issue_found">
+              No export snapshot stored on this device. Build a case bundle (Review → Export full bundle) first; the next chain compare will work.
+            </p>
+          ) : (
+            <>
+              <p
+                className={s.diagnosisIssue}
+                data-issue={
+                  exportComparison.comparison.firstDivergenceSeq !== null
+                    ? "entry_hash_mismatch"
+                    : exportComparison.comparison.missingFromCurrent > 0
+                      ? "missing_predecessor"
+                      : "no_issue_found"
+                }
+              >
+                {exportComparison.comparison.firstDivergenceSeq !== null
+                  ? `Hash divergence at seq #${exportComparison.comparison.firstDivergenceSeq} — entry was modified after the export went out.`
+                  : exportComparison.comparison.missingFromCurrent > 0
+                    ? `${exportComparison.comparison.missingFromCurrent} entry(s) present in the export are missing from the current chain — possible deletion.`
+                    : exportComparison.comparison.appendedSinceExport > 0
+                      ? `Chain is consistent with the last export plus ${exportComparison.comparison.appendedSinceExport} new entry(s) appended since.`
+                      : "Chain is identical to the last export — nothing has been appended since."}
+              </p>
+              <dl className={s.diagnosisGrid}>
+                <dt>Exported at</dt>
+                <dd>{new Date(exportComparison.snapshot.exportedAt).toLocaleString()}</dd>
+                <dt>Bundle</dt>
+                <dd><code>{exportComparison.snapshot.bundleLabel}</code></dd>
+                <dt>Chain length at export</dt>
+                <dd>{exportComparison.snapshot.chainLength}</dd>
+                <dt>Merkle root</dt>
+                <dd><code>{exportComparison.snapshot.merkleRoot ? `${exportComparison.snapshot.merkleRoot.slice(0, 24)}…` : "—"}</code></dd>
+                <dt>Compared entries</dt>
+                <dd>{exportComparison.comparison.comparedCount}</dd>
+                <dt>Appended since</dt>
+                <dd>{exportComparison.comparison.appendedSinceExport}</dd>
+              </dl>
+              <p className={s.diagnosisFoot}>
+                Forensic-aid only — the snapshot lives in localStorage and reflects the most recent export from THIS device. A reviewer who has the bundle can still re-verify independently via the included verifier.
+              </p>
             </>
           )}
         </div>

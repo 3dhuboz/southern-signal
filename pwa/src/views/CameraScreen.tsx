@@ -30,7 +30,8 @@ import { useLiveBroadcastState } from "../lib/system/liveBroadcast";
 import { usePushToTalk } from "../lib/audio/usePushToTalk";
 import { startVad, type VadHandle } from "../lib/audio/vad";
 import { useLongPress, useDoubleTap, useHorizontalSwipe, composeHandlers } from "../lib/gestures";
-import { resolvePreflightOverrides, runPreflight, type PreflightCheck, type PreflightReport } from "../lib/system/preflight";
+import { resolvePreflightOverrides, runPreflight, type PreflightCheck, type PreflightLevel, type PreflightReport } from "../lib/system/preflight";
+import { verifyAuditChain } from "../lib/db/auditLog";
 import { usePwaInstall } from "../lib/system/usePwaInstall";
 import { useLiveNarrator } from "../lib/posterior/liveNarrator";
 import { LiveAnalyzer } from "../lib/audio/liveAnalyzer";
@@ -157,6 +158,27 @@ function formatWatchdogChecks(checks: readonly PreflightCheck[]): string {
 /** True when any failing check is the storage one — drives the install CTA. */
 function watchdogStorageWarn(report: PreflightReport): boolean {
   return report.checks.some((c) => c.id === "storage" && c.level !== "ok");
+}
+
+/**
+ * Filter suppressed-by-pref checks out of a watchdog report and recompute
+ * the overall severity from what remains. Pre-start preflight never goes
+ * through this — the operator's "stop nagging me" pref intentionally only
+ * applies mid-session so they can't accidentally hide a battery failure at
+ * the moment of starting a session.
+ */
+function applyWatchdogSuppression(
+  report: PreflightReport,
+  suppress: { battery: boolean; storage: boolean },
+): PreflightReport {
+  if (!suppress.battery && !suppress.storage) return report;
+  const checks = report.checks.filter((c) =>
+    !((suppress.battery && c.id === "battery") || (suppress.storage && c.id === "storage")),
+  );
+  const overall: PreflightLevel = checks.some((c) => c.level === "block")
+    ? "block"
+    : checks.some((c) => c.level === "warn") ? "warn" : "ok";
+  return { overall, checks };
 }
 
 /** Ordinal formatter for the "Nth warning" counter — short forms that read
@@ -530,7 +552,12 @@ export function CameraScreen() {
         // sit BELOW scene overrides: a scene-specific tightening wins, but
         // otherwise an operator's global pref applies on top of the module
         // defaults.
-        const report = await runPreflight(resolvePreflightOverrides(preflightPrefRef.current, getScene(activeSceneIdRef.current)?.preflightOverrides));
+        const raw = await runPreflight(resolvePreflightOverrides(preflightPrefRef.current, getScene(activeSceneIdRef.current)?.preflightOverrides));
+        // Apply operator suppression last — Setup → Preflight thresholds lets
+        // the operator silence battery/storage warnings here. Pre-start
+        // preflight intentionally doesn't honour this; suppression only
+        // affects the mid-session re-check cadence, not initial gating.
+        const report = applyWatchdogSuppression(raw, preflightPrefRef.current.watchdogSuppress);
         const severity = { ok: 0, warn: 1, block: 2 } as const;
         // Fire the toast when (a) the overall severity escalated OR
         // (b) a new check id started failing while severity stayed the same
@@ -554,9 +581,13 @@ export function CameraScreen() {
         // alongside the audio/sensor evidence stream. Cheap (one INSERT each)
         // and the sample queue throttles cloud sync to one row per minute
         // per (investigation_id, sensor_type) anyway.
+        //
+        // Sample from `raw` (not the suppression-filtered `report`) so the
+        // review-time spark still has data even when the operator silenced
+        // toasts. Suppression is "stop nagging me", not "stop collecting".
         const inv = session.current;
         if (inv) {
-          const battery = report.checks.find((c) => c.id === "battery");
+          const battery = raw.checks.find((c) => c.id === "battery");
           if (battery?.data?.batteryLevel != null) {
             void recordSensorSample({
               investigation_id: inv.id,
@@ -566,7 +597,7 @@ export function CameraScreen() {
               metadata: { charging: battery.data.batteryCharging === true },
             });
           }
-          const storage = report.checks.find((c) => c.id === "storage");
+          const storage = raw.checks.find((c) => c.id === "storage");
           if (storage?.data?.storageFreeBytes != null) {
             void recordSensorSample({
               investigation_id: inv.id,
@@ -732,7 +763,28 @@ export function CameraScreen() {
     // Read the active scene through the ref so handleBegin doesn't need to
     // re-bind every scene change (it's a stable callback with [] deps).
     const sceneOverrides = getScene(activeSceneIdRef.current)?.preflightOverrides;
-    const preflightPromise = runPreflight(resolvePreflightOverrides(preflightPrefRef.current, sceneOverrides));
+    // Compose preflight + (optional) chain-integrity gate in parallel. The
+    // chain check is opt-in via Setup → "Refuse to start on broken chain";
+    // when on, a chain break elevates the report's overall to "block" with a
+    // synthetic check so the operator hits the same preflight blocker UI.
+    // Forensic-strict path — guards against piling new evidence onto a chain
+    // that already failed verification, which would taint the next export.
+    const preflightPromise = (async (): Promise<PreflightReport> => {
+      const report = await runPreflight(resolvePreflightOverrides(preflightPrefRef.current, sceneOverrides));
+      if (!preflightPrefRef.current.blockOnChainBreak) return report;
+      try {
+        const verification = await verifyAuditChain();
+        if (verification.ok) return report;
+        const synthetic: PreflightCheck = {
+          id: "chain",
+          level: "block",
+          message: `Audit chain integrity failure at seq #${verification.brokenAtSeq} (${verification.reason}). Setup → Preflight is configured to refuse new sessions until the chain is reviewed.`,
+        };
+        return { overall: "block", checks: [...report.checks, synthetic] };
+      } catch {
+        return report;
+      }
+    })();
     void preflightPromise.then((report) => {
       if (report.overall === "block") {
         setPreflight(report);
@@ -748,17 +800,24 @@ export function CameraScreen() {
       if (perm.motion === "denied" || perm.orientation === "denied") { setBusy(false); return; }
       setPermissionsGranted(true);
       void requestPersistentStorage();
+      // Resolve the (possibly chain-augmented) preflight BEFORE creating an
+      // investigation row. When the operator has opted into "refuse on broken
+      // chain", aborting here means we don't write the session_start audit
+      // entry onto a tainted chain — exactly the integrity contract the pref
+      // promises. Regular block-level checks still surface the blocker modal
+      // (visible via the preflightPromise.then above) without aborting; the
+      // forensic gate is the only path that hard-stops.
+      const report = await preflightPromise;
+      if (report.checks.some((c) => c.id === "chain" && c.level === "block")) {
+        // The modal is already up via the side-effect .then(); just bail.
+        return;
+      }
       const inv = await ensureTodayInvestigation();
       setCurrent(inv);
       if (inv.protocol_json && !inv.protocol_hash) {
         await lockProtocol(inv.id).catch(() => { /* non-blocking */ });
       }
       await startInvestigation(inv.id);
-      // Await the pre-flight report so the session_start event records the
-      // telemetry that was observed at the moment the operator pressed Begin.
-      // The shape is intentionally JSON-flat — every audit-log consumer
-      // (export, hash chain, sync) treats metadata as opaque storage.
-      const report = await preflightPromise;
       // Seed the watchdog baseline from the Begin snapshot so the periodic
       // re-check only fires a toast when the device state actually degrades
       // during the hunt — not when the operator started already on warn.

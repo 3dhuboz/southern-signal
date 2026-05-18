@@ -352,6 +352,113 @@
 .markerCategoryTag[data-category="movement"] { color: #FFD166; }
 .markerCategoryTag[data-category="felt"]     { color: #FF9AA2; }
 
+/* Marker row + inline editor. The wrapper just groups the row with the
+   editor disclosure; the row itself keeps the existing grid styling. */
+.markerRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.markerEditBtn {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  padding: 2px 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.markerEditBtn:hover { color: var(--signal); border-color: var(--signal-dim); }
+
+/* Saved free-text note rendered under the row when present and the editor
+   isn't open. Pulled out of the row's monospace grid so prose reads as prose. */
+.markerNote {
+  margin: 0 0 0 26px;
+  padding: 6px 10px;
+  background: var(--bg-inset);
+  border-left: 2px solid var(--signal-dim);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-style: italic;
+  line-height: 1.5;
+}
+
+.markerEditor {
+  margin-left: 26px;
+  padding: 10px 12px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.markerEditField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.markerEditField select,
+.markerEditField textarea {
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-sm);
+  padding: 6px 8px;
+  resize: vertical;
+}
+.markerEditField textarea {
+  min-height: 50px;
+  font-style: italic;
+}
+.markerEditActions {
+  display: flex;
+  gap: 6px;
+}
+.markerEditSave,
+.markerEditDismiss {
+  appearance: none;
+  border-radius: var(--r-sm);
+  padding: 5px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.markerEditSave {
+  background: var(--signal);
+  color: var(--text-on-accent);
+  border: 1px solid var(--signal);
+}
+.markerEditSave:hover { background: var(--signal-strong, var(--signal)); }
+.markerEditDismiss {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+}
+.markerEditDismiss:hover { background: var(--danger-wash); }
+.markerEditFoot {
+  margin: 0;
+  font-size: 10px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
 /* ── Device-state sparklines ──────────────────────────────────────────────
    Inline battery + storage timeline pulled from sensor_samples written by
    the mid-session watchdog. Two compact cards side-by-side so the reviewer
@@ -412,3 +519,97 @@
   letter-spacing: 0.4px;
 }
 .deviceSparkMeta { white-space: nowrap; }
+
+/* Compact glyph button that opens the spark in a larger modal — affords
+   "make this big enough to read individual samples" without adding chart
+   chrome to the inline card. */
+.deviceSparkExpand {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 0 5px;
+  font-size: 12px;
+  line-height: 1.2;
+  color: var(--text-muted);
+  cursor: pointer;
+  margin-left: 2px;
+}
+.deviceSparkExpand:hover { color: var(--signal); border-color: var(--signal-dim); }
+
+/* Expanded modal — viewport-anchored overlay with the same spark blown up
+   so a desktop reviewer can read individual samples. Same hover/lock
+   pattern as the inline spark, plus min/max labels and a full timestamp
+   range in the footer for context. */
+.sparkModalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 9000;
+}
+.sparkModalCard {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  padding: 16px 18px;
+  width: min(560px, 100%);
+  max-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+.sparkModalCard[data-tone="battery"] { color: var(--warning); }
+.sparkModalCard[data-tone="storage"] { color: var(--signal); }
+
+.sparkModalHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.sparkModalHead .deviceSparkLabel { letter-spacing: 1.4px; }
+.sparkModalHead .deviceSparkValue { font-size: 18px; }
+.sparkModalClose {
+  appearance: none;
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  padding: 0 8px;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.sparkModalClose:hover { color: var(--text-primary); border-color: var(--border-default); }
+
+.sparkModalSvg {
+  width: 100%;
+  height: 200px;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.sparkModalAxis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.sparkModalAxisRight { text-align: right; }
+
+.sparkModalFoot {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+}

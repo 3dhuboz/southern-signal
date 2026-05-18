@@ -306,6 +306,7 @@ export function Setup() {
       <PreflightThresholdsPanel
         prefs={prefs}
         onChange={(patch) => setPrefs({ preflight: { ...prefs.preflight, ...patch } })}
+        onSuppressChange={(patch) => setPrefs({ preflight: { ...prefs.preflight, watchdogSuppress: { ...prefs.preflight.watchdogSuppress, ...patch } } })}
       />
 
       {/* PWA install card — only renders when the browser exposed an install
@@ -681,10 +682,11 @@ export function Setup() {
  * key via saveActiveSceneId) reflects here without a page reload.
  */
 function PreflightThresholdsPanel({
-  prefs, onChange,
+  prefs, onChange, onSuppressChange,
 }: {
   prefs: AppPreferences;
-  onChange: (patch: { lowBatteryFraction?: number | null; minStorageMb?: number | null }) => void;
+  onChange: (patch: { lowBatteryFraction?: number | null; minStorageMb?: number | null; blockOnChainBreak?: boolean }) => void;
+  onSuppressChange: (patch: { battery?: boolean; storage?: boolean }) => void;
 }) {
   const [activeSceneId, setActiveSceneId] = useState(() => loadActiveSceneId());
   useEffect(() => {
@@ -768,6 +770,53 @@ function PreflightThresholdsPanel({
           </button>
         )}
       </label>
+
+      {/* Mid-session watchdog suppression. PRE-START preflight intentionally
+          always runs the full set — silencing a critical check at startup
+          would be silently dangerous. These toggles only quiet the 60-second
+          re-check toasts during a session. */}
+      <div className={st.fieldRow} style={{ flexDirection: "column", alignItems: "stretch", gap: 6, marginTop: 12 }}>
+        <span className={st.fieldLabel} style={{ marginBottom: 2 }}>Silence mid-session toasts for:</span>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <label className={st.toggleRow} style={{ padding: "6px 10px" }}>
+            <span style={{ fontSize: 12 }}>Battery</span>
+            <input
+              type="checkbox"
+              checked={prefs.preflight.watchdogSuppress.battery}
+              onChange={(e) => onSuppressChange({ battery: e.target.checked })}
+            />
+          </label>
+          <label className={st.toggleRow} style={{ padding: "6px 10px" }}>
+            <span style={{ fontSize: 12 }}>Storage</span>
+            <input
+              type="checkbox"
+              checked={prefs.preflight.watchdogSuppress.storage}
+              onChange={(e) => onSuppressChange({ storage: e.target.checked })}
+            />
+          </label>
+        </div>
+        <span className={st.toggleHint}>
+          Suppression only affects the mid-session toast cadence — pre-start preflight still runs the full set. The watchdog continues to sample silenced channels into the case file so the Review timeline stays complete; only the toast is hidden.
+        </span>
+      </div>
+
+      {/* Forensic-strict gate. When ON, a chain-integrity failure refuses to
+          start a fresh session — preventing new evidence from being appended
+          onto a tainted chain. OFF by default because most operators want a
+          warning + continue, not a hard stop. */}
+      <label className={st.toggleRow} style={{ marginTop: 8 }}>
+        <span>
+          <strong>Refuse to start on broken audit chain</strong>
+          <span className={st.toggleHint}>
+            Pre-flight runs verifyAuditChain. If broken, the Begin button hits a forensic-style blocker instead of starting the session. Use this when the case is destined for an external reviewer who'll re-verify the chain.
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          checked={prefs.preflight.blockOnChainBreak}
+          onChange={(e) => onChange({ blockOnChainBreak: e.target.checked })}
+        />
+      </label>
     </section>
   );
 }
@@ -782,16 +831,16 @@ function PreflightThresholdsPanel({
  * lives.
  */
 const WHATS_NEW_ITEMS: { title: string; where: string }[] = [
-  { title: "Tag markers by category on drop",         where: "Camera screen — after double-tap, pick Sound / Movement / Felt" },
-  { title: "Filter markers by category in Review",    where: "Review → Moment markers — chip row above the list" },
-  { title: "Tap-to-lock sparkline readout",           where: "Review → Device state — tap a spark to pin a value/time" },
-  { title: "Chain-broken banner with Export now",     where: "Top of every route — fires when verifier finds a chain break" },
-  { title: "Save your room's noise floor",            where: "Setup → Hands-free narration → Auto-baseline (3s)" },
-  { title: "Live mic + VAD meter on the camera HUD",  where: "Camera screen, top-left below the REC pill" },
-  { title: "Battery & storage timeline in Review",    where: "Review → Device state · battery + storage" },
-  { title: "Mid-session degradation toasts",          where: "Camera screen — appears when device state worsens" },
-  { title: "Per-scene preflight tuning",              where: "Vigil = simplified dock · Calibration / Pro-Lab skip battery · Walkthrough warns early" },
-  { title: "Diagnose broken audit chain rows",        where: "Setup → Audit log → Chain status BROKEN → Diagnose" },
+  { title: "Silence battery / storage watchdog toasts", where: "Setup → Preflight thresholds → Silence mid-session toasts for…" },
+  { title: "Refuse sessions on broken audit chain",     where: "Setup → Preflight thresholds → Refuse to start on broken audit chain" },
+  { title: "Edit + delete moment markers",              where: "Review → Moment markers — tap Edit on any row to add a note or dismiss" },
+  { title: "Compare chain against last export",         where: "Setup → Audit log → Compare to last export" },
+  { title: "Expand sparkline to a readable chart",      where: "Review → Device state — tap the ⛶ icon to enlarge" },
+  { title: "Tag markers by category on drop",           where: "Camera screen — after double-tap, pick Sound / Movement / Felt" },
+  { title: "Filter markers by category in Review",      where: "Review → Moment markers — chip row above the list" },
+  { title: "Tap-to-lock sparkline readout",             where: "Review → Device state — tap a spark to pin a value/time" },
+  { title: "Chain-broken banner with Export now",       where: "Top of every route — fires when verifier finds a chain break" },
+  { title: "Save your room's noise floor",              where: "Setup → Hands-free narration → Auto-baseline (3s)" },
 ];
 
 function WhatsNewCard() {

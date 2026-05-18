@@ -33,6 +33,7 @@ import { getOrCreateSigningKey, signBytes } from "./signingKeyStore";
 import { buildCoseSign1, toBase64 } from "./coseSign1";
 import { sendTsaRequest, tsaResponseOk } from "./tsaClient";
 import { saveBundleSignature } from "../db/bundleSignatureRepo";
+import { saveLastExportSnapshot } from "./lastExportSnapshot";
 import { VERIFY_DENO_SCRIPT } from "./verifyDeno";
 import type { TsaStatus } from "../db/schema";
 
@@ -1076,6 +1077,20 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
   const filename = scope === "single"
     ? `southern-signal-case-${(investigationId ?? "").slice(0, 8)}-${stamp}.zip`
     : `southern-signal-bundle-${stamp}.zip`;
+
+  // Persist a light forensic snapshot of the chain state at export time so
+  // AuditLogInspector can later answer "is the current chain still consistent
+  // with the one we sent out?" without rummaging through the exported bundle
+  // on disk. Hashes only — no payloads, no media, no PII.
+  const hashesBySeq: Record<number, string> = {};
+  for (const e of allAudit) hashesBySeq[e.seq] = e.entry_hash;
+  saveLastExportSnapshot({
+    exportedAt: new Date().toISOString(),
+    chainLength: allAudit.length,
+    merkleRoot: manifest.global_audit_chain.merkle_root,
+    hashesBySeq,
+    bundleLabel: filename,
+  });
 
   return {
     blob,
