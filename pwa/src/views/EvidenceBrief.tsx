@@ -8,8 +8,14 @@
  *   • Screenshot for sharing on social
  *
  * Body layout is intentionally narrow + serif-leaning so it reads as a
- * printable artefact, not a UI screen. The 8 disclaimers from the
- * ethical-floor commit are baked into the footer.
+ * printable artefact, not a UI screen. The footer carries the four
+ * brief-universal disclaimers (posterior is a model estimate; sector
+ * accuracy ±60°; AI proposes / investigator decides; AHT eliminates not
+ * confirms / H₀ INCONCLUSIVE rule). The other four ethical-floor
+ * disclaimers — SimpleMissionView amateur framing, BaitTone infrasound
+ * caveat, EvpEditor "saves appended to chain", AiAssistant "AI never
+ * claims to hear voices" — are surface-specific and live with the
+ * tool they qualify (see README "Standing disclaimers").
  */
 
 import { useEffect, useState } from "react";
