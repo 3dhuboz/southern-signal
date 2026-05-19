@@ -197,10 +197,14 @@ export function MissionControl() {
   }, [running, startedAt, tick]);
 
   // Posterior re-read on tick (decay) and on explicit updates.
+  // Gate the read on `running` so post-session siteSession.state changes
+  // (e.g. an export pass touching the state object) don't keep recomputing
+  // the posterior + peak every change after Stop.
   useEffect(() => {
+    if (!running) return;
     const next = getPosterior(siteSession.state, Date.now());
     setPosterior(next);
-    if (running) setPosteriorPeak((peak) => (next > peak ? next : peak));
+    setPosteriorPeak((peak) => (next > peak ? next : peak));
   }, [siteSession.state, tick, running]);
 
   // ----- Sensor anomaly → likelihood emission → posterior update -----
