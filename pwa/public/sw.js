@@ -55,6 +55,19 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
+  // API endpoints — NETWORK ONLY, NEVER CACHED.
+  // /api/* covers Pages Functions: /api/ai/*, /api/transcribe/*, /api/sync/*,
+  // /api/sensitive-sites/*, etc. Serving a stale AI response or a stale sync
+  // payload is silently wrong (and in some cases a privacy / chain-of-custody
+  // issue). The SW must let these pass straight to the network — no install
+  // precache, no runtime cache, no stale-while-revalidate. If the network is
+  // unavailable the callsite handles the failure itself (retry, offline
+  // banner, etc.); the SW does NOT fall back to cache here.
+  if (url.pathname.startsWith("/api/")) {
+    event.respondWith(fetch(req));
+    return;
+  }
+
   // HTML navigations: NETWORK FIRST. Falls back to the most-recent cached
   // HTML only when offline, so the freshly-deployed bundle's asset hashes
   // are always picked up on the next reload.
