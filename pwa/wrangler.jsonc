@@ -17,12 +17,37 @@
   //     ADD to dashboard bindings, they don't replace them. If we ever
   //     re-create this Pages project from scratch we'll want to migrate
   //     those declarations in here too.
+  //
+  // Environment split (2026-05-19, panel P0 fix):
+  //
+  //   Top-level bindings = production env (master branch → primary URL).
+  //   `env.preview` bindings = preview deploys (dev branch + any future
+  //   non-master branch in `on.push.branches`). Cloudflare Pages routes
+  //   non-production branch deploys to preview automatically.
+  //
+  //   Reason: before this split, ALL deploys (prod + every dev/PR preview)
+  //   shared one D1 instance (`southern-signal-community`). Test data
+  //   written by one preview was visible to the next — non-deterministic
+  //   test failures and the panel's confidence in CI tanked.
+  //   The preview env now points at its own ephemeral DB whose schema is
+  //   re-created on first request (see ensureCommunitySchema in
+  //   functions/api/community/_shared.ts — uses CREATE TABLE IF NOT EXISTS,
+  //   so wiping rows between CI runs is enough; tables self-heal).
+  //
+  //   Deferred (too involved for one CI pass): per-PR ephemeral D1 created
+  //   on PR open and destroyed on merge. Today all `dev`-branch + PR
+  //   previews share the single preview DB. CI wipes the preview DB before
+  //   each `push` to dev (see .github/workflows/deploy.yml "Reset preview
+  //   D1" step) so PR-against-dev runs start from a known-empty state.
+  //   Two PRs racing the workflow can still cross-pollinate; revisit when
+  //   PR volume warrants it.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "southern-signal",
   "compatibility_date": "2025-01-15",
   "pages_build_output_dir": "./dist",
   "d1_databases": [
     {
+      // PRODUCTION D1 — only the master-branch deploy binds this.
       // Drives /api/community/sites (operator-pinned haunts) + the
       // /api/community/incidents-in-area cache (AI-surfaced Trove/news
       // pins). Both endpoints 503 cleanly when this binding is missing.
@@ -30,5 +55,27 @@
       "database_name": "southern-signal-community",
       "database_id": "e0881f5b-b158-4a75-bd16-683d816e531d"
     }
-  ]
+  ],
+  "env": {
+    "preview": {
+      "d1_databases": [
+        {
+          // PREVIEW D1 — dev branch + any preview branch binds this.
+          //
+          // ACTION REQUIRED before first preview deploy after this commit:
+          //   1. Create the preview DB:
+          //        wrangler d1 create southern-signal-community-preview
+          //   2. Copy the returned UUID into `database_id` below.
+          //   3. (Optional) The first request to /api/community/* will
+          //      create the schema on demand via ensureCommunitySchema;
+          //      no manual migration needed.
+          //   4. CI wipes the preview DB before every push to dev — see
+          //      the "Reset preview D1" step in .github/workflows/deploy.yml.
+          "binding": "COMMUNITY_DB",
+          "database_name": "southern-signal-community-preview",
+          "database_id": "REPLACE_WITH_PREVIEW_D1_UUID"
+        }
+      ]
+    }
+  }
 }
