@@ -28,6 +28,12 @@ import { ScreenRecordButton } from "../components/ScreenRecordButton";
 import { SceneSheet } from "../components/SceneSheet";
 import { EvpRecorderControl } from "../components/EvpRecorderControl";
 import { DispositionPicker } from "../components/DispositionPicker";
+import { BroadcastBug } from "../components/broadcast/BroadcastBug";
+import { BroadcastAudioMeter } from "../components/broadcast/BroadcastAudioMeter";
+import { BroadcastTimestamp } from "../components/broadcast/BroadcastTimestamp";
+import { BroadcastSensorHud } from "../components/broadcast/BroadcastSensorHud";
+import { BroadcastSceneSelector } from "../components/broadcast/BroadcastSceneSelector";
+import { BroadcastLowerThird } from "../components/broadcast/BroadcastLowerThird";
 import { useLiveBroadcastState } from "../lib/system/liveBroadcast";
 import { usePushToTalk } from "../lib/audio/usePushToTalk";
 import { startVad, type VadHandle } from "../lib/audio/vad";
@@ -143,28 +149,11 @@ function IconTorch() {
   );
 }
 
-/** mm:ss formatter for the top-left REC pill. */
-function fmtSecs(total: number): string {
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
-
-// Top-left status pill — lookup table replaces three parallel ternary chains
-// (state, class, label). Adding a new state means one entry, not three.
+// Top-left status state — passed through to the BroadcastBug component
+// which owns label + visual treatment. Kept here so the priority ladder
+// (rec > live > ready > idle) stays in CameraScreen where the broadcast /
+// session timers already live.
 type TopPillState = "rec" | "live" | "ready" | "idle";
-type StyleMap = Record<string, string>;
-interface TopPillSpec {
-  /** Optional extra class added alongside the base `.cornerPillTopLeft`. */
-  extraClass?: (styles: StyleMap) => string;
-  label: (sessionSecs: number) => string;
-}
-const TOP_PILL_STATES: Record<TopPillState, TopPillSpec> = {
-  rec:   { extraClass: (st) => st.cornerPillRec,  label: (s) => `REC ${fmtSecs(s)}` },
-  live:  { extraClass: (st) => st.cornerPillLive, label: (s) => `LIVE ${fmtSecs(s)}` },
-  ready: {                                         label: (s) => `READY ${fmtSecs(s)}` },
-  idle:  {                                         label: ()  => "STANDBY" },
-};
 
 /**
  * Format the failing preflight checks for the watchdog toast. Prefers the
@@ -316,13 +305,12 @@ export function CameraScreen() {
   const analyzerRef = useRef<LiveAnalyzer | null>(null);
   const [sectorReading, setSectorReading] = useState<SectorReading | null>(null);
   // audioRms updates at 94 Hz (48 kHz / 512 samples). Avoid a React render
-  // every frame: keep the always-current level in a ref + an off-render RAF
-  // writer for the mic-meter's transform, and surface a coarse ~5 Hz copy
-  // through state for consumers (LiveStreamView's overlay-state effect) that
-  // do read the value.
+  // every frame: keep the always-current level in a ref, and surface a
+  // coarse ~5 Hz copy through state for consumers (BroadcastAudioMeter,
+  // LiveStreamView's overlay-state effect). The new broadcast meter
+  // handles its own peak-hold ballistics off the 5 Hz state copy — no
+  // direct DOM writes needed.
   const audioRmsRef = useRef<number>(0.05);
-  const audioRmsRafRef = useRef<number | null>(null);
-  const micMeterFillRef = useRef<HTMLSpanElement | null>(null);
   const [audioRmsCoarse, setAudioRmsCoarse] = useState<number>(0.05);
   const lastRmsCoarseEmitRef = useRef<number>(0);
 
@@ -1035,22 +1023,12 @@ export function CameraScreen() {
     const analyzer = new LiveAnalyzer({
       onSectorReading: (r) => setSectorReading(r),
       onLevel: (rms) => {
-        // 94 Hz callback. Stash the value in a ref (no render) and schedule
-        // a RAF that imperatively writes the meter transform. Emit a coarse
-        // 5 Hz state copy so the prop-driven consumer (LiveStreamView's
-        // overlay effect) can stay in React's tree without forcing 94
-        // renders/sec on the parent.
+        // 94 Hz callback. Stash the value in a ref (no render) and emit a
+        // coarse 5 Hz state copy. BroadcastAudioMeter runs its own RAF
+        // peak-hold off the 5 Hz prop, so we no longer need to imperatively
+        // write a DOM transform here; the overlay-state consumer
+        // (LiveStreamView's overlay effect) reads the same state copy.
         audioRmsRef.current = rms;
-        if (audioRmsRafRef.current == null) {
-          audioRmsRafRef.current = requestAnimationFrame(() => {
-            audioRmsRafRef.current = null;
-            const el = micMeterFillRef.current;
-            if (el) {
-              const level = Math.min(1, Math.max(0, audioRmsRef.current));
-              el.style.transform = `scaleX(${level})`;
-            }
-          });
-        }
         const now = performance.now();
         if (now - lastRmsCoarseEmitRef.current >= 200) {
           lastRmsCoarseEmitRef.current = now;
@@ -1088,12 +1066,6 @@ export function CameraScreen() {
     setSectorReading(null);
     audioRmsRef.current = 0.05;
     setAudioRmsCoarse(0.05);
-    if (audioRmsRafRef.current != null) {
-      cancelAnimationFrame(audioRmsRafRef.current);
-      audioRmsRafRef.current = null;
-    }
-    const el = micMeterFillRef.current;
-    if (el) el.style.transform = "scaleX(0.05)";
   }, []);
 
   useEffect(() => () => { void stopLiveAnalyzer(); }, [stopLiveAnalyzer]);
@@ -1248,11 +1220,6 @@ export function CameraScreen() {
       : running
         ? "ready"
         : "idle";
-  const pillSpec = TOP_PILL_STATES[topPillState];
-  const topPillClass = pillSpec.extraClass
-    ? `${s.cornerPillTopLeft} ${pillSpec.extraClass(s)}`
-    : s.cornerPillTopLeft;
-  const topPillLabel = pillSpec.label(sessionSecs);
 
   const sceneName = activeScene?.name ?? "Walkthrough";
 
@@ -1324,37 +1291,20 @@ export function CameraScreen() {
           fullscreen
         />
 
-        {/* ── Top-left floating pill: REC / LIVE / READY indicator ────── */}
-        <div
-          className={topPillClass}
-          role="status"
-          aria-live="polite"
-          aria-label={`Session: ${topPillLabel}`}
-        >
-          <span className={s.cornerPillDot} aria-hidden="true" />
-          <span className={s.cornerPillText}>{topPillLabel}</span>
-        </div>
+        {/* ── Top-left status bug: STANDBY / READY / LIVE / REC ────────────
+             Replaces the bare cornerPillTopLeft chip the camera shipped with.
+             Glass shell, hairline cyan rim, SS broadcast mark, mono elapsed
+             timecode. Lives in src/components/broadcast/BroadcastBug.tsx. */}
+        <BroadcastBug state={topPillState} elapsedSec={sessionSecs} />
 
-        {/* ── Mic peak meter — sits below the REC pill so the operator can
-             confirm the mic is hot at a glance. Hidden until the live
-             analyzer is reporting levels; the fill is driven via inline
-             scaleX so each audio tick doesn't churn React state. The active
-             rim turns green when VAD detects voice (so the operator sees
-             the auto-duck fired without watching the ITC tones). */}
+        {/* ── Broadcast audio meter — vertical green→amber→red strip with
+             peak-hold cap + tick marks + mono dB readout. Mounts under the
+             status bug and only renders while the session is running so the
+             pre-Begin frame stays clean. The actual analyzer subscription
+             still lives in CameraScreen — this component is presentation
+             only and reads audioRmsCoarse off state. */}
         {running && (
-          <div
-            className={`${s.micMeter} ${vadActive ? s.micMeterActive : ""}`.trim()}
-            aria-hidden="true"
-          >
-            <span className={s.micMeterLabel}>{vadActive ? "MIC · LIVE" : "MIC"}</span>
-            <div className={s.micMeterBar}>
-              <span
-                ref={micMeterFillRef}
-                className={s.micMeterFill}
-                style={{ transform: `scaleX(${Math.min(1, Math.max(0, audioRmsRef.current))})` }}
-              />
-            </div>
-          </div>
+          <BroadcastAudioMeter rms={audioRmsCoarse} vadActive={vadActive} />
         )}
 
         {/* ── Always-on device-state chip — sits under the mic meter and
@@ -1504,17 +1454,47 @@ export function CameraScreen() {
           </div>
         )}
 
-        {/* ── Top-right floating pill: active scene name (opens SceneSheet) ── */}
-        <button
-          type="button"
-          className={s.cornerPillTopRight}
-          onClick={() => setSceneSheetOpen(true)}
-          aria-label={`Scene: ${sceneName}. Tap to change.`}
-          title="Change scene"
-        >
-          <span className={s.cornerPillText}>{sceneName}</span>
-          <span className={s.cornerPillChevron} aria-hidden="true">▾</span>
-        </button>
+        {/* ── Top-right scene selector — glass chip, SCENE eyebrow + display-
+             cased name + SVG chevron. Opens the bottom-sheet picker. Sits
+             at the same Y as the BroadcastBug; the BroadcastSensorHud
+             tucks beneath it on the same edge. */}
+        <BroadcastSceneSelector sceneName={sceneName} onOpen={() => setSceneSheetOpen(true)} />
+
+        {/* ── Sensor HUD strip — compact mono key/value column under the
+             scene chip. EMF / LUX / ACC rows render only when the
+             underlying sensor reports samples (iOS without Magnetometer
+             support drops the EMF row). Rows flash --signal cyan for
+             400 ms on threshold crossings via the AnomalyTile alert flag. */}
+        {running && (
+          <BroadcastSensorHud
+            magnetometer={sensors.snapshot.magnetometer}
+            light={sensors.snapshot.light}
+            motion={sensors.snapshot.motion}
+            emfAlert={sensors.emf}
+            motionAlert={sensors.vibration}
+            lightAlert={sensors.lightAnomaly}
+            magnetometerAvailable={sensors.magnetometerAvailable}
+            lightAvailable={sensors.lightAvailable}
+          />
+        )}
+
+        {/* ── Bottom-left timecode slate — local wall-clock, UTC, and
+             session-elapsed counter. Burn-in safe for the recorded clip
+             so a video editor can lift timestamps without overlaying their
+             own slate. Always mounted (renders fine in idle too) so the
+             chrome feels complete from the moment the route loads. */}
+        <BroadcastTimestamp running={running} elapsedSec={sessionSecs} />
+
+        {/* ── Lower-third investigation slate — slides in from below when
+             an investigation is active. Title + location · date. Sticky-
+             content via the component so the slide-out frame still has
+             something to render against. */}
+        <BroadcastLowerThird
+          running={running}
+          title={session.current?.title}
+          location={session.current?.location_name}
+          startedAt={session.current?.started_at}
+        />
 
         {/* ── Scene-driven EVP recorder — only mounts when the active scene
              declares `evp.showRecorder`. Auto-starts on session begin when

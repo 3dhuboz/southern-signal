@@ -37,41 +37,16 @@
   height: 100%;
 }
 
-/* ── Floating corner pills ──────────────────────────────────────────────────
-   Semi-transparent, blurred, white text — high-contrast over any background
-   the camera produces. Pointer-events stay enabled so the right-side pill
-   stays tappable; the left-side is a status div but kept clickable-shaped
-   so the operator never wonders if it's interactive (it isn't).               */
-
-.cornerPillTopLeft,
-.cornerPillTopRight {
-  position: absolute;
-  top: calc(8px + var(--safe-top, 0px));
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 12px;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 999px;
-  color: #fff;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  pointer-events: auto;
-  z-index: 5;
-  -webkit-user-select: none;
-  user-select: none;
-  font-variant-numeric: tabular-nums;
-}
-
-.cornerPillTopLeft {
-  left: 12px;
-}
+/* The floating top-left status pill and top-right scene chip that used to
+   live here have been replaced by composed broadcast-grade chrome:
+       src/components/broadcast/BroadcastBug.tsx
+       src/components/broadcast/BroadcastSceneSelector.tsx
+   Same z-index (5), same safe-area handling, same tap-target rules — the
+   visual design now matches OB-van forensic chrome instead of the original
+   Snapchat-style chips. The legacy rules and state variants
+   (.cornerPillTopLeft, .cornerPillTopRight, .cornerPillRec, .cornerPillLive,
+   .cornerPillDot, .cornerPillText, .cornerPillChevron) were removed in the
+   broadcast HUD redesign. */
 
 /* ── Marker drop toast ─────────────────────────────────────────────────────
    Brief 1.5s confirmation that a double-tap landed and a moment marker is
@@ -442,30 +417,6 @@
   background: rgba(255, 255, 255, 0.1);
 }
 
-.cornerPillTopRight {
-  right: 12px;
-  cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease;
-  /* WCAG 2.5.5 — keep visible 28px pill chrome but expand the tap
-     target to 44x44 via an invisible pseudo overlay. */
-  position: absolute;
-}
-.cornerPillTopRight::before {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 100%;
-  height: 44px;
-  transform: translate(-50%, -50%);
-  pointer-events: auto;
-  /* Sit behind the pill's text content — pseudo-elements with no
-     z-index render in their stacking context, and the actual span
-     children of the button paint on top. */
-}
-.cornerPillTopRight:hover  { background: rgba(0, 0, 0, 0.7); }
-.cornerPillTopRight:active { transform: scale(0.97); }
-
 /* Scene-driven EVP recorder dock — anchored below the scene pill so the
    operator sees their auto-running clip status without crowding the
    shutter or the marker pill. Compact variant of EvpRecorderControl;
@@ -567,58 +518,26 @@
 }
 .welcomeGotIt:hover { background: rgba(34, 197, 94, 1); }
 
-.cornerPillText {
-  text-transform: uppercase;
-  line-height: 1;
-  white-space: nowrap;
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+/* .cornerPillText / .cornerPillChevron / .cornerPillDot lived here — the
+   BroadcastBug + BroadcastSceneSelector components own these now.
 
-.cornerPillChevron {
-  font-size: 11px;
-  opacity: 0.8;
-  margin-left: 2px;
-}
+   .micMeter (vertical mic peak meter) was replaced by the dedicated
+   BroadcastAudioMeter component, which paints a broadcast-grade meter
+   with peak-hold, tick marks, and a mono dB readout. */
 
-/* Status dot on the left pill */
-.cornerPillDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.55);
-  flex-shrink: 0;
-}
+/* Always-on device-state chip — sits just under the broadcast audio meter.
+   Glanceable battery % + free-storage readout that's always present during
+   a session, not just when a watchdog toast fires. Tone shifts when the
+   watchdog is flagging either check so the operator picks up trouble
+   before the next tick if they happen to look.
 
-/* ── Mic peak meter ───────────────────────────────────────────────────────
-   Tiny on-screen confirmation that the mic is hot — sits directly below the
-   top-left REC pill. The fill bar is driven via inline transform:scaleX(rms)
-   so we don't trigger React renders on every audio tick beyond what the
-   LiveAnalyzer's setAudioRms callback already costs. Pointer-events:none so
-   gestures pass through. Hidden until the analyzer reports a level (running). */
-
-.micMeter {
-  position: absolute;
-  top: calc(44px + var(--safe-top, 0px));
-  left: 12px;
-  width: 92px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  z-index: 5;
-  pointer-events: none;
-}
-
-/* Always-on device-state chip — sits just under the mic meter. Glanceable
-   battery % + free-storage readout that's always present during a session,
-   not just when a watchdog toast fires. Tone shifts when the watchdog is
-   flagging either check so the operator picks up trouble before the next
-   tick if they happen to look. */
+   Top offset: status bug (~36 + 12 safe-area = 48) + meter (~150) + 12 gap
+   ≈ 210 px from the top edge. Keeps the chip flush below the meter even
+   on a phone with no notch. */
 .deviceChip {
   position: absolute;
-  top: calc(80px + var(--safe-top, 0px));
-  left: 12px;
+  top: calc(210px + var(--safe-top, 0px));
+  left: calc(12px + var(--safe-left, 0px));
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -651,13 +570,14 @@
 .deviceChipUnit  { opacity: 0.7; font-size: 9px; text-transform: uppercase; letter-spacing: 0.7px; }
 .deviceChipSep   { opacity: 0.5; }
 
-/* Snooze indicator — sits just above the marker pill. Same chrome, but
-   tinted with the warning palette so the operator notices it. Tap to
-   unsnooze; auto-vanishes when the 10-minute window elapses. */
+/* Snooze indicator — sits just above the marker pill, both stacked over
+   the bottom-left BroadcastTimestamp slate. Same chrome, tinted with the
+   warning palette so the operator notices it. Tap to unsnooze;
+   auto-vanishes when the 10-minute window elapses. */
 .snoozeChip {
   position: absolute;
-  bottom: calc(160px + var(--safe-bottom, 0px));
-  left: 12px;
+  bottom: calc(240px + var(--safe-bottom, 0px));
+  left: calc(12px + var(--safe-left, 0px));
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -686,10 +606,14 @@
    to open Review where the editor lives. */
 /* Wrapper for the pill + its popover so absolute-positioned children share
    the same anchor without each having to re-derive the offset. */
+/* Marker tally pill — sits above the bottom-left BroadcastTimestamp slate
+   so the two HUD chips stack cleanly instead of fighting for space. The
+   timestamp slate is ~85 px tall, anchored at bottom ≈ 88 px (safe-bottom +
+   bottom-nav + 24 gap), so the marker pill sits at bottom ≈ 200 px. */
 .markerCountPillWrap {
   position: absolute;
-  bottom: calc(120px + var(--safe-bottom, 0px));
-  left: 12px;
+  bottom: calc(200px + var(--safe-bottom, 0px));
+  left: calc(12px + var(--safe-left, 0px));
   z-index: 5;
 }
 .markerCountPill {
@@ -790,76 +714,11 @@
 }
 .markerCountReviewLink:hover { background: rgba(34, 197, 94, 0.18); }
 
-.micMeterBar {
-  width: 100%;
-  height: 4px;
-  background: rgba(0, 0, 0, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 999px;
-  overflow: hidden;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
-
-.micMeterFill {
-  display: block;
-  height: 100%;
-  width: 100%;
-  background: linear-gradient(
-    90deg,
-    #48c882 0%,
-    #48c882 55%,
-    #d4c026 75%,
-    #d8392c 100%
-  );
-  transform-origin: left center;
-  transform: scaleX(0);
-  transition: transform 70ms linear;
-}
-
-.micMeterLabel {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.7);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
-  line-height: 1;
-}
-
-/* When VAD trips the bar's rim glows green — confirms the auto-duck fired. */
-.micMeterActive .micMeterBar {
-  border-color: rgba(72, 200, 130, 0.6);
-  box-shadow: 0 0 8px rgba(72, 200, 130, 0.4);
-}
-.micMeterActive .micMeterLabel {
-  color: rgba(120, 230, 175, 0.95);
-}
-
-/* REC variant — solid red dot, faint red rim */
-.cornerPillRec {
-  border-color: rgba(216, 57, 44, 0.65);
-}
-.cornerPillRec .cornerPillDot {
-  background: #d8392c;
-  box-shadow: 0 0 8px rgba(216, 57, 44, 0.8);
-  animation: ss-rec-pulse 1.4s ease-in-out infinite;
-}
-
-/* LIVE variant — solid green dot */
-.cornerPillLive {
-  border-color: rgba(72, 200, 130, 0.55);
-}
-.cornerPillLive .cornerPillDot {
-  background: #48c882;
-  box-shadow: 0 0 8px rgba(72, 200, 130, 0.7);
-}
-
-@keyframes ss-rec-pulse {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.45; }
-}
+/* The horizontal mic-meter strip + REC/LIVE corner-pill state variants
+   lived here. Both surfaces are now owned by the broadcast HUD chrome
+   under src/components/broadcast/. The `ss-rec-pulse` keyframe moved
+   into BroadcastBug.module.css (`ss-bug-rec-pulse`) so the bug owns its
+   own animation lifecycle. */
 
 /* ── BIG SHUTTER ────────────────────────────────────────────────────────────
    The primary action. 88×88 circular target, red when idle, white-with-red-
