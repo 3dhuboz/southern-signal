@@ -1,0 +1,123 @@
+/* ============================================================================
+   BroadcastTimestamp — bottom-left timecode slate.
+
+   Three monospace lines: local wall-clock (large, blinking colon), UTC
+   (small + muted), session elapsed (small). Glass shell matches the
+   BroadcastBug / AudioMeter so the chrome reads as one composed system.
+   Burns clean into a 1080p recording so a video editor can lift timecode
+   off the recorded clip without overlaying their own slate.
+   ============================================================================ */
+
+.slate {
+  position: absolute;
+  bottom: calc(var(--s-24, 24px) + var(--safe-bottom, 0px) + var(--bottom-nav-height, 64px));
+  left: calc(var(--s-16, 16px) + var(--safe-left, 0px));
+
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px 14px 9px;
+
+  background: rgba(8, 12, 18, 0.62);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid rgba(93, 242, 199, 0.16);
+  border-radius: 10px;
+  box-shadow:
+    0 6px 16px rgba(0, 0, 0, 0.55),
+    0 1px 0 rgba(255, 255, 255, 0.04) inset;
+
+  color: var(--text-primary, #E7ECF3);
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  letter-spacing: 0.4px;
+  line-height: 1;
+
+  z-index: 5;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: border-color 200ms ease-out, background 200ms ease-out;
+}
+
+/* Subtle warm-up when a session is running — borders pop, slate gets a
+   marginally darker base so the digits assert against the video. */
+.running {
+  border-color: rgba(93, 242, 199, 0.28);
+  background: rgba(8, 12, 18, 0.72);
+}
+
+/* Local wall-clock — the headline. Large, white, mono. Each colon span
+   uses .colon so the .blinkOff variant can dim alternating frames. */
+.local {
+  display: inline-flex;
+  align-items: baseline;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: var(--text-primary, #E7ECF3);
+}
+
+/* Digits group — keeps the numbers separately stylable from the colons. */
+.digits {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Colon: animated between full + dim opacity to read as a 1 Hz blink.
+   Two classes on the parent flip which keyframe applies — that way the
+   transition is instant on each second tick (the JS owns the cadence),
+   not a CSS-internal animation that could drift. */
+.colon {
+  display: inline-block;
+  padding: 0 0.05ch;
+  color: inherit;
+  transition: opacity 120ms linear;
+}
+.blinkOn .colon  { opacity: 1; }
+.blinkOff .colon { opacity: 0.32; }
+
+/* UTC row — small, muted, eyebrow + value. */
+.utc, .elapsed {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  color: var(--text-secondary, #9BA6B8);
+}
+
+.eyebrow {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--text-muted, #757F90);
+  line-height: 1;
+  min-width: 24px;
+}
+
+/* Elapsed row pops slightly brighter when running so the operator's eye
+   pings on the session-relative time without the slate fighting itself. */
+.running .elapsed .digits {
+  color: var(--signal, #5DF2C7);
+}
+
+/* Reduced-motion: lock the colon to "on" so nothing animates at all. */
+@media (prefers-reduced-motion: reduce) {
+  .blinkOff .colon { opacity: 1; }
+  .colon { transition: none; }
+}
+
+/* Compact variant for narrow viewports — keeps the slate inside the
+   left third of a 390-wide phone without crowding the marker pill. */
+@media (max-width: 420px) {
+  .slate {
+    padding: 8px 12px 7px;
+    gap: 3px;
+  }
+  .local { font-size: 24px; }
+  .utc, .elapsed { font-size: 10.5px; }
+}
