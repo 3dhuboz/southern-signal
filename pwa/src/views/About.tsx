@@ -245,6 +245,11 @@ export function About() {
           methodology. Reviewer shortlist is private until contact is made; the sign-off itself will be
           published with the release.
         </p>
+        <p className={s.review}>
+          This tool has not been peer-reviewed. It ships with public commitments to external sign-off by a
+          Bayesian statistician and an acoustician before any premiere; until that lands, treat any model
+          output as a working hypothesis, not a conclusion.
+        </p>
       </section>
 
       <section className={s.section}>
