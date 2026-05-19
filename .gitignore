@@ -12,6 +12,11 @@ pi-hub/tests/**/__pycache__/
 pwa/node_modules/
 pwa/dist/
 pwa/.vite/
+pwa/.audit-tmp/
+# Prevent npm/yarn lockfiles from sneaking back in alongside pnpm-lock.yaml
+# (CI uses pnpm; a second lockfile causes resolver drift — see deploy.yml).
+pwa/package-lock.json
+pwa/yarn.lock
 
 *.log
 .DS_Store
