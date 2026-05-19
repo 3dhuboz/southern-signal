@@ -105,9 +105,14 @@ export function BroadcastTimestamp({ running, elapsedSec }: Props) {
         <span className={s.eyebrow}>UTC</span>
         <span className={s.digits}>{utc}</span>
       </span>
-      <span className={s.elapsed}>
-        <span className={s.eyebrow}>T</span>
-        <span className={s.digits}>
+      <span
+        className={s.elapsed}
+        aria-label={running
+          ? `Session elapsed: ${Math.max(0, Math.floor(elapsedSec))} seconds`
+          : "Session not running"}
+      >
+        <span className={s.eyebrow} aria-hidden="true">T</span>
+        <span className={s.digits} aria-hidden="true">
           {running ? `+${fmtElapsed(elapsedSec)}` : "—:——"}
         </span>
       </span>
