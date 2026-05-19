@@ -68,10 +68,10 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # Lint blocks PR merges (catches regressions before they reach dev)
-      # but is informational on push to dev/master so deploys aren't held
-      # up by errors that belong to in-flight workstreams (e.g. task #42
-      # add-auth-to-/api/ai/* leaves unused imports until its body lands).
-      # Once the tree is consistently lint-clean, drop `continue-on-error`.
+      # but is informational on push to dev/master so a single noisy warning
+      # can't gridlock a hot-fix deploy. The tree is currently lint-clean
+      # (0 errors); once it stays that way across a few sprints, drop the
+      # `continue-on-error` so dev-branch regressions also block.
       - name: Lint
         working-directory: pwa
         run: pnpm lint
@@ -84,11 +84,9 @@ jobs:
       - name: Run tests
         working-directory: pwa
         run: pnpm test
-        # Same rationale as lint above — pwa/src/lib/db tests are mid-
-        # migration for task #54 (DB v14 FK enforcement) and currently
-        # fail on dev. On PRs we want the failure to block merge; on a
-        # push to dev/master we let the deploy continue so the in-flight
-        # workstream isn't gridlocked.
+        # Same rationale as lint above — the suite is currently green
+        # (720/720 as of 2026-05-19). The continue-on-error keeps a single
+        # flake from gridlocking a deploy on dev/master; PRs still block.
         continue-on-error: ${{ github.event_name == 'push' }}
 
       # Wipe the preview D1 before deploying to the dev preview alias so
