@@ -99,7 +99,11 @@ async function generateKey(): Promise<Keypair> {
 }
 
 async function sha256HexBytes(bytes: Uint8Array): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  // Cast required because TS lib.dom types narrowed `BufferSource` to
+  // `Uint8Array<ArrayBuffer>` (not the more permissive `ArrayBufferLike`),
+  // and the harness's lib resolution sometimes infers Uint8Array<SharedArrayBuffer>.
+  // Runtime accepts any TypedArray; cast is purely a type-level concession.
+  const digest = await crypto.subtle.digest("SHA-256", bytes as BufferSource);
   return Array.from(new Uint8Array(digest))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
@@ -136,7 +140,9 @@ async function buildSignedRequest(opts: {
   const request = new Request(`${TEST_ORIGIN}${path}`, {
     method,
     headers,
-    body: opts.body.byteLength > 0 ? opts.body : undefined,
+    // Same Uint8Array<ArrayBufferLike> vs BodyInit narrowing as in
+    // sha256HexBytes — cast is purely type-level, runtime is correct.
+    body: opts.body.byteLength > 0 ? (opts.body as BodyInit) : undefined,
   });
   return { request, bodyBytes: opts.body };
 }
