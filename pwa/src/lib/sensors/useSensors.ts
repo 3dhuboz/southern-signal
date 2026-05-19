@@ -64,15 +64,22 @@ export function useSensors(active: boolean): SensorState {
   const compassBaseline = useRef<BaselineState>(createBaseline(120));
   const lightBaseline = useRef<BaselineState>(createBaseline(60));
   const lastHeading = useRef<number | null>(null);
-  // devicemotion fires at 50-60 Hz. setSnapshot/setVibration each yield a
-  // fresh object, churning referential equality for every downstream consumer
-  // (and re-rendering the SensorPanel etc.) ~55 times/sec for the lifetime of
-  // a session. Throttle the React updates to ~10 Hz; the baseline z-score
-  // still updates every event, but the visible state only flips on a 100 ms
-  // grid. The watchdog / posterior engine read from sensors.snapshot via
+  // All four sensors fire at native rates (devicemotion 50-60 Hz, orientation
+  // ~30 Hz, magnetometer and ambient-light vary by platform but both push
+  // every reading). setSnapshot / setEmf / setVibration / setCompassAnomaly /
+  // setLightAnomaly each yield a fresh object, churning referential equality
+  // for every downstream consumer (and re-rendering the SensorPanel etc.) at
+  // the native rate for the lifetime of a session. Throttle the React
+  // commits to ~10 Hz; the baseline z-score still advances every event, but
+  // the visible state only flips on a 100 ms grid. Anomaly threshold
+  // crossings ALWAYS flush immediately so an alert isn't delayed up to
+  // 100 ms. The watchdog / posterior engine read from sensors.snapshot via
   // refs in their own effects, so they're not starved by the throttle.
-  const MOTION_STATE_INTERVAL_MS = 100;
+  const SENSOR_STATE_INTERVAL_MS = 100;
   const lastMotionStateEmitRef = useRef<number>(0);
+  const lastOrientationStateEmitRef = useRef<number>(0);
+  const lastMagStateEmitRef = useRef<number>(0);
+  const lastLightStateEmitRef = useRef<number>(0);
 
   useEffect(() => {
     if (!active) return;
@@ -86,7 +93,7 @@ export function useSensors(active: boolean): SensorState {
       // immediately rather than waiting up to 100 ms.
       const now = performance.now();
       const alert = Math.abs(result.z) > ANOMALY_THRESHOLD;
-      if (alert || now - lastMotionStateEmitRef.current >= MOTION_STATE_INTERVAL_MS) {
+      if (alert || now - lastMotionStateEmitRef.current >= SENSOR_STATE_INTERVAL_MS) {
         lastMotionStateEmitRef.current = now;
         setSnapshot((prev) => ({ ...prev, motion: s }));
         setVibration({
@@ -100,24 +107,39 @@ export function useSensors(active: boolean): SensorState {
     });
 
     const unsubOrientation = subscribeOrientation((s) => {
-      setSnapshot((prev) => ({ ...prev, orientation: s }));
+      // Advance the heading-delta baseline on every event (cheap), but
+      // throttle the React commit. Same alert-flush pattern as motion.
+      let baselineUpdate: { z: number; mean: number; stdev: number; alert: boolean; delta: number } | null = null;
       if (s.heading != null) {
         if (lastHeading.current != null) {
-          // Compute shortest-path heading delta (degrees).
           let delta = s.heading - lastHeading.current;
           while (delta > 180) delta -= 360;
           while (delta < -180) delta += 360;
           const result = updateBaseline(compassBaseline.current, Math.abs(delta));
           compassBaseline.current = result.state;
-          setCompassAnomaly({
-            value: Math.abs(delta),
+          baselineUpdate = {
             z: result.z,
             mean: result.mean,
             stdev: result.stdev,
             alert: Math.abs(result.z) > ANOMALY_THRESHOLD,
-          });
+            delta: Math.abs(delta),
+          };
         }
         lastHeading.current = s.heading;
+      }
+      const now = performance.now();
+      if (baselineUpdate?.alert || now - lastOrientationStateEmitRef.current >= SENSOR_STATE_INTERVAL_MS) {
+        lastOrientationStateEmitRef.current = now;
+        setSnapshot((prev) => ({ ...prev, orientation: s }));
+        if (baselineUpdate) {
+          setCompassAnomaly({
+            value: baselineUpdate.delta,
+            z: baselineUpdate.z,
+            mean: baselineUpdate.mean,
+            stdev: baselineUpdate.stdev,
+            alert: baselineUpdate.alert,
+          });
+        }
       }
     });
 
@@ -125,16 +147,21 @@ export function useSensors(active: boolean): SensorState {
     if (isMagnetometerSupported()) {
       setMagnetometerAvailable(true);
       void subscribeMagnetometer((s) => {
-        setSnapshot((prev) => ({ ...prev, magnetometer: s }));
         const result = updateBaseline(magBaseline.current, s.magnitude);
         magBaseline.current = result.state;
-        setEmf({
-          value: s.magnitude,
-          z: result.z,
-          mean: result.mean,
-          stdev: result.stdev,
-          alert: Math.abs(result.z) > ANOMALY_THRESHOLD,
-        });
+        const alert = Math.abs(result.z) > ANOMALY_THRESHOLD;
+        const now = performance.now();
+        if (alert || now - lastMagStateEmitRef.current >= SENSOR_STATE_INTERVAL_MS) {
+          lastMagStateEmitRef.current = now;
+          setSnapshot((prev) => ({ ...prev, magnetometer: s }));
+          setEmf({
+            value: s.magnitude,
+            z: result.z,
+            mean: result.mean,
+            stdev: result.stdev,
+            alert,
+          });
+        }
       }).then((subscription) => {
         if (subscription) stopMag = subscription.stop;
       });
@@ -144,16 +171,21 @@ export function useSensors(active: boolean): SensorState {
     if (isAmbientLightSupported()) {
       setLightAvailable(true);
       void subscribeAmbientLight((s) => {
-        setSnapshot((prev) => ({ ...prev, light: s }));
         const result = updateBaseline(lightBaseline.current, s.lux);
         lightBaseline.current = result.state;
-        setLightAnomaly({
-          value: s.lux,
-          z: result.z,
-          mean: result.mean,
-          stdev: result.stdev,
-          alert: Math.abs(result.z) > ANOMALY_THRESHOLD,
-        });
+        const alert = Math.abs(result.z) > ANOMALY_THRESHOLD;
+        const now = performance.now();
+        if (alert || now - lastLightStateEmitRef.current >= SENSOR_STATE_INTERVAL_MS) {
+          lastLightStateEmitRef.current = now;
+          setSnapshot((prev) => ({ ...prev, light: s }));
+          setLightAnomaly({
+            value: s.lux,
+            z: result.z,
+            mean: result.mean,
+            stdev: result.stdev,
+            alert,
+          });
+        }
       }).then((subscription) => {
         if (subscription) stopLight = subscription.stop;
       });

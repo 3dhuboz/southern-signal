@@ -105,7 +105,11 @@ export default function App() {
       <CivilTwilightBanner />
       <InterruptedSessionBanner />
       <ChainBrokenBanner />
-      <main id="ss-main-content" aria-label="Primary content">
+      {/* tabIndex={-1} on the skip-link target so the browser actually
+          focuses the main region when the user activates the link. Without
+          it, Safari and Firefox only scroll — the next Tab continues from
+          the previously-focused chrome button, defeating WCAG 2.4.1. */}
+      <main id="ss-main-content" tabIndex={-1} aria-label="Primary content">
         <Suspense fallback={<RouteFallback />}>
           <Routes>
             <Route path="/" element={<CameraScreen />} />

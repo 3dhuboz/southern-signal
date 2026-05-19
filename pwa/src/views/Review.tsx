@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import { AHT_H0_SUSPEND_THRESHOLD, computeH0Confidence } from "../lib/posterior/ahtVerdict";
 import { buildEvidenceBrief, findMostRecentInvestigationId, type EvidenceBrief } from "../lib/forensic/evidenceBrief";
 import { NullRateDashboard } from "../components/NullRateDashboard";
@@ -1513,6 +1514,11 @@ function SparkExpandedModal({
   markerTimestamps?: readonly string[];
   onClose: () => void;
 }) {
+  // a11y: trap focus inside the card while open. role="dialog" + aria-modal
+  // moves off the backdrop (which carries the click-to-close handler — a
+  // dialog role on a click-anywhere-to-close surface is misleading) and onto
+  // the inner card. Mirrors the SceneSheet / SimpleMissionView pattern.
+  const trapRef = useFocusTrap<HTMLDivElement>(true, { onEscape: onClose });
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   // Drag-to-zoom — the user drags across the SVG to select a time range,
@@ -1577,8 +1583,17 @@ function SparkExpandedModal({
       })()
     : null;
   return (
-    <div className={r.sparkModalBackdrop} role="dialog" aria-modal="true" aria-label={`${label} expanded chart`} onPointerDown={onClose}>
-      <div className={r.sparkModalCard} data-tone={tone} onPointerDown={(e) => e.stopPropagation()}>
+    <div className={r.sparkModalBackdrop} role="presentation" onPointerDown={onClose}>
+      <div
+        className={r.sparkModalCard}
+        data-tone={tone}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${label} expanded chart`}
+        ref={trapRef}
+        tabIndex={-1}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
         <div className={r.sparkModalHead}>
           <span className={r.deviceSparkLabel}>{label}</span>
           <span className={r.deviceSparkValue}>{format(hovered?.value ?? last.value)}</span>

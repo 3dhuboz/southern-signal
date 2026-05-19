@@ -172,7 +172,12 @@ export function SessionSummaryCard(props: SessionSummaryCardProps) {
   const finalBand = classifyPosterior(finalPosterior);
 
   return (
-    <div className={s.wrap} role="dialog" aria-label="Session summary" aria-live="polite">
+    // role="region" — this is a digest card embedded in the page flow,
+    // not a modal dialog. The previous role="dialog" misled screen readers
+    // into announcing it as a focus-trapped overlay; it's actually just
+    // a labelled section. aria-live="polite" stays so a new session digest
+    // announces itself when it appears after stop.
+    <div className={s.wrap} role="region" aria-label="Session summary" aria-live="polite">
       <header className={s.head}>
         <span className={s.eyebrow}>SESSION DIGEST</span>
         <h2 className={s.title}>How that session went</h2>
