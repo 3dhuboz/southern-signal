@@ -216,7 +216,11 @@ interface CoverData {
    * the section entirely. Dismissed markers are filtered out of this list
    * — the reviewer's verdict is "this isn't worth carrying forward".
    */
-  markerNotes?: { ts: string; elapsed: string | null; category: string | null; note: string }[];
+  // markerNotes — when scope=all (multi-case bundle) caseTitle is populated
+  // so reviewers can tell which case each note belongs to. When scope=single
+  // caseTitle stays null because the cover already names the case once at
+  // the top of the document and per-row attribution would be redundant.
+  markerNotes?: { ts: string; elapsed: string | null; category: string | null; note: string; caseTitle: string | null }[];
 }
 
 function escapeHtml(s: string): string {
@@ -367,6 +371,9 @@ const COVER_HTML_TEMPLATE = (d: CoverData): string => {
   ul.markerNotes .mnCat[data-category="sound"]    { color: #0a6c3f; }
   ul.markerNotes .mnCat[data-category="movement"] { color: #b87600; }
   ul.markerNotes .mnCat[data-category="felt"]     { color: #b03050; }
+  /* Case attribution chip — only emitted by scope=all bundles. Single-case
+     covers omit it because the case is already named at the top. */
+  ul.markerNotes .mnCase { padding: 1px 6px; border: 1px solid #999; border-radius: 3px; font-size: 9pt; color: #555; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
   ul.markerNotes blockquote { margin: 6px 0 0; padding: 8px 12px; border-left: 3px solid #888; background: #fff; font-style: italic; font-size: 11pt; }
   .sparks { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .spark { border: 1px solid #ddd; border-radius: 4px; padding: 8px 12px; background: #fafafa; }
@@ -451,6 +458,7 @@ ${(() => {
         <div class="mnHead">
           <span class="mnTs">${escapeHtml(n.elapsed ?? new Date(n.ts).toLocaleString())}</span>
           ${n.category ? `<span class="mnCat" data-category="${escapeHtml(n.category)}">${escapeHtml(n.category)}</span>` : ""}
+          ${n.caseTitle ? `<span class="mnCase">${escapeHtml(n.caseTitle)}</span>` : ""}
         </div>
         <blockquote>${escapeHtml(n.note)}</blockquote>
       </li>`).join("")}</ul>
@@ -969,7 +977,14 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
   // marker rows we already have in `events` and join with the overrides.
   // Elapsed-time labels come from each marker's own metadata, the same
   // representation the Review screen renders against.
-  const markerNotesForCover: { ts: string; elapsed: string | null; category: string | null; note: string }[] = [];
+  // Build a case-title lookup so each marker note row in a scope=all bundle
+  // can be attributed back to its owning case. Without it, the cover's
+  // "Reviewer notes on markers" section mixed notes from every case in
+  // one flat list — a reviewer couldn't tell which case a marker belonged
+  // to. For scope=single bundles the cover already names the case at the
+  // top, so the per-row caseTitle stays null (rendered without the chip).
+  const titleByInvestigation = new Map(investigations.map((inv) => [inv.id, inv.title ?? null]));
+  const markerNotesForCover: { ts: string; elapsed: string | null; category: string | null; note: string; caseTitle: string | null }[] = [];
   for (const ev of events) {
     if (ev.event_type !== "marker") continue;
     if (markerOverrides.dismissed.has(ev.id)) continue;
@@ -993,7 +1008,8 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
         }
       } catch { /* ignore */ }
     }
-    markerNotesForCover.push({ ts: ev.timestamp, elapsed, category, note: ann.note });
+    const caseTitle = scope === "all" ? (titleByInvestigation.get(ev.investigation_id) ?? null) : null;
+    markerNotesForCover.push({ ts: ev.timestamp, elapsed, category, note: ann.note, caseTitle });
   }
 
   const coverHtml = COVER_HTML_TEMPLATE({
