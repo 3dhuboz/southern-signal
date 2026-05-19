@@ -1,0 +1,176 @@
+/* ============================================================================
+   BroadcastAudioMeter — vertical mic meter under the broadcast bug.
+
+   Reads like the audio strip on an OB rack: a tall green-amber-red gradient,
+   tick marks at -36/-18/-12/-6/-3/0, a horizontal peak-hold line that
+   decays, a mono numerical dB readout below. Wrapped in the same glass +
+   hairline shell as the bug so the chrome reads as one composed system.
+
+   Theming: gradient stays universal (green/amber/red carry the same
+   semantic meaning across themes) but borders + glass + text inherit
+   tokens so scotopic and daylight track automatically.
+   ============================================================================ */
+
+.meter {
+  position: absolute;
+  top: calc(var(--s-12, 12px) + var(--safe-top, 0px) + 44px);
+  left: calc(var(--s-12, 12px) + var(--safe-left, 0px));
+
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 10px 12px 8px;
+  width: 64px;
+
+  background: rgba(8, 12, 18, 0.62);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid rgba(93, 242, 199, 0.18);
+  border-radius: 10px;
+  box-shadow:
+    0 6px 16px rgba(0, 0, 0, 0.55),
+    0 1px 0 rgba(255, 255, 255, 0.04) inset;
+
+  color: var(--text-primary, #E7ECF3);
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+
+  z-index: 5;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* "MIC" eyebrow above the bar so the readout has a label without depending
+   on context. Faintly de-emphasised so the gradient remains the main signal. */
+.label {
+  font-family: var(--font-display, "Space Grotesk", "Inter", sans-serif);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--text-secondary, #9BA6B8);
+  text-align: center;
+  line-height: 1;
+}
+
+/* Bar wrapper — flex row so ticks and bar share the same vertical scale. */
+.barRow {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  height: 96px;
+}
+
+/* The actual vertical fill column. Inside, .barFill scales from the bottom
+   anchored to its parent's height; the gradient sits ON the column so the
+   filled portion exposes the colour ramp from green up through red. */
+.barTrack {
+  position: relative;
+  flex: 1 1 auto;
+  width: 18px;
+  background: rgba(7, 11, 16, 0.7);
+  border: 1px solid rgba(93, 242, 199, 0.16);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+/* The filled column. Anchored to the bottom; height is set inline via
+   transform: scaleY(level). Gradient maps -60 → 0 dBFS across the column. */
+.barFill {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to top,
+    #48c882 0%,
+    #48c882 42%,
+    #d4c026 70%,
+    #ef6e6e 92%,
+    #ef6e6e 100%
+  );
+  transform-origin: bottom center;
+  transform: scaleY(0);
+  transition: transform 70ms linear;
+}
+
+/* Peak-hold line — a 1px horizontal cap that decays over ~1.5s. Pure CSS
+   transition on `bottom` so the parent only sets the percentage. */
+.peakHold {
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.65);
+  pointer-events: none;
+  transition: bottom 1.5s linear, opacity 1.5s linear;
+  opacity: 0.95;
+}
+.peakHoldHidden { opacity: 0; }
+
+/* Tick column to the right of the bar. Hairline ticks + tiny mono numerals
+   at -36, -18, -12, -6, -3, 0. Positioned absolutely against a relative
+   parent so they line up with their dB on the gradient. */
+.ticks {
+  position: relative;
+  width: 14px;
+  flex-shrink: 0;
+}
+.tick {
+  position: absolute;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 7.5px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  line-height: 1;
+  color: var(--text-muted, #757F90);
+  /* Translate up by half-height so the tick's centre lines up with its
+     `bottom` position — otherwise the bottom-rooted text sits one
+     half-height below the gradient row it labels. */
+  transform: translateY(50%);
+  font-variant-numeric: tabular-nums;
+}
+.tickMark {
+  width: 4px;
+  height: 1px;
+  background: var(--text-dim, #3F4858);
+}
+.tick0 { color: var(--danger, #EF6E6E); }
+.tick0 .tickMark { background: var(--danger, #EF6E6E); }
+
+/* Numerical dB readout under the bar. Mono. Proper Unicode minus. */
+.value {
+  display: inline-flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: 3px;
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  color: var(--text-primary, #E7ECF3);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.valueUnit {
+  font-size: 9px;
+  color: var(--text-muted, #757F90);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+/* VAD-active accent — rim glows cyan when voice activity detected; matches
+   the original meter's affordance but in the new visual language. */
+.active {
+  border-color: rgba(93, 242, 199, 0.55);
+  box-shadow:
+    0 6px 16px rgba(0, 0, 0, 0.55),
+    0 0 14px rgba(93, 242, 199, 0.18),
+    0 1px 0 rgba(255, 255, 255, 0.04) inset;
+}
+.active .label { color: var(--signal, #5DF2C7); }
+.active .barTrack { border-color: rgba(93, 242, 199, 0.45); }
