@@ -11,6 +11,7 @@
 
 import { useEffect, useState, type ReactElement } from "react";
 import { usePreferences } from "../lib/preferences";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import s from "./OnboardingTour.module.css";
 
 const COMPLETION_KEY = "ss-onboarding-completed-v1";
@@ -153,23 +154,17 @@ export function OnboardingTour() {
     if (!isCompleted()) setOpen(true);
   }, [aocAccepted]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        finish();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-
   const finish = () => {
     markCompleted();
     setOpen(false);
   };
+
+  // a11y: focus-trap takes over Escape handling (previously a window-level
+  // listener) so there's one place that owns dismissal. Also moves focus
+  // into the modal on open and restores it on close.
+  const trapRef = useFocusTrap<HTMLDivElement>(open, {
+    onEscape: finish,
+  });
 
   const back = () => setStepIndex((i) => Math.max(0, i - 1));
   const next = () => {
@@ -187,7 +182,7 @@ export function OnboardingTour() {
   const isLast = stepIndex === STEPS.length - 1;
 
   return (
-    <div className={s.overlay} role="dialog" aria-modal="true" aria-labelledby="ss-onboarding-title">
+    <div className={s.overlay} role="dialog" aria-modal="true" aria-labelledby="ss-onboarding-title" ref={trapRef} tabIndex={-1}>
       <div className={s.panel}>
         <div className={s.cue} aria-hidden="true">{step.cue}</div>
 

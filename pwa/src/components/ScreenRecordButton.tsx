@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { appendAuditEntry } from "../lib/db/auditLog";
 import { ScreenRecorder, downloadRecording, isInAppRecordingSupported, type RecorderState } from "../lib/recording/screenRecorder";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import s from "./ScreenRecordButton.module.css";
 
 interface ScreenRecordButtonProps {
@@ -65,6 +66,11 @@ export function ScreenRecordButton({ investigationId, classNames }: ScreenRecord
   }));
   const [showIosTip, setShowIosTip] = useState(false);
   const inAppOk = !state.inAppRecordingUnavailable;
+  // a11y: trap focus inside the iOS tip dialog while it's open. Escape
+  // dismisses without logging stop — same as the Cancel button.
+  const iosTipTrapRef = useFocusTrap<HTMLDivElement>(showIosTip, {
+    onEscape: () => setShowIosTip(false),
+  });
 
   useEffect(() => {
     const recorder = new ScreenRecorder();
@@ -159,9 +165,9 @@ export function ScreenRecordButton({ investigationId, classNames }: ScreenRecord
       {state.error && <p className={s.error}>{state.error}</p>}
 
       {showIosTip && (
-        <div className={s.tipOverlay} role="dialog" aria-modal="true">
+        <div className={s.tipOverlay} role="dialog" aria-modal="true" aria-labelledby="screen-rec-ios-tip-title" ref={iosTipTrapRef} tabIndex={-1}>
           <div className={s.tipPanel}>
-            <h3 className={s.tipTitle}>Use iOS Screen Record</h3>
+            <h3 id="screen-rec-ios-tip-title" className={s.tipTitle}>Use iOS Screen Record</h3>
             <p className={s.tipBody}>
               In-app screen capture isn't reliable on iPhone. Use the native recorder instead:
             </p>

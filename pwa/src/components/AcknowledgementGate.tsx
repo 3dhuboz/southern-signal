@@ -17,6 +17,7 @@
 import { useEffect, useState } from "react";
 import { appendAuditEntry } from "../lib/db/auditLog";
 import { setPreferences, usePreferences } from "../lib/preferences";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import s from "./AcknowledgementGate.module.css";
 
 const DEFAULT_TEMPLATE = (nation: string) => (
@@ -29,6 +30,10 @@ export function AcknowledgementGate() {
   const [open, setOpen] = useState(false);
   const [nation, setNation] = useState("");
   const [statement, setStatement] = useState("");
+  // a11y: trap focus inside the gate so an external-keyboard user can't tab
+  // out into the app behind. No onEscape — this is a blocking ethical-floor
+  // gate; dismissal requires accepting the acknowledgement.
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
 
   useEffect(() => {
     if (!prefs.acknowledgementOfCountry.accepted) setOpen(true);
@@ -60,7 +65,7 @@ export function AcknowledgementGate() {
   if (!open) return null;
 
   return (
-    <div className={s.overlay} role="dialog" aria-modal="true" aria-labelledby="aoc-title">
+    <div className={s.overlay} role="dialog" aria-modal="true" aria-labelledby="aoc-title" ref={trapRef} tabIndex={-1}>
       <div className={s.panel}>
         <h2 id="aoc-title" className={s.title}>Acknowledgement of Country</h2>
         <p className={s.lede}>

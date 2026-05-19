@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { saveProtocol, lockProtocol } from "../lib/db/protocolRepo";
 import type { InvestigationProtocol } from "../lib/db/schema";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import s from "./ProtocolWizard.module.css";
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -86,6 +87,11 @@ function ReadOnlyView({
   onClose?: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  // a11y: trap focus inside the read-only view. Escape calls onClose if
+  // provided — when omitted, the view is embedded and Escape is a no-op.
+  const trapRef = useFocusTrap<HTMLDivElement>(true, {
+    onEscape: () => onClose?.(),
+  });
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(hash).catch(() => { /* ignore */ });
@@ -94,7 +100,7 @@ function ReadOnlyView({
   };
 
   return (
-    <div className={s.backdrop} role="dialog" aria-modal="true" aria-label="Locked protocol">
+    <div className={s.backdrop} role="dialog" aria-modal="true" aria-label="Locked protocol" ref={trapRef} tabIndex={-1}>
       <div className={s.card}>
         <div className={s.header}>
           <span className={s.headerIcon}>🔒</span>
@@ -298,6 +304,12 @@ export function ProtocolWizard({
   );
   const [stopCondition, setStopCondition] = useState(initialProtocol?.stop_condition ?? "");
 
+  // a11y: trap focus inside the wizard while it's mounted. Escape forwards
+  // to onClose when provided; the parent owns mount/unmount otherwise.
+  const trapRef = useFocusTrap<HTMLDivElement>(true, {
+    onEscape: () => onClose?.(),
+  });
+
   // Derive the protocol object from current state for preview / saving
   const buildProtocol = useCallback((): InvestigationProtocol => {
     const allSignals = Array.from(signals);
@@ -441,7 +453,7 @@ export function ProtocolWizard({
   }
 
   return (
-    <div className={s.backdrop} role="dialog" aria-modal="true" aria-label="Protocol wizard">
+    <div className={s.backdrop} role="dialog" aria-modal="true" aria-label="Protocol wizard" ref={trapRef} tabIndex={-1}>
       <div className={s.card}>
         {/* Header */}
         <div className={s.header}>

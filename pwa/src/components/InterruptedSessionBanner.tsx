@@ -102,9 +102,12 @@ export function InterruptedSessionBanner() {
   if (!interrupted || dismissed) return null;
 
   return (
-    <div className={s.banner} role="status" aria-live="polite">
+    // role="region" + aria-labelledby is the correct landmark for a banner
+    // that prompts a deliberate action — role="status" is for transient
+    // announcements and made screen readers re-announce on every render.
+    <div className={s.banner} role="region" aria-labelledby="ss-interrupted-banner-title">
       <div className={s.body}>
-        <strong className={s.title}>Unfinished session detected</strong>
+        <strong id="ss-interrupted-banner-title" className={s.title}>Unfinished session detected</strong>
         <p className={s.detail}>
           "<span className={s.caseTitle}>{interrupted.title}</span>" was started{" "}
           <span className={s.ago}>{relativeTimeAgo(interrupted.started_at)}</span>{" "}

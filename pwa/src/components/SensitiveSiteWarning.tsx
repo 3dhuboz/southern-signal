@@ -14,6 +14,7 @@
 
 import { useState } from "react";
 import type { SiteMatch } from "../lib/sensors/sensitiveSiteClassifier";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import s from "./SensitiveSiteWarning.module.css";
 
 interface Props {
@@ -27,9 +28,14 @@ const CONFIRM_PHRASE = "i acknowledge";
 export function SensitiveSiteWarning({ matches, onAcknowledge, onCancel }: Props) {
   const [typed, setTyped] = useState("");
   const confirmed = typed.trim().toLowerCase() === CONFIRM_PHRASE;
+  // a11y: trap focus inside the warning while it's mounted. Escape cancels —
+  // the parent unmounts on either onCancel or onAcknowledge.
+  const trapRef = useFocusTrap<HTMLDivElement>(true, {
+    onEscape: onCancel,
+  });
 
   return (
-    <div className={s.overlay} role="dialog" aria-modal="true" aria-labelledby="ssw-title">
+    <div className={s.overlay} role="dialog" aria-modal="true" aria-labelledby="ssw-title" ref={trapRef} tabIndex={-1}>
       <div className={s.card}>
         <div className={s.header}>
           <span className={s.icon} aria-hidden="true">⚠</span>

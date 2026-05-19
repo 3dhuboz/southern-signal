@@ -28,18 +28,26 @@ export function EvpReview() {
   const [openAsset, setOpenAsset] = useState<MediaAsset | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
   const [filterMineOnly, setFilterMineOnly] = useState(false);
+  // Distinguish "still loading" from "loaded, found nothing" so the empty
+  // state copy ("Begin a session…") doesn't flash during the initial fetch.
+  const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(() => setReloadTick((t) => t + 1), []);
 
   useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
     void (async () => {
       const audioRows = await query<MediaAsset>(
         "SELECT * FROM media_assets WHERE media_type = 'audio' ORDER BY timestamp_start DESC LIMIT 200",
       );
       const inv = await query<Investigation>("SELECT id, title FROM investigations");
+      if (cancelled) return;
       const titleMap = new Map(inv.map((i) => [i.id, i.title]));
       setRows(audioRows.map((row) => ({ ...row, investigation_title: titleMap.get(row.investigation_id) ?? null })));
+      setLoading(false);
     })();
+    return () => { cancelled = true; };
   }, [reloadTick]);
 
   const visibleRows = useMemo(() => {
@@ -81,7 +89,9 @@ export function EvpReview() {
         )}
       </div>
 
-      {visibleRows.length === 0 ? (
+      {loading ? (
+        <p className={r.empty} aria-busy="true">Loading audio clips…</p>
+      ) : visibleRows.length === 0 ? (
         <p className={r.empty}>
           No audio clips yet.{" "}
           {session.current

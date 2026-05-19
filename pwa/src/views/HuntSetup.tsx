@@ -191,7 +191,20 @@ export function HuntSetup() {
   return (
     <div className={s.screen}>
       <div className={s.eyebrow}>Pre-flight</div>
-      <h1 className={s.title}>Hunt Setup</h1>
+      <div className={s.headRow}>
+        <h1 className={s.title}>Hunt Setup</h1>
+        {/* Back affordance — HuntSetup is reachable from the BottomNav
+            Camera tab's first-run redirect AND from the SceneSheet's
+            "Customise overlays…" link mid-session. Either path needs an
+            obvious way out that isn't "Start hunt with this scene". */}
+        <button
+          type="button"
+          className={`btn btn-ghost ${s.backBtn}`}
+          onClick={() => (window.history.length > 1 ? navigate(-1) : navigate("/"))}
+        >
+          ← Back
+        </button>
+      </div>
       <p className={s.subtitle}>
         Pick a scene before you begin. Each scene bundles a different set
         of overlays burnt into the recording and live stream.

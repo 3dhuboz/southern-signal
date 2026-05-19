@@ -5,6 +5,32 @@
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 
+/* Skip-to-content link — visually hidden until focused, so a keyboard user
+   can bypass the AppHeader + ChromeHeader + banners. Anchored to <main>.
+   WCAG 2.4.1 (Bypass Blocks). */
+.ss-skip-link {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translateY(-150%);
+  background: var(--bg-card, #0c1117);
+  color: var(--signal, #5DF2C7);
+  padding: 10px 16px;
+  border: 2px solid var(--signal, #5DF2C7);
+  border-radius: 0 0 8px 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  z-index: 9999;
+  transition: transform 120ms ease;
+}
+.ss-skip-link:focus,
+.ss-skip-link:focus-visible {
+  transform: translateY(0);
+  outline: none;
+}
+
 /* Global :focus-visible — every keyboard user needs a visible focus ring on
    every interactive element. Previously only `.btn` (in buttons.css) had a
    ring, leaving the camera shutter, dock buttons, snooze chip, marker pill,

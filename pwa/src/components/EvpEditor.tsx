@@ -41,6 +41,7 @@ import { Link } from "react-router-dom";
 import type { MediaAsset } from "../lib/db/schema";
 import { computeNoiseFloor } from "../lib/audio/spectrogram";
 import { SpectrogramViewer } from "./SpectrogramViewer";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import s from "./EvpEditor.module.css";
 
 interface Props {
@@ -156,6 +157,12 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const dragStateRef = useRef<{ startX: number; startTime: number } | null>(null);
+
+  // a11y: trap focus inside the editor while it's mounted. The parent owns
+  // mount/unmount, so we trap unconditionally — Escape forwards to onClose.
+  const trapRef = useFocusTrap<HTMLDivElement>(true, {
+    onEscape: onClose,
+  });
 
   // Decode WAV on mount (mono mix + optional stereo channels).
   useEffect(() => {
@@ -949,7 +956,7 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
     : undefined;
 
   return (
-    <div className={s.modal} role="dialog" aria-modal="true" aria-labelledby="evp-editor-title">
+    <div className={s.modal} role="dialog" aria-modal="true" aria-labelledby="evp-editor-title" ref={trapRef} tabIndex={-1}>
       <div className={s.dialog}>
         <header className={s.header}>
           <div>

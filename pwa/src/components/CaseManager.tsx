@@ -94,6 +94,10 @@ export function CaseManager() {
   const [prefs] = usePreferences();
   const researchEnabled = prefs.research.enabled;
   const [cases, setCases] = useState<CaseSummary[]>([]);
+  // Distinguish "loading" from "loaded, no cases" so the empty-state copy
+  // doesn't render during the initial fetch (fetches over OPFS-backed
+  // sqlite-wasm can run 100s-of-ms on a cold start; visible flash matters).
+  const [casesLoading, setCasesLoading] = useState(true);
   const [openCaseId, setOpenCaseId] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
   const [openMedia, setOpenMedia] = useState<MediaAsset[]>([]);
@@ -121,6 +125,8 @@ export function CaseManager() {
   const refresh = useCallback(() => setReloadTick((t) => t + 1), []);
 
   useEffect(() => {
+    let cancelled = false;
+    setCasesLoading(true);
     void (async () => {
       const inv = await query<Investigation>("SELECT * FROM investigations ORDER BY created_at DESC");
       const summaries: CaseSummary[] = [];
@@ -167,8 +173,11 @@ export function CaseManager() {
           dossierCount,
         });
       }
+      if (cancelled) return;
       setCases(summaries);
+      setCasesLoading(false);
     })();
+    return () => { cancelled = true; };
   }, [reloadTick]);
 
   useEffect(() => {
@@ -620,7 +629,9 @@ export function CaseManager() {
         </div>
       )}
 
-      {cases.length === 0 ? (
+      {casesLoading ? (
+        <p className={s.empty} aria-busy="true">Loading cases…</p>
+      ) : cases.length === 0 ? (
         <div className={s.emptyBlock}>
           {/* Schematic empty-cases illustration: a case-folder / clipboard
               outline with a soft pulse-line waveform sitting "inside" — the

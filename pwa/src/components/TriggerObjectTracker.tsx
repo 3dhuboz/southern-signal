@@ -19,6 +19,7 @@ import {
 import { registerMedia } from "../lib/db/repo";
 import { readFile, writeBytes } from "../lib/opfs";
 import type { TriggerObject, TriggerObjectCheck, TriggerDisplacement } from "../lib/db/schema";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import s from "./TriggerObjectTracker.module.css";
 
 interface TriggerObjectTrackerProps {
@@ -74,6 +75,11 @@ function CheckModal({ obj, investigationId, onClose, onSaved }: CheckModalProps)
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const prevPhotoUrlRef = useRef<string | null>(null);
+  // a11y: trap focus inside the check modal. Escape forwards to onClose;
+  // parent owns mount/unmount via showCheckModal.
+  const trapRef = useFocusTrap<HTMLDivElement>(true, {
+    onEscape: onClose,
+  });
 
   // Revoke object URL on unmount to avoid memory leaks.
   useEffect(() => {
@@ -126,7 +132,7 @@ function CheckModal({ obj, investigationId, onClose, onSaved }: CheckModalProps)
   }, [obj.id, investigationId, displaced, notes, pendingBlob, onSaved, onClose]);
 
   return (
-    <div className={s.modalBackdrop} role="dialog" aria-modal="true" aria-label="Log check">
+    <div className={s.modalBackdrop} role="dialog" aria-modal="true" aria-label="Log check" ref={trapRef} tabIndex={-1}>
       <div className={s.modal}>
         <div className={s.modalHeader}>
           <h3 className={s.modalTitle}>Log check — {obj.name}</h3>

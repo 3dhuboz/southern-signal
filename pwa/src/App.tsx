@@ -96,12 +96,16 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      {/* Skip-to-content link — visually hidden until focused, lets a
+          keyboard user jump past the chrome straight to the route's main
+          surface. WCAG 2.4.1 (Bypass Blocks). Style lives in global.css. */}
+      <a href="#ss-main-content" className="ss-skip-link">Skip to main content</a>
       <ChromeHeader />
       <ServiceWorkerUpdateBanner />
       <CivilTwilightBanner />
       <InterruptedSessionBanner />
       <ChainBrokenBanner />
-      <main>
+      <main id="ss-main-content" aria-label="Primary content">
         <Suspense fallback={<RouteFallback />}>
           <Routes>
             <Route path="/" element={<CameraScreen />} />
