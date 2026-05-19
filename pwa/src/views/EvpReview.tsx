@@ -53,6 +53,10 @@ export function EvpReview() {
   const visibleRows = useMemo(() => {
     if (!filterMineOnly || !session.current) return rows;
     return rows.filter((row) => row.investigation_id === session.current!.id);
+  // session is a useRef — the ref object is stable, .current mutates without
+  // triggering a re-render. The memo reads session.current at compute time
+  // so it doesn't need to re-key on ref mutations.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, filterMineOnly, session.current]);
 
   const sumBytes = visibleRows.reduce((acc, row) => {

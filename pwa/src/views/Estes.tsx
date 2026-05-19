@@ -264,6 +264,10 @@ export function Estes() {
         metadata: { who: entry.who, text: entry.text },
       }).catch(() => { /* ignore */ });
     }
+  // session is a useRef — the ref object is stable, .current mutates without
+  // re-rendering. The callback reads session.current at invoke time so it
+  // doesn't need to re-create when the ref mutates.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.current]);
 
   // Code TTL ticker (1Hz when waiting on a code).

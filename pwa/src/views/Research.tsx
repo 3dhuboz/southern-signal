@@ -389,6 +389,10 @@ export function Research() {
       }
     })();
     return () => { cancelled = true; };
+  // session is a useRef — the ref object is stable, .current mutates without
+  // re-rendering. session.current?.id is the read-out scalar used as a
+  // re-key trigger; eslint can't see through that.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.current?.id, savedDossierId]);
 
   const culturallyBlocked = prefs.globalCulturalSensitivityFlag || (session.current?.culturally_sensitive === 1);

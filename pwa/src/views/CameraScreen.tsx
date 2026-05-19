@@ -337,6 +337,10 @@ export function CameraScreen() {
     const id = session.current?.id;
     if (id) baselineRef.current = loadBaseline(id);
     else baselineRef.current = null;
+  // session is a useRef — the ref object is stable, .current mutates without
+  // needing to retrigger. session.current?.id is the read-out scalar; adding
+  // the ref itself as a dep would either no-op or churn.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.current?.id]);
 
   // Live narrator caption
@@ -629,6 +633,10 @@ export function CameraScreen() {
       });
     } catch { setVadActive(false); }
     return () => { handle?.stop(); setVadActive(false); };
+  // noiseFloorDb is intentionally a SEED at VAD startup — the adaptive floor
+  // takes over from there. Re-triggering on noiseFloorDb changes would tear
+  // down and re-seed mid-session, which is the opposite of what we want.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefs.vadAutoDuck, micStream, prefs.vadConfig.sensitivityDb, prefs.vadConfig.attackMs, prefs.vadConfig.releaseMs]);
   usePushToTalk(pttActive || vadActive);
 
@@ -928,6 +936,9 @@ export function CameraScreen() {
     void tick();
     const handle = window.setInterval(() => { void tick(); }, WATCHDOG_INTERVAL_MS);
     return () => window.clearInterval(handle);
+  // session is a useRef — tick() reads session.current at fire time so we
+  // intentionally don't re-bind the 60s interval when the ref mutates.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running]);
 
   // Auto-dismiss the toast after WATCHDOG_TOAST_MS. The operator can also
@@ -1219,6 +1230,10 @@ export function CameraScreen() {
     } catch { /**/ } finally {
       setBusy(false);
     }
+  // session is a useRef — the ref object is stable, .current mutates without
+  // triggering a re-render. The callback reads session.current at invoke time
+  // so we don't need to re-create on every mutation.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.current, stopLiveAnalyzer]);
 
   // ── Render ─────────────────────────────────────────────────────────────────

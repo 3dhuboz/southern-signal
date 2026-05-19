@@ -119,6 +119,9 @@ export function MissionControl() {
   useEffect(() => { baselineRef.current = baseline; }, [baseline]);
 
   // Load any previously-captured baseline for the active investigation.
+  // session is a useRef across the next four hooks — the ref object is stable
+  // and .current mutates without re-rendering. session.current?.id is the
+  // read-out scalar used as a re-key trigger; eslint can't see through that.
   useEffect(() => {
     const id = session.current?.id;
     if (!id) {
@@ -126,12 +129,14 @@ export function MissionControl() {
       return;
     }
     setBaseline(loadBaseline(id));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.current?.id]);
 
   const handleBaselineComplete = useCallback((summary: BaselineSummary) => {
     setBaseline(summary);
     const id = session.current?.id;
     if (id) saveBaseline(id, summary);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.current?.id]);
 
   // Reflect the active investigation's stored cultural-sensitivity flag.
@@ -146,6 +151,7 @@ export function MissionControl() {
       if (!cancelled) setCulturallySensitiveState(!!inv && inv.culturally_sensitive === 1);
     });
     return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.current?.id]);
 
   const handleToggleSensitive = useCallback(async () => {
@@ -164,6 +170,7 @@ export function MissionControl() {
       setCulturallySensitiveState(true);
       setStatusMsg("Site flagged as culturally sensitive. Cloud AI and sync are blocked for this case.");
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.current?.id, culturallySensitive]);
 
   const handleAskQuestion = useCallback(() => {
@@ -281,6 +288,13 @@ export function MissionControl() {
         void emitEvidence({ channel: coupling.channel, logLr: coupling.logLr, reason: coupling.reason, metadata: coupling.metadata, nowMs: now });
       }
     }
+  // `baseline` is intentionally read from closure each emf alert tick — the
+  // surrounding state changes (sensors.emf.*) cause this effect to re-run
+  // frequently enough to pick up baseline updates, and the alternative
+  // (adding baseline to deps) would needlessly re-bind on every Sound-Check
+  // sample during baseline capture. The companion baselineRef (set at line
+  // 119) is the explicit "always latest" pattern; this effect uses closure.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running, sensors.emf?.alert, sensors.emf?.z, sensors.emf?.value, sensors.emf?.mean, emitEvidence]);
 
   // ----- UI handlers -----
@@ -460,6 +474,9 @@ export function MissionControl() {
     } finally {
       setBusy(false);
     }
+  // session is a useRef — the ref object is stable, .current mutates without
+  // triggering a re-render. Callback reads session.current at invoke time.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.current, stopLiveAnalyzer, startedAt, posterior, posteriorPeak]);
 
   const handleMarker = useCallback(async () => {
@@ -473,6 +490,9 @@ export function MissionControl() {
       metadata: { geo: point },
     });
     setStatusMsg(point ? `Marker dropped (±${Math.round(point.accuracy ?? 0)} m).` : "Marker dropped.");
+  // session is a useRef — the ref object is stable, .current mutates without
+  // triggering a re-render. Callback reads session.current at invoke time.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.current]);
 
   // Calibration: simulated for V1 — operator says they placed the speaker at the expected sector.
