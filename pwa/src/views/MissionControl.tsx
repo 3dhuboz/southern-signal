@@ -83,7 +83,18 @@ export function MissionControl() {
   const [siteSession, setSiteSession] = useState<SiteSession>(() => createSiteSession());
   const [posterior, setPosterior] = useState<number>(siteSession.state.prior);
   const [sectorReading, setSectorReading] = useState<SectorReading | null>(null);
-  const [audioRms, setAudioRms] = useState<number>(0.05);
+  // audioRms gets fed from the LiveAnalyzer's onLevel callback at the same
+  // ~94 Hz rate as the camera path. setState there storms the parent and
+  // every child (SessionBaselineCard, LiveStreamView, posterior dial, etc.)
+  // at native frame rate. Mirror the CameraScreen fix: keep the fast value
+  // in a ref so any future consumer that needs the freshest sample can
+  // read it without subscribing to renders, and throttle the public state
+  // ("Coarse") to 5 Hz for UI consumers. The acoustic-transient handler
+  // already receives the fresh rms as a callback param, so it doesn't need
+  // to read the ref — but the ref is cheap to keep current.
+  const audioRmsRef = useRef<number>(0.05);
+  const [audioRmsCoarse, setAudioRmsCoarse] = useState<number>(0.05);
+  const lastAudioRmsEmitRef = useRef<number>(0);
   const analyzerRef = useRef<LiveAnalyzer | null>(null);
   const sectorReadingRef = useRef<SectorReading | null>(null);
   // Debounce refs — set on every emit ATTEMPT, including refused ones.
@@ -281,7 +292,19 @@ export function MissionControl() {
         sectorReadingRef.current = reading;
         setSectorReading(reading);
       },
-      onLevel: (rms) => setAudioRms(rms),
+      onLevel: (rms) => {
+        // Fast path: always store the latest sample in the ref so the
+        // acoustic-transient computation downstream sees the freshest
+        // value. Slow path: coalesce the React-visible state update to
+        // 5 Hz so the parent + child consumers re-render at a sustainable
+        // cadence instead of native ~94 Hz.
+        audioRmsRef.current = rms;
+        const now = performance.now();
+        if (now - lastAudioRmsEmitRef.current >= 200) {
+          lastAudioRmsEmitRef.current = now;
+          setAudioRmsCoarse(rms);
+        }
+      },
       onAcousticTransient: (reading, rms, _frameTs) => {
         const now = Date.now();
         // 2s debounce
@@ -469,7 +492,9 @@ export function MissionControl() {
 
   const trustworthy = isInstrumentTrustworthy(calibration);
   // Prefer real audio RMS for the breath-line; fall back to vibration sensor when audio not running.
-  const noiseFloor = Math.max(0.04, Math.min(0.6, audioRms > 0 ? audioRms * 4 : (sensors.vibration?.value ?? 0.05) / 4));
+  // Uses the 5 Hz coarse copy — breath-line scale doesn't need 94 Hz updates,
+  // and the noiseFloor is consumed by re-render-y child components.
+  const noiseFloor = Math.max(0.04, Math.min(0.6, audioRmsCoarse > 0 ? audioRmsCoarse * 4 : (sensors.vibration?.value ?? 0.05) / 4));
 
   return (
     <section className={s.view}>
@@ -478,7 +503,7 @@ export function MissionControl() {
       <SessionBaselineCard
         investigationId={session.current?.id ?? null}
         baseline={baseline}
-        audioRms={audioRms}
+        audioRms={audioRmsCoarse}
         emfMagnitude={sensors.snapshot.magnetometer?.magnitude ?? sensors.emf?.value ?? null}
         sessionRunning={running}
         onComplete={handleBaselineComplete}
@@ -510,7 +535,7 @@ export function MissionControl() {
           baseline={baseline}
           hasInvestigation={!!session.current}
           investigationId={session.current?.id ?? null}
-          audioRms={audioRms}
+          audioRms={audioRmsCoarse}
           sectorReading={sectorReading ? { sector: sectorReading.sector, coherence: sectorReading.coherence, trustworthy: sectorReading.trustworthy } : null}
           narratorCaption={narratorCaption}
           narratorSpeak={narrationSpeak}
@@ -668,7 +693,7 @@ export function MissionControl() {
         investigationId={session.current?.id ?? null}
         running={running}
         posterior={posterior}
-        audioRms={audioRms}
+        audioRms={audioRmsCoarse}
         sector={sectorReading?.sector ?? null}
         coherence={sectorReading?.coherence ?? 0}
         caseId={session.current?.id ?? null}
@@ -689,7 +714,7 @@ export function MissionControl() {
             investigationId={session.current?.id ?? null}
             running={running}
             posterior={posterior}
-            audioRms={audioRms}
+            audioRms={audioRmsCoarse}
             sector={sectorReading?.sector ?? null}
             coherence={sectorReading?.coherence ?? 0}
             caption={narratorCaption}
@@ -717,7 +742,7 @@ export function MissionControl() {
           caseId={session.current?.id ?? null}
           caseTitle={session.current?.title ?? null}
           posterior={posterior}
-          audioRms={audioRms}
+          audioRms={audioRmsCoarse}
           sector={sectorReading?.sector ?? null}
           coherence={sectorReading?.coherence ?? 0}
           caption={narratorCaption}
