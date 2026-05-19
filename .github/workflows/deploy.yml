@@ -67,15 +67,16 @@ jobs:
         working-directory: pwa
         run: pnpm install --frozen-lockfile
 
-      # Lint blocks PR merges (catches regressions before they reach dev)
-      # but is informational on push to dev/master so a single noisy warning
-      # can't gridlock a hot-fix deploy. The tree is currently lint-clean
-      # (0 errors); once it stays that way across a few sprints, drop the
-      # `continue-on-error` so dev-branch regressions also block.
+      # Lint is now a hard gate on every trigger — including push to dev /
+      # master. The earlier `continue-on-error: push` carve-out existed
+      # while a parallel sweep was burning down warnings; with the tree
+      # lint-clean and the suite stable, letting dev pushes ship through
+      # a regression silently is the worse failure mode. PRs already block
+      # — making push block too means the dev preview alias can never
+      # publish a build that wouldn't have merged.
       - name: Lint
         working-directory: pwa
         run: pnpm lint
-        continue-on-error: ${{ github.event_name == 'push' }}
 
       - name: Type-check + build
         working-directory: pwa
@@ -84,10 +85,11 @@ jobs:
       - name: Run tests
         working-directory: pwa
         run: pnpm test
-        # Same rationale as lint above — the suite is currently green
-        # (720/720 as of 2026-05-19). The continue-on-error keeps a single
-        # flake from gridlocking a deploy on dev/master; PRs still block.
-        continue-on-error: ${{ github.event_name == 'push' }}
+        # Same rationale as lint above: blocking on push means a single
+        # regression slipping in through a direct dev push can't deploy
+        # to https://dev.southern-signal.pages.dev with a broken build.
+        # If a genuine flake appears, fix the flake — don't paper over it
+        # by letting deploys ride through red CI.
 
       # Wipe the preview D1 before deploying to the dev preview alias so
       # one preview's seeded data isn't visible to the next. The schema is
