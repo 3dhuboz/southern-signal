@@ -71,10 +71,10 @@ function sqliteWasmUnhashedCopy() {
 export default defineConfig({
   plugins: [react(), sqliteWasmUnhashedCopy(), swVersionInject()],
   build: {
-    // lightningcss (Vite 8 default) cannot parse Tailwind v4's @media source()
-    // construct. Disable CSS minification until lightningcss supports it.
-    // Module CSS is still tree-shaken and deduplicated; the size penalty is
-    // small (~15 kB extra across all CSS files).
-    cssMinify: false,
+    // Tailwind v4 is no longer in the dep tree, so the lightningcss parser
+    // bug that originally forced cssMinify: false is moot. Re-enable CSS
+    // minification — lightningcss is the default in Vite 8 / rolldown and
+    // ships with no extra install needed.
+    cssMinify: true,
   },
 })
