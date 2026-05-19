@@ -46,10 +46,15 @@ jobs:
       # pnpm/action-setup MUST run before actions/setup-node — setup-node's
       # `cache: pnpm` looks up the pnpm binary while configuring the cache,
       # so swapping the order produces "pnpm: command not found".
+      # `package_json_file` MUST point at pwa/package.json — the action defaults
+      # to the repo root, where `packageManager` is not declared. Without this
+      # the runner errors `No pnpm version is specified.` and the deploy aborts
+      # in 11s before pnpm install even runs.
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
           run_install: false
+          package_json_file: pwa/package.json
 
       - name: Set up Node 20
         uses: actions/setup-node@v4
