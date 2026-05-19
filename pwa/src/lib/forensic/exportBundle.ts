@@ -475,23 +475,47 @@ ${(() => {
 `;
 };
 
+// XSS note: row.seq, row.entry_hash, row.prev_hash, row.payload_json,
+// row.kind, etc. come from a potentially-tampered audit_log.jsonl. NEVER
+// concatenate them into innerHTML — a malicious bundle that planted a
+// payload like "<img src=x onerror=...>" in any of those fields could
+// execute JS in a reviewer's browser. We render results by building
+// text nodes and inserting them with textContent / appendChild only.
+//
+// Anchor note: the standalone audit_log.jsonl check is self-consistent
+// only — without a signed reference, a tamperer can rewrite every line
+// of the log with a fresh consistent chain and we'd never notice. To
+// make this useful, the page also accepts manifest.json (and reads its
+// global_audit_chain.merkle_root) so we can recompute the Merkle root
+// from the chain and compare against the manifest's claim. We can't
+// verify the COSE signature inside a plain .html drop because we don't
+// bundle a CBOR/Ed25519-verify library here — for full-bundle
+// verification, reviewers should use verifier.ts (Deno) or verify.js
+// (Node).
 const VERIFY_HTML = `<!doctype html>
 <meta charset="utf-8">
 <title>Southern Signal · Audit chain verifier</title>
 <style>
   body { font: 14px/1.5 system-ui, -apple-system, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; color: #111; }
   h1 { font-size: 18px; margin: 0 0 8px; }
-  .drop { border: 2px dashed #999; border-radius: 12px; padding: 32px; text-align: center; color: #666; cursor: pointer; }
+  .drop { border: 2px dashed #999; border-radius: 12px; padding: 32px; text-align: center; color: #666; cursor: pointer; margin-bottom: 12px; }
   .drop.over { border-color: #0a8; color: #0a8; }
-  pre { background: #f5f5f5; border-radius: 6px; padding: 12px; overflow-x: auto; }
+  pre { background: #f5f5f5; border-radius: 6px; padding: 12px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
   .ok { color: #080; font-weight: 700; }
   .bad { color: #c00; font-weight: 700; }
+  .warn { color: #b87600; font-weight: 700; }
   .muted { color: #666; }
+  code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 </style>
 <h1>Southern Signal — Audit chain verifier</h1>
-<p class="muted">Drop <code>audit_log.jsonl</code> from a case bundle to verify the SHA-256 hash chain.<br>Runs entirely in your browser — nothing is uploaded.</p>
-<div id="drop" class="drop">Drop <code>audit_log.jsonl</code> here, or click to pick a file.</div>
-<input type="file" id="picker" accept=".jsonl,.json,text/*" style="display:none">
+<p class="muted">
+  Drop <code>audit_log.jsonl</code> from a case bundle to walk the SHA-256 hash chain.<br>
+  For a full proof (chain bound to a signed anchor), also drop <code>manifest.json</code>.<br>
+  Runs entirely in your browser — nothing is uploaded. For the strongest check
+  (Ed25519 signature + media SHA-256), run <code>deno run --allow-read --allow-net verifier.ts bundle.zip</code>.
+</p>
+<div id="drop" class="drop">Drop <code>audit_log.jsonl</code> and (optional) <code>manifest.json</code> here, or click to pick files.</div>
+<input type="file" id="picker" accept=".jsonl,.json,text/*" multiple style="display:none">
 <pre id="out">Awaiting file…</pre>
 <script>
 const drop = document.getElementById('drop');
@@ -504,17 +528,11 @@ drop.addEventListener('dragleave', () => drop.classList.remove('over'));
 drop.addEventListener('drop', e => {
   e.preventDefault();
   drop.classList.remove('over');
-  const f = e.dataTransfer.files[0];
-  if (f) verify(f);
+  if (e.dataTransfer.files.length > 0) verify(Array.from(e.dataTransfer.files));
 });
-picker.addEventListener('change', () => { if (picker.files[0]) verify(picker.files[0]); });
-
-function canonical(value) {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']';
-  const keys = Object.keys(value).sort();
-  return '{' + keys.map(k => JSON.stringify(k) + ':' + canonical(value[k])).join(',') + '}';
-}
+picker.addEventListener('change', () => {
+  if (picker.files.length > 0) verify(Array.from(picker.files));
+});
 
 async function sha256Hex(text) {
   const buf = new TextEncoder().encode(text);
@@ -522,54 +540,192 @@ async function sha256Hex(text) {
   return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function verify(file) {
-  out.textContent = 'Reading ' + file.name + '...';
-  const text = await file.text();
+// --- SAFE DOM RENDERING ----------------------------------------------------
+// All audit-log fields go through these helpers — never innerHTML —
+// so a planted "<img onerror=...>" string can't execute.
+function clear() { while (out.firstChild) out.removeChild(out.firstChild); }
+function add(kind, text) {
+  const span = document.createElement('span');
+  if (kind) span.className = kind;
+  span.textContent = String(text);
+  out.appendChild(span);
+}
+function addText(t) { out.appendChild(document.createTextNode(String(t))); }
+function addCode(t) {
+  const c = document.createElement('code');
+  c.textContent = String(t);
+  out.appendChild(c);
+}
+function showFail(detail) { clear(); add('bad', 'FAIL'); addText(' · '); addText(detail); }
+
+function hexToBytes(hex) {
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.slice(i*2, i*2+2), 16);
+  return out;
+}
+function bytesToHex(b) { return Array.from(b).map(x => x.toString(16).padStart(2, '0')).join(''); }
+async function sha256Concat(parts) {
+  let n = 0; for (const p of parts) n += p.length;
+  const buf = new Uint8Array(n);
+  let off = 0; for (const p of parts) { buf.set(p, off); off += p.length; }
+  return bytesToHex(new Uint8Array(await crypto.subtle.digest('SHA-256', buf)));
+}
+async function leafHashFromExisting(hex) { return await sha256Concat([new Uint8Array([0x00]), hexToBytes(hex)]); }
+async function innerHashHex(l, r) { return await sha256Concat([new Uint8Array([0x01]), hexToBytes(l), hexToBytes(r)]); }
+async function merkleRoot(entryHashes) {
+  if (entryHashes.length === 0) return null;
+  let level = [];
+  for (const h of entryHashes) level.push(await leafHashFromExisting(h));
+  if (level.length === 1) return level[0];
+  while (level.length > 1) {
+    const next = [];
+    for (let i = 0; i + 1 < level.length; i += 2) next.push(await innerHashHex(level[i], level[i + 1]));
+    if (level.length % 2 === 1) next.push(level[level.length - 1]);
+    level = next;
+  }
+  return level[0];
+}
+
+async function verify(files) {
+  let auditFile = null, manifestFile = null;
+  for (const f of files) {
+    const n = f.name.toLowerCase();
+    if (n.endsWith('.jsonl') || n === 'audit_log.jsonl') auditFile = f;
+    else if (n === 'manifest.json' || n.endsWith('manifest.json')) manifestFile = f;
+  }
+  if (!auditFile && files.length === 1 && files[0].name.toLowerCase().endsWith('.json')) {
+    manifestFile = files[0];
+  }
+
+  clear(); addText('Reading ' + (auditFile ? auditFile.name : '(no audit_log)') + (manifestFile ? ' + ' + manifestFile.name : '') + '...');
+
+  if (!auditFile) {
+    showFail('drop audit_log.jsonl to verify the chain (manifest.json alone is not enough).');
+    return;
+  }
+
+  const text = await auditFile.text();
   const lines = text.split(/\\r?\\n/).filter(Boolean);
   const GENESIS = '0'.repeat(64);
   let prev = GENESIS;
   let expectedSeq = 1;
+  const recomputedHashes = [];
   for (const line of lines) {
     let row;
     try { row = JSON.parse(line); } catch (e) {
-      out.innerHTML = '<span class="bad">FAIL</span> · seq ' + expectedSeq + ' is not valid JSON';
+      showFail('seq ' + expectedSeq + ' is not valid JSON');
       return;
     }
     if (row.seq !== expectedSeq) {
-      out.innerHTML = '<span class="bad">FAIL</span> · expected seq ' + expectedSeq + ', got ' + row.seq;
+      showFail('expected seq ' + expectedSeq + ', got ' + String(row.seq));
       return;
     }
     if (row.prev_hash !== prev) {
-      out.innerHTML = '<span class="bad">FAIL</span> · seq ' + row.seq + ' prev_hash mismatch';
+      showFail('seq ' + String(row.seq) + ' prev_hash mismatch');
       return;
     }
     const msg = row.seq + '|' + row.ts_utc + '|' + row.actor + '|' + row.kind + '|' + row.payload_json + '|' + row.prev_hash;
     const recomputed = await sha256Hex(msg);
     if (recomputed !== row.entry_hash) {
-      out.innerHTML = '<span class="bad">FAIL</span> · seq ' + row.seq + ' entry_hash mismatch';
+      showFail('seq ' + String(row.seq) + ' entry_hash mismatch');
       return;
     }
+    recomputedHashes.push(recomputed);
     prev = row.entry_hash;
     expectedSeq += 1;
   }
-  out.innerHTML = '<span class="ok">OK</span> · ' + lines.length + ' entries verified · last entry_hash = <code>' + prev + '</code>';
+
+  if (!manifestFile) {
+    clear();
+    add('warn', 'CHAIN-OK (no signed anchor)');
+    addText(' · ' + lines.length + ' entries chain-consistent · last entry_hash = ');
+    addCode(prev);
+    addText(' · ');
+    add('muted', 'drop manifest.json too — or run verifier.ts in Deno — to bind this chain to a signed Merkle root.');
+    return;
+  }
+
+  let manifest;
+  try {
+    manifest = JSON.parse(await manifestFile.text());
+  } catch (e) {
+    showFail('manifest.json is not valid JSON');
+    return;
+  }
+  const claimedRoot = manifest && manifest.global_audit_chain && manifest.global_audit_chain.merkle_root;
+  const recomputedRoot = await merkleRoot(recomputedHashes);
+  if (claimedRoot == null && recomputedRoot == null) {
+    clear();
+    add('ok', 'OK');
+    addText(' · 0 entries · empty chain matches empty Merkle root in manifest.');
+    return;
+  }
+  if (claimedRoot !== recomputedRoot) {
+    clear();
+    add('bad', 'FAIL');
+    addText(' · Merkle root mismatch. Recomputed=');
+    addCode(recomputedRoot ? recomputedRoot : '(null)');
+    addText(' Claimed=');
+    addCode(claimedRoot ? String(claimedRoot) : '(null)');
+    addText(' · audit_log.jsonl does not match the manifest claim. ');
+    add('muted', 'Note: this manifest is NOT signature-verified by this page — use verifier.ts for the full check.');
+    return;
+  }
+
+  clear();
+  add('ok', 'OK');
+  addText(' · ' + lines.length + ' entries · Merkle root matches manifest: ');
+  addCode(recomputedRoot ? recomputedRoot : '(null)');
+  addText(' · ');
+  add('muted', 'manifest signature is NOT verified by this page. Run verifier.ts (Deno) for end-to-end signed-bundle verification.');
 }
 </script>
 `;
 
 const VERIFY_JS = `#!/usr/bin/env node
 // Southern Signal — audit chain verifier (Node 18+).
-// Usage: node verify.js audit_log.jsonl
+//
+// Usage:
+//   node verify.js audit_log.jsonl                 # chain self-check only
+//   node verify.js audit_log.jsonl manifest.json   # chain + Merkle anchor
+//
+// IMPORTANT: the bare chain check is self-consistent only — a tamperer
+// can rewrite every line with a fresh consistent chain. Always pass
+// manifest.json (and prefer the Deno verifier.ts for COSE signature +
+// media SHA-256). The Merkle root in manifest.json is what the COSE
+// envelope signs over, so comparing the recomputed root against it
+// anchors the chain to a signature.
 const fs = require('fs');
 const crypto = require('crypto');
 const path = process.argv[2];
-if (!path) { console.error('Usage: node verify.js audit_log.jsonl'); process.exit(2); }
+const manifestPath = process.argv[3] || null;
+if (!path) {
+  console.error('Usage: node verify.js audit_log.jsonl [manifest.json]');
+  process.exit(2);
+}
 
-function canonical(value) {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']';
-  const keys = Object.keys(value).sort();
-  return '{' + keys.map(k => JSON.stringify(k) + ':' + canonical(value[k])).join(',') + '}';
+function sha256Hex(text) {
+  return crypto.createHash('sha256').update(text).digest('hex');
+}
+function hexToBuf(hex) { return Buffer.from(hex, 'hex'); }
+function sha256Bytes(bufs) {
+  const h = crypto.createHash('sha256');
+  for (const b of bufs) h.update(b);
+  return h.digest('hex');
+}
+function leafHashFromExisting(hex) { return sha256Bytes([Buffer.from([0x00]), hexToBuf(hex)]); }
+function innerHashHex(l, r) { return sha256Bytes([Buffer.from([0x01]), hexToBuf(l), hexToBuf(r)]); }
+function merkleRoot(entryHashes) {
+  if (entryHashes.length === 0) return null;
+  let level = entryHashes.map(leafHashFromExisting);
+  if (level.length === 1) return level[0];
+  while (level.length > 1) {
+    const next = [];
+    for (let i = 0; i + 1 < level.length; i += 2) next.push(innerHashHex(level[i], level[i + 1]));
+    if (level.length % 2 === 1) next.push(level[level.length - 1]);
+    level = next;
+  }
+  return level[0];
 }
 
 const text = fs.readFileSync(path, 'utf8');
@@ -577,17 +733,45 @@ const lines = text.split(/\\r?\\n/).filter(Boolean);
 const GENESIS = '0'.repeat(64);
 let prev = GENESIS;
 let expectedSeq = 1;
+const recomputedHashes = [];
 for (const line of lines) {
   const row = JSON.parse(line);
   if (row.seq !== expectedSeq) { console.error('FAIL seq', expectedSeq, '->', row.seq); process.exit(1); }
   if (row.prev_hash !== prev) { console.error('FAIL prev_hash mismatch at seq', row.seq); process.exit(1); }
   const msg = row.seq + '|' + row.ts_utc + '|' + row.actor + '|' + row.kind + '|' + row.payload_json + '|' + row.prev_hash;
-  const recomputed = crypto.createHash('sha256').update(msg).digest('hex');
+  const recomputed = sha256Hex(msg);
   if (recomputed !== row.entry_hash) { console.error('FAIL entry_hash mismatch at seq', row.seq); process.exit(1); }
+  recomputedHashes.push(recomputed);
   prev = row.entry_hash;
   expectedSeq += 1;
 }
-console.log('OK ·', lines.length, 'entries verified · last entry_hash =', prev);
+
+if (!manifestPath) {
+  console.log('CHAIN-OK (no signed anchor) ·', lines.length, 'entries chain-consistent · last entry_hash =', prev);
+  console.log('NOTE: this is self-consistency only. Pass manifest.json as the second arg to anchor to a signed Merkle root, or run verifier.ts in Deno for the full check (COSE signature + media SHA-256).');
+  process.exit(0);
+}
+
+let manifest;
+try {
+  manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+} catch (e) {
+  console.error('FAIL manifest.json is not valid JSON:', e && e.message);
+  process.exit(1);
+}
+const claimedRoot = manifest && manifest.global_audit_chain && manifest.global_audit_chain.merkle_root;
+const recomputedRoot = merkleRoot(recomputedHashes);
+if (claimedRoot == null && recomputedRoot == null) {
+  console.log('OK · 0 entries · empty chain matches empty Merkle root in manifest.');
+  process.exit(0);
+}
+if (claimedRoot !== recomputedRoot) {
+  console.error('FAIL Merkle root mismatch · recomputed=' + recomputedRoot + ' claimed=' + claimedRoot);
+  console.error('audit_log.jsonl does not match the manifest claim.');
+  process.exit(1);
+}
+console.log('OK ·', lines.length, 'entries · Merkle root matches manifest:', recomputedRoot);
+console.log('NOTE: this script does NOT verify the COSE_Sign1 signature over manifest.json. For end-to-end verification including the Ed25519 signature and media file SHA-256, run verifier.ts in Deno.');
 `;
 
 export interface BundleDossierRow {
@@ -756,8 +940,17 @@ function buildRestrictionNotice(
 
 export async function buildExportBundle(investigationId?: string): Promise<{ blob: Blob; summary: ExportSummary }> {
   const scope = investigationId ? "single" : "all";
-  const manifest = await buildManifest();
+  // TOCTOU note: read the audit log FIRST and pass that snapshot into
+  // buildManifest, so the manifest's signed `merkle_root` is derived
+  // from the exact same rows we're about to serialise into
+  // `audit_log.jsonl`. If we let buildManifest re-query, a concurrent
+  // appendAuditEntry between its query and ours would land a row in
+  // audit_log.jsonl that the signed merkle_root doesn't account for —
+  // the verifier would correctly flag the bundle as tampered (false
+  // positive on legit exports, and a hole an attacker could squeeze
+  // a row into).
   const allAudit = await query<AuditLogEntry>("SELECT * FROM audit_log ORDER BY seq ASC");
+  const manifest = await buildManifest({ pinned: { allAudit } });
 
   const investigations = investigationId
     ? await query<Investigation>("SELECT * FROM investigations WHERE id = ?", [investigationId])

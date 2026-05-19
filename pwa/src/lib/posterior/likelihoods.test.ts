@@ -15,16 +15,29 @@ describe("acoustic transient", () => {
     expect(emitAcousticTransient({ coherence: 0.9, subBandsAgreed: 2, sector: "REAR-L", sectorPersistedFromPrior: false, isFirstInWindow: true })).toBeNull();
   });
   it("emits +3.0 log LR on first fire", () => {
-    const e = emitAcousticTransient({ coherence: 0.9, subBandsAgreed: 4, sector: "REAR-L", sectorPersistedFromPrior: false, isFirstInWindow: true });
+    // Coherence kept below 0.85 to isolate the baseLogLr from the
+    // RMS-orthogonal coherence-novelty bonus (added in the panel P1
+    // self-coupling decouple).
+    const e = emitAcousticTransient({ coherence: 0.75, subBandsAgreed: 4, sector: "REAR-L", sectorPersistedFromPrior: false, isFirstInWindow: true });
     expect(e?.logLr).toBeCloseTo(3.0, 6);
   });
   it("emits +1.0 on subsequent fires within window", () => {
-    const e = emitAcousticTransient({ coherence: 0.9, subBandsAgreed: 4, sector: "REAR-L", sectorPersistedFromPrior: false, isFirstInWindow: false });
+    const e = emitAcousticTransient({ coherence: 0.75, subBandsAgreed: 4, sector: "REAR-L", sectorPersistedFromPrior: false, isFirstInWindow: false });
     expect(e?.logLr).toBeCloseTo(1.0, 6);
   });
   it("adds persistence bonus", () => {
-    const e = emitAcousticTransient({ coherence: 0.9, subBandsAgreed: 4, sector: "REAR-L", sectorPersistedFromPrior: true, isFirstInWindow: true });
+    const e = emitAcousticTransient({ coherence: 0.75, subBandsAgreed: 4, sector: "REAR-L", sectorPersistedFromPrior: true, isFirstInWindow: true });
     expect(e?.logLr).toBeCloseTo(4.4, 6);
+  });
+  it("adds +0.5 coherence-novelty bonus when coherence ≥ 0.85 (RMS-orthogonal evidence)", () => {
+    const e = emitAcousticTransient({ coherence: 0.9, subBandsAgreed: 4, sector: "REAR-L", sectorPersistedFromPrior: false, isFirstInWindow: true });
+    expect(e?.logLr).toBeCloseTo(3.5, 6);
+    expect(e?.metadata?.coherence_novelty_bonus).toBe(0.5);
+  });
+  it("does not add the coherence-novelty bonus just below the 0.85 threshold", () => {
+    const e = emitAcousticTransient({ coherence: 0.84, subBandsAgreed: 4, sector: "REAR-L", sectorPersistedFromPrior: false, isFirstInWindow: true });
+    expect(e?.logLr).toBeCloseTo(3.0, 6);
+    expect(e?.metadata?.coherence_novelty_bonus).toBe(0);
   });
 
   describe("with site baseline (V2)", () => {
@@ -53,9 +66,11 @@ describe("acoustic transient", () => {
       expect(result).toBeNull();
     });
 
-    it("emits standard 3.0 log LR when audioRms exceeds p95 but is at or below max", () => {
+    it("emits standard 3.0 log LR when audioRms exceeds p95 but is at or below max (coherence below novelty threshold)", () => {
+      // Coherence kept below 0.85 to isolate baseline-gate behaviour from
+      // the (now coherence-driven) novelty bonus.
       const e = emitAcousticTransient({
-        coherence: 0.9,
+        coherence: 0.75,
         subBandsAgreed: 4,
         sector: "REAR-L",
         sectorPersistedFromPrior: false,
@@ -68,24 +83,51 @@ describe("acoustic transient", () => {
       expect(e?.metadata?.above_site_max).toBe(false);
     });
 
-    it("adds a +0.5 bonus when audioRms exceeds site max (novelty)", () => {
+    it("does NOT add an RMS-magnitude bonus even when audioRms exceeds site max (decouples self-coupling)", () => {
+      // PRE-FIX: this returned 3.5 (+0.5 RMS-novelty bonus). That bonus
+      // double-counted the same RMS spike that already (a) gated the
+      // transient firing upstream in liveAnalyzer.ts L159 and (b) the
+      // 3.0 base LR was calibrated against. POST-FIX: the RMS-novelty
+      // bonus is REMOVED; `above_site_max` is still recorded in metadata
+      // for audit-trail transparency but does NOT add to log-LR. See
+      // likelihoods.ts "Self-coupling decouple" comment for the full
+      // reasoning.
       const e = emitAcousticTransient({
-        coherence: 0.9,
+        coherence: 0.75, // below 0.85 novelty threshold — no coherence bonus either
         subBandsAgreed: 4,
         sector: "REAR-L",
         sectorPersistedFromPrior: false,
         isFirstInWindow: true,
-        audioRms: 0.15,
+        audioRms: 0.15, // above site max 0.12
+        siteBaseline: baseline,
+      });
+      expect(e?.logLr).toBeCloseTo(3.0, 6);
+      expect(e?.metadata?.above_site_max).toBe(true);
+      expect(e?.metadata?.coherence_novelty_bonus).toBe(0);
+    });
+
+    it("adds a +0.5 coherence-novelty bonus when coherence ≥ 0.85 (RMS-orthogonal)", () => {
+      // The novelty bonus moved from `audioRms > site.audioRmsMax`
+      // (self-coupled with the RMS-gated transient detector) to
+      // `coherence >= 0.85` (orthogonal to RMS magnitude — it's spectral
+      // directional consistency from the FFT cross-spectrum).
+      const e = emitAcousticTransient({
+        coherence: 0.9, // ≥ 0.85 → novelty bonus fires
+        subBandsAgreed: 4,
+        sector: "REAR-L",
+        sectorPersistedFromPrior: false,
+        isFirstInWindow: true,
+        audioRms: 0.10, // above p95, at/below max — adds NO LR itself now
         siteBaseline: baseline,
       });
       expect(e?.logLr).toBeCloseTo(3.5, 6);
-      expect(e?.metadata?.above_site_max).toBe(true);
+      expect(e?.metadata?.coherence_novelty_bonus).toBe(0.5);
     });
 
     it("falls back to baseline-less behaviour when audioRms is missing", () => {
       // No audioRms provided — baseline can't be applied; legacy LR fires.
       const e = emitAcousticTransient({
-        coherence: 0.9,
+        coherence: 0.75, // keep below 0.85 to isolate the legacy LR
         subBandsAgreed: 4,
         sector: "REAR-L",
         sectorPersistedFromPrior: false,
@@ -99,7 +141,7 @@ describe("acoustic transient", () => {
     it("ignores baseline with zero audioRmsP95 (no audio captured)", () => {
       const noAudioBaseline = { ...baseline, audioRmsMean: 0, audioRmsP95: 0, audioRmsMax: 0 };
       const e = emitAcousticTransient({
-        coherence: 0.9,
+        coherence: 0.75,
         subBandsAgreed: 4,
         sector: "REAR-L",
         sectorPersistedFromPrior: false,
@@ -111,7 +153,7 @@ describe("acoustic transient", () => {
       expect(e?.metadata?.above_site_p95).toBe(false);
     });
 
-    it("stacks novelty bonus on top of persistence bonus", () => {
+    it("stacks coherence-novelty bonus on top of persistence bonus", () => {
       const e = emitAcousticTransient({
         coherence: 0.9,
         subBandsAgreed: 4,
@@ -121,7 +163,7 @@ describe("acoustic transient", () => {
         audioRms: 0.20,
         siteBaseline: baseline,
       });
-      // base 3.0 + persistence 1.4 + novelty 0.5 = 4.9
+      // base 3.0 + persistence 1.4 + coherence-novelty 0.5 = 4.9
       // (capped at 4.0 by posterior.ts but this fn returns the raw value)
       expect(e?.logLr).toBeCloseTo(4.9, 6);
     });
@@ -236,8 +278,24 @@ describe("temporal coupling", () => {
   it("requires Δt ≤ 200 ms", () => {
     expect(emitTemporalCoupling({ channels: ["acoustic", "magnetometer"], deltaMs: 250 })).toBeNull();
   });
-  it("emits 2.3 log LR on a valid coupling", () => {
+  it("emits 2.3 log LR on a valid coupling between independent channels (acoustic + magnetometer)", () => {
     const e = emitTemporalCoupling({ channels: ["acoustic", "magnetometer"], deltaMs: 80 });
+    expect(e?.logLr).toBeCloseTo(2.3, 6);
+  });
+  // Channel-independence rule (panel P1 self-coupling decouple): both
+  // `acoustic` and `infrasound` are derived from the audio RMS sequence
+  // (see infrasound.ts pushFrameRms(rms, …) consuming the very same rms
+  // value used by the acoustic transient detector in liveAnalyzer.ts).
+  // A coupling event on those two channels would triple-count the same
+  // RMS spike. Coupling between audio-chain channels must REFUSE.
+  it("refuses acoustic + infrasound coupling (shared audio RMS — not independent)", () => {
+    expect(emitTemporalCoupling({ channels: ["acoustic", "infrasound"], deltaMs: 50 })).toBeNull();
+  });
+  it("refuses infrasound + acoustic regardless of order", () => {
+    expect(emitTemporalCoupling({ channels: ["infrasound", "acoustic"], deltaMs: 50 })).toBeNull();
+  });
+  it("still couples infrasound with a NON-audio-chain channel (e.g. magnetometer)", () => {
+    const e = emitTemporalCoupling({ channels: ["infrasound", "magnetometer"], deltaMs: 50 });
     expect(e?.logLr).toBeCloseTo(2.3, 6);
   });
 });

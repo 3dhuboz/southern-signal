@@ -63,26 +63,56 @@ export function emitAcousticTransient(opts: {
   let aboveSiteP95 = false;
   let aboveSiteMax = false;
   let baselineNote = "";
-  let bonusFromBaseline = 0;
   if (site && site.audioRmsP95 > 0 && typeof opts.audioRms === "number" && Number.isFinite(opts.audioRms)) {
     if (opts.audioRms <= site.audioRmsP95) {
       // Within the site's measured noise floor — refuse, even if the
       // detector's coherence + sub-band gates passed. The site baseline
       // is a longer, calmer reference than any single-frame coherence
       // peak and trumps it.
+      //
+      // NOTE: this RMS comparison is GATING ONLY (null vs not-null). It
+      // does NOT contribute additive log-LR evidence. See the comment
+      // below on the removed RMS-novelty bonus for why this matters.
       return null;
     }
     aboveSiteP95 = true;
     if (opts.audioRms > site.audioRmsMax) {
       aboveSiteMax = true;
-      bonusFromBaseline = 0.5;
     }
     baselineNote = `, RMS ${opts.audioRms.toFixed(3)} > site p95 ${site.audioRmsP95.toFixed(3)}${aboveSiteMax ? ` (above site max ${site.audioRmsMax.toFixed(3)})` : ""}`;
   }
 
+  // Self-coupling decouple (2026-05-19, panel P1):
+  //
+  // The previous implementation added a +0.5 "novelty above site max" bonus
+  // when `audioRms > site.audioRmsMax`. That term is REMOVED because it
+  // double-counts evidence already in the pipeline:
+  //
+  //   1. LiveAnalyzer gates the transient firing on `rms - rollingRms >
+  //      transientThreshold` (liveAnalyzer.ts L159). The baseLogLr of 3.0
+  //      is calibrated for the fact that RMS deviation already cleared a
+  //      threshold.
+  //   2. The site-baseline GATE above (audioRms <= p95 → null) uses the
+  //      same audio RMS. That gate is fine because it REMOVES candidates,
+  //      not ADDS log-LR.
+  //   3. Adding a further +0.5 bonus on `audioRms > site.audioRmsMax`
+  //      treats the same RMS signal as a THIRD piece of independent
+  //      evidence — which it isn't. An external Bayesian reviewer would
+  //      reject this as a violation of the independence assumption stated
+  //      at the top of posterior.ts.
+  //
+  // The novelty signal we still want — "this transient is unusually
+  // strong for this site" — now comes from a feature ORTHOGONAL to RMS:
+  // the spectral coherence value already required by the detector's first
+  // gate. High coherence (≥ 0.85) means a tightly-localised acoustic
+  // source above the 0.7 minimum gate; it's genuinely orthogonal to the
+  // RMS magnitude. The +0.5 magnitude is preserved — we're moving the
+  // bonus from a self-coupled signal to an orthogonal one.
+  const coherenceNoveltyBonus = opts.coherence >= 0.85 ? 0.5 : 0;
+
   const baseLogLr = opts.isFirstInWindow ? 3.0 : 1.0;
   const persistenceBonus = opts.sectorPersistedFromPrior ? 1.4 : 0;
-  const logLr = baseLogLr + persistenceBonus + bonusFromBaseline;
+  const logLr = baseLogLr + persistenceBonus + coherenceNoveltyBonus;
   const reason = opts.sectorPersistedFromPrior
     ? `Acoustic transient ${opts.sector}, sector persistence from prior event${baselineNote}`
     : `Acoustic transient ${opts.sector}, coh ${opts.coherence.toFixed(2)}, ${opts.subBandsAgreed} bands${baselineNote}`;
@@ -99,7 +129,12 @@ export function emitAcousticTransient(opts: {
       site_audio_rms_p95: site?.audioRmsP95 ?? null,
       site_audio_rms_max: site?.audioRmsMax ?? null,
       above_site_p95: aboveSiteP95,
+      // `above_site_max` is retained in audit metadata for transparency,
+      // but it NO LONGER adds to logLr — see "Self-coupling decouple"
+      // comment above. The actual novelty contribution comes from
+      // `coherence_novelty_bonus`, which is RMS-orthogonal.
       above_site_max: aboveSiteMax,
+      coherence_novelty_bonus: coherenceNoveltyBonus,
     },
   };
 }
@@ -214,10 +249,9 @@ export function emitMagnetometerAnomaly(opts: {
 // Channel D — Cross-channel temporal coupling (the most important channel)
 // ----------------------------------------------------------------------
 //
-// Detector: when two independent channels (acoustic + magnetometer, or
-// acoustic + infrasound) fire within 200 ms of each other, emit a
-// COUPLING event. Independence makes this much more informative than
-// either channel alone.
+// Detector: when two INDEPENDENT channels fire within 200 ms of each
+// other, emit a COUPLING event. Independence makes this much more
+// informative than either channel alone.
 //
 // Likelihood model:
 //   P(coupling within 200 ms | mundane): negligible — base rate of any
@@ -228,12 +262,48 @@ export function emitMagnetometerAnomaly(opts: {
 //
 // We declare 2.3 here (LR ~10) as a conservative single-event contribution
 // and let the LR ceiling protect against repeated firings.
+//
+// Channel-independence rule (2026-05-19, panel P1 self-coupling fix):
+//
+// "Independent" is the load-bearing word. Channels that share a physical
+// signal-chain do NOT qualify. The `acoustic` and `infrasound` channels
+// are BOTH derived from the audio RMS sequence — see infrasound.ts where
+// InfrasoundDetector.pushFrameRms takes the very same `rms` value that
+// the acoustic transient detector gates on in liveAnalyzer.ts L159.
+// Firing a coupling event on `acoustic + infrasound` therefore triple-
+// counts the same audio-RMS spike:
+//
+//   1. acoustic channel: +3.0 (already cleared an RMS-deviation gate)
+//   2. infrasound channel: +1.7 (FFT peak in envelope-of-same-RMS)
+//   3. coupling: +2.3 (firing because both fired within 200 ms — but
+//      the simultaneity is GUARANTEED by the shared RMS source, not by
+//      an independent physical event affecting two modalities)
+//
+// `acoustic + magnetometer` IS genuinely independent (mic + magnetometer
+// are different hardware sensors with different physics), so that
+// coupling remains valid.
+//
+// The rule is enforced here, in the likelihood, rather than at each
+// call-site so a future caller can't accidentally re-introduce the bug.
+
+/** Channels that share the audio RMS signal chain and are NOT independent. */
+const AUDIO_CHAIN_CHANNELS = new Set(["acoustic", "infrasound"]);
+
+function shareAudioChain(channels: string[]): boolean {
+  let count = 0;
+  for (const c of channels) if (AUDIO_CHAIN_CHANNELS.has(c)) count += 1;
+  return count >= 2;
+}
 
 export function emitTemporalCoupling(opts: {
   channels: string[];
   deltaMs: number;
 }): EvidenceEmission | null {
   if (opts.channels.length < 2 || opts.deltaMs > 200) return null;
+  // Independence assumption: refuse couplings between channels that share
+  // the audio signal chain — they're not independent evidence, just the
+  // same RMS spike appearing in two derived channels.
+  if (shareAudioChain(opts.channels)) return null;
   return {
     channel: "coupling",
     logLr: 2.3,

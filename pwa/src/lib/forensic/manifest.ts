@@ -14,6 +14,32 @@ import type { AuditLogEntry, EvidenceEvent, Investigation, MediaAsset, ResearchD
 import { leafFromExistingHashHex, merkleRoot } from "./merkle";
 import { sha256Hex } from "./canonicalJson";
 
+const GENESIS_HASH = "0".repeat(64);
+
+/**
+ * Verify the chain from an already-loaded row set instead of hitting the
+ * DB again. Pure function over the snapshot, so callers that need their
+ * verification result and their bundled audit_log.jsonl to derive from
+ * the exact same bytes can rely on this.
+ */
+async function verifyAuditChainFromRows(rows: AuditLogEntry[]): Promise<
+  { ok: true } | { ok: false; brokenAtSeq: number; reason: string }
+> {
+  let expectedPrev = GENESIS_HASH;
+  let expectedSeq = 1;
+  for (const row of rows) {
+    if (row.seq !== expectedSeq) return { ok: false, brokenAtSeq: row.seq, reason: `expected seq ${expectedSeq}` };
+    if (row.prev_hash !== expectedPrev) return { ok: false, brokenAtSeq: row.seq, reason: "prev_hash mismatch" };
+    const recomputed = await sha256Hex(
+      `${row.seq}|${row.ts_utc}|${row.actor}|${row.kind}|${row.payload_json}|${row.prev_hash}`,
+    );
+    if (recomputed !== row.entry_hash) return { ok: false, brokenAtSeq: row.seq, reason: "entry_hash mismatch" };
+    expectedPrev = row.entry_hash;
+    expectedSeq += 1;
+  }
+  return { ok: true };
+}
+
 /**
  * Per-dossier view in the manifest. The full ResearchResult JSON isn't
  * embedded — at 5-30 KB per dossier the manifest would balloon fast.
@@ -143,14 +169,33 @@ async function toDossierView(row: ResearchDossierRow): Promise<ManifestDossierVi
   };
 }
 
-export async function buildManifest(): Promise<Manifest> {
+/**
+ * Build the manifest.
+ *
+ * Pass `pinned.allAudit` from the caller when you need the manifest's
+ * `global_audit_chain.merkle_root` to match a snapshot you've already
+ * captured (e.g. the bytes you're about to write to `audit_log.jsonl`
+ * in an export bundle). Without pinning, this function re-reads the
+ * audit_log table; a concurrent append between the caller's read and
+ * this read would silently put the bundled audit log out of sync with
+ * the manifest's signed merkle_root. See exportBundle.ts for the
+ * call-site that pins to close that TOCTOU window.
+ */
+export async function buildManifest(opts?: { pinned?: { allAudit: AuditLogEntry[] } }): Promise<Manifest> {
   const investigations = await query<Investigation>(
     "SELECT * FROM investigations ORDER BY created_at ASC",
   );
-  const allAudit = await query<AuditLogEntry>(
+  const allAudit = opts?.pinned?.allAudit ?? await query<AuditLogEntry>(
     "SELECT * FROM audit_log ORDER BY seq ASC",
   );
-  const verification = await verifyAuditChain();
+  // verifyAuditChain hits the DB independently — a concurrent append
+  // between allAudit and verifyAuditChain could disagree. Recompute
+  // verification from the pinned snapshot when one was supplied, so
+  // the manifest's verification claim, leaf list, and merkle_root all
+  // derive from the same byte-for-byte set of rows.
+  const verification = opts?.pinned?.allAudit
+    ? await verifyAuditChainFromRows(opts.pinned.allAudit)
+    : await verifyAuditChain();
 
   // Bulk-load all dossiers once. The per-case partitioning is cheap and
   // we want a single query because schema_v4 isn't guaranteed on older

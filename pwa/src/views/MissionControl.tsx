@@ -351,14 +351,15 @@ export function MissionControl() {
           metadata: evidence.metadata,
           nowMs: now,
         });
-        // Cross-channel coupling check (acoustic + infrasound).
-        const tA = lastEmissionTsRef.current.acoustic;
-        if (tA && Math.abs(now - tA) <= 200) {
-          const coupling = emitTemporalCoupling({ channels: ["acoustic", "infrasound"], deltaMs: Math.abs(now - tA) });
-          if (coupling) {
-            void emitEvidence({ channel: coupling.channel, logLr: coupling.logLr, reason: coupling.reason, metadata: coupling.metadata, nowMs: now });
-          }
-        }
+        // No acoustic+infrasound coupling — both channels share the audio
+        // RMS chain (see infrasound.ts: InfrasoundDetector.pushFrameRms
+        // consumes the same rms value the acoustic transient detector
+        // gates on in liveAnalyzer.ts L159). emitTemporalCoupling also
+        // refuses such pairs defensively (likelihoods.ts shareAudioChain),
+        // but we don't even attempt them here so the audit log stays
+        // clean. Infrasound + magnetometer would qualify as an
+        // independent coupling; the magnetometer effect above handles
+        // any acoustic+magnetometer coupling on its own ts ref.
       },
       onError: (err) => {
         setStatusMsg(`Audio analyzer error: ${err.message}`);
