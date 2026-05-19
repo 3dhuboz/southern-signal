@@ -44,7 +44,7 @@ const EMPTY: MarkerOverrides = { dismissed: new Set(), annotations: new Map() };
  * unconditionally without a separate "did this succeed" branch.
  */
 export async function loadMarkerOverrides(): Promise<MarkerOverrides> {
-  let rows: { payload_json: string; kind: string }[] = [];
+  let rows: { payload_json: string; kind: string }[];
   try {
     rows = await query<{ payload_json: string; kind: string }>(
       "SELECT payload_json, kind FROM audit_log WHERE kind IN ('marker.annotated', 'marker.dismissed') ORDER BY seq ASC",

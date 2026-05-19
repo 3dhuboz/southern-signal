@@ -56,7 +56,9 @@ function readCanvasTheme(): CanvasTheme {
 function withAlpha(color: string, alpha: number): string {
   const c = color.trim();
   if (c.startsWith("#")) {
-    let r = 0, g = 0, b = 0;
+    let r: number;
+    let g: number;
+    let b: number;
     if (c.length === 4) {
       r = parseInt(c[1] + c[1], 16);
       g = parseInt(c[2] + c[2], 16);

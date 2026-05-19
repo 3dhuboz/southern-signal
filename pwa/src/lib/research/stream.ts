@@ -49,7 +49,7 @@ export function streamResearch(req: ResearchRequest, callbacks: StreamCallbacks)
         signal: controller.signal,
       });
     } catch (err) {
-      throw new Error(`Stream request failed: ${(err as Error).message}`);
+      throw new Error(`Stream request failed: ${(err as Error).message}`, { cause: err });
     }
 
     if (!res.ok) {

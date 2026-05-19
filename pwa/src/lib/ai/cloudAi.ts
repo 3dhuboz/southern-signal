@@ -248,6 +248,6 @@ function parseJsonArray<T = unknown>(text: string): T[] {
     if (!Array.isArray(parsed)) throw new Error("Response was not an array");
     return parsed;
   } catch (err) {
-    throw new Error(`Failed to parse AI response: ${(err as Error).message}`);
+    throw new Error(`Failed to parse AI response: ${(err as Error).message}`, { cause: err });
   }
 }

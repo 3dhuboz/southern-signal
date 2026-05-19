@@ -932,17 +932,18 @@ export function CameraScreen() {
     return () => window.clearTimeout(h);
   }, [watchdog]);
 
-  // First-run redirect: if the operator has NEVER picked a scene, send them
-  // to HuntSetup before showing the camera surface. The synchronous Navigate
-  // avoids one frame of camera-screen render; we don't ALSO wire a useEffect
-  // navigate() here — that was a redundant second redirect path that fired
-  // on every nav-back from /hunt-setup before the synchronous Navigate could
-  // intercept. BottomNav still provides the escape hatch (Review / Setup /
-  // EVP tabs) for a user who back-buttons mid-flow.
+  // First-run redirect flag — evaluated up front, applied as a conditional
+  // return AFTER every hook has been declared. We can't `return <Navigate />`
+  // at this point because all the hooks below (useWakeLock, the sensor
+  // emitters, the posterior tick, etc.) must be called in the same order on
+  // every render to satisfy React's rules-of-hooks. On first-run the
+  // component still mounts the hooks, but their bodies all gate on `running`
+  // (false at startup), so the side-effect cost of the wasted render is
+  // effectively zero — the Navigate fires before any timers, listeners, or
+  // wake locks attach. BottomNav still provides the escape hatch (Review /
+  // Setup / EVP tabs) for a user who back-buttons mid-flow.
   const navigate = useNavigate();
-  if (!hasPickedSceneEver()) {
-    return <Navigate to="/hunt-setup" replace />;
-  }
+  const needsScenePickRedirect = !hasPickedSceneEver();
 
   // Keep screen awake during recording
   useWakeLock(running);
@@ -1221,6 +1222,14 @@ export function CameraScreen() {
   const topPillLabel = pillSpec.label(sessionSecs);
 
   const sceneName = activeScene?.name ?? "Walkthrough";
+
+  // Conditional return AFTER all hooks (see the matching comment up by the
+  // `needsScenePickRedirect` declaration). React's rules-of-hooks require the
+  // hook list to be stable across renders; on first-run we still execute
+  // every hook above, then bail to the redirect here.
+  if (needsScenePickRedirect) {
+    return <Navigate to="/hunt-setup" replace />;
+  }
 
   return (
     <div className={s.screen}>

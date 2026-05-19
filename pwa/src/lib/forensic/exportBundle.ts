@@ -1098,12 +1098,9 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
   const builtAt = new Date().toISOString();
   const merkleRootValue = scopedManifest.global_audit_chain.merkle_root;
 
-  let coseSignatureB64: string | null = null;
-  let publicKeyHex: string | null = null;
-
   try {
     const signingKey = await getOrCreateSigningKey();
-    publicKeyHex = signingKey.publicKeyHex;
+    const publicKeyHex = signingKey.publicKeyHex;
 
     // Sign the EXACT bytes that were already written to manifest.json
     // above. Re-stringifying here would re-introduce the bug — `JSON.
@@ -1111,7 +1108,7 @@ export async function buildExportBundle(investigationId?: string): Promise<{ blo
     // been mutated, and even on identical input the pretty-vs-compact
     // distinction would silently break verification.
     const coseEnvelope = await buildCoseSign1(manifestBytes, signBytes);
-    coseSignatureB64 = toBase64(coseEnvelope);
+    const coseSignatureB64 = toBase64(coseEnvelope);
 
     // COSE envelope as a binary ZIP entry.
     entries.push({ path: "cose_signature.cbor", data: coseEnvelope, mtime: new Date() });

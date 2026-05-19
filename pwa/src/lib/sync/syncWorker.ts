@@ -77,7 +77,7 @@ async function uploadBatch(items: SyncItem[], settings: SyncSettings): Promise<U
         // File is gone (deleted before sync). Treat as a soft fail — server
         // never sees it; client will mark this item failed with a clear msg.
         console.warn(`[sync] media_blob ${item.ref_id} missing locally`, err);
-        throw new Error(`local file missing: ${item.file_path}`);
+        throw new Error(`local file missing: ${item.file_path}`, { cause: err });
       }
     }
     wireItems.push(wire);

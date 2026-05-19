@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 // Import the Pages Function handler directly. The path is unusual but
 // vitest resolves it the same way Cloudflare's bundler does at deploy
 // time, so the test runs against the same module the platform will run.
-// eslint-disable-next-line import/no-relative-packages
 import { onRequestGet, onRequestOptions } from "../../functions/api/health";
 
 interface Env {

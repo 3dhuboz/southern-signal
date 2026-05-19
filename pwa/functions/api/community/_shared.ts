@@ -169,6 +169,10 @@ export function coarsenCoord(v: number): number {
  *  null if the result is empty after trim. */
 export function sanitiseText(input: unknown, maxLen: number): string | null {
   if (typeof input !== "string") return null;
+  // Stripping control characters (NUL through US, plus DEL) is precisely what
+  // this sanitiser is for — the no-control-regex rule fires a false positive
+  // on the very pattern that does the work.
+  // eslint-disable-next-line no-control-regex
   const trimmed = input.replace(/[\x00-\x1F\x7F]/g, "").trim();
   if (!trimmed) return null;
   return trimmed.slice(0, maxLen);

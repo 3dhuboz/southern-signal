@@ -53,7 +53,7 @@ export async function openRouterChat(req: OpenRouterRequest): Promise<string> {
   });
 
   if (!resp.ok) {
-    let detail = "";
+    let detail: string;
     try {
       const j = await resp.json();
       detail = j?.error?.message || JSON.stringify(j);

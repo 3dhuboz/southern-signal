@@ -51,8 +51,11 @@ export interface LeafletMarker extends LeafletLayer {
   on(event: string, handler: (...args: unknown[]) => void): LeafletMarker;
 }
 
-export interface LeafletIcon { /* opaque */ }
-export interface LeafletBounds { /* opaque */ }
+// Opaque type tokens — Leaflet's `Icon` and `LatLngBounds` are passed around
+// as black boxes. `type X = object` is the no-empty-interface-rule compliant
+// way to express "any object, we don't introspect it."
+export type LeafletIcon = object;
+export type LeafletBounds = object;
 
 declare global {
   interface Window {
