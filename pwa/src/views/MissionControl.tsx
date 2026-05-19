@@ -392,11 +392,14 @@ export function MissionControl() {
         return;
       }
       setPermissionsGranted(true);
-      // iOS Safari caps OPFS near 1 GiB without persistent-storage. We need
-      // the user gesture, so this is the right hook — it's idempotent on
-      // re-entry and silent on browsers that don't support the API.
-      void requestPersistentStorage();
       const inv = await ensureTodayInvestigation();
+      // iOS Safari caps OPFS near 1 GiB without persistent-storage; on
+      // Chromium the persist() heuristic also weights "has stored data".
+      // Calling AFTER the first investigation write means the browser
+      // sees the storage activity tied to the user gesture, which lifts
+      // the success rate. opfs.ts caches granted/denied in localStorage
+      // so the re-ask on later Begin taps short-circuits.
+      void requestPersistentStorage();
       // No re-confirmation modal here. The Simple-mode readiness banner
       // already surfaces baseline absence + staleness with explanatory
       // copy; a window.confirm() on top is jarring on mobile and breaks

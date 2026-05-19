@@ -6,20 +6,94 @@
  * `isOpfsSupported()` first.
  *
  * iOS Safari quirk: OPFS storage caps near 1 GiB without `navigator.storage.persist()`.
- * Call `requestPersistentStorage()` early in onboarding.
+ * The Storage Standard says persist() succeeds only when:
+ *   - a secure context (HTTPS or localhost) is active,
+ *   - a user gesture is "still active" (per browser heuristics), and
+ *   - the browser is willing to grant — Chromium uses a heuristic that
+ *     includes "site has stored data" and "PWA installed".
+ *
+ * Call `requestPersistentStorage()` from a button-gesture handler that
+ * also creates the first stored asset (so the heuristic is satisfied).
  */
+
+const PERSIST_DECIDED_KEY = "ss:persist-decided";
 
 export function isOpfsSupported(): boolean {
   return typeof navigator !== "undefined" && "storage" in navigator && "getDirectory" in navigator.storage;
 }
 
-export async function requestPersistentStorage(): Promise<boolean> {
-  if (!("storage" in navigator) || !("persist" in navigator.storage)) return false;
+/**
+ * Whether the browser has already granted persistent-storage to this
+ * origin. Safe to call any time; returns false if the API is missing.
+ *
+ * This is the spec'd `navigator.storage.persisted()` (past-tense, a
+ * read) — distinct from `persist()` (present-tense, a request). We
+ * check it before re-asking so we don't burn a permission prompt on
+ * Chrome desktop, where re-asking after a "no" can be ignored.
+ */
+export async function isStoragePersisted(): Promise<boolean> {
+  if (!("storage" in navigator) || !("persisted" in navigator.storage)) return false;
   try {
-    return await navigator.storage.persist();
+    return await navigator.storage.persisted();
   } catch {
     return false;
   }
+}
+
+/**
+ * Ask the browser to mark this origin's storage as persistent.
+ *
+ * - Returns the new persistence state (true if granted now OR already).
+ * - Idempotent: if already persisted, short-circuits without a re-ask.
+ * - Caches the decision in localStorage so subsequent app launches
+ *   don't re-issue the prompt every time `handleBegin` fires. The cache
+ *   stores both grants AND denials — a user who said "no" once
+ *   shouldn't be re-asked on every session (the storage spec doesn't
+ *   promise the prompt's UX is the same on every browser, and on iOS
+ *   it shows up as a dotted-line indicator the user already chose).
+ *
+ * Best called from a button-gesture handler that ALSO performs the
+ * first meaningful storage write (creates the day's investigation row).
+ * Browser heuristics weight gesture + recent storage activity heavily.
+ */
+export async function requestPersistentStorage(): Promise<boolean> {
+  if (!("storage" in navigator) || !("persist" in navigator.storage)) return false;
+
+  // Cheapest exit: persisted() is read-only, never prompts, and short-
+  // circuits on the second + nth Begin tap once we've already been granted.
+  if (await isStoragePersisted()) {
+    rememberDecision("granted");
+    return true;
+  }
+
+  // Skip the re-ask if a prior call already got a final answer this session.
+  // We don't want a "no" to silently keep prompting on each Begin tap.
+  const prior = readDecision();
+  if (prior === "denied") return false;
+
+  try {
+    const granted = await navigator.storage.persist();
+    rememberDecision(granted ? "granted" : "denied");
+    return granted;
+  } catch {
+    // Don't poison the cache on a transient throw — leave the door open
+    // for a retry next time (some Safari versions throw on first call
+    // before storage is ready, then succeed on a follow-up).
+    return false;
+  }
+}
+
+function readDecision(): "granted" | "denied" | null {
+  try {
+    const v = globalThis.localStorage?.getItem(PERSIST_DECIDED_KEY);
+    return v === "granted" || v === "denied" ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberDecision(decision: "granted" | "denied"): void {
+  try { globalThis.localStorage?.setItem(PERSIST_DECIDED_KEY, decision); } catch { /* private mode */ }
 }
 
 export async function getStorageEstimate(): Promise<{ usage?: number; quota?: number }> {

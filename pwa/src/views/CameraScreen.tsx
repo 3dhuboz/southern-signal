@@ -1143,7 +1143,14 @@ export function CameraScreen() {
       const perm = await requestSensorPermissionsForUserGesture();
       if (perm.motion === "denied" || perm.orientation === "denied") { setBusy(false); return; }
       setPermissionsGranted(true);
-      void requestPersistentStorage();
+      // requestPersistentStorage() is deferred until AFTER the first
+      // meaningful storage write (the day's investigation row, below).
+      // The spec lets persist() succeed only under specific conditions —
+      // user gesture + secure context + (often) at least one stored
+      // asset. Calling it before the first investigation write returned
+      // false on Chromium because the heuristic hadn't seen us write
+      // anything yet. opfs.ts caches granted/denied in localStorage so
+      // we don't keep re-asking on every Begin tap.
       // Resolve the (possibly chain-augmented) preflight BEFORE creating an
       // investigation row. When the operator has opted into "refuse on broken
       // chain", aborting here means we don't write the session_start audit
@@ -1157,6 +1164,11 @@ export function CameraScreen() {
         return;
       }
       const inv = await ensureTodayInvestigation();
+      // First meaningful write (the investigation row) just landed —
+      // ask now so the browser's heuristic sees the storage activity.
+      // Fire-and-forget; cached in localStorage so re-asking on later
+      // Begin taps short-circuits.
+      void requestPersistentStorage();
       setCurrent(inv);
       if (inv.protocol_json && !inv.protocol_hash) {
         await lockProtocol(inv.id).catch(() => { /* non-blocking */ });
