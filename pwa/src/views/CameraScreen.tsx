@@ -1224,6 +1224,11 @@ export function CameraScreen() {
 
   return (
     <div className={s.screen}>
+      {/* Visually-hidden landing-page heading. The camera surface is
+          intentionally chromeless (no visible header), but every route still
+          needs an h1 so screen-reader navigation by heading works and
+          Lighthouse / axe stop flagging the page. */}
+      <h1 className="visually-hidden">Camera</h1>
       {/* Mandatory disposition prompt — appears immediately after a session
           stops so the operator can't wander off without classifying. Mirrors
           MissionControl's post-stop flow; without this the base-rate
@@ -1543,9 +1548,14 @@ export function CameraScreen() {
              is the durable fix for "running out of room". Hard-dismisses
              after WATCHDOG_TOAST_MS even if untouched. */}
         {watchdog && (
+          // role="status" (implicit aria-live="polite") instead of "alert" so
+          // a screen-reader user isn't interrupted mid-sentence by a toast
+          // that auto-dismisses after WATCHDOG_TOAST_MS. The separate
+          // pre-flight blocker below uses role="alertdialog" for hard stops;
+          // a degraded device state is "should know" not "stop everything".
           <div
             className={`${s.watchdogToast} ${watchdog.overall === "block" ? s.watchdogToastBlock : s.watchdogToastWarn}`.trim()}
-            role="alert"
+            role="status"
           >
             <button
               type="button"
