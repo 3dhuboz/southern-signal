@@ -79,6 +79,19 @@
   color: var(--text-secondary);
   cursor: pointer;
   line-height: 1;
+  /* WCAG 2.5.5 — keep visible chrome at 22x22 but expand the tap target
+     to 44x44 via a transparent pseudo overlay. */
+  position: relative;
+}
+.diagnosisClose::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
 }
 .diagnosisClose:hover { color: var(--danger); border-color: var(--danger); }
 

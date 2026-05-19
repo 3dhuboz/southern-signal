@@ -169,6 +169,29 @@ h1, h2, h3, h4 { margin: 0; font-weight: 600; }
   border: 0; padding: 0;
 }
 
+/* WCAG 2.5.5 — expanded hit area without changing visible size.
+   Used on icon-only buttons and compact chips whose visible chrome is
+   smaller than 44x44 but whose tap target needs to clear the AAA bar.
+
+   The pseudo is a child of the button, so its box is part of the
+   button's hit region — taps in the bleed zone fire the button's
+   click handler. `pointer-events: auto` is explicit so the overlay
+   isn't accidentally suppressed by an ancestor `pointer-events: none`.
+
+   Visual hint: the bleed is transparent. We do NOT z-index it above
+   the visible chrome — content keeps painting on top. */
+.ss-hit-44 { position: relative; }
+.ss-hit-44::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

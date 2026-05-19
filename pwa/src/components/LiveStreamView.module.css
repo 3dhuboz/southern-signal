@@ -377,7 +377,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 36px;
+  min-height: 44px;
 }
 .cameraBtn:hover { background: var(--bg-overlay); border-color: var(--border-strong); }
 .cameraBtn:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -508,7 +508,7 @@
   display: flex;
   align-items: center;
   gap: var(--s-8);
-  min-height: 38px;
+  min-height: 44px;
   transition: background 120ms, border-color 120ms, color 120ms;
 }
 .channelToggle:hover {
@@ -560,7 +560,7 @@
   padding: var(--s-4) var(--s-12);
   border-radius: var(--r-full);
   cursor: pointer;
-  min-height: 30px;
+  min-height: 44px;
 }
 .channelsActionBtn:hover {
   background: var(--bg-overlay);

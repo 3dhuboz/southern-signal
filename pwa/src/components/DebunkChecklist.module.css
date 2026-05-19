@@ -89,7 +89,7 @@
 
 .verdictBtn {
   position: relative;
-  min-height: 36px;
+  min-height: 44px;
   padding: 6px 10px;
   border-radius: var(--r-md);
   border: 1px solid var(--border-default);
@@ -234,7 +234,7 @@
 
 .saveBtn {
   align-self: flex-end;
-  min-height: 40px;
+  min-height: 44px;
   padding: var(--s-8) var(--s-16);
   border-radius: var(--r-full);
   border: 1px solid var(--signal-dim);

@@ -100,7 +100,7 @@
   background: var(--bg-inset);
   color: var(--text-muted);
   border: 1px solid var(--border-default);
-  min-height: 28px;
+  min-height: 44px;
   white-space: nowrap;
 }
 .takePill:hover {
@@ -307,7 +307,7 @@
   font-weight: 600;
   letter-spacing: 0.4px;
   cursor: pointer;
-  min-height: 36px;
+  min-height: 44px;
 }
 .calibrationOption:hover {
   background: var(--bg-overlay);

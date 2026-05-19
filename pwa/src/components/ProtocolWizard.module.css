@@ -88,6 +88,18 @@
   justify-content: center;
   line-height: 1;
   padding: 0;
+  /* WCAG 2.5.5 — expand tap target to 44x44 without changing chrome. */
+  position: relative;
+}
+.closeBtn::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
 }
 .closeBtn:hover { color: var(--danger); border-color: var(--danger); }
 
@@ -394,6 +406,18 @@
   justify-content: center;
   line-height: 1;
   padding: 0;
+  /* WCAG 2.5.5 — expand tap target to 44x44 without changing chrome. */
+  position: relative;
+}
+.removeWindowBtn::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
 }
 .removeWindowBtn:hover { color: var(--danger); border-color: var(--danger); }
 
@@ -552,7 +576,7 @@
   background: var(--bg-inset);
   color: var(--text-secondary);
   cursor: pointer;
-  min-height: 38px;
+  min-height: 44px;
   transition: border-color 120ms, color 120ms;
 }
 .btnBack:hover { border-color: var(--signal-dim); color: var(--text-primary); }
@@ -568,7 +592,7 @@
   background: var(--signal-wash);
   color: var(--signal);
   cursor: pointer;
-  min-height: 38px;
+  min-height: 44px;
   transition: background 120ms, border-color 120ms;
 }
 .btnNext:hover { background: color-mix(in srgb, var(--signal) 16%, var(--bg-inset)); }
@@ -585,7 +609,7 @@
   background: var(--warning-wash);
   color: var(--warning);
   cursor: pointer;
-  min-height: 38px;
+  min-height: 44px;
   letter-spacing: 0.3px;
   transition: background 120ms, border-color 120ms;
 }

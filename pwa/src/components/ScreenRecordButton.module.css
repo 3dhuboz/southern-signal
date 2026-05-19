@@ -12,7 +12,7 @@
   letter-spacing: 0.4px;
   cursor: pointer;
   font-family: inherit;
-  min-height: 36px;
+  min-height: 44px;
 }
 .btn:hover {
   background: var(--bg-overlay);

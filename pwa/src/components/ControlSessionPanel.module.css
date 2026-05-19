@@ -237,7 +237,7 @@
   background: var(--signal-wash);
   color: var(--signal);
   cursor: pointer;
-  min-height: 34px;
+  min-height: 44px;
   transition: background 120ms, border-color 120ms;
 }
 .btnPrimary:hover {
@@ -258,7 +258,7 @@
   background: var(--bg-inset);
   color: var(--text-secondary);
   cursor: pointer;
-  min-height: 34px;
+  min-height: 44px;
   transition: border-color 120ms, color 120ms;
 }
 .btnGhost:hover {

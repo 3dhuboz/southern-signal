@@ -89,7 +89,7 @@
   font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
-  min-height: 36px;
+  min-height: 44px;
 }
 .runBtn {
   background: var(--accent-strong);

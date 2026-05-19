@@ -446,6 +446,22 @@
   right: 12px;
   cursor: pointer;
   transition: background 120ms ease, border-color 120ms ease;
+  /* WCAG 2.5.5 — keep visible 28px pill chrome but expand the tap
+     target to 44x44 via an invisible pseudo overlay. */
+  position: absolute;
+}
+.cornerPillTopRight::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 44px;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  /* Sit behind the pill's text content — pseudo-elements with no
+     z-index render in their stacking context, and the actual span
+     children of the button paint on top. */
 }
 .cornerPillTopRight:hover  { background: rgba(0, 0, 0, 0.7); }
 .cornerPillTopRight:active { transform: scale(0.97); }
@@ -935,6 +951,7 @@
   justify-content: center;
   gap: 6px;
   height: 38px;
+  min-height: 44px;
   min-width: 56px;
   padding: 0 14px;
   border-radius: 999px;

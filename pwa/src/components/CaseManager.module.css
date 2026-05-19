@@ -235,14 +235,13 @@
 }
 /* CaseManager buttons share one compact size — primary, ghost, and
    danger flavours all consume .btn + their flavour utility for colour
-   and behaviour. .btnSize carries the case-row-sized geometry: 38px
-   touch target (smaller than view-level CTAs), --r-sm radius, 12px
-   text. */
+   and behaviour. .btnSize carries the case-row-sized geometry: --r-sm
+   radius, 12px text. Hit target bumped to 44px (WCAG 2.5.5 AAA). */
 .btnSize {
   font-size: 12px;
   padding: var(--s-8) 14px;
   border-radius: var(--r-sm);
-  min-height: 38px;
+  min-height: 44px;
 }
 
 .sensitiveRow {
@@ -460,6 +459,19 @@
   cursor: pointer;
   font-size: 14px;
   line-height: 1;
+  /* WCAG 2.5.5 — visible 28x28 chrome but the tap target expands to
+     44x44 via a transparent pseudo overlay. */
+  position: relative;
+}
+.iconBtn::before, .iconBtnDanger::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
 }
 .iconBtn { color: var(--text-secondary); }
 .iconBtn:hover { color: var(--signal); border-color: var(--signal-dim); }

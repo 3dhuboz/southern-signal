@@ -5,10 +5,28 @@
  * Run with:
  *   deno run --allow-read --allow-net verifier.ts <bundle.zip>
  *
+ * Trust model: the only thing the verifier should EVER trust as
+ * authoritative is the COSE_Sign1 envelope (cose_signature.cbor) — the
+ * Ed25519 signature anchors the manifest.json bytes to the device's
+ * private key at write-time. From the SIGNED manifest we read:
+ *
+ *   • global_audit_chain.merkle_root — recompute it from on-disk
+ *     audit_log.jsonl, compare against the signed claim.
+ *   • per-investigation media[i].sha256 — re-hash the on-disk bytes,
+ *     compare against the signed claim.
+ *
+ * The verifier MUST NEVER accept a field from the manifest to verify
+ * the manifest itself (no self-attestation). In particular, never
+ * trust manifest.global_audit_chain.verification.ok — that boolean
+ * was written by the same party we're trying to detect tampering by.
+ *
  * Checks performed:
- *   1. Audit log SHA-256 hash chain integrity
- *   2. Manifest merkle_root matches re-derived root from audit log
- *   3. COSE_Sign1 Ed25519 signature over manifest.json bytes
+ *   1. Audit log SHA-256 hash chain integrity (jsonl self-consistent)
+ *   2. COSE_Sign1 Ed25519 signature over manifest.json bytes
+ *   3. Merkle root RECOMPUTED from on-disk audit_log.jsonl matches
+ *      the SIGNED manifest's claimed root.
+ *   4. Each media file's SHA-256 RECOMPUTED from on-disk bytes matches
+ *      the SIGNED manifest's claim.
  *
  * All dependencies are remote Deno modules — no npm, no local files beyond
  * the bundle itself.
@@ -18,10 +36,18 @@ export const VERIFY_DENO_SCRIPT = `#!/usr/bin/env -S deno run --allow-read --all
 // Southern Signal — bundle verifier (Deno)
 // Usage: deno run --allow-read --allow-net verifier.ts <bundle.zip>
 //
+// Trust anchor: the COSE_Sign1 envelope (cose_signature.cbor) over the
+// manifest.json bytes. Once that signature verifies, the manifest values
+// can be trusted as the SIGNED claims; all other on-disk artifacts are
+// re-derived and compared against those signed claims. Crucially, this
+// verifier NEVER trusts a manifest field to validate the manifest
+// itself — no self-attestation.
+//
 // Checks:
-//   1. audit_log.jsonl SHA-256 hash chain
-//   2. manifest.json merkle_root matches chain
-//   3. cose_signature.cbor Ed25519 signature over manifest.json bytes
+//   1. audit_log.jsonl SHA-256 hash chain (self-consistent)
+//   2. cose_signature.cbor Ed25519 signature over manifest.json bytes
+//   3. Merkle root recomputed from audit_log.jsonl matches signed root
+//   4. Each media/<inv>/<file> SHA-256 matches signed manifest claim
 //
 // Exit code 0 = all checks pass. Exit code 1 = at least one check failed.
 
@@ -49,16 +75,38 @@ async function sha256Hex(data) {
   return bytesToHex(new Uint8Array(buf));
 }
 
-async function sha256Bytes(data) {
-  const buf = await crypto.subtle.digest("SHA-256", data);
-  return new Uint8Array(buf);
+// RFC 6962 Merkle tree primitives. leaf = SHA-256(0x00 || bytes),
+// inner = SHA-256(0x01 || left || right). Odd fan-out: promote the last
+// node (do NOT duplicate). Mirrors src/lib/forensic/merkle.ts.
+async function _sha256BytesConcat(parts) {
+  let total = 0;
+  for (const p of parts) total += p.length;
+  const buf = new Uint8Array(total);
+  let off = 0;
+  for (const p of parts) { buf.set(p, off); off += p.length; }
+  const digest = await crypto.subtle.digest("SHA-256", buf);
+  return bytesToHex(new Uint8Array(digest));
 }
-
-function canonical(value) {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
-  const keys = Object.keys(value).sort();
-  return "{" + keys.map(k => JSON.stringify(k) + ":" + canonical(value[k])).join(",") + "}";
+async function _leafFromExistingHashHex(existingHex) {
+  return await _sha256BytesConcat([new Uint8Array([0x00]), hexToBytes(existingHex)]);
+}
+async function _innerHash(leftHex, rightHex) {
+  return await _sha256BytesConcat([new Uint8Array([0x01]), hexToBytes(leftHex), hexToBytes(rightHex)]);
+}
+async function merkleRootFromHashes(entryHashesHex) {
+  if (entryHashesHex.length === 0) return null;
+  let level = [];
+  for (const h of entryHashesHex) level.push(await _leafFromExistingHashHex(h));
+  if (level.length === 1) return level[0];
+  while (level.length > 1) {
+    const next = [];
+    for (let i = 0; i + 1 < level.length; i += 2) {
+      next.push(await _innerHash(level[i], level[i + 1]));
+    }
+    if (level.length % 2 === 1) next.push(level[level.length - 1]);
+    level = next;
+  }
+  return level[0];
 }
 
 function pass(label) { console.log("  PASS  " + label); }
@@ -172,8 +220,13 @@ async function readBytes(path) {
   return await e.getData(new Uint8ArrayWriter());
 }
 
+// Chain hashes collected by Check 1, consumed by Check 3 (Merkle).
+const collectedChainHashes = [];
+let chainCheckOk = false;
+
 // ---------------------------------------------------------------------------
-// Check 1: audit_log.jsonl hash chain
+// Check 1: audit_log.jsonl hash chain (self-consistent — does NOT bind
+// the chain to anything signed; that's Check 3's job).
 // ---------------------------------------------------------------------------
 console.log("1. Audit log hash chain");
 {
@@ -212,11 +265,18 @@ console.log("1. Audit log hash chain");
         chainDetail = "seq " + row.seq + " entry_hash mismatch (recomputed=" + recomputed.slice(0,16) + "...)";
         break;
       }
+      // Stash the RECOMPUTED hash (not the row's claim) for the Merkle
+      // check below. They're equal here because the row passed
+      // validation, but using the recomputed value future-proofs the
+      // chain → Merkle pipeline against a regression that lets a bad
+      // entry_hash slip through Check 1.
+      collectedChainHashes.push(recomputed);
       prev = row.entry_hash;
       expectedSeq++;
     }
     if (chainOk) {
       pass("audit_log.jsonl — " + lines.length + " entries verified");
+      chainCheckOk = true;
     } else {
       fail("audit_log.jsonl", chainDetail);
       allPass = false;
@@ -225,50 +285,21 @@ console.log("1. Audit log hash chain");
 }
 
 // ---------------------------------------------------------------------------
-// Check 2: manifest.json — merkle_root
+// Check 2: COSE_Sign1 Ed25519 signature over manifest.json
 // ---------------------------------------------------------------------------
 console.log("");
-console.log("2. Manifest merkle root");
-{
-  const text = await readText("manifest.json");
-  if (!text) {
-    fail("manifest.json", "file missing from bundle");
-    allPass = false;
-  } else {
-    let manifest;
-    try { manifest = JSON.parse(text); } catch {
-      fail("manifest.json", "invalid JSON");
-      allPass = false;
-      manifest = null;
-    }
-    if (manifest) {
-      const reportedRoot = manifest?.global_audit_chain?.merkle_root ?? null;
-      const verifyOk = manifest?.global_audit_chain?.verification?.ok ?? false;
-      if (verifyOk) {
-        pass("merkle_root: " + (reportedRoot ? reportedRoot.slice(0, 16) + "..." : "(empty)"));
-      } else {
-        const reason = manifest?.global_audit_chain?.verification?.reason ?? "unknown";
-        fail("merkle_root", "verification reported broken: " + reason);
-        allPass = false;
-      }
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Check 3: COSE_Sign1 Ed25519 signature over manifest.json
-// ---------------------------------------------------------------------------
-console.log("");
-console.log("3. COSE_Sign1 Ed25519 signature");
+console.log("2. COSE_Sign1 Ed25519 signature");
+let coseSignatureOk = false;
 {
   const coseBytes = await readBytes("cose_signature.cbor");
   const manifestText = await readText("manifest.json");
   // signing.json sidecar holds bundle_id, built_at, ed25519_pubkey_hex,
-  // tsa_status. It's a separate file so manifest.json can stay byte-stable
-  // — what the COSE envelope is over. Older bundles (pre-fix) embedded the
-  // pubkey inside manifest.signing instead; we fall back to that path so
-  // those bundles can still be partially verified (structure check passes,
-  // signature won't because their stored bytes never matched signed bytes).
+  // tsa_status. It's a separate file so manifest.json can stay byte-
+  // stable — what the COSE envelope is over. Older bundles (pre-fix)
+  // embedded the pubkey inside manifest.signing instead; we fall back
+  // to that path so those bundles can still be partially verified
+  // (structure check passes, signature won't because their stored
+  // bytes never matched signed bytes).
   const signingText = await readText("signing.json");
 
   if (!coseBytes) {
@@ -304,7 +335,6 @@ console.log("3. COSE_Sign1 Ed25519 signature");
       } else {
         // Reconstruct Sig_Structure (what was signed).
         // Sig_Structure = [ "Signature1", protected_bstr, aad: h'', payload ]
-        // We need to CBOR-encode this. We'll build it manually.
         function cborArgument(major, value) {
           const m = major << 5;
           if (value <= 23) return new Uint8Array([m | value]);
@@ -345,10 +375,9 @@ console.log("3. COSE_Sign1 Ed25519 signature");
 
         // Extract the Ed25519 public key. Live bundles store it in
         // signing.json (sidecar); legacy bundles embedded it under
-        // manifest.signing — fall back to that for verification of older
-        // exports (though their signature won't match because the manifest
-        // bytes drifted across the augmentation step that's since been fixed).
-        let pubKeyHex: string | null = null;
+        // manifest.signing — fall back to that for verification of
+        // older exports.
+        let pubKeyHex = null;
         if (signingText) {
           try {
             const signing = JSON.parse(signingText);
@@ -357,15 +386,18 @@ console.log("3. COSE_Sign1 Ed25519 signature");
         }
         if (!pubKeyHex) {
           try {
-            const manifest = JSON.parse(manifestText);
-            if (typeof manifest?.signing?.ed25519_pubkey_hex === "string") pubKeyHex = manifest.signing.ed25519_pubkey_hex;
+            const m = JSON.parse(manifestText);
+            if (typeof m?.signing?.ed25519_pubkey_hex === "string") pubKeyHex = m.signing.ed25519_pubkey_hex;
           } catch { /* leave null */ }
         }
 
         if (!pubKeyHex) {
-          // No public key in manifest — we can still verify structure but
-          // can't check the actual signature. Report as a soft warning.
-          pass("COSE_Sign1 structure valid (public key not in manifest — signature content not verified)");
+          // No public key anywhere — without a key we cannot verify the
+          // signature, and an unverified signature is no signature. Fail
+          // closed so a tamperer can't simply delete signing.json (and
+          // any legacy embedded pubkey) to skip the check.
+          fail("Ed25519 signature", "no ed25519_pubkey_hex in signing.json (or legacy manifest.signing) — cannot verify");
+          allPass = false;
         } else {
           const pubKeyBytes = hexToBytes(pubKeyHex);
           const pubKey = await crypto.subtle.importKey(
@@ -383,6 +415,7 @@ console.log("3. COSE_Sign1 Ed25519 signature");
           );
           if (valid) {
             pass("Ed25519 signature verified (pubkey: " + pubKeyHex.slice(0, 16) + "...)");
+            coseSignatureOk = true;
           } else {
             fail("Ed25519 signature", "signature verification failed — bundle may have been tampered");
             allPass = false;
@@ -392,6 +425,108 @@ console.log("3. COSE_Sign1 Ed25519 signature");
     } catch (err) {
       fail("cose_signature.cbor", err.message);
       allPass = false;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Check 3: Merkle root — RECOMPUTED from on-disk audit_log.jsonl vs the
+// SIGNED manifest's claim. This is the load-bearing tamper detector for
+// audit-log substitution. The signed manifest's merkle_root is the
+// external anchor; we MUST NOT trust manifest.global_audit_chain.
+// verification.ok (self-asserted boolean from the very party we're
+// trying to detect tampering by).
+// ---------------------------------------------------------------------------
+console.log("");
+console.log("3. Merkle root (recomputed audit log vs signed manifest)");
+{
+  if (!chainCheckOk) {
+    fail("Merkle root", "skipped — audit log self-check failed");
+    allPass = false;
+  } else if (!coseSignatureOk) {
+    fail("Merkle root", "skipped — manifest signature not verified; cannot trust signed claim");
+    allPass = false;
+  } else {
+    const manifestText2 = await readText("manifest.json");
+    let signedRoot = null;
+    try {
+      const m = JSON.parse(manifestText2);
+      signedRoot = m?.global_audit_chain?.merkle_root ?? null;
+    } catch {
+      fail("Merkle root", "manifest.json invalid JSON");
+      allPass = false;
+    }
+    const recomputedRoot = await merkleRootFromHashes(collectedChainHashes);
+    if (signedRoot === null && recomputedRoot === null) {
+      pass("Merkle root: (empty chain — null on both sides)");
+    } else if (signedRoot === recomputedRoot) {
+      pass("Merkle root matches signed manifest: " + (recomputedRoot ? recomputedRoot.slice(0, 16) + "..." : "(none)"));
+    } else {
+      fail(
+        "Merkle root",
+        "recomputed=" + (recomputedRoot ? recomputedRoot.slice(0, 16) + "..." : "null") +
+          " signed=" + (signedRoot ? String(signedRoot).slice(0, 16) + "..." : "null") +
+          " — audit_log.jsonl bytes do not match signed claim",
+      );
+      allPass = false;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Check 4: Media file SHA-256 — RECOMPUTED from on-disk bytes vs the
+// SIGNED manifest's claim. Without this, a tamperer could swap any media
+// file in the bundle and the verifier would never notice.
+// ---------------------------------------------------------------------------
+console.log("");
+console.log("4. Media file SHA-256 (on-disk bytes vs signed manifest)");
+{
+  if (!coseSignatureOk) {
+    fail("Media SHA-256", "skipped — manifest signature not verified; cannot trust signed claims");
+    allPass = false;
+  } else {
+    const manifestText3 = await readText("manifest.json");
+    let manifest3 = null;
+    try { manifest3 = JSON.parse(manifestText3); } catch { manifest3 = null; }
+    if (!manifest3) {
+      fail("Media SHA-256", "manifest.json invalid JSON");
+      allPass = false;
+    } else {
+      let checked = 0;
+      let mismatched = 0;
+      let missing = 0;
+      const invs = Array.isArray(manifest3.investigations) ? manifest3.investigations : [];
+      for (const inv of invs) {
+        const mediaList = Array.isArray(inv?.media) ? inv.media : [];
+        for (const m of mediaList) {
+          const claimedSha = m?.sha256;
+          const filePath = m?.file_path;
+          if (typeof claimedSha !== "string" || !claimedSha || typeof filePath !== "string" || !filePath) {
+            continue;
+          }
+          const archivePath = filePath.replace(/^\\/+/, "");
+          const bytes = await readBytes(archivePath);
+          if (!bytes) {
+            // Could legitimately be missing (e.g., ICIP-restricted file
+            // replaced by a _RESTRICTED.txt notice). Skip silently.
+            missing++;
+            continue;
+          }
+          checked++;
+          const got = await sha256Hex(bytes);
+          if (got !== claimedSha) {
+            mismatched++;
+            fail("Media SHA-256", archivePath + " — got " + got.slice(0, 16) + "... want " + String(claimedSha).slice(0, 16) + "...");
+          }
+        }
+      }
+      if (mismatched > 0) {
+        allPass = false;
+      } else if (checked === 0) {
+        pass("Media SHA-256 — no media with claims in manifest (skipped " + missing + " missing/restricted)");
+      } else {
+        pass("Media SHA-256 — " + checked + " file(s) match signed manifest (skipped " + missing + " missing/restricted)");
+      }
     }
   }
 }
