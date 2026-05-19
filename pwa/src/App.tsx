@@ -30,6 +30,12 @@ const Research = lazy(() => import("./views/Research").then((m) => ({ default: m
 const DossierPrint = lazy(() => import("./views/DossierPrint").then((m) => ({ default: m.DossierPrint })));
 const CommunityMap = lazy(() => import("./views/CommunityMap").then((m) => ({ default: m.CommunityMap })));
 const About = lazy(() => import("./views/About").then((m) => ({ default: m.About })));
+// Internal tools — not surfaced in the main nav. The /preview/broadcast route
+// renders the broadcast HUD chrome over a placeholder backdrop in all four
+// status states simultaneously, so designers / reviewers / prospects can see
+// STANDBY, READY, REC and LIVE side-by-side without starting a real
+// investigation. Lazy-loaded so it doesn't bloat the main entry chunk.
+const BroadcastPreview = lazy(() => import("./views/BroadcastPreview").then((m) => ({ default: m.BroadcastPreview })));
 
 function RouteFallback() {
   return (
@@ -148,6 +154,10 @@ export default function App() {
             <Route path="/dossier/:id" element={<DossierPrint />} />
             <Route path="/community" element={<CommunityMap />} />
             <Route path="/about" element={<About />} />
+            {/* Internal design-review tool. Always accessible — useful in
+                production too (prospects, reviewers). No nav link; reachable
+                via direct URL only. */}
+            <Route path="/preview/broadcast" element={<BroadcastPreview />} />
           </Routes>
         </Suspense>
       </main>
