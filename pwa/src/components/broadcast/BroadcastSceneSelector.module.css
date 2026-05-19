@@ -1,0 +1,124 @@
+/* ============================================================================
+   BroadcastSceneSelector — top-right scene picker trigger.
+
+   Mirrors the BroadcastBug shell: dark glass, hairline cyan rim, mono
+   eyebrow + display-cased scene name + clean SVG chevron. Tap target
+   expanded to 44 px via a pseudo so the visible chip can stay sized to
+   the rest of the broadcast chrome.
+   ============================================================================ */
+
+.chip {
+  position: absolute;
+  top: calc(var(--s-12, 12px) + var(--safe-top, 0px));
+  right: calc(var(--s-12, 12px) + var(--safe-right, 0px));
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 12px 0 14px;
+
+  background: rgba(8, 12, 18, 0.62);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid rgba(93, 242, 199, 0.18);
+  border-radius: 10px;
+  box-shadow:
+    0 6px 16px rgba(0, 0, 0, 0.55),
+    0 1px 0 rgba(255, 255, 255, 0.04) inset;
+
+  color: var(--text-primary, #E7ECF3);
+  font-family: var(--font-display, "Space Grotesk", "Inter", sans-serif);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+
+  appearance: none;
+  cursor: pointer;
+  z-index: 5;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: background 140ms ease-out, border-color 140ms ease-out, transform 80ms ease-out;
+  max-width: min(56vw, 240px);
+}
+
+/* WCAG 2.5.5 — expand the tap target to 44 × 44 css px via a pseudo,
+   leaving the visible chip at its broadcast-grade 36 px height. */
+.chip::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 44px;
+  min-width: 44px;
+  transform: translate(-50%, -50%);
+}
+
+.chip:hover {
+  background: rgba(8, 14, 18, 0.72);
+  border-color: rgba(93, 242, 199, 0.32);
+}
+.chip:active { transform: scale(0.97); }
+.chip:focus-visible {
+  outline: 2px solid var(--signal, #5DF2C7);
+  outline-offset: 3px;
+}
+
+/* Two-line body so the eyebrow can sit above the name without crowding
+   the chip's height. Min-width 0 so flex doesn't blow past max-width
+   when the scene name is long. */
+.body {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.eyebrow {
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--signal, #5DF2C7);
+  line-height: 1;
+}
+
+.name {
+  font-family: var(--font-display, "Space Grotesk", "Inter", sans-serif);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  line-height: 1.1;
+  color: var(--text-primary, #E7ECF3);
+  /* Truncate over-long scene names so the chip doesn't blow past its
+     max-width on a 390 phone — chevron stays visible. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.chevron {
+  width: 12px;
+  height: 8px;
+  flex-shrink: 0;
+  color: var(--text-secondary, #9BA6B8);
+  transition: color 140ms ease-out;
+}
+.chip:hover .chevron { color: var(--signal, #5DF2C7); }
+
+/* Compact variant for narrow viewports — drops the eyebrow + tightens
+   padding so the chip still fits beside the sensor HUD column. */
+@media (max-width: 420px) {
+  .chip {
+    gap: 8px;
+    height: 32px;
+    padding: 0 10px 0 12px;
+    max-width: min(54vw, 220px);
+  }
+  .eyebrow { display: none; }
+  .name { font-size: 11.5px; }
+  .chevron { width: 10px; height: 7px; }
+}
