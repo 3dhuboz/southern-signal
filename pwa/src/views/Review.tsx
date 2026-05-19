@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { AHT_H0_SUSPEND_THRESHOLD, computeH0Confidence } from "../lib/posterior/ahtVerdict";
 import { buildEvidenceBrief, findMostRecentInvestigationId, type EvidenceBrief } from "../lib/forensic/evidenceBrief";
@@ -340,9 +340,9 @@ export function Review() {
 
   // At-a-glance session summary — counts by category, EVP captures, audit
   // entries, and session duration derived from the device-state timeline.
-  // Computed inline because all the inputs are already in state; a memoised
-  // intermediate would be over-engineered for ~5 small reductions.
-  const sessionSummary = (() => {
+  // Memoised on [markers, timeline] so unrelated state changes (export
+  // status, dialog flags, etc.) don't recompute the reduction every render.
+  const sessionSummary = useMemo(() => {
     const total = markers.length;
     const byCategory: Record<"sound" | "movement" | "felt" | "untagged", number> = {
       sound: 0, movement: 0, felt: 0, untagged: 0,
@@ -370,9 +370,13 @@ export function Review() {
       } catch { /* leave null */ }
     }
     return { total, byCategory, durationLabel };
-  })();
+  }, [markers, timeline]);
 
-  const posteriorRows: PosteriorRow[] = entries
+  // Up to 200 audit entries × JSON.parse on every render added up: memoise
+  // on [entries]. The shape returned is stable across renders when entries
+  // is unchanged, which also stabilises any downstream consumers that key
+  // on row identity.
+  const posteriorRows: PosteriorRow[] = useMemo(() => entries
     .filter((e) => e.kind.startsWith("evidence."))
     .map((e) => {
       const payload = JSON.parse(e.payload_json) as Record<string, unknown>;
@@ -386,13 +390,15 @@ export function Review() {
         reason: String(payload.reason ?? ""),
         capped: Boolean(payload.capped ?? false),
       };
-    });
+    }), [entries]);
 
   // H₀ — AI insufficiency. Computed from the 30 most-recent
   // `ai.debunk.proposed` audit entries carrying max_plausibility, via the
   // shared helper. When H₀ ≥ the suspend threshold the AHT post-roll engine
   // SUSPENDS — every case renders INCONCLUSIVE instead of a positive verdict.
-  const debunkAttempts = entries
+  // Memoised on [entries] so the per-render JSON.parse fan-out doesn't run
+  // on every state change.
+  const debunkAttempts = useMemo(() => entries
     .filter((e) => e.kind === "ai.debunk.proposed")
     .map((e) => {
       try {
@@ -401,7 +407,7 @@ export function Review() {
       } catch { return null; }
     })
     .filter((p): p is number => p !== null && Number.isFinite(p))
-    .slice(0, 30); // entries are ordered DESC so this is the 30 most recent
+    .slice(0, 30), [entries]); // entries are ordered DESC so this is the 30 most recent
   const h0 = computeH0Confidence(debunkAttempts);
   const h0Confidence = h0.value;
   const h0Pct = Math.round(h0Confidence * 100);
