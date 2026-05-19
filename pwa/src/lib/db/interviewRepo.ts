@@ -7,7 +7,7 @@
  */
 
 import { appendAuditEntry } from "./auditLog";
-import { exec, query } from "./db";
+import { exec, query, withTransaction } from "./db";
 import type { InterviewRow, WitnessRelationship } from "./schema";
 
 const ACTOR = "user";
@@ -51,34 +51,36 @@ export async function addInterview(data: {
     updated_at: now,
   };
 
-  await exec(
-    `INSERT INTO interviews
-       (id, investigation_id, witness_name, relationship, statement,
-        notable_claims, linked_event_ids, occurred_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      row.id,
-      row.investigation_id,
-      row.witness_name,
-      row.relationship,
-      row.statement,
-      row.notable_claims,
-      row.linked_event_ids,
-      row.occurred_at,
-      row.created_at,
-      row.updated_at,
-    ],
-  );
+  await withTransaction(async () => {
+    await exec(
+      `INSERT INTO interviews
+         (id, investigation_id, witness_name, relationship, statement,
+          notable_claims, linked_event_ids, occurred_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        row.id,
+        row.investigation_id,
+        row.witness_name,
+        row.relationship,
+        row.statement,
+        row.notable_claims,
+        row.linked_event_ids,
+        row.occurred_at,
+        row.created_at,
+        row.updated_at,
+      ],
+    );
 
-  await appendAuditEntry({
-    actor: ACTOR,
-    kind: "interview.added",
-    payload: {
-      id,
-      investigation_id: data.investigationId,
-      witness_name: row.witness_name,
-      relationship: row.relationship,
-    },
+    await appendAuditEntry({
+      actor: ACTOR,
+      kind: "interview.added",
+      payload: {
+        id,
+        investigation_id: data.investigationId,
+        witness_name: row.witness_name,
+        relationship: row.relationship,
+      },
+    });
   });
 
   return row;
@@ -152,15 +154,17 @@ export async function updateInterview(
 
   binds.push(id);
 
-  await exec(
-    `UPDATE interviews SET ${setClauses.join(", ")} WHERE id = ?`,
-    binds,
-  );
+  await withTransaction(async () => {
+    await exec(
+      `UPDATE interviews SET ${setClauses.join(", ")} WHERE id = ?`,
+      binds,
+    );
 
-  await appendAuditEntry({
-    actor: ACTOR,
-    kind: "interview.updated",
-    payload: { id, fields: Object.keys(patch) },
+    await appendAuditEntry({
+      actor: ACTOR,
+      kind: "interview.updated",
+      payload: { id, fields: Object.keys(patch) },
+    });
   });
 }
 
@@ -169,10 +173,12 @@ export async function updateInterview(
 // ---------------------------------------------------------------------------
 
 export async function deleteInterview(id: string): Promise<void> {
-  await exec("DELETE FROM interviews WHERE id = ?", [id]);
-  await appendAuditEntry({
-    actor: ACTOR,
-    kind: "interview.deleted",
-    payload: { id },
+  await withTransaction(async () => {
+    await exec("DELETE FROM interviews WHERE id = ?", [id]);
+    await appendAuditEntry({
+      actor: ACTOR,
+      kind: "interview.deleted",
+      payload: { id },
+    });
   });
 }

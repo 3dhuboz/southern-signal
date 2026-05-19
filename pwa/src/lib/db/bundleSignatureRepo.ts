@@ -6,7 +6,7 @@
  */
 
 import { appendAuditEntry } from "./auditLog";
-import { exec, query } from "./db";
+import { exec, query, withTransaction } from "./db";
 import type { BundleSignatureRow, TsaStatus } from "./schema";
 
 /**
@@ -14,33 +14,35 @@ import type { BundleSignatureRow, TsaStatus } from "./schema";
  * Called at export time, before or after the TSA attempt.
  */
 export async function saveBundleSignature(row: BundleSignatureRow): Promise<void> {
-  await exec(
-    `INSERT INTO bundle_signatures
-       (bundle_id, investigation_id, built_at, merkle_root,
-        cose_signature_b64, ed25519_pubkey_hex,
-        tsa_status, tsa_token_b64, tsa_requested_at, tsa_anchored_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      row.bundle_id,
-      row.investigation_id,
-      row.built_at,
-      row.merkle_root,
-      row.cose_signature_b64,
-      row.ed25519_pubkey_hex,
-      row.tsa_status,
-      row.tsa_token_b64,
-      row.tsa_requested_at,
-      row.tsa_anchored_at,
-    ],
-  );
-  await appendAuditEntry({
-    actor: "user",
-    kind: "bundle_signature.save",
-    payload: {
-      bundle_id: row.bundle_id,
-      investigation_id: row.investigation_id,
-      tsa_status: row.tsa_status,
-    },
+  await withTransaction(async () => {
+    await exec(
+      `INSERT INTO bundle_signatures
+         (bundle_id, investigation_id, built_at, merkle_root,
+          cose_signature_b64, ed25519_pubkey_hex,
+          tsa_status, tsa_token_b64, tsa_requested_at, tsa_anchored_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        row.bundle_id,
+        row.investigation_id,
+        row.built_at,
+        row.merkle_root,
+        row.cose_signature_b64,
+        row.ed25519_pubkey_hex,
+        row.tsa_status,
+        row.tsa_token_b64,
+        row.tsa_requested_at,
+        row.tsa_anchored_at,
+      ],
+    );
+    await appendAuditEntry({
+      actor: "user",
+      kind: "bundle_signature.save",
+      payload: {
+        bundle_id: row.bundle_id,
+        investigation_id: row.investigation_id,
+        tsa_status: row.tsa_status,
+      },
+    });
   });
 }
 
@@ -54,16 +56,18 @@ export async function updateTsaResult(
   tsa_token_b64: string | null,
   tsa_anchored_at: string | null,
 ): Promise<void> {
-  await exec(
-    `UPDATE bundle_signatures
-       SET tsa_status = ?, tsa_token_b64 = ?, tsa_anchored_at = ?
-     WHERE bundle_id = ?`,
-    [tsa_status, tsa_token_b64, tsa_anchored_at, bundleId],
-  );
-  await appendAuditEntry({
-    actor: "user",
-    kind: "bundle_signature.tsa_update",
-    payload: { bundle_id: bundleId, tsa_status },
+  await withTransaction(async () => {
+    await exec(
+      `UPDATE bundle_signatures
+         SET tsa_status = ?, tsa_token_b64 = ?, tsa_anchored_at = ?
+       WHERE bundle_id = ?`,
+      [tsa_status, tsa_token_b64, tsa_anchored_at, bundleId],
+    );
+    await appendAuditEntry({
+      actor: "user",
+      kind: "bundle_signature.tsa_update",
+      payload: { bundle_id: bundleId, tsa_status },
+    });
   });
 }
 

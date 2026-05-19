@@ -7,7 +7,15 @@ const { queryFn, execFn, enqueueFn, appendAuditFn } = vi.hoisted(() => ({
   appendAuditFn: vi.fn(),
 }));
 
-vi.mock("./db", () => ({ query: queryFn, exec: execFn }));
+// withTransaction is a thin BEGIN/COMMIT wrapper around the underlying
+// exec(). In production it inserts BEGIN + body + COMMIT into the same
+// worker; under test we run the body inline so the assertions can target
+// exec()/query() the same way they did before transactions were added.
+vi.mock("./db", () => ({
+  query: queryFn,
+  exec: execFn,
+  withTransaction: async <T>(body: () => Promise<T>): Promise<T> => body(),
+}));
 vi.mock("../sync/queue", () => ({ enqueue: enqueueFn, clearSensitivityCache: vi.fn() }));
 vi.mock("./auditLog", () => ({ appendAuditEntry: appendAuditFn }));
 

@@ -10,7 +10,7 @@
  * Entry shape: seq, ts_utc, actor, kind, payload_json, prev_hash, entry_hash.
  */
 
-import { exec, query } from "./db";
+import { exec, query, withTransaction } from "./db";
 import { enqueue, setAuditLogger } from "../sync/queue";
 import { canonicalJson, sha256Hex } from "../forensic/canonicalJson";
 
@@ -53,22 +53,33 @@ export async function appendAuditEntry({ actor, kind, payload, ts }: AuditAppend
   const message = `${seq}|${tsUtc}|${actor}|${kind}|${payloadCanon}|${prevHash}`;
   const entryHash = await sha256Hex(message);
 
-  await exec(
-    "INSERT INTO audit_log (seq, ts_utc, actor, kind, payload_json, prev_hash, entry_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    [seq, tsUtc, actor, kind, payloadCanon, prevHash, entryHash],
-  );
-
-  // Enqueue for cloud sync. Best-effort — failures here must NOT break the
-  // chain itself (sync is downstream of the local source of truth).
-  try {
-    await enqueue({
-      kind: "audit",
-      ref_id: String(seq),
-      payload: { seq, ts_utc: tsUtc, actor, kind, payload_json: payloadCanon, prev_hash: prevHash, entry_hash: entryHash },
-    });
-  } catch (err) {
-    console.warn("[sync] failed to enqueue audit entry", err);
-  }
+  // v15: the audit_log INSERT and its sync_queue mirror commit together.
+  // If the chain insert fails (UNIQUE seq collision, FK violation, table
+  // missing) the queue row is rolled back too — we never end up with a
+  // sync row that points at a non-existent chain entry. When this is
+  // called from a repo write that already opened a transaction,
+  // withTransaction detects nesting and runs inline under the outer
+  // commit, so we don't crash with "cannot start a transaction within
+  // a transaction".
+  //
+  // Enqueue failures are swallowed (chain integrity is local-first;
+  // sync is downstream) so a transient enqueue error doesn't ROLLBACK
+  // the chain entry.
+  await withTransaction(async () => {
+    await exec(
+      "INSERT INTO audit_log (seq, ts_utc, actor, kind, payload_json, prev_hash, entry_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [seq, tsUtc, actor, kind, payloadCanon, prevHash, entryHash],
+    );
+    try {
+      await enqueue({
+        kind: "audit",
+        ref_id: String(seq),
+        payload: { seq, ts_utc: tsUtc, actor, kind, payload_json: payloadCanon, prev_hash: prevHash, entry_hash: entryHash },
+      });
+    } catch (err) {
+      console.warn("[sync] failed to enqueue audit entry", err);
+    }
+  });
 
   return { seq, ts_utc: tsUtc, prev_hash: prevHash, entry_hash: entryHash };
 }

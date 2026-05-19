@@ -6,7 +6,15 @@ const { queryFn, execFn, enqueueFn } = vi.hoisted(() => ({
   enqueueFn: vi.fn(),
 }));
 
-vi.mock("./db", () => ({ query: queryFn, exec: execFn }));
+// Inline withTransaction in tests so we don't have to assert on
+// BEGIN/COMMIT bookkeeping that exists purely for the production
+// promiser path. The function body runs exactly as it would in
+// production; just no transactional bracketing.
+vi.mock("./db", () => ({
+  query: queryFn,
+  exec: execFn,
+  withTransaction: async <T>(body: () => Promise<T>): Promise<T> => body(),
+}));
 vi.mock("../sync/queue", () => ({ enqueue: enqueueFn, setAuditLogger: vi.fn() }));
 
 import { appendAuditEntry, verifyAuditChain } from "./auditLog";

@@ -12,7 +12,7 @@
  */
 
 import { appendAuditEntry } from "./auditLog";
-import { exec, query } from "./db";
+import { exec, query, withTransaction } from "./db";
 import type { DebunkChecklistRow, DebunkItemSlug, DebunkVerdict } from "./schema";
 
 const ACTOR_DEFAULT = "user";
@@ -43,30 +43,36 @@ export async function saveDebunkVerdict(row: {
   const id = crypto.randomUUID();
   const ts = nowUtc();
 
-  // INSERT OR REPLACE on the primary-key triple (investigation_id, event_id,
-  // item). SQLite replaces the entire row, so we always supply id + logged_at.
-  // The id may change across edits — that's fine; we track history via the
-  // audit chain, not via row immutability.
-  await exec(
-    `INSERT OR REPLACE INTO debunk_checklist
-       (id, investigation_id, event_id, item, verdict, notes, logged_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [id, row.investigationId, row.eventId, row.item, row.verdict, row.notes?.trim() ?? null, ts],
-  );
+  // v15: row upsert + audit chain entry commit atomically. INSERT OR REPLACE
+  // can now violate a FK (investigation_id / event_id parents are enforced);
+  // wrapping in withTransaction means the audit chain doesn't see a save
+  // entry for a row that never landed.
+  await withTransaction(async () => {
+    // INSERT OR REPLACE on the primary-key triple (investigation_id, event_id,
+    // item). SQLite replaces the entire row, so we always supply id + logged_at.
+    // The id may change across edits — that's fine; we track history via the
+    // audit chain, not via row immutability.
+    await exec(
+      `INSERT OR REPLACE INTO debunk_checklist
+         (id, investigation_id, event_id, item, verdict, notes, logged_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [id, row.investigationId, row.eventId, row.item, row.verdict, row.notes?.trim() ?? null, ts],
+    );
 
-  await appendAuditEntry({
-    actor: ACTOR_DEFAULT,
-    kind: "debunk.verdict",
-    payload: {
-      id,
-      investigationId: row.investigationId,
-      eventId: row.eventId,
-      item: row.item,
-      verdict: row.verdict,
-      // notes deliberately omitted from the chain payload — free-text fields
-      // can contain PII. The row itself is the source of truth; the chain just
-      // proves the save happened at this timestamp.
-    },
+    await appendAuditEntry({
+      actor: ACTOR_DEFAULT,
+      kind: "debunk.verdict",
+      payload: {
+        id,
+        investigationId: row.investigationId,
+        eventId: row.eventId,
+        item: row.item,
+        verdict: row.verdict,
+        // notes deliberately omitted from the chain payload — free-text fields
+        // can contain PII. The row itself is the source of truth; the chain just
+        // proves the save happened at this timestamp.
+      },
+    });
   });
 }
 

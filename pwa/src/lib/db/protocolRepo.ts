@@ -12,7 +12,7 @@
  * data was gathered.
  */
 
-import { exec, query } from "./db";
+import { exec, query, withTransaction } from "./db";
 import { appendAuditEntry } from "./auditLog";
 import { canonicalJson, sha256Hex } from "../forensic/canonicalJson";
 import type { InvestigationProtocol } from "./schema";
@@ -54,21 +54,23 @@ export async function saveProtocol(
   }
 
   const protocolJson = JSON.stringify(protocol);
-  await exec(
-    "UPDATE investigations SET protocol_json = ? WHERE id = ?",
-    [protocolJson, investigationId],
-  );
-  await appendAuditEntry({
-    actor: "user",
-    kind: "protocol.save",
-    payload: {
-      investigation_id: investigationId,
-      authored_at: protocol.authored_at,
-      hypothesis_length: protocol.hypothesis.length,
-      signal_count: protocol.predicted_signals.length,
-      zone_count: protocol.zones.length,
-      window_count: protocol.windows.length,
-    },
+  await withTransaction(async () => {
+    await exec(
+      "UPDATE investigations SET protocol_json = ? WHERE id = ?",
+      [protocolJson, investigationId],
+    );
+    await appendAuditEntry({
+      actor: "user",
+      kind: "protocol.save",
+      payload: {
+        investigation_id: investigationId,
+        authored_at: protocol.authored_at,
+        hypothesis_length: protocol.hypothesis.length,
+        signal_count: protocol.predicted_signals.length,
+        zone_count: protocol.zones.length,
+        window_count: protocol.windows.length,
+      },
+    });
   });
 }
 
@@ -106,21 +108,24 @@ export async function lockProtocol(investigationId: string): Promise<string> {
 
   // Canonical JSON → SHA-256 so key ordering in the stored string is
   // irrelevant — the hash is always over a deterministic byte sequence.
+  // Hash outside the transaction (SubtleCrypto can be expensive on iOS).
   const hash = await sha256Hex(canonicalJson(protocol as unknown as Record<string, unknown>));
 
-  await exec(
-    "UPDATE investigations SET protocol_hash = ? WHERE id = ?",
-    [hash, investigationId],
-  );
+  await withTransaction(async () => {
+    await exec(
+      "UPDATE investigations SET protocol_hash = ? WHERE id = ?",
+      [hash, investigationId],
+    );
 
-  await appendAuditEntry({
-    actor: "user",
-    kind: "protocol.locked",
-    payload: {
-      investigation_id: investigationId,
-      protocol_hash: hash,
-      authored_at: protocol.authored_at,
-    },
+    await appendAuditEntry({
+      actor: "user",
+      kind: "protocol.locked",
+      payload: {
+        investigation_id: investigationId,
+        protocol_hash: hash,
+        authored_at: protocol.authored_at,
+      },
+    });
   });
 
   return hash;

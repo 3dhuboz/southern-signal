@@ -7,7 +7,7 @@
  */
 
 import { appendAuditEntry } from "./auditLog";
-import { exec, query } from "./db";
+import { exec, query, withTransaction } from "./db";
 import { uuid, nowUtc } from "./repo";
 import type { TriggerDisplacement, TriggerObject, TriggerObjectCheck } from "./schema";
 
@@ -31,15 +31,17 @@ export async function createTriggerObject(input: {
     created_at: ts,
     updated_at: ts,
   };
-  await exec(
-    `INSERT INTO trigger_objects (id, investigation_id, name, description, initial_image_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [obj.id, obj.investigation_id, obj.name, obj.description, obj.initial_image_id, obj.created_at, obj.updated_at],
-  );
-  await appendAuditEntry({
-    actor: ACTOR_DEFAULT,
-    kind: "trigger_object.create",
-    payload: { id, investigation_id: input.investigation_id, name: obj.name },
+  await withTransaction(async () => {
+    await exec(
+      `INSERT INTO trigger_objects (id, investigation_id, name, description, initial_image_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [obj.id, obj.investigation_id, obj.name, obj.description, obj.initial_image_id, obj.created_at, obj.updated_at],
+    );
+    await appendAuditEntry({
+      actor: ACTOR_DEFAULT,
+      kind: "trigger_object.create",
+      payload: { id, investigation_id: input.investigation_id, name: obj.name },
+    });
   });
   return obj;
 }
@@ -53,23 +55,27 @@ export async function listTriggerObjects(investigationId: string): Promise<Trigg
 
 export async function setInitialImage(objectId: string, imageId: string): Promise<void> {
   const ts = nowUtc();
-  await exec(
-    "UPDATE trigger_objects SET initial_image_id = ?, updated_at = ? WHERE id = ?",
-    [imageId, ts, objectId],
-  );
-  await appendAuditEntry({
-    actor: ACTOR_DEFAULT,
-    kind: "trigger_object.initial_image",
-    payload: { object_id: objectId, image_id: imageId },
+  await withTransaction(async () => {
+    await exec(
+      "UPDATE trigger_objects SET initial_image_id = ?, updated_at = ? WHERE id = ?",
+      [imageId, ts, objectId],
+    );
+    await appendAuditEntry({
+      actor: ACTOR_DEFAULT,
+      kind: "trigger_object.initial_image",
+      payload: { object_id: objectId, image_id: imageId },
+    });
   });
 }
 
 export async function deleteTriggerObject(id: string): Promise<void> {
-  await exec("DELETE FROM trigger_objects WHERE id = ?", [id]);
-  await appendAuditEntry({
-    actor: ACTOR_DEFAULT,
-    kind: "trigger_object.delete",
-    payload: { id },
+  await withTransaction(async () => {
+    await exec("DELETE FROM trigger_objects WHERE id = ?", [id]);
+    await appendAuditEntry({
+      actor: ACTOR_DEFAULT,
+      kind: "trigger_object.delete",
+      payload: { id },
+    });
   });
 }
 
@@ -95,30 +101,32 @@ export async function logTriggerCheck(input: {
     displacement_notes: input.displacement_notes?.trim() || null,
     checked_at: ts,
   };
-  await exec(
-    `INSERT INTO trigger_object_checks
-       (id, trigger_object_id, investigation_id, image_id, displaced, displacement_notes, checked_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [
-      check.id,
-      check.trigger_object_id,
-      check.investigation_id,
-      check.image_id,
-      check.displaced,
-      check.displacement_notes,
-      check.checked_at,
-    ],
-  );
-  await appendAuditEntry({
-    actor: ACTOR_DEFAULT,
-    kind: "trigger_object.check",
-    payload: {
-      id,
-      trigger_object_id: input.trigger_object_id,
-      investigation_id: input.investigation_id,
-      displaced,
-      has_image: !!check.image_id,
-    },
+  await withTransaction(async () => {
+    await exec(
+      `INSERT INTO trigger_object_checks
+         (id, trigger_object_id, investigation_id, image_id, displaced, displacement_notes, checked_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        check.id,
+        check.trigger_object_id,
+        check.investigation_id,
+        check.image_id,
+        check.displaced,
+        check.displacement_notes,
+        check.checked_at,
+      ],
+    );
+    await appendAuditEntry({
+      actor: ACTOR_DEFAULT,
+      kind: "trigger_object.check",
+      payload: {
+        id,
+        trigger_object_id: input.trigger_object_id,
+        investigation_id: input.investigation_id,
+        displaced,
+        has_image: !!check.image_id,
+      },
+    });
   });
   return check;
 }

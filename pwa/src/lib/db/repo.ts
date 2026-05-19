@@ -6,7 +6,7 @@
  */
 
 import { appendAuditEntry } from "./auditLog";
-import { exec, query } from "./db";
+import { exec, query, withTransaction } from "./db";
 import type { EvidenceEvent, Investigation, MediaAsset, ResearchDossierRow, ResearchFindingNoteRow, ReviewerDiscipline, ReviewerSignoffRow, SensorSample } from "./schema";
 import { clearSensitivityCache, enqueue } from "../sync/queue";
 import { sha256Hex } from "../forensic/canonicalJson";
@@ -49,17 +49,22 @@ export async function createInvestigation(input: { title: string; location_name?
     to_consent_path: null,
     commercial_use_approved: 0,
   };
-  await exec(
-    `INSERT INTO investigations (id, title, location_name, notes, created_at, status, source)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [investigation.id, investigation.title, investigation.location_name, investigation.notes, investigation.created_at, investigation.status, investigation.source],
-  );
-  await appendAuditEntry({
-    actor: ACTOR_DEFAULT,
-    kind: "investigation.create",
-    payload: { id, title: investigation.title, location_name: investigation.location_name },
+  // v15: row insert + audit append + sync enqueue commit together so a
+  // mid-sequence failure (e.g. FK rejection now that they're enforced)
+  // never leaves the investigation on disk without its chain entry.
+  await withTransaction(async () => {
+    await exec(
+      `INSERT INTO investigations (id, title, location_name, notes, created_at, status, source)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [investigation.id, investigation.title, investigation.location_name, investigation.notes, investigation.created_at, investigation.status, investigation.source],
+    );
+    await appendAuditEntry({
+      actor: ACTOR_DEFAULT,
+      kind: "investigation.create",
+      payload: { id, title: investigation.title, location_name: investigation.location_name },
+    });
+    await safeEnqueue({ kind: "investigation", ref_id: id, payload: investigation as unknown as Record<string, unknown> });
   });
-  await safeEnqueue({ kind: "investigation", ref_id: id, payload: investigation as unknown as Record<string, unknown> });
   return investigation;
 }
 
@@ -74,25 +79,31 @@ export async function getInvestigation(id: string): Promise<Investigation | null
 
 export async function startInvestigation(id: string): Promise<void> {
   const ts = nowUtc();
-  await exec(
-    "UPDATE investigations SET status = 'running', started_at = COALESCE(started_at, ?) WHERE id = ?",
-    [ts, id],
-  );
-  await appendAuditEntry({ actor: ACTOR_DEFAULT, kind: "investigation.start", payload: { id, started_at: ts } });
+  await withTransaction(async () => {
+    await exec(
+      "UPDATE investigations SET status = 'running', started_at = COALESCE(started_at, ?) WHERE id = ?",
+      [ts, id],
+    );
+    await appendAuditEntry({ actor: ACTOR_DEFAULT, kind: "investigation.start", payload: { id, started_at: ts } });
+  });
 }
 
 export async function stopInvestigation(id: string, disposition?: string): Promise<void> {
   const ts = nowUtc();
-  await exec(
-    "UPDATE investigations SET status = 'ended', ended_at = ?, disposition = COALESCE(?, disposition) WHERE id = ?",
-    [ts, disposition ?? null, id],
-  );
-  await appendAuditEntry({ actor: ACTOR_DEFAULT, kind: "investigation.stop", payload: { id, ended_at: ts, disposition: disposition ?? null } });
+  await withTransaction(async () => {
+    await exec(
+      "UPDATE investigations SET status = 'ended', ended_at = ?, disposition = COALESCE(?, disposition) WHERE id = ?",
+      [ts, disposition ?? null, id],
+    );
+    await appendAuditEntry({ actor: ACTOR_DEFAULT, kind: "investigation.stop", payload: { id, ended_at: ts, disposition: disposition ?? null } });
+  });
 }
 
 export async function setDisposition(id: string, disposition: "null" | "inconclusive" | "flagged" | "confirmed_mundane"): Promise<void> {
-  await exec("UPDATE investigations SET disposition = ? WHERE id = ?", [disposition, id]);
-  await appendAuditEntry({ actor: ACTOR_DEFAULT, kind: "investigation.disposition", payload: { id, disposition } });
+  await withTransaction(async () => {
+    await exec("UPDATE investigations SET disposition = ? WHERE id = ?", [disposition, id]);
+    await appendAuditEntry({ actor: ACTOR_DEFAULT, kind: "investigation.disposition", payload: { id, disposition } });
+  });
 }
 
 /**
@@ -104,15 +115,19 @@ export async function setDisposition(id: string, disposition: "null" | "inconclu
  */
 export async function setCulturallySensitive(id: string, value: boolean): Promise<void> {
   const v = value ? 1 : 0;
-  await exec("UPDATE investigations SET culturally_sensitive = ? WHERE id = ?", [v, id]);
-  // Invalidate the sync gate's per-case cache so the new value applies on the
-  // very next enqueue, rather than waiting for the 30s TTL.
-  clearSensitivityCache();
-  await appendAuditEntry({
-    actor: ACTOR_DEFAULT,
-    kind: "investigation.cultural_sensitivity",
-    payload: { id, culturally_sensitive: v },
+  await withTransaction(async () => {
+    await exec("UPDATE investigations SET culturally_sensitive = ? WHERE id = ?", [v, id]);
+    await appendAuditEntry({
+      actor: ACTOR_DEFAULT,
+      kind: "investigation.cultural_sensitivity",
+      payload: { id, culturally_sensitive: v },
+    });
   });
+  // Invalidate the sync gate's per-case cache so the new value applies on the
+  // very next enqueue, rather than waiting for the 30s TTL. Cache lives in
+  // memory (not the DB) — we clear it AFTER the transaction commits so the
+  // refreshed value can't be repopulated by a concurrent read before commit.
+  clearSensitivityCache();
 }
 
 // ---------------------- sensor samples ----------------------
@@ -151,19 +166,28 @@ export async function recordSensorSample(input: SensorSampleInput): Promise<Sens
     unit: input.unit ?? null,
     metadata_json: input.metadata ? JSON.stringify(input.metadata) : null,
   };
-  await exec(
-    `INSERT INTO sensor_samples (id, investigation_id, timestamp, sensor_type, value, x, y, z, unit, metadata_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [sample.id, sample.investigation_id, sample.timestamp, sample.sensor_type, sample.value, sample.x, sample.y, sample.z, sample.unit, sample.metadata_json],
-  );
-  // Throttled mirror to the sync queue. Local insert above is unconditional.
+  // Sensor samples are the hottest write path on the device — IMU streams
+  // can fire 50+ Hz. We still pay the BEGIN/COMMIT round-trip because the
+  // local INSERT + (throttled) sync enqueue must commit together: a
+  // partial state where the sample landed locally but the queue row got
+  // lost (or vice-versa) would skew the cloud roll-up. The transaction
+  // is single-statement most of the time (throttle suppresses the
+  // enqueue), so the cost stays bounded.
   const throttleKey = `${sample.investigation_id}|${sample.sensor_type}`;
   const now = Date.now();
   const lastAt = lastSensorEnqueueAt.get(throttleKey) ?? 0;
-  if (now - lastAt >= SENSOR_SYNC_THROTTLE_MS) {
-    lastSensorEnqueueAt.set(throttleKey, now);
-    await safeEnqueue({ kind: "sensor", ref_id: id, payload: sample as unknown as Record<string, unknown> });
-  }
+  const shouldMirror = now - lastAt >= SENSOR_SYNC_THROTTLE_MS;
+  await withTransaction(async () => {
+    await exec(
+      `INSERT INTO sensor_samples (id, investigation_id, timestamp, sensor_type, value, x, y, z, unit, metadata_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [sample.id, sample.investigation_id, sample.timestamp, sample.sensor_type, sample.value, sample.x, sample.y, sample.z, sample.unit, sample.metadata_json],
+    );
+    if (shouldMirror) {
+      lastSensorEnqueueAt.set(throttleKey, now);
+      await safeEnqueue({ kind: "sensor", ref_id: id, payload: sample as unknown as Record<string, unknown> });
+    }
+  });
   return sample;
 }
 
@@ -202,17 +226,19 @@ export async function recordEvent(input: EventInput): Promise<EvidenceEvent> {
     linked_file: input.linked_file ?? null,
     restriction: "open",
   };
-  await exec(
-    `INSERT INTO evidence_events (id, investigation_id, timestamp, source, event_type, title, description, metadata_json, linked_file)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [event.id, event.investigation_id, event.timestamp, event.source, event.event_type, event.title, event.description, event.metadata_json, event.linked_file],
-  );
-  await appendAuditEntry({
-    actor: ACTOR_DEFAULT,
-    kind: `event.${input.event_type}`,
-    payload: { id, investigation_id: input.investigation_id, source: input.source, event_type: input.event_type },
+  await withTransaction(async () => {
+    await exec(
+      `INSERT INTO evidence_events (id, investigation_id, timestamp, source, event_type, title, description, metadata_json, linked_file)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [event.id, event.investigation_id, event.timestamp, event.source, event.event_type, event.title, event.description, event.metadata_json, event.linked_file],
+    );
+    await appendAuditEntry({
+      actor: ACTOR_DEFAULT,
+      kind: `event.${input.event_type}`,
+      payload: { id, investigation_id: input.investigation_id, source: input.source, event_type: input.event_type },
+    });
+    await safeEnqueue({ kind: "event", ref_id: id, payload: event as unknown as Record<string, unknown> });
   });
-  await safeEnqueue({ kind: "event", ref_id: id, payload: event as unknown as Record<string, unknown> });
   return event;
 }
 
@@ -249,23 +275,25 @@ export async function registerMedia(input: MediaInput): Promise<MediaAsset> {
     metadata_json: input.metadata ? JSON.stringify(input.metadata) : null,
     restriction: "open",
   };
-  await exec(
-    `INSERT INTO media_assets (id, investigation_id, media_type, file_path, timestamp_start, timestamp_end, checksum_sha256, metadata_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [asset.id, asset.investigation_id, asset.media_type, asset.file_path, asset.timestamp_start, asset.timestamp_end, asset.checksum_sha256, asset.metadata_json],
-  );
-  await appendAuditEntry({
-    actor: ACTOR_DEFAULT,
-    kind: "media.register",
-    payload: { id, investigation_id: input.investigation_id, media_type: input.media_type, file_path: input.file_path, sha256: input.checksum_sha256 ?? null },
-  });
-  await safeEnqueue({ kind: "media_row", ref_id: id, payload: asset as unknown as Record<string, unknown> });
-  // The bytes go up separately so a 2GB video doesn't block the row sync.
-  await safeEnqueue({
-    kind: "media_blob",
-    ref_id: id,
-    payload: { id, investigation_id: input.investigation_id, file_path: input.file_path, media_type: input.media_type, sha256: input.checksum_sha256 ?? null },
-    file_path: input.file_path,
+  await withTransaction(async () => {
+    await exec(
+      `INSERT INTO media_assets (id, investigation_id, media_type, file_path, timestamp_start, timestamp_end, checksum_sha256, metadata_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [asset.id, asset.investigation_id, asset.media_type, asset.file_path, asset.timestamp_start, asset.timestamp_end, asset.checksum_sha256, asset.metadata_json],
+    );
+    await appendAuditEntry({
+      actor: ACTOR_DEFAULT,
+      kind: "media.register",
+      payload: { id, investigation_id: input.investigation_id, media_type: input.media_type, file_path: input.file_path, sha256: input.checksum_sha256 ?? null },
+    });
+    await safeEnqueue({ kind: "media_row", ref_id: id, payload: asset as unknown as Record<string, unknown> });
+    // The bytes go up separately so a 2GB video doesn't block the row sync.
+    await safeEnqueue({
+      kind: "media_blob",
+      ref_id: id,
+      payload: { id, investigation_id: input.investigation_id, file_path: input.file_path, media_type: input.media_type, sha256: input.checksum_sha256 ?? null },
+      file_path: input.file_path,
+    });
   });
   return asset;
 }
@@ -328,42 +356,44 @@ export async function saveDossier(input: DossierInput): Promise<ResearchDossierR
     model: input.model,
     result_json,
   };
-  await exec(
-    `INSERT INTO research_dossiers
-       (id, investigation_id, venue_name, location_hint, region, created_at, model, result_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [row.id, row.investigation_id, row.venue_name, row.location_hint, row.region, row.created_at, row.model, row.result_json],
-  );
-  // Soft-warn on bigger-than-typical writes so a reviewer's chain
-  // shows when the model was generating unusually large payloads even
-  // though they were within the hard limit.
   const SOFT_WARN_BYTES = 200_000;
-  if (byteLen >= SOFT_WARN_BYTES) {
+  await withTransaction(async () => {
+    await exec(
+      `INSERT INTO research_dossiers
+         (id, investigation_id, venue_name, location_hint, region, created_at, model, result_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [row.id, row.investigation_id, row.venue_name, row.location_hint, row.region, row.created_at, row.model, row.result_json],
+    );
+    // Soft-warn on bigger-than-typical writes so a reviewer's chain
+    // shows when the model was generating unusually large payloads even
+    // though they were within the hard limit.
+    if (byteLen >= SOFT_WARN_BYTES) {
+      await appendAuditEntry({
+        actor: ACTOR_DEFAULT,
+        kind: "research.dossier.size_warning",
+        payload: { id, bytes: byteLen, threshold_bytes: SOFT_WARN_BYTES },
+      });
+    }
     await appendAuditEntry({
       actor: ACTOR_DEFAULT,
-      kind: "research.dossier.size_warning",
-      payload: { id, bytes: byteLen, threshold_bytes: SOFT_WARN_BYTES },
+      kind: "research.dossier.save",
+      payload: {
+        id,
+        investigation_id: row.investigation_id,
+        venue_name: row.venue_name,
+        region: row.region,
+        model: row.model,
+        // Lean payload — full result is in the row, the audit chain just
+        // needs an integrity anchor.
+        finding_count: Array.isArray((input.result as { findings?: unknown }).findings)
+          ? ((input.result as { findings: unknown[] }).findings.length)
+          : 0,
+      },
     });
-  }
-  await appendAuditEntry({
-    actor: ACTOR_DEFAULT,
-    kind: "research.dossier.save",
-    payload: {
-      id,
-      investigation_id: row.investigation_id,
-      venue_name: row.venue_name,
-      region: row.region,
-      model: row.model,
-      // Lean payload — full result is in the row, the audit chain just
-      // needs an integrity anchor.
-      finding_count: Array.isArray((input.result as { findings?: unknown }).findings)
-        ? ((input.result as { findings: unknown[] }).findings.length)
-        : 0,
-    },
+    // Sync queue: standalone dossiers (no investigation_id) still mirror
+    // — they're useful pre-visit recon evidence for the cloud roll-up.
+    await safeEnqueue({ kind: "dossier", ref_id: id, payload: row as unknown as Record<string, unknown> });
   });
-  // Sync queue: standalone dossiers (no investigation_id) still mirror
-  // — they're useful pre-visit recon evidence for the cloud roll-up.
-  await safeEnqueue({ kind: "dossier", ref_id: id, payload: row as unknown as Record<string, unknown> });
   return row;
 }
 
@@ -386,8 +416,10 @@ export async function getDossier(id: string): Promise<ResearchDossierRow | null>
 }
 
 export async function deleteDossier(id: string): Promise<void> {
-  await exec("DELETE FROM research_dossiers WHERE id = ?", [id]);
-  await appendAuditEntry({ actor: ACTOR_DEFAULT, kind: "research.dossier.delete", payload: { id } });
+  await withTransaction(async () => {
+    await exec("DELETE FROM research_dossiers WHERE id = ?", [id]);
+    await appendAuditEntry({ actor: ACTOR_DEFAULT, kind: "research.dossier.delete", payload: { id } });
+  });
 }
 
 // ---------------------- research finding notes (v5) ----------------------
@@ -434,16 +466,18 @@ export async function saveFindingNote(input: FindingNoteInput): Promise<Research
   );
   const id = existing[0]?.id ?? uuid();
   const createdAt = existing[0]?.created_at ?? now;
-  await exec(
-    `INSERT INTO research_finding_notes (id, dossier_id, finding_key, text, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)
-     ON CONFLICT(dossier_id, finding_key) DO UPDATE SET text = excluded.text, updated_at = excluded.updated_at`,
-    [id, input.dossier_id, input.finding_key, text, createdAt, now],
-  );
-  await appendAuditEntry({
-    actor: ACTOR_DEFAULT,
-    kind: existing[0] ? "research.finding_note.update" : "research.finding_note.create",
-    payload: { id, dossier_id: input.dossier_id, finding_key: input.finding_key, text_length: text.length },
+  await withTransaction(async () => {
+    await exec(
+      `INSERT INTO research_finding_notes (id, dossier_id, finding_key, text, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(dossier_id, finding_key) DO UPDATE SET text = excluded.text, updated_at = excluded.updated_at`,
+      [id, input.dossier_id, input.finding_key, text, createdAt, now],
+    );
+    await appendAuditEntry({
+      actor: ACTOR_DEFAULT,
+      kind: existing[0] ? "research.finding_note.update" : "research.finding_note.create",
+      payload: { id, dossier_id: input.dossier_id, finding_key: input.finding_key, text_length: text.length },
+    });
   });
   return { id, dossier_id: input.dossier_id, finding_key: input.finding_key, text, created_at: createdAt, updated_at: now };
 }
@@ -454,14 +488,16 @@ export async function deleteFindingNote(dossierId: string, findingKey: string): 
     [dossierId, findingKey],
   );
   if (!existing[0]) return;
-  await exec(
-    "DELETE FROM research_finding_notes WHERE dossier_id = ? AND finding_key = ?",
-    [dossierId, findingKey],
-  );
-  await appendAuditEntry({
-    actor: ACTOR_DEFAULT,
-    kind: "research.finding_note.delete",
-    payload: { id: existing[0].id, dossier_id: dossierId, finding_key: findingKey },
+  await withTransaction(async () => {
+    await exec(
+      "DELETE FROM research_finding_notes WHERE dossier_id = ? AND finding_key = ?",
+      [dossierId, findingKey],
+    );
+    await appendAuditEntry({
+      actor: ACTOR_DEFAULT,
+      kind: "research.finding_note.delete",
+      payload: { id: existing[0].id, dossier_id: dossierId, finding_key: findingKey },
+    });
   });
 }
 
@@ -558,26 +594,33 @@ export async function createSignoff(input: SignoffInput): Promise<ReviewerSignof
     created_at: now,
     updated_at: now,
   };
-  await exec(
-    `INSERT INTO reviewer_signoffs
-       (id, reviewer_name, affiliation, identifier, discipline, signed_at, app_version, statement, source_url, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [row.id, row.reviewer_name, row.affiliation, row.identifier, row.discipline, row.signed_at, row.app_version, row.statement, row.source_url, row.created_at, row.updated_at],
-  );
-  await appendAuditEntry({
-    actor: ACTOR_DEFAULT,
-    kind: "reviewer.signoff.create",
-    payload: {
-      id,
-      reviewer_name: row.reviewer_name,
-      discipline: row.discipline,
-      signed_at: row.signed_at,
-      app_version: row.app_version,
-      // The full statement gets hashed into the chain so forgery would
-      // visibly break verification, but we don't repeat it in the payload —
-      // it's already on the row.
-      statement_sha256: await sha256Hex(row.statement),
-    },
+  // Hash outside the transaction — SubtleCrypto can be slow on mobile;
+  // we don't want it holding the SQLite tx open. The hash still binds
+  // the on-disk statement bytes: tampering with the row changes the
+  // statement, which would no longer match the hash the chain anchored.
+  const statementSha = await sha256Hex(row.statement);
+  await withTransaction(async () => {
+    await exec(
+      `INSERT INTO reviewer_signoffs
+         (id, reviewer_name, affiliation, identifier, discipline, signed_at, app_version, statement, source_url, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [row.id, row.reviewer_name, row.affiliation, row.identifier, row.discipline, row.signed_at, row.app_version, row.statement, row.source_url, row.created_at, row.updated_at],
+    );
+    await appendAuditEntry({
+      actor: ACTOR_DEFAULT,
+      kind: "reviewer.signoff.create",
+      payload: {
+        id,
+        reviewer_name: row.reviewer_name,
+        discipline: row.discipline,
+        signed_at: row.signed_at,
+        app_version: row.app_version,
+        // The full statement gets hashed into the chain so forgery would
+        // visibly break verification, but we don't repeat it in the payload —
+        // it's already on the row.
+        statement_sha256: statementSha,
+      },
+    });
   });
   return row;
 }
@@ -590,24 +633,28 @@ export async function updateSignoff(id: string, input: SignoffInput): Promise<Re
   );
   if (!existing[0]) throw new Error(`Sign-off ${id} not found.`);
   const now = nowUtc();
-  await exec(
-    `UPDATE reviewer_signoffs
-       SET reviewer_name = ?, affiliation = ?, identifier = ?, discipline = ?,
-           signed_at = ?, app_version = ?, statement = ?, source_url = ?, updated_at = ?
-       WHERE id = ?`,
-    [norm.reviewer_name, norm.affiliation, norm.identifier, norm.discipline, norm.signed_at, norm.app_version, norm.statement, norm.source_url, now, id],
-  );
-  await appendAuditEntry({
-    actor: ACTOR_DEFAULT,
-    kind: "reviewer.signoff.update",
-    payload: {
-      id,
-      reviewer_name: norm.reviewer_name,
-      discipline: norm.discipline,
-      signed_at: norm.signed_at,
-      app_version: norm.app_version,
-      statement_sha256: await sha256Hex(norm.statement),
-    },
+  // Hash outside the transaction (same reasoning as createSignoff).
+  const statementSha = await sha256Hex(norm.statement);
+  await withTransaction(async () => {
+    await exec(
+      `UPDATE reviewer_signoffs
+         SET reviewer_name = ?, affiliation = ?, identifier = ?, discipline = ?,
+             signed_at = ?, app_version = ?, statement = ?, source_url = ?, updated_at = ?
+         WHERE id = ?`,
+      [norm.reviewer_name, norm.affiliation, norm.identifier, norm.discipline, norm.signed_at, norm.app_version, norm.statement, norm.source_url, now, id],
+    );
+    await appendAuditEntry({
+      actor: ACTOR_DEFAULT,
+      kind: "reviewer.signoff.update",
+      payload: {
+        id,
+        reviewer_name: norm.reviewer_name,
+        discipline: norm.discipline,
+        signed_at: norm.signed_at,
+        app_version: norm.app_version,
+        statement_sha256: statementSha,
+      },
+    });
   });
   return {
     id,
@@ -630,15 +677,17 @@ export async function deleteSignoff(id: string): Promise<void> {
     [id],
   );
   if (!existing[0]) return;
-  await exec("DELETE FROM reviewer_signoffs WHERE id = ?", [id]);
-  await appendAuditEntry({
-    actor: ACTOR_DEFAULT,
-    kind: "reviewer.signoff.delete",
-    payload: {
-      id,
-      reviewer_name: existing[0].reviewer_name,
-      discipline: existing[0].discipline,
-    },
+  await withTransaction(async () => {
+    await exec("DELETE FROM reviewer_signoffs WHERE id = ?", [id]);
+    await appendAuditEntry({
+      actor: ACTOR_DEFAULT,
+      kind: "reviewer.signoff.delete",
+      payload: {
+        id,
+        reviewer_name: existing[0].reviewer_name,
+        discipline: existing[0].discipline,
+      },
+    });
   });
 }
 
@@ -685,33 +734,35 @@ export async function createControlSession(
     to_consent_path: null,
     commercial_use_approved: 0,
   };
-  await exec(
-    `INSERT INTO investigations
-       (id, title, location_name, notes, created_at, status, source, session_type, paired_investigation_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      investigation.id,
-      investigation.title,
-      investigation.location_name,
-      investigation.notes,
-      investigation.created_at,
-      investigation.status,
-      investigation.source,
-      investigation.session_type,
-      investigation.paired_investigation_id,
-    ],
-  );
-  await appendAuditEntry({
-    actor: ACTOR_DEFAULT,
-    kind: "investigation.control_session.create",
-    payload: {
-      id,
-      title: investigation.title,
-      location_name: investigation.location_name,
-      paired_investigation_id: pairedInvestigationId,
-    },
+  await withTransaction(async () => {
+    await exec(
+      `INSERT INTO investigations
+         (id, title, location_name, notes, created_at, status, source, session_type, paired_investigation_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        investigation.id,
+        investigation.title,
+        investigation.location_name,
+        investigation.notes,
+        investigation.created_at,
+        investigation.status,
+        investigation.source,
+        investigation.session_type,
+        investigation.paired_investigation_id,
+      ],
+    );
+    await appendAuditEntry({
+      actor: ACTOR_DEFAULT,
+      kind: "investigation.control_session.create",
+      payload: {
+        id,
+        title: investigation.title,
+        location_name: investigation.location_name,
+        paired_investigation_id: pairedInvestigationId,
+      },
+    });
+    await safeEnqueue({ kind: "investigation", ref_id: id, payload: investigation as unknown as Record<string, unknown> });
   });
-  await safeEnqueue({ kind: "investigation", ref_id: id, payload: investigation as unknown as Record<string, unknown> });
   return investigation;
 }
 
