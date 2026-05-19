@@ -1,0 +1,273 @@
+/* ============================================================================
+   BroadcastPreview — design-review surface for the broadcast HUD.
+
+   Layout:
+     - Sticky header with title + theme/reduced-motion controls
+     - 2×2 grid of 16:9 frames (1×4 stack on mobile, 2×2 on tablet+)
+     - Footer with the "internal tool" note
+
+   Each frame establishes its own positioning context so the broadcast
+   components' `position: absolute` offsets anchor to the frame edges. The
+   16:9 aspect ratio is enforced via `aspect-ratio` so the frame scales
+   gracefully across viewport widths without us having to JS-measure heights.
+   ============================================================================ */
+
+.page {
+  min-height: 100dvh;
+  background: var(--bg-app, #0B0F14);
+  color: var(--text-primary, #E7ECF3);
+  padding:
+    calc(var(--s-16, 16px) + var(--safe-top, 0px))
+    calc(var(--s-16, 16px) + var(--safe-right, 0px))
+    calc(var(--s-24, 24px) + var(--safe-bottom, 0px) + var(--bottom-nav-height, 64px))
+    calc(var(--s-16, 16px) + var(--safe-left, 0px));
+  font-family: var(--font-body, "Inter", system-ui, sans-serif);
+}
+
+/* ── Header ───────────────────────────────────────────────────────────────── */
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(93, 242, 199, 0.12);
+}
+
+.headLeft {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.title {
+  font-family: var(--font-display, "Space Grotesk", "Inter", sans-serif);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  line-height: 1.2;
+  margin: 0 0 6px;
+  color: var(--text-primary, #E7ECF3);
+}
+
+.subtitle {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary, #9BA6B8);
+  max-width: 60ch;
+  margin: 0;
+}
+
+.headNav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  align-items: center;
+}
+
+/* ── Controls (theme segmented + reduced-motion toggle) ───────────────────── */
+
+.controlGroup {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.controlLabel {
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 9.5px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--text-secondary, #9BA6B8);
+  padding: 0;
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid rgba(93, 242, 199, 0.18);
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(8, 12, 18, 0.4);
+}
+
+.segmentBtn {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid rgba(93, 242, 199, 0.12);
+  color: var(--text-secondary, #9BA6B8);
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  padding: 8px 12px;
+  cursor: pointer;
+  /* WCAG 2.5.5 — keep the actual hit-region at 44×44 even though the
+     visible chip is shorter. Using a pseudo-element so the focus ring
+     hugs the visible chip without a giant outline. */
+  min-height: 32px;
+  min-width: 64px;
+  transition: background 150ms ease, color 150ms ease;
+}
+.segmentBtn:last-child { border-right: 0; }
+.segmentBtn:hover { color: var(--text-primary, #E7ECF3); }
+.segmentBtnActive {
+  background: rgba(93, 242, 199, 0.14);
+  color: var(--signal, #5DF2C7);
+}
+
+.toggleRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-secondary, #9BA6B8);
+  cursor: pointer;
+  user-select: none;
+}
+.toggleRow input { accent-color: var(--signal, #5DF2C7); }
+
+.backLink {
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 11px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--text-secondary, #9BA6B8);
+  text-decoration: none;
+  border: 1px solid rgba(93, 242, 199, 0.12);
+  border-radius: 8px;
+  padding: 8px 12px;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+.backLink:hover {
+  color: var(--signal, #5DF2C7);
+  border-color: rgba(93, 242, 199, 0.32);
+}
+
+/* ── Grid + frames ────────────────────────────────────────────────────────── */
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+}
+
+@media (min-width: 720px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 24px;
+  }
+}
+
+.frameFigure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* The frame establishes the positioning context for the absolutely-
+   positioned broadcast components. 16:9 aspect ratio mirrors the
+   typical camera capture frame; full width within its grid cell so the
+   chrome's hard-coded offsets land in a familiar place. */
+.frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid rgba(93, 242, 199, 0.14);
+  background: #060A10;
+  /* Subtle outer shadow + inset highlight so the frame reads as a TV
+     monitor rather than an empty rectangle. */
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.55),
+    0 1px 0 rgba(255, 255, 255, 0.03) inset;
+  isolation: isolate;
+}
+
+/* Neutral low-light backdrop. Deliberately a vignette gradient rather
+   than imagery so the broadcast chrome stays the focus and the preview
+   reads identically in scotopic / daylight / phosphor themes. */
+.backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(
+      ellipse at 50% 35%,
+      rgba(40, 50, 65, 0.55) 0%,
+      rgba(20, 26, 36, 0.75) 45%,
+      rgba(6, 10, 16, 0.95) 100%
+    );
+  /* A barely-there scanline texture so the backdrop reads as "low-light
+     video" rather than a flat fill. Faint enough that scotopic / daylight
+     don't have to compensate. */
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.012) 0px,
+      rgba(255, 255, 255, 0.012) 1px,
+      transparent 1px,
+      transparent 3px
+    ),
+    radial-gradient(
+      ellipse at 50% 35%,
+      rgba(40, 50, 65, 0.55) 0%,
+      rgba(20, 26, 36, 0.75) 45%,
+      rgba(6, 10, 16, 0.95) 100%
+    );
+}
+
+.caption {
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 11px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--text-secondary, #9BA6B8);
+  text-align: center;
+}
+
+/* ── Footer ───────────────────────────────────────────────────────────────── */
+
+.footer {
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(93, 242, 199, 0.08);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary, #9BA6B8);
+}
+.footer code {
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 12px;
+  padding: 2px 5px;
+  background: rgba(93, 242, 199, 0.08);
+  border-radius: 4px;
+  color: var(--signal, #5DF2C7);
+}
+
+/* ── Reduced-motion override ──────────────────────────────────────────────────
+   When the toggle is on, the page root carries
+   `data-prefers-reduced-motion="reduce"`. Disable every animation and
+   transition inside the preview (mirrors the global @media rule in
+   global.css). The `:global()` wrapper lets this CSS-module file reach
+   into the broadcast components' hashed class names. */
+
+:global([data-prefers-reduced-motion="reduce"]) *,
+:global([data-prefers-reduced-motion="reduce"]) *::before,
+:global([data-prefers-reduced-motion="reduce"]) *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
