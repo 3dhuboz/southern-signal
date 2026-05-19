@@ -42,6 +42,7 @@ import type { MediaAsset } from "../lib/db/schema";
 import { computeNoiseFloor } from "../lib/audio/spectrogram";
 import { SpectrogramViewer } from "./SpectrogramViewer";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useEd25519Support } from "../hooks/useEd25519Support";
 import s from "./EvpEditor.module.css";
 
 interface Props {
@@ -130,6 +131,10 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
   const [deepReview, setDeepReview] = useState<DeepReview | null>(null);
   const [deepReviewBusy, setDeepReviewBusy] = useState(false);
   const [deepReviewErr, setDeepReviewErr] = useState<string | null>(null);
+  // Deep review hits the signed /api/ai/evp-review endpoint → needs
+  // Ed25519 the same as every other AI call.
+  const ed25519Support = useEd25519Support();
+  const signingUnsupported = ed25519Support !== null && !ed25519Support.ok;
 
   // --- Headphone gate (per session, not persisted) -----------------------
   const [headphoneChecked, setHeadphoneChecked]   = useState(false);
@@ -1303,8 +1308,10 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
                   type="button"
                   className={s.secondaryBtn}
                   onClick={handleTranscribe}
-                  disabled={transcribing || transcribingLocal}
-                  title="Cloud transcription via Whisper. Blocked on culturally-sensitive cases."
+                  disabled={transcribing || transcribingLocal || signingUnsupported}
+                  title={signingUnsupported
+                    ? "Requires iOS 17 or later — Ed25519 signing is unavailable on this device."
+                    : "Cloud transcription via Whisper. Blocked on culturally-sensitive cases."}
                 >
                   {transcribing ? "Transcribing…" : selection ? "Transcribe selection (cloud)" : "Transcribe full (cloud)"}
                 </button>
@@ -1350,8 +1357,10 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
                       type="button"
                       className={s.deepReviewBtn}
                       onClick={handleDeepAiReview}
-                      disabled={deepReviewBusy}
-                      title="Second-pass AI review against the venue dossier + baseline context. Audit-chained."
+                      disabled={deepReviewBusy || signingUnsupported}
+                      title={signingUnsupported
+                        ? "Requires iOS 17 or later — Ed25519 signing is unavailable on this device."
+                        : "Second-pass AI review against the venue dossier + baseline context. Audit-chained."}
                     >
                       {deepReviewBusy ? "Reviewing in context…" : "Deep AI review (in context)"}
                     </button>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useEd25519Support } from "../hooks/useEd25519Support";
 import { AHT_H0_SUSPEND_THRESHOLD, computeH0Confidence } from "../lib/posterior/ahtVerdict";
 import { buildEvidenceBrief, findMostRecentInvestigationId, type EvidenceBrief } from "../lib/forensic/evidenceBrief";
 import { NullRateDashboard } from "../components/NullRateDashboard";
@@ -187,6 +188,13 @@ function formatMarkerElapsed(meta: string | null): string | null {
 export function Review() {
   const [prefs] = usePreferences();
   const isPro = prefs.experienceMode === "pro";
+  // Ed25519 support feeds the disabled state for the Export Bundle button.
+  // Probe runs at App boot; unresolved (null) leaves the button enabled so
+  // we don't false-positive a "disabled" while the probe is still in
+  // flight on the first paint. Once it lands, an `ok: false` result
+  // disables the button and the persistent banner explains why.
+  const ed25519Support = useEd25519Support();
+  const signingUnsupported = ed25519Support !== null && !ed25519Support.ok;
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [chainStatus, setChainStatus] = useState<"checking" | "ok" | "broken">("checking");
   const [chainBrokenSeq, setChainBrokenSeq] = useState<number | null>(null);
@@ -778,7 +786,13 @@ export function Review() {
                 <span> · {entries.length} log entries, none altered since capture</span>
               </>
             )}
-            <button type="button" className={r.downloadButton} onClick={handleExportZip} disabled={exporting}>
+            <button
+              type="button"
+              className={r.downloadButton}
+              onClick={handleExportZip}
+              disabled={exporting || signingUnsupported}
+              title={signingUnsupported ? "Requires iOS 17 or later — Ed25519 signing is unavailable on this device." : undefined}
+            >
               {exporting ? "Building zip…" : isPro ? "Export full bundle (.zip)" : "Download case bundle (.zip)"}
             </button>
             {isPro && (

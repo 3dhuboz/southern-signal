@@ -38,6 +38,7 @@ import { recordEvent, saveDossier, listDossiers, getDossier, deleteDossier, find
 import type { ResearchDossierRow } from "../lib/db/schema";
 import { appendAuditEntry } from "../lib/db/auditLog";
 import { getCurrentPoint } from "../lib/sensors/geolocation";
+import { useEd25519Support } from "../hooks/useEd25519Support";
 import s from "./View.module.css";
 import r from "./Research.module.css";
 
@@ -393,7 +394,12 @@ export function Research() {
   const culturallyBlocked = prefs.globalCulturalSensitivityFlag || (session.current?.culturally_sensitive === 1);
   const researchDisabled = !prefs.research.enabled;
   const rateBlocked = rate.used >= rate.cap;
-  const canRun = venueName.trim().length >= 2 && !busy && !culturallyBlocked && !researchDisabled && !rateBlocked;
+  // AI Investigator hits the signed /api/ai/research relay → gated on
+  // Ed25519 availability the same as every other AI call. See
+  // CryptoUnsupportedBanner for the user-facing copy.
+  const ed25519Support = useEd25519Support();
+  const signingUnsupported = ed25519Support !== null && !ed25519Support.ok;
+  const canRun = venueName.trim().length >= 2 && !busy && !culturallyBlocked && !researchDisabled && !rateBlocked && !signingUnsupported;
 
   // Rotate the fallback progress label while a run is in flight AND no
   // server stage has arrived yet. The streaming endpoint's stage events
@@ -1011,6 +1017,7 @@ export function Research() {
             className={`btn btn-primary ${r.runBtn}`}
             onClick={handleRun}
             disabled={!canRun}
+            title={signingUnsupported ? "Requires iOS 17 or later — Ed25519 signing is unavailable on this device." : undefined}
           >
             {busy ? progressLabel : "Run AI Investigator"}
           </button>

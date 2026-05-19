@@ -136,6 +136,23 @@ tool, an external Bayesian and an external acoustician will sign off on the
 methodology. Reviewer shortlist is private until contact is made; the
 sign-off itself is published with the release.
 
+## Known limitations
+
+- **iOS 17+ is the minimum.** The forensic Export Bundle and every signed
+  AI call (`/api/ai/*`) use WebCrypto Ed25519 to sign requests with a
+  hardware-bound, non-extractable key (`lib/forensic/signingKeyStore.ts`).
+  Apple shipped Ed25519 in iOS / iPadOS / Safari 17 (September 2023); on
+  iOS 16.x or earlier `crypto.subtle.generateKey({ name: "Ed25519" }, …)`
+  throws a `NotSupportedError`. The app boots a preflight probe
+  (`lib/forensic/cryptoSupport.ts`) and surfaces a persistent banner plus
+  disabled Export Bundle / AI Assist buttons when the runtime is too old.
+  Review, Camera, About, and the rest of the app stay browsable. We
+  deliberately do not polyfill — a JS Ed25519 implementation would have
+  to extract the private key into JS memory, defeating the
+  non-extractable contract that gives the forensic chain its value.
+  Recent Chromium (Chrome 113+, Edge 113+) and Firefox (130+) all
+  support Ed25519 natively.
+
 ## Development
 
 ```bash

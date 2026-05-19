@@ -1,0 +1,79 @@
+/* App-shell banner shown when the WebCrypto Ed25519 probe fails. Same
+   shape as InterruptedSessionBanner — the runtime isn't broken, it just
+   can't extend the forensic chain on this device — so we use --warning
+   (amber) rather than --danger. */
+
+.banner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-12);
+  margin: 0 var(--s-20) var(--s-12);
+  padding: 14px var(--s-16);
+  border-radius: var(--r-md);
+  border: 1px solid var(--warning);
+  background: var(--warning-wash);
+  color: var(--text-primary);
+  /* Respect notch / safe-area insets. The banner sits inside the document
+     flow under AppHeader / ServiceWorkerUpdateBanner, but on a 390 px
+     viewport the side margins narrow to keep the copy readable without
+     wrapping onto a fourth line. */
+  margin-left: max(var(--s-20), env(safe-area-inset-left, 0));
+  margin-right: max(var(--s-20), env(safe-area-inset-right, 0));
+}
+
+@media (min-width: 640px) {
+  .banner {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-16);
+  }
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  min-width: 0;
+  flex: 1;
+}
+
+.title {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--warning);
+}
+
+.detail {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.actions {
+  display: flex;
+  gap: var(--s-8);
+  flex-shrink: 0;
+}
+
+.dismissBtn {
+  padding: var(--s-8) 14px;
+  border-radius: var(--r-md);
+  font-size: 12px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid var(--warning);
+  background: transparent;
+  color: var(--warning);
+  /* Touch target — WCAG 2.5.5: minimum 44×44 CSS px. The padding above is
+     deliberately tuned so the rendered hit area meets that floor on the
+     390 px reference viewport. */
+  min-height: 44px;
+  min-width: 64px;
+}
+.dismissBtn:hover { background: color-mix(in srgb, var(--warning) 12%, transparent); }

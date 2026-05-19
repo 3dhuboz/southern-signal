@@ -22,6 +22,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { verifyAuditChain } from "../lib/db/auditLog";
+import { useEd25519Support } from "../hooks/useEd25519Support";
 import s from "./ChainBrokenBanner.module.css";
 
 interface BrokenStatus { brokenAtSeq: number; reason: string }
@@ -34,6 +35,10 @@ export function ChainBrokenBanner() {
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const navigate = useNavigate();
+  // Export now signs the manifest — gate it the same way as every other
+  // export entry point when Ed25519 is unavailable on this device.
+  const ed25519Support = useEd25519Support();
+  const signingUnsupported = ed25519Support !== null && !ed25519Support.ok;
 
   // Snapshot the current bundle to disk immediately. Critical when the chain
   // is broken — the operator wants the forensic record captured before any
@@ -92,8 +97,10 @@ export function ChainBrokenBanner() {
           type="button"
           className={s.openBtn}
           onClick={() => void exportNow()}
-          disabled={exporting}
-          title="Captures the bundle (with the current broken chain) to disk for forensic review."
+          disabled={exporting || signingUnsupported}
+          title={signingUnsupported
+            ? "Requires iOS 17 or later — Ed25519 signing is unavailable on this device."
+            : "Captures the bundle (with the current broken chain) to disk for forensic review."}
         >
           {exporting ? "Exporting…" : "Export now"}
         </button>

@@ -6,10 +6,12 @@ import { AppHeader } from "./components/AppHeader";
 import { BottomNav } from "./components/BottomNav";
 import { ChainBrokenBanner } from "./components/ChainBrokenBanner";
 import { CivilTwilightBanner } from "./components/CivilTwilightBanner";
+import { CryptoUnsupportedBanner } from "./components/CryptoUnsupportedBanner";
 import { InterruptedSessionBanner } from "./components/InterruptedSessionBanner";
 import { ServiceWorkerUpdateBanner } from "./components/ServiceWorkerUpdateBanner";
 import { CameraScreen } from "./views/CameraScreen";
 import { sunAltitudeDeg } from "./lib/sensors/civilTwilight";
+import { probeEd25519Support } from "./lib/forensic/cryptoSupport";
 import { applyTheme, setPreferences, usePreferences } from "./lib/preferences";
 import "./styles/global.css";
 
@@ -58,6 +60,17 @@ export default function App() {
     applyTheme(prefs.theme, prefs.scotopicLevel);
   }, [prefs.theme, prefs.scotopicLevel]);
 
+  // Kick off the WebCrypto Ed25519 probe as soon as the shell mounts so
+  // every signing-dependent button (Export Bundle, AI Assist, EVP deep
+  // review) and the persistent CryptoUnsupportedBanner can render against
+  // a known result. The probe is idempotent and caches its result; this
+  // effect just ensures it fires before any feature surface attempts a
+  // signing call. Failures land in the banner — never propagate as
+  // unhandled exceptions.
+  useEffect(() => {
+    void probeEd25519Support();
+  }, []);
+
   // Time-of-day theme auto-engage. Runs once on mount only — manual
   // toggling wins for the session. Symmetric:
   //   sun altitude ≤ -6°  (past civil dusk)        → scotopic mid
@@ -102,6 +115,12 @@ export default function App() {
       <a href="#ss-main-content" className="ss-skip-link">Skip to main content</a>
       <ChromeHeader />
       <ServiceWorkerUpdateBanner />
+      {/* CryptoUnsupportedBanner sits above the other banners — it gates
+          Export Bundle + AI Assist, which the other banners' actions may
+          depend on (e.g. ChainBrokenBanner's "Export now" button signs a
+          bundle). Operator should see the cryptographic-limitation note
+          before they're tempted to click those. */}
+      <CryptoUnsupportedBanner />
       <CivilTwilightBanner />
       <InterruptedSessionBanner />
       <ChainBrokenBanner />

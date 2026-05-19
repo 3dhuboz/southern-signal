@@ -18,6 +18,7 @@
 import { useCallback, useState } from "react";
 import { autoDebunk, CloudGuardError, CloudKeyMissingError, generateQuestions, type DebunkResult } from "../lib/ai/cloudAi";
 import { appendAuditEntry } from "../lib/db/auditLog";
+import { useEd25519Support } from "../hooks/useEd25519Support";
 import type { LogIncrement } from "../lib/posterior/posterior";
 import s from "./AiAssistant.module.css";
 
@@ -38,6 +39,15 @@ export function AiAssistant({ investigationId, posterior, recentIncrements, site
   const [error, setError] = useState<string | null>(null);
   const [questions, setQuestions] = useState<string[]>([]);
   const [debunks, setDebunks] = useState<DebunkResult[]>([]);
+  // Every /api/ai/* call signs the request via the same WebCrypto Ed25519
+  // key used by Export Bundle. When the runtime can't generate that key
+  // (iOS ≤16.3) both buttons get disabled with an upgrade hint. The
+  // persistent banner at the app shell carries the full explanation.
+  const ed25519Support = useEd25519Support();
+  const signingUnsupported = ed25519Support !== null && !ed25519Support.ok;
+  const signingTooltip = signingUnsupported
+    ? "Requires iOS 17 or later — Ed25519 signing is unavailable on this device."
+    : undefined;
 
   const handleSuggestQuestions = useCallback(async () => {
     if (!investigationId) {
@@ -149,7 +159,8 @@ export function AiAssistant({ investigationId, posterior, recentIncrements, site
           type="button"
           className={`btn btn-primary ${s.actionSize}`}
           onClick={handleSuggestQuestions}
-          disabled={busy || !investigationId}
+          disabled={busy || !investigationId || signingUnsupported}
+          title={signingTooltip}
         >
           {busy && mode === "questions" ? "Thinking…" : "Suggest a question"}
         </button>
@@ -157,8 +168,8 @@ export function AiAssistant({ investigationId, posterior, recentIncrements, site
           type="button"
           className={`btn btn-ghost ${s.actionSize}`}
           onClick={handleDebunk}
-          disabled={busy || !investigationId || !debunkAvailable}
-          title={!debunkAvailable ? "Available when posterior ≥ 0.40" : undefined}
+          disabled={busy || !investigationId || !debunkAvailable || signingUnsupported}
+          title={signingTooltip ?? (!debunkAvailable ? "Available when posterior ≥ 0.40" : undefined)}
         >
           {busy && mode === "debunker" ? "Thinking…" : "Test mundane explanations"}
         </button>

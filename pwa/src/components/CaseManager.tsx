@@ -17,6 +17,7 @@ import { appendAuditEntry } from "../lib/db/auditLog";
 import { createInvestigation, deleteDossier, setCulturallySensitive } from "../lib/db/repo";
 import { getProtocol } from "../lib/db/protocolRepo";
 import { usePreferences } from "../lib/preferences";
+import { useEd25519Support } from "../hooks/useEd25519Support";
 import type { InvestigationProtocol, ResearchDossierRow, RestrictionLevel } from "../lib/db/schema";
 import { clearBaseline } from "../lib/posterior/sessionBaseline";
 import { buildExportBundle, downloadBlob } from "../lib/forensic/exportBundle";
@@ -92,6 +93,10 @@ function formatDuration(start: string, end: string | null): string {
 
 export function CaseManager() {
   const [prefs] = usePreferences();
+  // Ed25519 keygen support — when false, the "Export bundle (.zip)" button
+  // is disabled. See CryptoUnsupportedBanner for the user-facing copy.
+  const ed25519Support = useEd25519Support();
+  const signingUnsupported = ed25519Support !== null && !ed25519Support.ok;
   const researchEnabled = prefs.research.enabled;
   const [cases, setCases] = useState<CaseSummary[]>([]);
   // Distinguish "loading" from "loaded, no cases" so the empty-state copy
@@ -917,6 +922,8 @@ export function CaseManager() {
                         type="button"
                         className={`btn btn-ghost ${s.btnSize}`}
                         onClick={handleExportBundle}
+                        disabled={signingUnsupported}
+                        title={signingUnsupported ? "Requires iOS 17 or later — Ed25519 signing is unavailable on this device." : undefined}
                       >
                         Export bundle (.zip)
                       </button>
