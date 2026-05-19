@@ -41,10 +41,47 @@
   //   D1" step) so PR-against-dev runs start from a known-empty state.
   //   Two PRs racing the workflow can still cross-pollinate; revisit when
   //   PR volume warrants it.
+  //
+  // /api/ai/* relay auth (2026-05-19, panel P0 fix — fail-closed flip):
+  //
+  //   Default is STRICT: unsigned POSTs to /api/ai/chat, /api/ai/transcribe,
+  //   /api/ai/research, /api/ai/research/stream, and /api/ai/evp-review
+  //   are rejected with 401. This is the safe production setting and
+  //   does NOT require any env var to be set.
+  //
+  //   Permissive opt-in (DEV / MIGRATION ONLY):
+  //     AI_RELAY_ALLOW_UNSIGNED=1   accept unsigned requests, with a
+  //                                 console.warn on every request (visible
+  //                                 in `wrangler tail`).
+  //
+  //   Legacy var (still honoured during rollout, prefer the new name):
+  //     AI_RELAY_REQUIRE_SIGNED=0   equivalent to AI_RELAY_ALLOW_UNSIGNED=1.
+  //     AI_RELAY_REQUIRE_SIGNED=1   no-op (same as default).
+  //
+  //   These are set in Cloudflare dashboard → Pages → southern-signal →
+  //   Settings → Environment variables. Leave UNSET in production. If
+  //   AI_RELAY_REQUIRE_SIGNED was set to "0" historically on this Pages
+  //   project, REMOVE it after this deploy — otherwise the relay stays
+  //   permissive and exposes the budget-drain surface this commit fixes.
+  //
+  //   Declared here as an empty default so a fresh checkout's wrangler
+  //   surfaces the var name in `vars` listings without overriding the
+  //   dashboard's (intentionally unset) value. NOTE: top-level `vars`
+  //   values DO override dashboard values, so we use empty string —
+  //   which fails the /^(1|true|yes)$/i regex and therefore behaves
+  //   identically to "unset" (strict / fail-closed).
+  //
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "southern-signal",
   "compatibility_date": "2025-01-15",
   "pages_build_output_dir": "./dist",
+  "vars": {
+    // Empty string = strict default. Set to "1" in the Cloudflare
+    // dashboard (NOT here, so we don't ship a permissive default into
+    // source-controlled config) to opt into permissive mode for a
+    // rollout window.
+    "AI_RELAY_ALLOW_UNSIGNED": ""
+  },
   "d1_databases": [
     {
       // PRODUCTION D1 — only the master-branch deploy binds this.

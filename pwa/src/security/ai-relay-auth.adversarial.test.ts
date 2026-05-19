@@ -19,7 +19,8 @@
  *        defence-in-depth that the relay is browser-PWA only.
  *
  *   The auth code MUST reject all four. Specifically:
- *     - Strict mode (AI_RELAY_REQUIRE_SIGNED=1) → unsigned = 401.
+ *     - Default (strict) mode                   → unsigned = 401.
+ *     - Permissive opt-in still has limits      → see explicit opt-in test.
  *     - Wrong-key signature                     → 401 (signature invalid).
  *     - Replayed signature over different body  → 401 (body hash mismatch).
  *     - Bad Origin (cross-site / no header)     → 403 (forbidden origin).
@@ -151,24 +152,69 @@ async function buildSignedRequest(opts: {
 // Adversarial tests
 // ---------------------------------------------------------------------------
 
-describe("/api/ai/* auth — adversarial: unsigned POST in strict mode", () => {
-  it("sanity: an unsigned POST passes in permissive (default) mode — establishes the relaxed path exists", async () => {
-    // If this fails, the strict-mode test below isn't actually proving
-    // strict mode rejects an unsigned request; it might be rejecting it
-    // for some other (default) reason.
+describe("/api/ai/* auth — adversarial: unsigned POST in default (strict) mode", () => {
+  it("attacker: unsigned POST is REFUSED with 401 in the DEFAULT (env unset) mode", async () => {
+    // The headline budget-drain attack: curl/script POSTs an unsigned
+    // request to /api/ai/chat. Default behaviour (panel P0 fix
+    // 2026-05-19) must reject with 401 — no env var needed.
     const req = new Request(TEST_URL, {
       method: "POST",
       headers: new Headers({ Origin: TEST_ORIGIN }),
       body: new Uint8Array(0),
     });
     const out = await authenticate(req, env(), { bodyBytes: new Uint8Array(0) });
+    expect(out.ok).toBe(false);
+    if (!out.ok) {
+      expect(out.status).toBe(401);
+      expect(out.error.toLowerCase()).toContain("signed");
+    }
+  });
+
+  it("AI_RELAY_ALLOW_UNSIGNED=1 explicit opt-in: unsigned POST accepted (dev/migration mode)", async () => {
+    // Permissive mode is no longer the default; it must be explicitly
+    // opted into. This test pins that the escape hatch is still wired —
+    // accepts the request and reports signed:false so the caller falls
+    // back to IP-based rate-limit.
+    const req = new Request(TEST_URL, {
+      method: "POST",
+      headers: new Headers({ Origin: TEST_ORIGIN }),
+      body: new Uint8Array(0),
+    });
+    const out = await authenticate(
+      req,
+      env({ AI_RELAY_ALLOW_UNSIGNED: "1" }),
+      { bodyBytes: new Uint8Array(0) },
+    );
+    expect(out.ok).toBe(true);
+    if (out.ok) {
+      expect(out.signed).toBe(false);
+      if (!out.signed) expect(out.pubkeyHex).toBeNull();
+    }
+  });
+
+  it("LEGACY: AI_RELAY_REQUIRE_SIGNED=0 keeps permissive (rollout-window safety)", async () => {
+    // Operators who set the OLD env var to "0" during the previous
+    // rollout must keep getting the permissive behaviour they configured
+    // — otherwise this commit silently 401s existing deploys. Migration
+    // is operator-driven: remove the var, then optionally set the new
+    // name.
+    const req = new Request(TEST_URL, {
+      method: "POST",
+      headers: new Headers({ Origin: TEST_ORIGIN }),
+      body: new Uint8Array(0),
+    });
+    const out = await authenticate(
+      req,
+      env({ AI_RELAY_REQUIRE_SIGNED: "0" }),
+      { bodyBytes: new Uint8Array(0) },
+    );
     expect(out.ok).toBe(true);
     if (out.ok) expect(out.signed).toBe(false);
   });
 
-  it("attacker: unsigned POST is REFUSED with 401 when AI_RELAY_REQUIRE_SIGNED=1", async () => {
-    // The headline budget-drain attack: curl/script POSTs an unsigned
-    // request to /api/ai/chat. Strict mode must reject with 401.
+  it("LEGACY: AI_RELAY_REQUIRE_SIGNED=1 is a no-op vs the new strict default", async () => {
+    // An older deploy that explicitly set "1" before the flip should
+    // keep rejecting unsigned — same observable behaviour as default.
     const req = new Request(TEST_URL, {
       method: "POST",
       headers: new Headers({ Origin: TEST_ORIGIN }),
@@ -180,16 +226,14 @@ describe("/api/ai/* auth — adversarial: unsigned POST in strict mode", () => {
       { bodyBytes: new Uint8Array(0) },
     );
     expect(out.ok).toBe(false);
-    if (!out.ok) {
-      expect(out.status).toBe(401);
-      expect(out.error.toLowerCase()).toContain("signed");
-    }
+    if (!out.ok) expect(out.status).toBe(401);
   });
 
   it("attacker: partial signing headers (Pubkey + Timestamp, no Signature) are REFUSED with 401 even in permissive mode", async () => {
     // Half-baked attempt — attacker grabbed pubkey + timestamp off the
     // wire but couldn't replay a signature. Auth code rejects because
-    // ANY signing header present means ALL must be.
+    // ANY signing header present means ALL must be — and this rule
+    // applies even when AI_RELAY_ALLOW_UNSIGNED=1.
     const req = new Request(TEST_URL, {
       method: "POST",
       headers: new Headers({
@@ -199,7 +243,11 @@ describe("/api/ai/* auth — adversarial: unsigned POST in strict mode", () => {
       }),
       body: new Uint8Array(0),
     });
-    const out = await authenticate(req, env(), { bodyBytes: new Uint8Array(0) });
+    const out = await authenticate(
+      req,
+      env({ AI_RELAY_ALLOW_UNSIGNED: "1" }),
+      { bodyBytes: new Uint8Array(0) },
+    );
     expect(out.ok).toBe(false);
     if (!out.ok) {
       expect(out.status).toBe(401);
@@ -431,17 +479,13 @@ describe("/api/ai/* auth — adversarial: bad Origin", () => {
 });
 
 describe("/api/ai/* auth — happy path sanity (proves the rejections above aren't false positives)", () => {
-  it("a fully valid signed POST in strict mode passes auth", async () => {
+  it("a fully valid signed POST passes auth in the DEFAULT (strict) mode", async () => {
     // If THIS goes red, every adversarial test above is suspect — they
     // could be rejecting requests for an unrelated reason.
     const victim = await generateKey();
     const body = new TextEncoder().encode(JSON.stringify({ system: "s", user: "u" }));
     const { request } = await buildSignedRequest({ key: victim, body });
-    const out = await authenticate(
-      request,
-      env({ AI_RELAY_REQUIRE_SIGNED: "1" }),
-      { bodyBytes: body },
-    );
+    const out = await authenticate(request, env(), { bodyBytes: body });
     expect(out.ok).toBe(true);
     if (out.ok) {
       expect(out.signed).toBe(true);

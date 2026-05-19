@@ -5,6 +5,10 @@
  * unauthenticated is burning Steve's API budget. These tests pin the
  * contract that signed requests verify, unsigned requests are accepted
  * only in permissive mode, and Origin/Referer is always enforced.
+ *
+ * Default mode (2026-05-19 panel P0): STRICT / fail-closed. Unsigned
+ * POSTs return 401 unless AI_RELAY_ALLOW_UNSIGNED=1 (or legacy
+ * AI_RELAY_REQUIRE_SIGNED=0) is explicitly set.
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { webcrypto } from "node:crypto";
@@ -84,32 +88,81 @@ describe("authenticate — Origin / Referer enforcement", () => {
     if (!out.ok) expect(out.status).toBe(403);
   });
 
-  it("accepts same-origin Origin header (no signing headers, permissive mode)", async () => {
+  it("accepts same-origin Origin header in PERMISSIVE mode (AI_RELAY_ALLOW_UNSIGNED=1)", async () => {
+    // Permissive mode is no longer the default — it has to be opted into.
     const req = makeReq({});
-    const out = await authenticate(req, env(), { bodyBytes: new Uint8Array(0) });
+    const out = await authenticate(req, { ...env(), AI_RELAY_ALLOW_UNSIGNED: "1" }, { bodyBytes: new Uint8Array(0) });
     expect(out.ok).toBe(true);
     if (out.ok) expect(out.signed).toBe(false);
   });
 
-  it("accepts a Referer when Origin is absent", async () => {
+  it("accepts a Referer when Origin is absent (permissive mode)", async () => {
     const req = new Request(TEST_URL, {
       method: "POST",
       headers: new Headers({ Referer: `${TEST_ORIGIN}/some/page` }),
     });
-    const out = await authenticate(req, env(), { bodyBytes: new Uint8Array(0) });
+    const out = await authenticate(req, { ...env(), AI_RELAY_ALLOW_UNSIGNED: "1" }, { bodyBytes: new Uint8Array(0) });
     expect(out.ok).toBe(true);
   });
 });
 
-describe("authenticate — signing-required mode", () => {
-  it("refuses unsigned requests when AI_RELAY_REQUIRE_SIGNED=1", async () => {
+describe("authenticate — fail-closed default (2026-05-19 panel P0)", () => {
+  it("refuses unsigned requests in the DEFAULT (no env var set) mode", async () => {
+    // The headline regression-blocker: a leaked /api/ai/* URL POSTed from
+    // anywhere with a same-origin spoof would burn the operator's budget
+    // before this commit. Default behaviour must now be a 401.
     const req = makeReq({});
-    const out = await authenticate(req, { ...env(), AI_RELAY_REQUIRE_SIGNED: "1" }, { bodyBytes: new Uint8Array(0) });
+    const out = await authenticate(req, env(), { bodyBytes: new Uint8Array(0) });
+    expect(out.ok).toBe(false);
+    if (!out.ok) {
+      expect(out.status).toBe(401);
+      expect(out.error.toLowerCase()).toContain("signed");
+    }
+  });
+
+  it("LEGACY: AI_RELAY_REQUIRE_SIGNED=1 is a no-op (same as default)", async () => {
+    // Backward compat — operators who set this var explicitly during the
+    // earlier rollout should see the same strict behaviour.
+    const req = makeReq({});
+    const out = await authenticate(
+      req,
+      { ...env(), AI_RELAY_REQUIRE_SIGNED: "1" },
+      { bodyBytes: new Uint8Array(0) },
+    );
     expect(out.ok).toBe(false);
     if (!out.ok) expect(out.status).toBe(401);
   });
 
-  it("accepts signed requests in strict mode", async () => {
+  it("LEGACY: AI_RELAY_REQUIRE_SIGNED=0 still flips to permissive (rollout safety)", async () => {
+    // A Cloudflare Pages env that still has the old var set to "0" must
+    // keep behaving permissively so existing deploys don't 401 the
+    // moment this commit lands — operators need an explicit migration
+    // window to remove the variable. The console.warn surfaces the
+    // slip-up.
+    const req = makeReq({});
+    const out = await authenticate(
+      req,
+      { ...env(), AI_RELAY_REQUIRE_SIGNED: "0" },
+      { bodyBytes: new Uint8Array(0) },
+    );
+    expect(out.ok).toBe(true);
+    if (out.ok) expect(out.signed).toBe(false);
+  });
+
+  it("AI_RELAY_ALLOW_UNSIGNED=1 explicit opt-in: unsigned POST accepted (dev/migration mode)", async () => {
+    // The supported way to keep accepting unsigned requests during a
+    // rollout window.
+    const req = makeReq({});
+    const out = await authenticate(
+      req,
+      { ...env(), AI_RELAY_ALLOW_UNSIGNED: "1" },
+      { bodyBytes: new Uint8Array(0) },
+    );
+    expect(out.ok).toBe(true);
+    if (out.ok) expect(out.signed).toBe(false);
+  });
+
+  it("accepts signed requests in strict (default) mode", async () => {
     const { pubHex, signCanonical } = await genKey();
     const body = new TextEncoder().encode(JSON.stringify({ hello: "world" }));
     const timestamp = Date.now();
@@ -124,7 +177,7 @@ describe("authenticate — signing-required mode", () => {
         "X-SS-Signature": sig,
       },
     });
-    const out = await authenticate(req, { ...env(), AI_RELAY_REQUIRE_SIGNED: "1" }, { bodyBytes: body });
+    const out = await authenticate(req, env(), { bodyBytes: body });
     expect(out.ok).toBe(true);
     if (out.ok) {
       expect(out.signed).toBe(true);

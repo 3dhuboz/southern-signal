@@ -96,3 +96,74 @@ export async function signedJson<TReq>(path: string, body: TReq, opts?: { header
     body: bytes,
   });
 }
+
+/**
+ * Multipart-encoded POST that's signed end-to-end.
+ *
+ * Why this exists (instead of just letting the browser serialise a
+ * FormData): the relay verifies the signature against the raw bytes
+ * the server receives. Browsers serialise FormData internally — picking
+ * a boundary, encoding parts — and the client never sees those bytes,
+ * so the client can't sign them. This helper builds the multipart
+ * payload manually as a Uint8Array, so the bytes the client signs and
+ * the bytes the server hashes are identical.
+ *
+ * Parts can be `string` (text fields) or `{ blob: Blob; filename?: string }`
+ * (file parts). The browser would normally name a blob field "blob" if
+ * no filename was given; we do the same so the upstream Whisper / OpenAI
+ * accepts the file part.
+ */
+export type MultipartPart =
+  | { name: string; value: string }
+  | { name: string; blob: Blob; filename?: string };
+
+export async function signedMultipart(
+  path: string,
+  parts: MultipartPart[],
+  opts?: { headers?: Record<string, string> },
+): Promise<Response> {
+  // Random 32-hex boundary. Has to be unguessable enough not to collide
+  // with arbitrary user content, which for our payloads (audio bytes) is
+  // already implausible — but be safe.
+  const boundary = `----SSBoundary${bytesToHex(crypto.getRandomValues(new Uint8Array(16)))}`;
+  const encoder = new TextEncoder();
+  const chunks: Uint8Array[] = [];
+
+  for (const part of parts) {
+    chunks.push(encoder.encode(`--${boundary}\r\n`));
+    if ("value" in part) {
+      chunks.push(encoder.encode(`Content-Disposition: form-data; name="${part.name}"\r\n\r\n`));
+      chunks.push(encoder.encode(part.value));
+      chunks.push(encoder.encode("\r\n"));
+    } else {
+      const filename = part.filename ?? "blob";
+      const contentType = part.blob.type || "application/octet-stream";
+      chunks.push(encoder.encode(
+        `Content-Disposition: form-data; name="${part.name}"; filename="${filename}"\r\nContent-Type: ${contentType}\r\n\r\n`,
+      ));
+      const blobBytes = new Uint8Array(await part.blob.arrayBuffer());
+      chunks.push(blobBytes);
+      chunks.push(encoder.encode("\r\n"));
+    }
+  }
+  chunks.push(encoder.encode(`--${boundary}--\r\n`));
+
+  // Concatenate.
+  let total = 0;
+  for (const c of chunks) total += c.byteLength;
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    body.set(c, offset);
+    offset += c.byteLength;
+  }
+
+  return signedFetch(path, {
+    method: "POST",
+    headers: {
+      "Content-Type": `multipart/form-data; boundary=${boundary}`,
+      ...(opts?.headers ?? {}),
+    },
+    body,
+  });
+}

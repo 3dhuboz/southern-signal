@@ -7,6 +7,7 @@
  */
 
 import { CloudGuardError, ensureRoutable, isInvestigationSensitive, type CloudCallContext } from "./cloudAi";
+import { signedMultipart, type MultipartPart } from "./signedFetch";
 
 const TRANSCRIBE_PATH = "/api/ai/transcribe";
 
@@ -52,12 +53,17 @@ export async function transcribeAudio(
 ): Promise<TranscriptionResult> {
   await ensureRoutable(ctx);
 
-  const form = new FormData();
-  form.append("file", audio, opts?.filename ?? "audio.wav");
-  if (opts?.language) form.append("language", opts.language);
-  if (opts?.prompt) form.append("prompt", opts.prompt);
-
-  const resp = await fetch(TRANSCRIBE_PATH, { method: "POST", body: form });
+  // Build multipart payload as bytes ourselves so we can sign exactly
+  // what the server receives. A FormData passed to fetch() lets the
+  // browser pick the boundary and serialise the body — bytes the
+  // client never sees, hence can't sign — which would fail strict-mode
+  // auth at /api/ai/transcribe.
+  const parts: MultipartPart[] = [
+    { name: "file", blob: audio, filename: opts?.filename ?? "audio.wav" },
+  ];
+  if (opts?.language) parts.push({ name: "language", value: opts.language });
+  if (opts?.prompt) parts.push({ name: "prompt", value: opts.prompt });
+  const resp = await signedMultipart(TRANSCRIBE_PATH, parts);
   if (resp.status === 503) {
     const body = await readErrorBody(resp);
     throw new TranscribeUnavailableError(body.detail ?? body.error);

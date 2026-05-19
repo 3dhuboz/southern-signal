@@ -40,17 +40,53 @@
  * itself rate-limited by IP (5 first-time devices per IP per day) so a
  * malicious actor can't enumerate the keyspace.
  *
- * Bypass for compatibility — if AI_RELAY_REQUIRE_SIGNED is unset, the
- * server still verifies signatures when present (so legit clients get
- * per-pubkey rate limits), but accepts unsigned requests too. Set
- * AI_RELAY_REQUIRE_SIGNED=1 to enforce signing. Default is "warn-only"
- * during rollout; the operator flips the switch once they've shipped
- * the signing client. The Origin / IP rate-limit defenses stay on
- * regardless of the require-signed switch.
+ * Fail-closed contract (panel P0, 2026-05-19): the relay rejects
+ * unsigned requests by default. The threat model — a leaked /api/ai/chat
+ * URL draining the operator's OpenRouter / Anthropic budget — makes a
+ * permissive default a budget-drain attack waiting to happen.
+ *
+ *   AI_RELAY_ALLOW_UNSIGNED=1  → permissive (dev / migration only). The
+ *     server still verifies signatures when present (per-pubkey rate
+ *     limits), but accepts unsigned requests too. A console.warn is
+ *     emitted on each request so the slip-up is visible in `wrangler
+ *     tail`. Use this ONLY when rolling out a new client that hasn't
+ *     shipped its signing code yet.
+ *   anything else (incl. unset) → strict / fail-closed. Unsigned POSTs
+ *     get a 401. This is the production default.
+ *
+ * Backward compatibility — older deployments set AI_RELAY_REQUIRE_SIGNED
+ * to flip the bit; the semantics inverted in this commit. The mapping:
+ *
+ *   AI_RELAY_REQUIRE_SIGNED=1   → strict (same as default)             — no-op
+ *   AI_RELAY_REQUIRE_SIGNED=0   → equivalent to AI_RELAY_ALLOW_UNSIGNED=1
+ *
+ * The Origin / IP rate-limit defenses stay on regardless of which
+ * switch is set. See `wrangler.jsonc` for the operator-facing config
+ * documentation.
  */
 
 export interface AuthEnv {
-  /** When set to "1" / "true", reject any request that fails signature verification. */
+  /**
+   * Opt-in to permissive mode (accept unsigned requests). Set to "1" /
+   * "true" / "yes" for dev / migration windows only. Default (unset or
+   * any other value) is strict / fail-closed: unsigned POSTs → 401.
+   *
+   * A console.warn is emitted on every authenticated request while this
+   * flag is on, so the slip-up is visible in `wrangler tail`.
+   */
+  AI_RELAY_ALLOW_UNSIGNED?: string;
+  /**
+   * Legacy switch (kept for backward compatibility through the rollout
+   * window). Semantics inverted on 2026-05-19:
+   *
+   *   "1" / "true" → strict (no-op; same as default).
+   *   "0" / "false" → permissive (equivalent to AI_RELAY_ALLOW_UNSIGNED=1).
+   *
+   * New deployments should set AI_RELAY_ALLOW_UNSIGNED instead. This
+   * field is here so an older Cloudflare Pages env that still has
+   * AI_RELAY_REQUIRE_SIGNED=0 set doesn't suddenly start rejecting
+   * traffic without an operator-visible warning.
+   */
   AI_RELAY_REQUIRE_SIGNED?: string;
   /** Comma-separated list of allowed origins. Defaults to the request's own origin (same-origin only). Set to "*" to allow any. */
   AI_RELAY_ALLOWED_ORIGINS?: string;
@@ -296,14 +332,55 @@ async function tofuRegister(
 }
 
 /**
+ * Resolve the permissive-mode flag.
+ *
+ *   - AI_RELAY_ALLOW_UNSIGNED=1 → permissive.
+ *   - Legacy: AI_RELAY_REQUIRE_SIGNED=0 → permissive (old name for the
+ *     same semantics, kept so a deploy that still has the old var set
+ *     to "0" doesn't suddenly start refusing traffic with no migration
+ *     notice in the operator's dashboard).
+ *   - anything else → strict (fail-closed) — the default.
+ *
+ * The "1"/"true"/"yes" parsing matches the rest of the codebase (case-
+ * insensitive). Any other value, incl. empty string, falls through to
+ * strict.
+ */
+function isPermissiveModeOn(env: AuthEnv): boolean {
+  if (/^(1|true|yes)$/i.test(env.AI_RELAY_ALLOW_UNSIGNED ?? "")) return true;
+  // Backward compat: AI_RELAY_REQUIRE_SIGNED=0 / =false / =no = permissive.
+  if (/^(0|false|no)$/i.test(env.AI_RELAY_REQUIRE_SIGNED ?? "")) return true;
+  return false;
+}
+
+/**
+ * Emit a one-line warning when permissive mode is active. Visible in
+ * `wrangler tail` output so operators who forget to remove the
+ * dev-rollout opt-in see it on every request, not just at deploy time.
+ *
+ * Throttled to once-per-minute per worker isolate to avoid log spam
+ * under load; the goal is operator-visibility, not per-request paranoia.
+ */
+let lastPermissiveWarnMs = 0;
+function warnPermissiveMode(): void {
+  const now = Date.now();
+  if (now - lastPermissiveWarnMs < 60_000) return;
+  lastPermissiveWarnMs = now;
+  try {
+    console.warn(
+      "[ai-relay] PERMISSIVE MODE ACTIVE — AI_RELAY_ALLOW_UNSIGNED=1 (or legacy AI_RELAY_REQUIRE_SIGNED=0). Unsigned POSTs are being accepted. Unset to restore fail-closed default before public beta.",
+    );
+  } catch { /* console missing in some test envs — non-fatal */ }
+}
+
+/**
  * Run the auth pipeline. Returns:
  *   - { ok: true, signed: true, pubkeyHex } when the request carries a
  *     valid Ed25519 signature (caller can rate-limit per-pubkey).
- *   - { ok: true, signed: false, reason } when AI_RELAY_REQUIRE_SIGNED
- *     is OFF and the request lacks (or has invalid) signing headers —
- *     caller MUST still rate-limit per-IP via the legacy path.
+ *   - { ok: true, signed: false, reason } when permissive mode is ON
+ *     and the request lacks signing headers — caller MUST still
+ *     rate-limit per-IP via the legacy path.
  *   - { ok: false, status, error } when the request must be REFUSED
- *     (Origin invalid, signed-required + signature missing/invalid,
+ *     (Origin invalid, default strict mode + missing/invalid signature,
  *     timestamp out of skew, etc.). Caller returns the canned response.
  *
  * On `ok: true && signed: true`, the per-device rate-limit counters have
@@ -322,26 +399,28 @@ export async function authenticate(
   }
 
   // 2. Signing headers — if any of the three are present, ALL must be
-  //    valid. If none are present, behaviour depends on
-  //    AI_RELAY_REQUIRE_SIGNED.
+  //    valid. If none are present, behaviour depends on the permissive
+  //    opt-in (AI_RELAY_ALLOW_UNSIGNED, with the legacy
+  //    AI_RELAY_REQUIRE_SIGNED=0 supported for backward compat).
   const pubkeyHex = request.headers.get("X-SS-Pubkey")?.toLowerCase() ?? null;
   const timestampStr = request.headers.get("X-SS-Timestamp");
   const signatureB64 = request.headers.get("X-SS-Signature");
   const anySigningHeader = !!(pubkeyHex || timestampStr || signatureB64);
   const allSigningHeaders = !!(pubkeyHex && timestampStr && signatureB64);
 
-  const requireSigned = /^(1|true|yes)$/i.test(env.AI_RELAY_REQUIRE_SIGNED ?? "");
+  const allowUnsigned = isPermissiveModeOn(env);
+  if (allowUnsigned) warnPermissiveMode();
 
   if (!anySigningHeader) {
-    if (requireSigned) {
+    if (!allowUnsigned) {
       return {
         ok: false,
         status: 401,
         error: "Signed request required",
-        detail: "This deployment requires X-SS-Pubkey, X-SS-Timestamp, and X-SS-Signature headers signed with the device's Ed25519 key.",
+        detail: "This deployment requires X-SS-Pubkey, X-SS-Timestamp, and X-SS-Signature headers signed with the device's Ed25519 key. Set AI_RELAY_ALLOW_UNSIGNED=1 in Cloudflare Pages env to temporarily disable (dev / rollout only).",
       };
     }
-    return { ok: true, pubkeyHex: null, signed: false, reason: "No signing headers — falling back to IP-based rate limit." };
+    return { ok: true, pubkeyHex: null, signed: false, reason: "No signing headers — falling back to IP-based rate limit (permissive mode)." };
   }
 
   if (!allSigningHeaders) {
@@ -397,5 +476,6 @@ export const _internals = {
   parseAllowedOrigins,
   originHeaderOk,
   verifySignature,
+  isPermissiveModeOn,
   MAX_SKEW_MS,
 };
