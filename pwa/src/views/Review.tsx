@@ -80,6 +80,11 @@ type MarkerFilter = MarkerCategory | "untagged";
 interface MarkerView {
   id: string;
   timestamp: string;
+  /** Owning investigation_id — must be embedded in every marker.annotated /
+   *  marker.dismissed audit payload so per-case Merkle root computation in
+   *  src/lib/forensic/manifest.ts can attribute overrides to this case.
+   *  Without it, annotations silently fall out of single-case bundles. */
+  investigationId: string;
   title: string;
   elapsedLabel: string | null;
   sceneId: string | null;
@@ -325,6 +330,7 @@ export function Review() {
               return {
                 id: row.id,
                 timestamp: row.timestamp,
+                investigationId: row.investigation_id,
                 title: row.title ?? "Moment marked",
                 elapsedLabel: formatMarkerElapsed(row.metadata_json),
                 sceneId,
@@ -483,11 +489,19 @@ export function Review() {
 
   const saveMarkerEdit = useCallback(async (markerId: string) => {
     const trimmed = draftNote.trim();
+    // Look up the marker so we can attach its investigation_id to the audit
+    // payload. Per-case Merkle root computation requires it; see MarkerView
+    // type doc above for the full rationale. If the marker disappeared from
+    // state mid-edit (extremely unlikely — the editor closes on dismiss)
+    // we still write the audit entry so the action is captured, but the
+    // per-case manifest filter won't claim it for any case.
+    const target = markers.find((m) => m.id === markerId);
+    const investigation_id = target?.investigationId;
     try {
       await appendAuditEntry({
         actor: "user",
         kind: "marker.annotated",
-        payload: { marker_id: markerId, note: trimmed || null, category: draftCategory },
+        payload: { investigation_id, marker_id: markerId, note: trimmed || null, category: draftCategory },
       });
       setMarkers((cur) => cur.map((m) =>
         m.id === markerId ? { ...m, note: trimmed || null, category: draftCategory } : m,
@@ -495,20 +509,22 @@ export function Review() {
       clearMarkerDraft(markerId);
       closeMarkerEditor();
     } catch { /* swallow — audit append failures are surfaced via the chain banner */ }
-  }, [draftNote, draftCategory, closeMarkerEditor]);
+  }, [draftNote, draftCategory, closeMarkerEditor, markers]);
 
   const dismissMarker = useCallback(async (markerId: string) => {
+    const target = markers.find((m) => m.id === markerId);
+    const investigation_id = target?.investigationId;
     try {
       await appendAuditEntry({
         actor: "user",
         kind: "marker.dismissed",
-        payload: { marker_id: markerId },
+        payload: { investigation_id, marker_id: markerId },
       });
       setMarkers((cur) => cur.filter((m) => m.id !== markerId));
       clearMarkerDraft(markerId);
       if (editingMarkerId === markerId) closeMarkerEditor();
     } catch { /* swallow */ }
-  }, [editingMarkerId, closeMarkerEditor]);
+  }, [editingMarkerId, closeMarkerEditor, markers]);
 
   // Persist the draft note + category to localStorage whenever they change
   // while an editor is open. Debounce-free — typing latency on a small
@@ -548,19 +564,24 @@ export function Review() {
   const bulkSetCategory = useCallback(async (category: MarkerCategory) => {
     if (selectedMarkerIds.size === 0) return;
     const ids = Array.from(selectedMarkerIds);
+    // Build an id → investigationId lookup once so each iteration doesn't
+    // re-scan markers. Markers from a different case shouldn't be in
+    // selectedMarkerIds (the picker only sees the active case's list) but
+    // we tolerate stragglers by falling back to undefined.
+    const investigationById = new Map(markers.map((m) => [m.id, m.investigationId]));
     for (const id of ids) {
       try {
         await appendAuditEntry({
           actor: "user",
           kind: "marker.annotated",
-          payload: { marker_id: id, note: null, category },
+          payload: { investigation_id: investigationById.get(id), marker_id: id, note: null, category },
         });
       } catch { /* continue — chain banner surfaces failures */ }
     }
     setMarkers((cur) => cur.map((m) => (selectedMarkerIds.has(m.id) ? { ...m, category } : m)));
     setSelectedMarkerIds(new Set());
     setSelectMode(false);
-  }, [selectedMarkerIds]);
+  }, [selectedMarkerIds, markers]);
 
   // Dismiss every selected marker — same pattern, one audit entry each.
   const bulkDismiss = useCallback(async () => {

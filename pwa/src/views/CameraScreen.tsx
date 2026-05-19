@@ -513,12 +513,18 @@ export function CameraScreen() {
       // Quick-tag note → append-only marker.annotated, same path the Review
       // editor uses. Preserves "marker created, then noted" in the chain
       // rather than back-editing the capture row.
+      //
+      // investigation_id MUST be in the payload — the per-case Merkle root
+      // computation in src/lib/forensic/manifest.ts filters audit rows by
+      // `payload.investigation_id === inv.id`. Without it, marker
+      // annotations silently fall out of the per-case bundle, and a
+      // verifier comparing two manifests over time will flag the drift.
       if (trimmedNote) {
         try {
           await appendAuditEntry({
             actor: "user",
             kind: "marker.annotated",
-            payload: { marker_id: event.id, note: trimmedNote, category },
+            payload: { investigation_id: inv.id, marker_id: event.id, note: trimmedNote, category },
           });
         } catch { /* surfaced via the chain banner */ }
       }
