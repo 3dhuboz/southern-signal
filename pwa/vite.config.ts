@@ -76,6 +76,12 @@ export default defineConfig({
     // minification — lightningcss is the default in Vite 8 / rolldown and
     // ships with no extra install needed.
     cssMinify: true,
+    // Surface chunks over 250 KB raw at build time. The real budget gate
+    // is `pnpm check:bundle` (gzipped, CI-blocking) — this just gives an
+    // early hint during local builds so you don't have to wait for CI to
+    // notice a vendor was pulled into the main entry. Bump if a legitimate
+    // chunk (e.g. sqlite-wasm vendor split) crosses the threshold.
+    chunkSizeWarningLimit: 250,
     rolldownOptions: {
       output: {
         // Split big, rarely-changing vendor groups out of the index chunk so

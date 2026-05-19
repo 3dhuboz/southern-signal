@@ -82,6 +82,16 @@ jobs:
         working-directory: pwa
         run: pnpm build
 
+      # Bundle-size budget gate. Reads pwa/dist after the build step and
+      # fails the workflow if the main index-*.js chunk crosses the gzipped
+      # budget (75 KB) or if the lazy SDK chunk has been re-bundled into
+      # the main entry. Budget rationale + implementation details live in
+      # pwa/scripts/check-bundle-size.mjs. No continue-on-error — blocking
+      # on bust is the whole point.
+      - name: Check bundle size budget
+        working-directory: pwa
+        run: pnpm check:bundle
+
       - name: Run tests
         working-directory: pwa
         run: pnpm test
