@@ -156,18 +156,29 @@ sign-off itself is published with the release.
 ## Development
 
 ```bash
-npm install
-npm run dev        # Vite dev server
-npm test           # vitest run (one-shot)
-npm run test:watch # vitest watch
-npm run build      # tsc -b && vite build
-npm run lint
+pnpm install
+pnpm dev           # Vite dev server
+pnpm test          # vitest run (one-shot)
+pnpm test:watch    # vitest watch
+pnpm build         # tsc -b && vite build
+pnpm lint
+pnpm check:bundle  # bundle-size budget gate (run after `pnpm build`)
 ```
 
 Tests run fully on Node — no browser. Vitest 4 with `vi.hoisted` for module
 mocks. The audio / video / WHIP layers are not unit-tested (they need a real
 browser); everything pure (likelihoods, posterior, baseline math, audit
 chain, forensic helpers, AHT verdict) is covered.
+
+**Bundle budget.** The main entry chunk is budgeted at **75 KB gzipped**
+(currently 65.8 KB, ~9 KB headroom). The `pnpm check:bundle` script reads
+`dist/assets/index-*.js`, gzips it, and exits 1 if it crosses the budget;
+CI runs it after `pnpm build` and blocks the deploy on bust. The script
+also asserts that the Anthropic SDK stays in its own `sdk-*.js` lazy
+chunk — the panel work to lazy-load it (335 KB → 211 KB raw) is a
+load-bearing perf win we don't want a static-import slip to undo
+silently. Budget rationale lives in
+[`scripts/check-bundle-size.mjs`](scripts/check-bundle-size.mjs).
 
 ## Deployment
 
@@ -188,6 +199,25 @@ Required Pages environment variables:
 | `CF_STREAM_API_TOKEN` | `/api/live/fb/connect`                       | Same.                                     |
 | `FB_CONNECT_TOKEN`    | `/api/live/fb/connect`                       | Same.                                     |
 | `TROVE_API_KEY`       | `/api/community/incidents-in-area`           | Community-map area incident search uses Trove (NLA digitised newspapers) in parallel with Sonar. Free key at https://trove.nla.gov.au/about/create-something/using-api/api-keys (instant signup). Optional — Sonar-only path still works without it. |
+| `AI_RELAY_ALLOW_UNSIGNED` | `/api/ai/*` (all relay endpoints) | **Leave unset for production.** All `/api/ai/*` endpoints default to **fail-closed** — the client must sign every POST with its hardware-bound Ed25519 key (`X-SS-Pubkey` / `X-SS-Timestamp` / `X-SS-Signature` headers); unsigned requests get a 401. Set to `1` only as a temporary rollout escape hatch if old PWA installs without the signing client are still in the field. A `console.warn` fires on every request while permissive mode is on so the slip-up is visible in `wrangler tail`. Unset to restore strict mode. |
+| `AI_RELAY_REQUIRE_SIGNED` | `/api/ai/*` (all relay endpoints) | **Legacy flag.** Older deployments used this to flip the bit; semantics inverted on 2026-05-19. `=1` is a no-op (same as default strict); `=0` maps to permissive (equivalent to `AI_RELAY_ALLOW_UNSIGNED=1`). Kept so a Cloudflare Pages env that still has it set to `0` doesn't suddenly start rejecting traffic without an operator-visible warning. New deployments should set `AI_RELAY_ALLOW_UNSIGNED` instead. |
+
+### AI relay signing — operator quick reference
+
+- **Production (recommended):** leave both `AI_RELAY_ALLOW_UNSIGNED` and
+  `AI_RELAY_REQUIRE_SIGNED` **unset**. The relay rejects every unsigned
+  `POST /api/ai/*` with a 401 and a JSON detail explaining the missing
+  headers. Signed POSTs from the PWA pass through normally; per-pubkey
+  rate limits still apply.
+- **Rollout window:** if you cut the strict-mode deploy live and there
+  are still PWA installs in the field on a build that doesn't have the
+  signing client, set `AI_RELAY_ALLOW_UNSIGNED=1` for a short window.
+  The relay then accepts unsigned requests AND continues to verify
+  signed ones — `wrangler tail` will log a permissive-mode warning on
+  every request. Unset the flag as soon as the field has rolled forward.
+- **Legacy compat:** `AI_RELAY_REQUIRE_SIGNED=0` still works as a
+  synonym for permissive. Prefer renaming to `AI_RELAY_ALLOW_UNSIGNED`
+  on the next env edit so the active default matches the variable name.
 
 Required Pages bindings (D1, KV, R2 — set in `wrangler.jsonc` or the
 dashboard):
@@ -211,11 +241,14 @@ they're unset (e.g. AI assist shows a "proxy not configured" error).
 - Cloud transcription: working (gated by cultural-sensitivity flag).
 - **On-device transcription: working** (Whisper-tiny.en via
   `@huggingface/transformers`, opt-in from Setup, self-test included).
-- 18+ test files / 237+ tests covering forensic substrate, posterior math,
-  baseline-aware likelihoods, AHT verdict logic, Evidence Brief assembly,
-  WAV resample, sync-queue cultural-sensitivity gating, audit-chain
-  verification, sessionBaseline persistence, plain-English translators,
-  liveNarrator templates, localTranscribe worker plumbing.
+- 53 test files / 735 tests (as of 2026-05-19) covering forensic
+  substrate, posterior math, baseline-aware likelihoods, AHT verdict
+  logic, Evidence Brief assembly, WAV resample, sync-queue
+  cultural-sensitivity gating, audit-chain verification, sessionBaseline
+  persistence, plain-English translators, liveNarrator templates,
+  localTranscribe worker plumbing, and adversarial fuzzing of the
+  forensic verifier, audit TOCTOU, AI-relay auth, cultural-sensitivity
+  gate, and schema-FK enforcement paths.
 
 ## License
 
