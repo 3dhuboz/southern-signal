@@ -58,6 +58,9 @@
 }
 
 .title {
+  /* Rendered as <h2> for a11y heading nav. Reset default UA margin so
+     the slate's flexbox layout doesn't gain a top/bottom gap. */
+  margin: 0;
   font-family: var(--font-display, "Space Grotesk", "Inter", sans-serif);
   font-size: 16px;
   font-weight: 700;

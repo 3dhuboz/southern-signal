@@ -80,7 +80,10 @@ export function BroadcastLowerThird({ running, title, location, startedAt }: Pro
       role="region"
       aria-label="Investigation slate"
     >
-      <div className={s.title}>{sticky.title}</div>
+      {/* <h2> so screen readers can navigate to the investigation slate
+          by heading. Visual styling is identical to the prior <div> —
+          the .title rule resets default UA margins. */}
+      <h2 className={s.title}>{sticky.title}</h2>
       <div className={s.subtitle}>
         {sticky.location && (
           <>
