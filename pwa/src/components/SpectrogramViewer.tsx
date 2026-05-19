@@ -12,7 +12,7 @@
  *   - Playhead drag rail beneath the canvas → onSeek(timeS)
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   computeSpectrogram,
   renderSpectrogram,
@@ -56,14 +56,19 @@ export function SpectrogramViewer({
   const [frames, setFrames]       = useState<SpectrogramFrame[] | null>(null);
 
   // Merged options — sampleRate is always required; apply defaults.
-  const mergedOptions: SpectrogramOptions = {
+  // useMemo so the downstream useCallback at line 216 keeps stable identity
+  // across renders. Stable downstream identity prevents the spectrogram from
+  // recomputing every render when only an unrelated prop (playheadS, etc.)
+  // changes. Callers are expected to memoize `options` themselves; if they
+  // don't, this still re-fires per render — that's the caller's bug.
+  const mergedOptions = useMemo<SpectrogramOptions>(() => ({
     sampleRate,
     fftSize: 1024,
     hopFraction: 0.5,
     voiceBand: [300, 3400],
     mainsHumHz: 50,
     ...options,
-  };
+  }), [sampleRate, options]);
 
   // Re-compute spectrogram when samples change.
   useEffect(() => {

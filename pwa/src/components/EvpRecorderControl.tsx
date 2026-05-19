@@ -273,6 +273,11 @@ export function EvpRecorderControl({ investigationId, onSaved, variant = "defaul
     if (state.status !== "idle") return;
     autoStartedRef.current = true;
     void handleStart();
+    // handleStart is intentionally omitted — the autoStartedRef latch ensures
+    // we fire once per (investigationId × idle-status) edge, regardless of
+    // whether handleStart's identity changes between renders. Adding it would
+    // re-fire start on every render until the latch closes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoStart, investigationId, state.status]);
 
   // Scene-driven auto-stop. When the parent flips `active` from true to
@@ -287,6 +292,10 @@ export function EvpRecorderControl({ investigationId, onSaved, variant = "defaul
     if (prev === true && active === false && state.status === "recording") {
       void handleStop();
     }
+    // handleStop intentionally omitted — the prev-active edge check is the
+    // gate; identity changes to handleStop between renders shouldn't trigger
+    // a stop. Same rationale as the autoStart effect above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, state.status]);
 
   // Cleanup on unmount — stop the recorder if it's still running.

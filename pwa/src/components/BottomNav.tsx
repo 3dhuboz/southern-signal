@@ -147,6 +147,11 @@ export function BottomNav() {
       }
     })();
     return () => { cancelled = true; };
+    // session is a useRef — the ref object is stable, .current mutates without
+    // needing to retrigger. The specific `session.current?.*` reads in deps
+    // ARE intentional (we want re-fetch when session identity changes), but
+    // the rule still flags the bare `session` reference as "missing".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [researchEnabled, session.current?.id, session.current?.title, session.current?.location_name]);
 
   const visibleItems = useMemo(() => {
