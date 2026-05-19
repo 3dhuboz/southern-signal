@@ -6,7 +6,20 @@
  * via a `source` column so cross-device sync can union rows safely.
  */
 
-export const CURRENT_SCHEMA_VERSION = 14;
+/**
+ * Schema version. v15 (2026-05-19) adds no new tables — it stamps the change
+ * that turned on `PRAGMA foreign_keys = ON` per connection (see db.ts).
+ *
+ * - v13 → v14: ICIP columns on investigations/media_assets/evidence_events
+ *              (already shipped to users with DBs on disk).
+ * - v14 → v15: FK enforcement enabled. SQLite has always parsed the FK
+ *              declarations in `SCHEMA_SQL`; before v15 they were inert
+ *              because the connection PRAGMA was never set. v15 turns them
+ *              on; the migration step also runs a one-shot orphan-row
+ *              cleanup so legacy DBs with dangling references don't trip
+ *              the first FK-checked write.
+ */
+export const CURRENT_SCHEMA_VERSION = 15;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_meta (

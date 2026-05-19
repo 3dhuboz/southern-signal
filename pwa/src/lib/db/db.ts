@@ -108,6 +108,23 @@ async function init(): Promise<InitResult> {
   const mode = await ready;
   setMode(mode);
 
+  // v15 — enforce declared FOREIGN KEY constraints on this connection.
+  //
+  // SQLite parses FK declarations regardless, but they're INERT until
+  // `PRAGMA foreign_keys = ON` is set on each new connection. We've been
+  // shipping the declarations since v3; they only start to MEAN anything
+  // once this PRAGMA fires. It MUST run before any other DML — including
+  // the legacy ALTER statements below — because turning it on mid-flight
+  // is rejected inside a transaction, and toggling it changes whether
+  // subsequent writes raise FOREIGN KEY constraint failed.
+  //
+  // Why per-connection: the SAH-pool worker holds one persistent DB
+  // handle for the lifetime of the page. If we ever respawn the worker
+  // (closeDb() → next init()), `init` runs again and re-applies the
+  // PRAGMA against the fresh handle. No code path opens a second
+  // connection.
+  await exec("PRAGMA foreign_keys = ON;", [], false);
+
   // Schema setup — same SQL the previous path ran. Idempotent.
   await exec(SCHEMA_SQL, [], false);
 
@@ -170,6 +187,44 @@ async function init(): Promise<InitResult> {
       await exec(stmt, [], false);
     } catch {
       /* column exists on v14+ DBs or new DB created with SCHEMA_SQL */
+    }
+  }
+
+  // v15: one-shot orphan-row cleanup. FK constraints were not enforced
+  // before this version, so a legacy DB can hold rows whose parent has
+  // been deleted (e.g. an investigation row was removed without ON
+  // DELETE cascading because the cascade was inert). With foreign_keys
+  // now ON, subsequent writes to those tables would fail on the FIRST
+  // child insert if SQLite ever runs an integrity check (e.g. during
+  // VACUUM). We pre-clean here so existing chains stay verifiable.
+  //
+  // Idempotent: a fresh DB has no orphans, and re-running on a clean DB
+  // is a no-op. Audit log is intentionally left untouched (no FK).
+  for (const stmt of [
+    // CASCADE-equivalent cleanups for tables whose parent FK is to investigations.
+    "DELETE FROM sensor_samples       WHERE investigation_id NOT IN (SELECT id FROM investigations)",
+    "DELETE FROM evidence_events      WHERE investigation_id NOT IN (SELECT id FROM investigations)",
+    "DELETE FROM media_assets         WHERE investigation_id NOT IN (SELECT id FROM investigations)",
+    "DELETE FROM transcripts          WHERE investigation_id NOT IN (SELECT id FROM investigations)",
+    "DELETE FROM transcripts          WHERE media_id         NOT IN (SELECT id FROM media_assets)",
+    "DELETE FROM debunk_checklist     WHERE investigation_id NOT IN (SELECT id FROM investigations)",
+    "DELETE FROM debunk_checklist     WHERE event_id         NOT IN (SELECT id FROM evidence_events)",
+    "DELETE FROM interviews           WHERE investigation_id NOT IN (SELECT id FROM investigations)",
+    "DELETE FROM trigger_objects      WHERE investigation_id NOT IN (SELECT id FROM investigations)",
+    "DELETE FROM trigger_object_checks WHERE trigger_object_id NOT IN (SELECT id FROM trigger_objects)",
+    "DELETE FROM trigger_object_checks WHERE investigation_id  NOT IN (SELECT id FROM investigations)",
+    "DELETE FROM research_finding_notes WHERE dossier_id NOT IN (SELECT id FROM research_dossiers)",
+    // SET NULL-equivalent cleanups for nullable FKs.
+    "UPDATE research_dossiers SET investigation_id = NULL WHERE investigation_id IS NOT NULL AND investigation_id NOT IN (SELECT id FROM investigations)",
+    "UPDATE bundle_signatures SET investigation_id = NULL WHERE investigation_id IS NOT NULL AND investigation_id NOT IN (SELECT id FROM investigations)",
+  ]) {
+    try {
+      await exec(stmt, [], false);
+    } catch (err) {
+      // A missing table (pre-the-table-was-added) raises here. That's
+      // fine — there's nothing to clean. Anything else, surface so we
+      // notice in the console; we still continue.
+      console.warn("[db] v15 orphan cleanup skipped:", (err as Error).message);
     }
   }
 
@@ -262,4 +317,47 @@ export async function query<T = Record<string, unknown>>(
 export async function exec(sql: string, bind: BindValue[] = []): Promise<void> {
   const fn = await getExec();
   await fn(sql, bind, false);
+}
+
+// ---------------------------------------------------------------------------
+// Transactions (v15).
+//
+// sqlite-wasm runs every exec() on the same DB handle inside one worker, so
+// nesting BEGIN/COMMIT around a sequence of writes gives us atomic semantics
+// (the FS sync after COMMIT either succeeds for the whole group or rolls
+// back). We do NOT support nesting in SQLite — if a transaction is already
+// open we run the body inline and rely on the OUTER caller's COMMIT/ROLLBACK
+// to bracket us. SQLite-wasm doesn't expose SAVEPOINT cleanly over the
+// promiser, and treating nesting as a no-op matches the only callers we
+// have today (appendAuditEntry inside an outer repo.ts transaction).
+//
+// Failure semantics: if the body throws, we ROLLBACK and rethrow. If the
+// COMMIT itself throws, we let the caller see the failure.
+// ---------------------------------------------------------------------------
+
+let inTransaction = false;
+
+/**
+ * Run `body` inside a SQLite transaction. Use for any function that does
+ * more than one INSERT/UPDATE/DELETE and needs all-or-nothing semantics —
+ * e.g. "create row + append audit entry + enqueue for sync".
+ */
+export async function withTransaction<T>(body: () => Promise<T>): Promise<T> {
+  if (inTransaction) {
+    // Already inside a tx — just run inline, the outer caller commits.
+    return body();
+  }
+  const fn = await getExec();
+  await fn("BEGIN", [], false);
+  inTransaction = true;
+  try {
+    const result = await body();
+    await fn("COMMIT", [], false);
+    inTransaction = false;
+    return result;
+  } catch (err) {
+    inTransaction = false;
+    try { await fn("ROLLBACK", [], false); } catch { /* best effort */ }
+    throw err;
+  }
 }
