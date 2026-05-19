@@ -14,10 +14,17 @@
  *   - Hard-coded refusal when the global culturalSensitivity flag is on.
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+// Anthropic SDK is type-imported here so the static import graph stays
+// SDK-free; the BYOK code path dynamic-imports the runtime below. The
+// SDK is ~7 MB un-minified and was previously shipping on the main
+// bundle path for every user; the BYOK escape hatch only fires on the
+// (rare) developer path when the proxy is unreachable and an Anthropic
+// API key has been configured.
+import type Anthropic from "@anthropic-ai/sdk";
 import { getApiKey } from "./keyStore";
 import { getPreferences } from "../preferences";
 import { query } from "../db/db";
+import { signedJson } from "./signedFetch";
 
 export type CloudProvider = "anthropic" | "openai" | "gemini" | "openrouter" | "proxy";
 
@@ -122,16 +129,12 @@ export async function ensureRoutable(ctx: CloudCallContext): Promise<void> {
 
 async function callProxy(opts: { system: string; user: string; maxTokens?: number; temperature?: number; model?: string }): Promise<string | null> {
   try {
-    const resp = await fetch(PROXY_PATH, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        system: opts.system,
-        user: opts.user,
-        max_tokens: opts.maxTokens,
-        temperature: opts.temperature,
-        model: opts.model,
-      }),
+    const resp = await signedJson(PROXY_PATH, {
+      system: opts.system,
+      user: opts.user,
+      max_tokens: opts.maxTokens,
+      temperature: opts.temperature,
+      model: opts.model,
     });
     if (resp.status === 503) {
       // Proxy reachable but the operator hasn't set OPENROUTER_API_KEY in their
@@ -180,6 +183,12 @@ async function callAnthropicBYOK(opts: { system: string; user: string; maxTokens
   const apiKey = await getApiKey("anthropic");
   if (!apiKey) throw new CloudKeyMissingError("anthropic");
   const prefs = getPreferences();
+  // Dynamic import of @anthropic-ai/sdk — ~7 MB un-minified. The default
+  // path is the server proxy (signedJson above), so the SDK should never
+  // ship to a user unless they have set a BYOK key AND the proxy is
+  // unreachable. Keeping this dynamic-only means the SDK gets its own
+  // code-split chunk and stays off the critical path.
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
   const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
   const response = await client.messages.create({
     model: prefs.ai.anthropicModel,
