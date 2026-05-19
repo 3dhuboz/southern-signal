@@ -1,0 +1,171 @@
+/* ============================================================================
+   BroadcastBug — top-left status bug for the camera surface.
+
+   Looks like the on-air bug from a science documentary OB van: dark glass
+   shell, hairline cyan rim, SS mark | state label | elapsed timecode.
+   States: idle (STANDBY · muted) → ready (READY · neutral) → live (LIVE ·
+   solid cyan dot) → rec (REC · pulsing red dot). Sized for 480p downscale
+   legibility — this bug appears on the broadcast frame, not just the
+   operator's screen.
+   ============================================================================ */
+
+.bug {
+  position: absolute;
+  top: calc(var(--s-12, 12px) + var(--safe-top, 0px));
+  left: calc(var(--s-12, 12px) + var(--safe-left, 0px));
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 14px 0 12px;
+
+  /* Dark glass — forensic, calm, no horror. */
+  background: rgba(8, 12, 18, 0.62);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid rgba(93, 242, 199, 0.18);
+  border-radius: 10px;
+
+  color: var(--text-primary, #E7ECF3);
+  font-family: var(--font-display, "Space Grotesk", "Inter", sans-serif);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  /* Long, soft, dark drop + a hairline inset top highlight so the panel
+     reads as a physical surface against any video. */
+  box-shadow:
+    0 6px 16px rgba(0, 0, 0, 0.55),
+    0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+
+  z-index: 5;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+  /* Calm transitions between state changes. */
+  transition: border-color 200ms ease-out, background 200ms ease-out;
+}
+
+/* SS broadcast mark — small signal-wave glyph + "SS" wordmark. Reads as
+   the channel bug an editor would expect on a documentary feed. */
+.mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 9px;
+  border-right: 1px solid rgba(93, 242, 199, 0.22);
+  height: 18px;
+  color: var(--signal, #5DF2C7);
+}
+.markGlyph {
+  width: 14px;
+  height: 14px;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.markText {
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  line-height: 1;
+}
+
+.body {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted, #757F90);
+  flex-shrink: 0;
+  transition: background 200ms ease-out, box-shadow 200ms ease-out;
+}
+
+.label {
+  font-family: var(--font-display, "Space Grotesk", "Inter", sans-serif);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 1.6px;
+  line-height: 1;
+  color: var(--text-secondary, #9BA6B8);
+}
+
+.elapsed {
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  line-height: 1;
+  color: var(--text-primary, #E7ECF3);
+  font-variant-numeric: tabular-nums;
+  min-width: 5ch;
+  text-align: right;
+}
+
+/* ── State variants ─────────────────────────────────────────────────────── */
+
+.idle .dot { background: var(--text-dim, #3F4858); }
+.idle .label { color: var(--text-secondary, #9BA6B8); }
+
+.ready {
+  border-color: rgba(93, 242, 199, 0.28);
+}
+.ready .dot {
+  background: var(--signal-dim, #2BA386);
+}
+.ready .label { color: var(--text-primary, #E7ECF3); }
+
+.live {
+  border-color: rgba(93, 242, 199, 0.45);
+  background: rgba(8, 14, 18, 0.7);
+}
+.live .dot {
+  background: var(--signal, #5DF2C7);
+  box-shadow: 0 0 10px rgba(93, 242, 199, 0.55);
+}
+.live .label { color: var(--signal, #5DF2C7); }
+
+.rec {
+  border-color: rgba(239, 110, 110, 0.55);
+  background: rgba(18, 8, 10, 0.7);
+}
+.rec .dot {
+  background: var(--danger, #EF6E6E);
+  box-shadow: 0 0 10px rgba(239, 110, 110, 0.7);
+  animation: ss-bug-rec-pulse 1s ease-in-out infinite;
+}
+.rec .label { color: var(--danger, #EF6E6E); }
+
+/* 1Hz pulse on the REC dot. Subtle — no other ambient animation on chrome. */
+@keyframes ss-bug-rec-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.55; transform: scale(0.85); }
+}
+
+/* Reduced-motion: keep the dot solid, lose the pulse. */
+@media (prefers-reduced-motion: reduce) {
+  .rec .dot {
+    animation: none;
+  }
+}
+
+/* ── Compact variant for narrow viewports ───────────────────────────────── */
+/* Tightens horizontal padding + hides the SS wordmark so the bug still
+   fits on 390-wide phones beside the audio meter underneath. */
+@media (max-width: 420px) {
+  .bug {
+    gap: 8px;
+    padding: 0 12px 0 10px;
+    height: 32px;
+  }
+  .markText { display: none; }
+  .mark { padding-right: 6px; }
+  .elapsed { font-size: 11.5px; }
+  .label { font-size: 10.5px; letter-spacing: 1.4px; }
+}
