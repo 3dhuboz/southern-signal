@@ -443,6 +443,9 @@ export function EvidenceBrief() {
         <p>
           The Adversarial Hypothesis Tournament (AHT) eliminates explanations; it does not confirm causes. When the H₀ "AI insufficiency" confidence exceeds 0.4, the verdict is INCONCLUSIVE, never confirmed.
         </p>
+        <p>
+          Additional tool-specific disclaimers are surfaced inside the relevant in-app tools (Bait-Tone, EVP Editor, AI Assist, Simple Mission View).
+        </p>
         <p className={s.briefMeta}>
           Brief generated {formatDate(brief.generatedAt)} · Southern Signal v0.1.0
         </p>
