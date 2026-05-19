@@ -61,6 +61,7 @@ export function BroadcastSceneSelector({ sceneName, eyebrow = "SCENE", onOpen }:
       className={s.chip}
       onClick={onOpen}
       aria-label={`Scene: ${sceneName}. Tap to change.`}
+      aria-haspopup="dialog"
       title="Change scene"
     >
       <span className={s.body}>
