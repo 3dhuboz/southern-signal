@@ -101,7 +101,7 @@ export function PosteriorBar({ posterior, recentIncrements, prior }: PosteriorBa
       )}
 
       <p className={s.disclaimer}>
-        Posterior is a model estimate. It does not measure presence.
+        Posterior is a model estimate. It does not measure presence. Sectors are 60° quadrants of the live audio field, not direction-of-arrival bearings — ASI estimates which sector the loudest non-baseline transient came from, not where in that sector.
       </p>
     </div>
   );
