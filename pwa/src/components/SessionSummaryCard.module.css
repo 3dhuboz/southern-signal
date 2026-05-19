@@ -30,7 +30,7 @@
   margin: 0;
   font-size: 20px;
   font-weight: 700;
-  color: var(--text);
+  color: var(--text-primary);
   letter-spacing: 0.2px;
 }
 .dispositionPill {
@@ -42,7 +42,7 @@
   border-radius: var(--r-full);
   border: 1px solid var(--border-strong);
   background: var(--bg-overlay);
-  color: var(--text);
+  color: var(--text-primary);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.4px;
@@ -74,7 +74,7 @@
 .metricValue {
   font-size: 22px;
   font-weight: 700;
-  color: var(--text);
+  color: var(--text-primary);
   font-variant-numeric: tabular-nums;
   font-family: var(--font-mono);
 }
@@ -115,7 +115,7 @@
   font-size: 16px;
   font-weight: 800;
   letter-spacing: 0.8px;
-  color: var(--text);
+  color: var(--text-primary);
 }
 .verdict_inconclusive .verdictLabel { color: var(--warning); }
 .verdict_unexplained .verdictLabel { color: var(--danger); }
@@ -196,7 +196,7 @@
 .rowKind {
   font-size: 12px;
   font-weight: 700;
-  color: var(--text);
+  color: var(--text-primary);
   letter-spacing: 0.3px;
 }
 .rowReason {
@@ -237,7 +237,7 @@
 .chain code {
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--text);
+  color: var(--text-primary);
   background: var(--bg-overlay);
   padding: 0 var(--s-4);
   border-radius: 4px;
@@ -274,7 +274,7 @@
 .actionPrimary:active { transform: scale(0.99); }
 .actionSecondary {
   background: var(--bg-surface);
-  color: var(--text);
+  color: var(--text-primary);
   border: 1px solid var(--border-default);
 }
 .actionSecondary:hover { background: var(--bg-overlay); }

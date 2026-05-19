@@ -716,9 +716,9 @@
 
 /* ── Stereo analysis chips ───────────────────────────────────────────────── */
 .stereoChip {
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
-  color: var(--accent);
+  background: color-mix(in srgb, var(--signal) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--signal) 40%, transparent);
+  color: var(--signal);
   border-radius: var(--r-sm);
   padding: 1px 7px;
   font-family: var(--font-mono);

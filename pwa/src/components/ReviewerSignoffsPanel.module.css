@@ -103,7 +103,7 @@
   color: var(--signal);
   text-decoration: underline;
 }
-.itemRefs a:hover { color: var(--signal-bright, var(--signal)); }
+.itemRefs a:hover { color: var(--signal-glow, var(--signal)); }
 
 .itemActions {
   display: flex;
@@ -194,12 +194,12 @@
 
 .primary {
   background: var(--signal);
-  color: var(--bg-primary, #07090C);
+  color: var(--bg-canvas, #07090C);
   border-color: var(--signal);
   font-weight: 800;
 }
 .primary:hover {
-  background: var(--signal-bright, var(--signal));
+  background: var(--signal-glow, var(--signal));
 }
 .primary:disabled {
   opacity: 0.6;

@@ -519,8 +519,8 @@
 .siteAlertBadge {
   display: flex;
   align-items: center;
-  gap: var(--space-2, 8px);
-  padding: var(--space-2, 8px) var(--space-3, 12px);
+  gap: var(--s-8, 8px);
+  padding: var(--s-8, 8px) var(--s-12, 12px);
   background: color-mix(in srgb, var(--warning, #d97706) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--warning, #d97706) 40%, transparent);
   border-radius: var(--r-md, 6px);
@@ -543,8 +543,8 @@
 .siteAcknowledgedBadge {
   display: flex;
   align-items: center;
-  gap: var(--space-2, 8px);
-  padding: var(--space-2, 8px) var(--space-3, 12px);
+  gap: var(--s-8, 8px);
+  padding: var(--s-8, 8px) var(--s-12, 12px);
   background: color-mix(in srgb, var(--success, #22c55e) 10%, transparent);
   border: 1px solid color-mix(in srgb, var(--success, #22c55e) 35%, transparent);
   border-radius: var(--r-md, 6px);

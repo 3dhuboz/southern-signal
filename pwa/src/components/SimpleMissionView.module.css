@@ -600,7 +600,7 @@
 }
 .sensitivePill:hover {
   background: var(--bg-overlay);
-  color: var(--text);
+  color: var(--text-primary);
   border-color: var(--border-strong);
 }
 .sensitivePillActive {
@@ -629,7 +629,7 @@
 .readinessRowBody strong {
   font-size: 12px;
   letter-spacing: 0.4px;
-  color: var(--text);
+  color: var(--text-primary);
 }
 .readinessRowBody span {
   font-size: 11.5px;
@@ -638,13 +638,13 @@
 .readinessOk {
   background: rgba(93, 242, 199, 0.06);
   border-color: rgba(93, 242, 199, 0.35);
-  color: var(--text);
+  color: var(--text-primary);
 }
 .readinessOk strong { color: var(--accent-strong); }
 .readinessWarn {
   background: rgba(242, 185, 93, 0.06);
   border-color: rgba(242, 185, 93, 0.35);
-  color: var(--text);
+  color: var(--text-primary);
 }
 .readinessWarn strong { color: var(--warning); }
 .readinessIcon {
@@ -806,7 +806,7 @@
     linear-gradient(180deg, var(--danger-wash), var(--danger-wash)),
     var(--bg-elevated);
   border-color: var(--danger);
-  color: var(--text);
+  color: var(--text-primary);
 }
 .broadcastOnAir {
   background:

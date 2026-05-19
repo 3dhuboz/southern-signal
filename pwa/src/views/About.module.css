@@ -2,7 +2,7 @@
   max-width: 760px;
   margin: 0 auto;
   padding: var(--s-32) var(--s-24) 80px;
-  color: var(--text);
+  color: var(--text-primary);
   line-height: 1.55;
 }
 
@@ -39,7 +39,7 @@
   line-height: 1.2;
   font-weight: 700;
   letter-spacing: -0.4px;
-  color: var(--text);
+  color: var(--text-primary);
 }
 .lede {
   margin: 0 0 var(--s-20);
@@ -100,13 +100,13 @@
 .valueProp strong {
   display: block;
   margin-bottom: var(--s-4);
-  color: var(--text);
+  color: var(--text-primary);
   font-size: 14px;
 }
 .valueProp code {
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--text);
+  color: var(--text-primary);
   background: var(--bg-overlay);
   padding: 1px var(--s-4);
   border-radius: 3px;
@@ -147,7 +147,7 @@
   margin: 0;
   font-size: 15px;
   font-weight: 700;
-  color: var(--text);
+  color: var(--text-primary);
 }
 .mode p {
   margin: 0;
@@ -179,7 +179,7 @@
   font-size: 13px;
   color: var(--text-secondary);
 }
-.privacy strong { color: var(--text); }
+.privacy strong { color: var(--text-primary); }
 
 /* ----- REVIEW ----- */
 
@@ -226,7 +226,7 @@
   border-radius: var(--r-md);
   border: 1px solid var(--border-default);
   background: var(--bg-overlay);
-  color: var(--text);
+  color: var(--text-primary);
   font-size: 14px;
 }
 .betaInput:focus {
@@ -255,7 +255,7 @@
   border: 1px solid var(--accent-strong);
   background: rgba(93, 242, 199, 0.06);
   font-size: 13px;
-  color: var(--text);
+  color: var(--text-primary);
 }
 .betaSaved p { margin: 0 0 var(--s-8); }
 .betaSaved code {
@@ -273,7 +273,7 @@
   text-decoration: underline;
   cursor: pointer;
 }
-.linkButton:hover { color: var(--text); }
+.linkButton:hover { color: var(--text-primary); }
 .muted { color: var(--text-muted); }
 
 /* ----- FOOTER ----- */

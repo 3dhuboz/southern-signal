@@ -6,28 +6,28 @@
   align-items: center;
   justify-content: center;
   z-index: 900;
-  padding: var(--space-4);
+  padding: var(--s-16);
 }
 
 .card {
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
   border-radius: var(--r-lg);
-  padding: var(--space-6);
+  padding: var(--s-24);
   max-width: 480px;
   width: 100%;
   max-height: 90dvh;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--s-16);
 }
 
 /* Header */
 .header {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--s-12);
 }
 
 .icon {
@@ -58,11 +58,11 @@
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--s-8);
   border: 1px solid var(--border-default);
   border-radius: var(--r-md);
-  padding: var(--space-3);
-  background: var(--bg-base);
+  padding: var(--s-12);
+  background: var(--bg-canvas);
   max-height: 160px;
   overflow-y: auto;
 }
@@ -81,7 +81,7 @@
 
 .siteMeta {
   font-size: var(--text-xs);
-  color: var(--text-tertiary);
+  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 
@@ -97,10 +97,10 @@
 .attribution {
   margin: 0;
   font-size: var(--text-xs);
-  color: var(--text-tertiary);
+  color: var(--text-muted);
   font-style: italic;
-  border-top: 1px solid var(--border-muted, var(--border-default));
-  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle, var(--border-default));
+  padding-top: var(--s-8);
 }
 
 /* Acknowledgement input */
@@ -112,10 +112,10 @@
 
 .ackInput {
   width: 100%;
-  padding: var(--space-2) var(--space-3);
+  padding: var(--s-8) var(--s-12);
   border: 1px solid var(--border-default);
   border-radius: var(--r-md);
-  background: var(--bg-base);
+  background: var(--bg-canvas);
   color: var(--text-primary);
   font-size: var(--text-sm);
   font-family: inherit;
@@ -124,8 +124,8 @@
 }
 
 .ackInput:focus {
-  border-color: var(--accent, #22c55e);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #22c55e) 20%, transparent);
+  border-color: var(--signal, #22c55e);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--signal, #22c55e) 20%, transparent);
 }
 
 .ackHint {
@@ -137,12 +137,12 @@
 /* Actions */
 .actions {
   display: flex;
-  gap: var(--space-3);
+  gap: var(--s-12);
   justify-content: flex-end;
 }
 
 .cancelBtn {
-  padding: var(--space-2) var(--space-4);
+  padding: var(--s-8) var(--s-16);
   border: 1px solid var(--border-default);
   border-radius: var(--r-md);
   background: transparent;
@@ -153,14 +153,14 @@
 }
 
 .cancelBtn:hover {
-  background: var(--bg-hover, rgba(255, 255, 255, 0.05));
+  background: var(--bg-overlay, rgba(255, 255, 255, 0.05));
 }
 
 .confirmBtn {
-  padding: var(--space-2) var(--space-4);
+  padding: var(--s-8) var(--s-16);
   border: none;
   border-radius: var(--r-md);
-  background: var(--accent, #22c55e);
+  background: var(--signal, #22c55e);
   color: #000;
   font-size: var(--text-sm);
   font-weight: 600;

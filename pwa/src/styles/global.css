@@ -13,7 +13,7 @@ html, body { height: 100%; margin: 0; }
   top: 0;
   left: 0;
   transform: translateY(-150%);
-  background: var(--bg-card, #0c1117);
+  background: var(--bg-surface, #0c1117);
   color: var(--signal, #5DF2C7);
   padding: 10px 16px;
   border: 2px solid var(--signal, #5DF2C7);

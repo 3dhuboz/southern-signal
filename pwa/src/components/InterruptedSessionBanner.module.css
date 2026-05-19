@@ -7,7 +7,7 @@
   border-radius: var(--r-md);
   border: 1px solid var(--warning);
   background: var(--warning-wash);
-  color: var(--text);
+  color: var(--text-primary);
 }
 
 @media (min-width: 640px) {
@@ -44,7 +44,7 @@
 
 .caseTitle {
   font-weight: 700;
-  color: var(--text);
+  color: var(--text-primary);
 }
 
 .ago {

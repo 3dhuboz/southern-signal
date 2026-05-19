@@ -33,6 +33,20 @@
   --danger:         #EF6E6E;
   --danger-wash:    #2A1313;
 
+  /* Success — used by acknowledgement / "OK" badges. Distinct from --signal
+     (brand cyan) so a green check doesn't compete with the accent. */
+  --success:        #3ECF8E;
+  --success-wash:   #0F2A1E;
+
+  /* Type scale — sizes used by typography utilities + module CSS.
+     Keep raw px for predictable rhythm with the spacing scale (--s-N).
+     Pair sizing here with line-height set at the call site. */
+  --text-xs:   11px;
+  --text-sm:   13px;
+  --text-base: 15px;
+  --text-lg:   18px;
+  --text-xl:   22px;
+
   /* Spacing scale */
   --s-2: 2px; --s-4: 4px; --s-6: 6px; --s-8: 8px; --s-10: 10px;
   --s-12: 12px; --s-14: 14px; --s-16: 16px; --s-20: 20px;
@@ -90,6 +104,12 @@
   --warning-wash:   #2A0808;
   --danger:         #E33645;
   --danger-wash:    #2A0808;
+
+  /* Success in red-mode reduces to the same deep red so no green leaks
+     into rod-cell space. Acknowledgement badges still read as "affirmative"
+     in context but stay >=650nm. */
+  --success:        #7C0F1F;
+  --success-wash:   #2A0808;
 }
 
 /* No additive cyan glow in scotopic mode — replace with deep-red glow. */
@@ -162,6 +182,10 @@
   --warning-wash:   #FBF1DD;
   --danger:         #B5202F;
   --danger-wash:    #F9E2E5;
+
+  /* Darker success green for AA contrast on white. */
+  --success:        #1F8F5C;
+  --success-wash:   #E6F5EC;
 }
 
 /* Replace dark radial wash with a soft warm overlay so light theme stays bright. */
