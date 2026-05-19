@@ -1,10 +1,38 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+
+// Build id used to namespace the service-worker cache. Combines the
+// package version with the current timestamp so every build yields a
+// unique cache key; old caches get purged in the SW's activate handler.
+const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf8')) as { version?: string }
+const BUILD_ID = `${pkg.version ?? '0.0.0'}-${Date.now().toString(36)}`
+
+/**
+ * Replace the `__BUILD_ID__` token inside the emitted sw.js so each deploy
+ * gets a fresh cache namespace without anyone having to hand-bump VERSION.
+ *
+ * sw.js lives under `public/` and is copied as-is by Vite — it never enters
+ * the bundle graph, so `generateBundle` doesn't see it. Run on `closeBundle`
+ * and patch the file on disk instead.
+ */
+function swVersionInject() {
+  return {
+    name: 'sw-version-inject',
+    apply: 'build' as const,
+    closeBundle() {
+      const swPath = resolve(__dirname, 'dist/sw.js')
+      if (!existsSync(swPath)) return
+      const raw = readFileSync(swPath, 'utf8')
+      const next = raw.replaceAll('__BUILD_ID__', BUILD_ID)
+      if (next !== raw) writeFileSync(swPath, next, 'utf8')
+    },
+  }
+}
 
 /**
  * Vite bundles the sqlite-wasm worker (sqlite3-worker1-*.js) with a content-
@@ -41,7 +69,7 @@ function sqliteWasmUnhashedCopy() {
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), sqliteWasmUnhashedCopy()],
+  plugins: [react(), sqliteWasmUnhashedCopy(), swVersionInject()],
   build: {
     // lightningcss (Vite 8 default) cannot parse Tailwind v4's @media source()
     // construct. Disable CSS minification until lightningcss supports it.

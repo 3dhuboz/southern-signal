@@ -12,7 +12,15 @@
 // refresh. Network-first for HTML guarantees a freshly-deployed bundle
 // reaches the user on the very next reload. Hashed assets keep
 // cache-first since the content-hash is the cache key.
-const VERSION = "ss-pwa-v3";
+//
+// The `__BUILD_ID__` token is substituted at build time by the
+// `swVersionInject` plugin in vite.config.ts. Each build derives a
+// fresh id from the package version + the build timestamp, so the SW
+// cache namespace changes per-deploy automatically — no more manual
+// version bumps and no more unbounded cache growth.
+// In dev mode (where the public file is served as-is) the token stays
+// in place; the SW is only registered against the built bundle.
+const VERSION = "ss-pwa-__BUILD_ID__";
 const STATIC_CACHE = `static-${VERSION}`;
 const STATIC_ASSETS = ["/manifest.webmanifest", "/icon-192.svg", "/icon-512.svg", "/icon-mask.svg"];
 
