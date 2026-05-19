@@ -169,17 +169,39 @@ describe("signingKeyStore — getOrCreateSigningKey", () => {
     expect(publicKeyHex).toMatch(/^[0-9a-f]+$/);
   });
 
-  it("re-imports the stored JWK when the module is reloaded (round-trip)", async () => {
-    // First module load: generate + persist.
+  it("re-uses the stored CryptoKey when the module is reloaded (round-trip)", async () => {
+    // First module load: generate + persist a non-extractable CryptoKey.
     const first = await (await import("./signingKeyStore")).getOrCreateSigningKey();
     const expectedPub = first.publicKeyHex;
 
     // Reload the module — module-level promise cache is dropped, but the
-    // IndexedDB shim keeps the row, so loadOrCreateKey() must take the
-    // import-from-JWK path and yield the SAME pubkey.
+    // IndexedDB shim keeps the row. The v2 path stores a CryptoKey
+    // reference directly (no JWK round-trip), so the same pubkey hex
+    // surfaces on the second load.
     vi.resetModules();
     const second = await (await import("./signingKeyStore")).getOrCreateSigningKey();
     expect(second.publicKeyHex).toBe(expectedPub);
+  });
+
+  it("generates the private key as non-extractable (cannot exportKey())", async () => {
+    const { getOrCreateSigningKey } = await import("./signingKeyStore");
+    const { privateKey } = await getOrCreateSigningKey();
+    expect(privateKey.extractable).toBe(false);
+    // The WebCrypto contract: exportKey on a non-extractable CryptoKey
+    // throws InvalidAccessError. Whatever the runtime spells the error
+    // as, it must NOT resolve.
+    await expect(crypto.subtle.exportKey("jwk", privateKey)).rejects.toThrow();
+    await expect(crypto.subtle.exportKey("raw", privateKey)).rejects.toThrow();
+  });
+
+  it("does not persist privateKeyJwk (no JWK material on disk)", async () => {
+    const { getOrCreateSigningKey } = await import("./signingKeyStore");
+    await getOrCreateSigningKey();
+    const snap = shim.current!.snapshot();
+    const rec = snap.get("keys")?.get("device-ed25519") as { privateKeyJwk?: unknown; schema?: number } | undefined;
+    expect(rec).toBeDefined();
+    expect(rec).not.toHaveProperty("privateKeyJwk");
+    expect(rec?.schema).toBe(2);
   });
 });
 

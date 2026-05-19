@@ -1,24 +1,51 @@
 /**
- * Ed25519 signing key — stored in IndexedDB as a JWK, singleton per device.
+ * Ed25519 signing key — stored in IndexedDB, singleton per device.
  *
  * Separate from keyStore.ts (which holds cloud API keys) so there is no
  * coupling between AI provider configuration and forensic signing.
  *
- * The private key is extractable (JWK) so it can survive an IndexedDB
- * round-trip. The public key is exported as raw bytes (32 bytes) and
- * exposed as a 64-char hex string for inclusion in export bundles.
+ * Security posture: the private key is generated NON-extractable. WebCrypto
+ * still allows structured-clone of a non-extractable CryptoKey across the
+ * IndexedDB boundary (the bytes never leave the agent), which is the
+ * mechanism we use to survive a page reload. There is no JWK export of the
+ * private key — so an XSS payload running on the page cannot exfiltrate
+ * it via `crypto.subtle.exportKey()`.
+ *
+ * Migration: legacy records carry `privateKeyJwk` and an extractable key.
+ * Those records are rotated on first load — a fresh non-extractable
+ * keypair is generated and persisted, the legacy row replaced. Older
+ * bundles still verify against their own embedded pubkey because
+ * verifiers always read the pubkey from the bundle's signing.json, not
+ * from the device. The trade-off is operators see a new
+ * ed25519_pubkey_hex on the next bundle; that's acceptable for V1 where
+ * cross-device sync isn't a requirement.
+ *
+ * The public key is exported as raw bytes (32 bytes) and exposed as a
+ * 64-char hex string for inclusion in export bundles.
  */
 
 const DB_NAME = "ss-signing";
 const STORE = "keys";
 const DB_VERSION = 1;
 
-interface SigningKeyRecord {
+interface LegacySigningKeyRecord {
   id: "device-ed25519"; // singleton
   privateKeyJwk: JsonWebKey;
   publicKeyHex: string; // 32 bytes, 64 hex chars
   createdAt: string;
 }
+
+interface SigningKeyRecord {
+  id: "device-ed25519"; // singleton
+  /** Non-extractable CryptoKey, round-tripped via structured-clone in IDB. */
+  privateKey: CryptoKey;
+  publicKeyHex: string; // 32 bytes, 64 hex chars
+  createdAt: string;
+  /** Marker so we can tell migrated v2 rows from legacy v1 rows. */
+  schema: 2;
+}
+
+type AnySigningKeyRecord = SigningKeyRecord | LegacySigningKeyRecord;
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -57,9 +84,10 @@ async function withStore<T>(
 let signingKeyPromise: Promise<{ privateKey: CryptoKey; publicKeyHex: string }> | null = null;
 
 /**
- * Generate an Ed25519 CryptoKeyPair via WebCrypto and store private key as JWK.
- * Returns existing key if already generated (singleton per device).
- * Subsequent calls return the same Promise (no extra IndexedDB round-trips).
+ * Generate an Ed25519 CryptoKeyPair via WebCrypto and store the private
+ * key as a non-extractable CryptoKey in IndexedDB. Returns the existing
+ * key if already generated (singleton per device). Subsequent calls
+ * return the same Promise (no extra IndexedDB round-trips).
  */
 export function getOrCreateSigningKey(): Promise<{
   privateKey: CryptoKey;
@@ -73,37 +101,39 @@ async function loadOrCreateKey(): Promise<{
   privateKey: CryptoKey;
   publicKeyHex: string;
 }> {
-  // Try to load existing record first.
-  let rec: SigningKeyRecord | undefined;
+  let rec: AnySigningKeyRecord | undefined;
   try {
-    rec = await withStore<SigningKeyRecord | undefined>(
+    rec = await withStore<AnySigningKeyRecord | undefined>(
       "readonly",
-      (s) => s.get("device-ed25519") as IDBRequest<SigningKeyRecord | undefined>,
+      (s) => s.get("device-ed25519") as IDBRequest<AnySigningKeyRecord | undefined>,
     );
   } catch {
     rec = undefined;
   }
 
   if (rec) {
-    // Re-import the private key from JWK.
-    const privateKey = await crypto.subtle.importKey(
-      "jwk",
-      rec.privateKeyJwk,
-      { name: "Ed25519" },
-      false,
-      ["sign"],
-    );
-    return { privateKey, publicKeyHex: rec.publicKeyHex };
+    if (isV2Record(rec)) {
+      return { privateKey: rec.privateKey, publicKeyHex: rec.publicKeyHex };
+    }
+    // Legacy v1 (extractable JWK) — rotate to v2.
+    return await mintFreshKey();
   }
 
-  // Generate a new keypair.
+  return await mintFreshKey();
+}
+
+function isV2Record(rec: AnySigningKeyRecord): rec is SigningKeyRecord {
+  return (rec as { schema?: number }).schema === 2;
+}
+
+async function mintFreshKey(): Promise<{ privateKey: CryptoKey; publicKeyHex: string }> {
+  // Non-extractable Ed25519 keypair. The private key is bound to this
+  // origin's IndexedDB and cannot be exfiltrated via the WebCrypto API.
   const keyPair = await crypto.subtle.generateKey(
     { name: "Ed25519" },
-    true, // extractable — needed for JWK export/import
+    /* extractable */ false,
     ["sign", "verify"],
   );
-
-  const privateKeyJwk = await crypto.subtle.exportKey("jwk", keyPair.privateKey);
   const publicRaw = await crypto.subtle.exportKey("raw", keyPair.publicKey);
   const publicKeyHex = Array.from(new Uint8Array(publicRaw))
     .map((b) => b.toString(16).padStart(2, "0"))
@@ -111,11 +141,14 @@ async function loadOrCreateKey(): Promise<{
 
   const newRec: SigningKeyRecord = {
     id: "device-ed25519",
-    privateKeyJwk,
+    privateKey: keyPair.privateKey,
     publicKeyHex,
     createdAt: new Date().toISOString(),
+    schema: 2,
   };
 
+  // IndexedDB structured-clone preserves CryptoKey objects across page
+  // reloads without ever materialising the bytes in JS.
   await withStore<IDBValidKey>("readwrite", (s) => s.put(newRec));
 
   return { privateKey: keyPair.privateKey, publicKeyHex };
