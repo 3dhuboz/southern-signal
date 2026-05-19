@@ -1,0 +1,128 @@
+/* ============================================================================
+   BroadcastLowerThird — mid-bottom investigation slate.
+
+   Slides in from below when running flips true; slides out (preserving
+   its content via the parent's sticky cache) when running drops to false.
+   Sits above the BottomNav + the operator's bottom-left timecode HUD so
+   nothing overlaps. Centred horizontally; width caps at 80 vw so long
+   titles ellipsize instead of crowding the sensor HUD or shutter button.
+   ============================================================================ */
+
+.slate {
+  position: absolute;
+  /* Above the shutter (88 px) + slim dock + bottom nav. Just below the
+     mid-bottom mark so the slate stays in the lower-third proper. */
+  bottom: calc(var(--s-12, 12px) + var(--safe-bottom, 0px) + var(--bottom-nav-height, 64px) + 180px);
+  left: 50%;
+
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 22px 11px;
+  min-width: 220px;
+  max-width: min(80vw, 520px);
+
+  background: rgba(8, 12, 18, 0.62);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid rgba(93, 242, 199, 0.22);
+  border-radius: 12px;
+  box-shadow:
+    0 8px 22px rgba(0, 0, 0, 0.6),
+    0 1px 0 rgba(255, 255, 255, 0.04) inset;
+
+  text-align: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+
+  z-index: 4;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+
+  /* Animation: slide + fade. transform: translate combines horizontal
+     centring (translateX(-50%)) with vertical slide (translateY). */
+  transform: translate(-50%, 16px);
+  opacity: 0;
+  transition: transform 250ms ease-out, opacity 220ms ease-out;
+}
+
+.visible {
+  transform: translate(-50%, 0);
+  opacity: 1;
+}
+
+.hidden {
+  transform: translate(-50%, 16px);
+  opacity: 0;
+}
+
+.title {
+  font-family: var(--font-display, "Space Grotesk", "Inter", sans-serif);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  line-height: 1.2;
+  color: var(--text-primary, #E7ECF3);
+  /* Truncate to a single line. The slate is meant to be glanceable; the
+     full title is available in the Setup view. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.subtitle {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  color: var(--text-secondary, #9BA6B8);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.location {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sep {
+  color: var(--text-muted, #757F90);
+  opacity: 0.8;
+}
+
+.date {
+  color: var(--text-muted, #757F90);
+}
+
+/* Reduced motion: instant opacity, no slide. */
+@media (prefers-reduced-motion: reduce) {
+  .slate {
+    transform: translate(-50%, 0);
+    transition: opacity 100ms linear;
+  }
+  .hidden { opacity: 0; }
+  .visible { opacity: 1; }
+}
+
+/* Compact variant — phones. Tightens horizontal padding and brings the
+   slate down a bit (no marker-pill conflict because both are bottom-
+   anchored with different y offsets). */
+@media (max-width: 420px) {
+  .slate {
+    padding: 8px 16px 9px;
+    min-width: 180px;
+    max-width: 88vw;
+    bottom: calc(var(--s-12, 12px) + var(--safe-bottom, 0px) + var(--bottom-nav-height, 64px) + 168px);
+  }
+  .title { font-size: 14px; }
+  .subtitle { font-size: 10.5px; gap: 6px; }
+}
