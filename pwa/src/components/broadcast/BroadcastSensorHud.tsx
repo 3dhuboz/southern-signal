@@ -105,6 +105,24 @@ export function BroadcastSensorHud({
   const anyVisible = showEmf || showLux || showAcc;
   if (!anyVisible) return null;
 
+  // A11y: when a row flashes cyan on a threshold cross, sighted operators
+  // see the wash; a screen-reader operator needs an equivalent announcement.
+  // We build a per-sensor announcement string only while the flash is hot
+  // and feed it into a polite aria-live region — keeps the page quiet
+  // except on the rising edge, mirroring the visual pulse.
+  const emfAnnouncement = emfFlash && magnetometer
+    ? `EMF anomaly: ${fmt(magnetometer.magnitude, 1)} micro-tesla`
+    : "";
+  const luxAnnouncement = lightFlash && light
+    ? `Light anomaly: ${fmt(light.lux, light.lux < 10 ? 1 : 0)} lux`
+    : "";
+  const accAnnouncement = motionFlash && motion
+    ? `Motion anomaly: ${fmt(motion.accelMagnitude, 2)} metres per second squared`
+    : "";
+  const liveAnnouncement = [emfAnnouncement, luxAnnouncement, accAnnouncement]
+    .filter(Boolean)
+    .join(". ");
+
   return (
     <div
       className={s.hud}
@@ -147,6 +165,27 @@ export function BroadcastSensorHud({
           </span>
         </div>
       )}
+      {/* Visually-hidden live region: AT users hear the spike at the
+          same moment a sighted operator sees the row flash cyan. The
+          region is empty when no flash is active so the page stays
+          quiet between events. */}
+      <span
+        aria-live="polite"
+        aria-atomic="true"
+        style={{
+          position: "absolute",
+          width: 1,
+          height: 1,
+          padding: 0,
+          margin: -1,
+          overflow: "hidden",
+          clip: "rect(0,0,0,0)",
+          whiteSpace: "nowrap",
+          border: 0,
+        }}
+      >
+        {liveAnnouncement}
+      </span>
     </div>
   );
 }
