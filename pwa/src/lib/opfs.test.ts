@@ -26,7 +26,10 @@ function mkDir(name: string): FakeDirectory {
 
 class FakeFileHandle {
   kind: "file" = "file";
-  constructor(private node: FakeFile) {}
+  // No `private` modifier — tsconfig has erasableSyntaxOnly which rejects
+  // TS-only access modifiers. Test fakes don't need access control anyway.
+  node: FakeFile;
+  constructor(node: FakeFile) { this.node = node; }
   get name() { return this.node.name; }
   async getFile() {
     const u8 = this.node.data;
@@ -76,7 +79,8 @@ class FakeFileHandle {
 
 class FakeDirHandle {
   kind: "directory" = "directory";
-  constructor(private node: FakeDirectory) {}
+  node: FakeDirectory;
+  constructor(node: FakeDirectory) { this.node = node; }
   get name() { return this.node.name; }
 
   async getDirectoryHandle(name: string, opts?: { create?: boolean }): Promise<FakeDirHandle> {
