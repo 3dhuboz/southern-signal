@@ -76,5 +76,29 @@ export default defineConfig({
     // minification — lightningcss is the default in Vite 8 / rolldown and
     // ships with no extra install needed.
     cssMinify: true,
+    rolldownOptions: {
+      output: {
+        // Split big, rarely-changing vendor groups out of the index chunk so
+        // a code edit doesn't bust the cache for React + Radix + sqlite-wasm.
+        // Rolldown's manualChunks is callback-based (unlike rollup which
+        // takes a plain object) — we map module id substrings to chunk
+        // names. Any module whose id contains node_modules/<pkg> lands
+        // in the matching bucket; everything else falls through to the
+        // default heuristic and the route-level lazy boundaries.
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined
+          if (
+            id.includes('node_modules/react/') ||
+            id.includes('node_modules/react-dom/') ||
+            id.includes('node_modules/react-router-dom/') ||
+            id.includes('node_modules/react-router/') ||
+            id.includes('node_modules/scheduler/')
+          ) return 'react'
+          if (id.includes('node_modules/@radix-ui/')) return 'radix'
+          if (id.includes('node_modules/@sqlite.org/')) return 'sqlite'
+          return undefined
+        },
+      },
+    },
   },
 })
