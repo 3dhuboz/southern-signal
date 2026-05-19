@@ -129,13 +129,25 @@ export function BroadcastAudioMeter({ rms, vadActive = false }: Props) {
   // visual quiet during silence and during slow-decaying tails.
   const peakHidden = peakDb <= MIN_DB + 0.5 || peakPct <= fillPct + 0.5;
 
+  // A11y: the gradient is purely visual; a screen reader needs the level
+  // spoken out. We render an aria-label on the root with the current dBFS
+  // value rounded for human readability, and mark the bar+tick chrome
+  // aria-hidden so the announcement is the level, not a wall of tick
+  // strings. The text readout below the bar stays visible to sighted
+  // users — only the chrome is hidden from the AT.
+  const ariaLevel = Math.round(db);
+  const vadSuffix = vadActive ? ", voice activity detected" : "";
   return (
     <div
       className={`${s.meter} ${vadActive ? s.active : ""}`.trim()}
-      aria-hidden="true"
+      role="meter"
+      aria-label={`Microphone level: ${ariaLevel} dBFS${vadSuffix}`}
+      aria-valuemin={MIN_DB}
+      aria-valuemax={MAX_DB}
+      aria-valuenow={ariaLevel}
     >
-      <span className={s.label}>{vadActive ? "MIC · LIVE" : "MIC"}</span>
-      <div className={s.barRow}>
+      <span className={s.label} aria-hidden="true">{vadActive ? "MIC · LIVE" : "MIC"}</span>
+      <div className={s.barRow} aria-hidden="true">
         <div className={s.barTrack}>
           {/* Gradient fill — anchored to the bottom; height is the live dB
               percentage. CSS handles the green→amber→red mapping. */}
@@ -162,7 +174,7 @@ export function BroadcastAudioMeter({ rms, vadActive = false }: Props) {
           ))}
         </div>
       </div>
-      <span className={s.value}>
+      <span className={s.value} aria-hidden="true">
         <span>{fmtDb(db)}</span>
         <span className={s.valueUnit}>dBFS</span>
       </span>
