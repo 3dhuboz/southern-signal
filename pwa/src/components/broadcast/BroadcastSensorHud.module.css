@@ -1,0 +1,126 @@
+/* ============================================================================
+   BroadcastSensorHud — top-right compact sensor data block.
+
+   Stacked key/value rows: EMF (µT) / LUX / ACC (m/s²). Right-aligned
+   value column with tabular-nums so the digits don't jitter across
+   ticks. Glass shell + hairline cyan rim match the BroadcastBug so the
+   chrome reads as one composed broadcast system.
+
+   Layout: positioned absolute, sits below the scene-selector chip in the
+   top-right corner. Width is content-driven (~136 px) to stay compact
+   and never bleed into the centre 60 % "talent space".
+   ============================================================================ */
+
+.hud {
+  position: absolute;
+  /* Sits below the BroadcastSceneSelector chip (44 px) + 8 px gap. */
+  top: calc(var(--s-12, 12px) + var(--safe-top, 0px) + 52px);
+  right: calc(var(--s-12, 12px) + var(--safe-right, 0px));
+
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 124px;
+  max-width: 156px;
+  padding: 8px 10px;
+
+  background: rgba(8, 12, 18, 0.62);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid rgba(93, 242, 199, 0.18);
+  border-radius: 10px;
+  box-shadow:
+    0 6px 16px rgba(0, 0, 0, 0.55),
+    0 1px 0 rgba(255, 255, 255, 0.04) inset;
+
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+
+  z-index: 5;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 2px;
+  border-radius: 5px;
+  transition: background 300ms ease-out, color 300ms ease-out;
+}
+
+/* Threshold flash. `data-alert="1"` triggers a one-shot keyframe that
+   washes the row in --signal cyan, then decays back to the muted state.
+   The keyframe restarts naturally when the parent flips back to 0 then
+   1 again — the JS owns the rising-edge detection so the row pulses
+   once per spike, not endlessly. */
+.row[data-alert="1"] {
+  animation: ss-hud-row-flash 400ms ease-out;
+}
+
+@keyframes ss-hud-row-flash {
+  0% {
+    background: rgba(93, 242, 199, 0.22);
+    color: var(--signal, #5DF2C7);
+  }
+  100% {
+    background: transparent;
+    color: inherit;
+  }
+}
+
+.key {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--text-muted, #757F90);
+}
+
+.value {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 4px;
+  text-align: right;
+  color: var(--text-primary, #E7ECF3);
+}
+
+.num {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.unit {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  color: var(--text-muted, #757F90);
+  text-transform: lowercase;
+}
+
+/* Reduced-motion: disable the flash keyframe; the value flicker on the
+   number itself is informational enough. */
+@media (prefers-reduced-motion: reduce) {
+  .row[data-alert="1"] { animation: none; }
+}
+
+/* Compact variant — keeps the panel inside the right third of a 390-wide
+   phone without crowding the scene chip. Tighter padding only; we keep
+   font sizes legible for both phone-screen and zoomed-1080p-playback. */
+@media (max-width: 420px) {
+  .hud {
+    min-width: 116px;
+    max-width: 138px;
+    padding: 7px 9px;
+    gap: 3px;
+  }
+  .row { padding: 2px 2px; }
+}
