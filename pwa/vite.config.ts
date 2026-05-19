@@ -79,7 +79,7 @@ export default defineConfig({
     rolldownOptions: {
       output: {
         // Split big, rarely-changing vendor groups out of the index chunk so
-        // a code edit doesn't bust the cache for React + Radix + sqlite-wasm.
+        // a code edit doesn't bust the cache for React + sqlite-wasm.
         // Rolldown's manualChunks is callback-based (unlike rollup which
         // takes a plain object) — we map module id substrings to chunk
         // names. Any module whose id contains node_modules/<pkg> lands
@@ -94,7 +94,6 @@ export default defineConfig({
             id.includes('node_modules/react-router/') ||
             id.includes('node_modules/scheduler/')
           ) return 'react'
-          if (id.includes('node_modules/@radix-ui/')) return 'radix'
           if (id.includes('node_modules/@sqlite.org/')) return 'sqlite'
           return undefined
         },
