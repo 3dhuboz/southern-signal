@@ -84,16 +84,32 @@ export function EvpRecorderControl({ investigationId, onSaved, variant = "defaul
     wavBuffer: ArrayBuffer;
     durationSeconds: number;
   }): Promise<void> => {
-    const prefs = getPreferences();
+    // Read preferences defensively — a corrupted blob must NOT silently
+    // treat the device as non-sensitive. We refuse auto-transcribe on any
+    // read failure (it's an opt-in convenience, not a critical path).
+    let prefs: ReturnType<typeof getPreferences>;
+    try {
+      prefs = getPreferences();
+    } catch {
+      return;
+    }
     if (!prefs.evp.autoTranscribe) return;
     if (args.durationSeconds < 1) return;
     if (typeof navigator !== "undefined" && navigator.onLine === false) return;
-    if (prefs.globalCulturalSensitivityFlag) return;
+    if (prefs.globalCulturalSensitivityFlag !== false) return;
+
+    // isInvestigationSensitive is fail-closed (DB throw / row missing →
+    // returns true) so this branch refuses on any uncertainty.
     if (await isInvestigationSensitive(args.investigationId)) return;
 
     setTranscribeStatus("Transcribing…");
     try {
       const blob = new Blob([args.wavBuffer], { type: "audio/wav" });
+      // We pass `culturallySensitive: false` here only because we just
+      // verified both flags above and got `false` from each. transcribeAudio
+      // -> ensureRoutable re-checks the DB row itself (belt-and-braces), so
+      // a race where the operator toggles the flag mid-transcribe still
+      // fails closed.
       const result = await transcribeAudio(
         blob,
         { investigationId: args.investigationId, culturallySensitive: false },

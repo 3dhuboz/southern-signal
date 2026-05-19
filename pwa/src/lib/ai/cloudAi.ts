@@ -52,14 +52,30 @@ export class CloudKeyMissingError extends Error {
  * Callers should prefer this over trusting `CloudCallContext.culturallySensitive`
  * alone — the context flag may be stale if the user toggled it between
  * call-time and now. We OR the two so either wins.
+ *
+ * **Fail-CLOSED contract:** any uncertainty — DB throws, row missing,
+ * value un-coercible — returns `true` (treat as sensitive). The PWA is
+ * used at Indigenous sites in Australia; uncertainty is never a green
+ * light to ship audio off-device. See ensureRoutable for the policy
+ * boundary that wraps this.
  */
 export async function isInvestigationSensitive(investigationId: string): Promise<boolean> {
+  if (typeof investigationId !== "string" || investigationId.length === 0) {
+    // No investigation id → can't verify a flag → assume sensitive.
+    return true;
+  }
   try {
     const rows = await query<{ culturally_sensitive: number | bigint }>(
       "SELECT culturally_sensitive FROM investigations WHERE id = ?",
       [investigationId],
     );
-    const raw = rows[0]?.culturally_sensitive ?? 0;
+    if (!rows || rows.length === 0) {
+      // Row missing — could be a stale id, a fresh case mid-create, or
+      // a DB inconsistency. Don't optimistically transmit.
+      return true;
+    }
+    const raw = rows[0]?.culturally_sensitive;
+    if (raw == null) return true;
     return Number(raw) === 1;
   } catch {
     // Fail closed: if we can't read the flag, refuse cloud routing.
@@ -67,11 +83,37 @@ export async function isInvestigationSensitive(investigationId: string): Promise
   }
 }
 
+/**
+ * Gate every cloud AI call through this. Fail-closed at every branch:
+ *
+ *   - Per-case DB flag check (via isInvestigationSensitive) — fails closed.
+ *   - Caller-passed ctx flag — trusted as an OR.
+ *   - Global device-wide flag from preferences — read defensively so a
+ *     corrupted localStorage doesn't silently drop the device-wide
+ *     guard.
+ *
+ * If ANY check is true OR the prefs read itself throws, we throw
+ * CloudGuardError. The caller must never catch this and proceed.
+ */
 export async function ensureRoutable(ctx: CloudCallContext): Promise<void> {
-  const prefs = getPreferences();
+  // Reading preferences should never throw (read() has its own try/catch
+  // returning DEFAULTS), but if a future refactor breaks that invariant
+  // we treat the failure as "device-wide flag unknown → assume on".
+  let globalFlag: boolean;
+  try {
+    const prefs = getPreferences();
+    // Explicit Boolean(): a corrupted prefs blob could yield a non-bool
+    // shape; coerce + treat undefined/null as `true` (sensitive).
+    globalFlag = prefs?.globalCulturalSensitivityFlag !== false;
+  } catch {
+    globalFlag = true;
+  }
+
   // DB check is authoritative; ctx flag and global pref are belt-and-braces.
+  // isInvestigationSensitive is already fail-closed (catch returns true).
   const dbSensitive = await isInvestigationSensitive(ctx.investigationId);
-  if (dbSensitive || ctx.culturallySensitive || prefs.globalCulturalSensitivityFlag) {
+
+  if (dbSensitive || ctx.culturallySensitive || globalFlag) {
     throw new CloudGuardError(
       "Cloud AI is refused for culturally-sensitive cases. Audio and notes from this case cannot leave the device. Use on-device tools.",
     );
