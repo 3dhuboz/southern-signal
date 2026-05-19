@@ -104,3 +104,38 @@
   line-height: 1.5;
   font-style: italic;
 }
+
+/* "View details" link surfaced in Simple mode, anchored to the bar.
+   Tapping reveals a one-line explanation about switching to Pro in
+   Settings. The link is unobtrusive — same idiom as the disclaimer. */
+.viewDetailsRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.viewDetailsBtn {
+  align-self: flex-start;
+  background: none;
+  border: 0;
+  padding: 4px 0;
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--text-muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  min-height: 44px;
+}
+.viewDetailsBtn:hover { color: var(--text-secondary); }
+.viewDetailsHint {
+  background: var(--bg-inset);
+  border-left: 2px solid var(--signal-dim);
+  padding: var(--s-8) var(--s-10);
+  border-radius: var(--r-sm);
+  color: var(--text-secondary);
+  font-style: normal;
+  line-height: 1.5;
+}

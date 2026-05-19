@@ -11,13 +11,23 @@
  * the math and UI cannot drift apart.
  */
 
+import { useState } from "react";
 import { classifyPosterior, POSTERIOR_THRESHOLDS, type LogIncrement } from "../lib/posterior/posterior";
+import { usePresentationMode } from "../hooks/usePresentationMode";
 import s from "./PosteriorBar.module.css";
 
 interface PosteriorBarProps {
   posterior: number;
   recentIncrements: LogIncrement[];
   prior: number;
+  /**
+   * Force-render the Pro numeric detail (P = X.XX value chip, log LR
+   * annotation row). Defaults to the global presentation-mode hook —
+   * Simple hides the numbers, Pro shows them. Tests pass an explicit
+   * override to assert the visual gating regardless of the persisted
+   * preference.
+   */
+  forceProDetail?: boolean;
 }
 
 const COLOR_BY_BAND: Record<ReturnType<typeof classifyPosterior>, string> = {
@@ -29,7 +39,12 @@ const COLOR_BY_BAND: Record<ReturnType<typeof classifyPosterior>, string> = {
   flag: "var(--danger)",
 };
 
-export function PosteriorBar({ posterior, recentIncrements, prior }: PosteriorBarProps) {
+export function PosteriorBar({ posterior, recentIncrements, prior, forceProDetail }: PosteriorBarProps) {
+  const { isPro } = usePresentationMode();
+  const showProDetail = forceProDetail ?? isPro;
+  // One-time tooltip surfaced from the "View details" link in Simple
+  // mode — explains why the math is hidden and where to opt in.
+  const [hintOpen, setHintOpen] = useState(false);
   const band = classifyPosterior(posterior);
   const fillColor = COLOR_BY_BAND[band];
 
@@ -43,12 +58,16 @@ export function PosteriorBar({ posterior, recentIncrements, prior }: PosteriorBa
 
   return (
     <div className={s.wrap}>
-      {/* Top row: posterior number + band label */}
+      {/* Top row: posterior number + band label. The P=X.XX value chip is
+          a Pro-only readout; Simple mode keeps the band label so amateurs
+          still see INCONCLUSIVE / ELEVATED / FLAG. */}
       <div className={s.label}>
         <span className={s.eyebrow}>SITE POSTERIOR</span>
-        <span className={s.value} data-band={band}>
-          P = {posterior.toFixed(2)}
-        </span>
+        {showProDetail && (
+          <span className={s.value} data-band={band}>
+            P = {posterior.toFixed(2)}
+          </span>
+        )}
         <span className={s.bandLabel} data-band={band}>
           {bandLabel(band)}
         </span>
@@ -89,14 +108,37 @@ export function PosteriorBar({ posterior, recentIncrements, prior }: PosteriorBa
         <span style={{ left: `${flagX}%` }} className={s.thresholdLabel}>0.95 FLAG</span>
       </div>
 
-      {/* Last LR annotation */}
-      {lastIncrement && (
+      {/* Last LR annotation — Pro-only. Simple mode hides the log-LR
+          math; the bar fill + band label carry the meaning amateurs need. */}
+      {showProDetail && lastIncrement && (
         <div className={s.lrAnnotation}>
           <span className={s.lrChannel}>{lastIncrement.channel.toUpperCase()}</span>
           <span className={s.lrValue}>
             {lastIncrement.logLr >= 0 ? "+" : ""}{lastIncrement.logLr.toFixed(2)} log LR (LR {Math.exp(Math.abs(lastIncrement.logLr)).toFixed(1)})
           </span>
           <span className={s.lrReason}>{lastIncrement.reason}</span>
+        </div>
+      )}
+
+      {/* "View details" affordance in Simple mode — surfaces the
+          one-time tooltip explaining that the numerical readouts are
+          hidden and where to switch on Pro. Mounted only when the
+          numerics are actually being gated; in Pro it's redundant. */}
+      {!showProDetail && (
+        <div className={s.viewDetailsRow}>
+          <button
+            type="button"
+            className={s.viewDetailsBtn}
+            onClick={() => setHintOpen((v) => !v)}
+            aria-expanded={hintOpen}
+          >
+            {hintOpen ? "Hide" : "View details"}
+          </button>
+          {hintOpen && (
+            <p className={s.viewDetailsHint}>
+              These statistics are hidden in Simple mode. Switch to Pro in Settings to see them by default.
+            </p>
+          )}
         </div>
       )}
 

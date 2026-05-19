@@ -19,6 +19,7 @@ import { useCallback, useState } from "react";
 import { autoDebunk, CloudGuardError, CloudKeyMissingError, generateQuestions, type DebunkResult } from "../lib/ai/cloudAi";
 import { appendAuditEntry } from "../lib/db/auditLog";
 import { useEd25519Support } from "../hooks/useEd25519Support";
+import { usePresentationMode } from "../hooks/usePresentationMode";
 import type { LogIncrement } from "../lib/posterior/posterior";
 import s from "./AiAssistant.module.css";
 
@@ -34,6 +35,7 @@ interface AiAssistantProps {
 type Mode = "idle" | "questions" | "debunker";
 
 export function AiAssistant({ investigationId, posterior, recentIncrements, siteContext, culturallySensitive }: AiAssistantProps) {
+  const { isPro } = usePresentationMode();
   const [mode, setMode] = useState<Mode>("idle");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -151,7 +153,11 @@ export function AiAssistant({ investigationId, posterior, recentIncrements, site
     <div className={s.wrap}>
       <header className={s.head}>
         <span className={s.eyebrow}>AI ASSIST</span>
-        <span className={s.note}>Sonnet 4.6. Off-device per case. Refused on culturally sensitive sites.</span>
+        <span className={s.note}>
+          {isPro
+            ? "Sonnet 4.6. Off-device per case. Refused on culturally sensitive sites."
+            : "AI-powered. Off-device per case. Refused on culturally sensitive sites."}
+        </span>
       </header>
 
       <div className={s.actions}>
@@ -195,7 +201,11 @@ export function AiAssistant({ investigationId, posterior, recentIncrements, site
             <div key={i} className={s.debunkRow}>
               <div className={s.debunkHeader}>
                 <span className={s.debunkBar} style={{ width: `${Math.round(Math.max(0, Math.min(1, d.plausibility)) * 100)}%` }} />
-                <span className={s.debunkPlaus}>P {d.plausibility.toFixed(2)}</span>
+                {/* P 0.XX numeric is Pro-only; Simple readers get the visual
+                    plausibility bar and an integer percent label. */}
+                <span className={s.debunkPlaus}>
+                  {isPro ? `P ${d.plausibility.toFixed(2)}` : `${Math.round(Math.max(0, Math.min(1, d.plausibility)) * 100)}%`}
+                </span>
               </div>
               <span className={s.debunkHypothesis}>{d.hypothesis}</span>
               <span className={s.debunkTest}><strong>Test:</strong> {d.test}</span>

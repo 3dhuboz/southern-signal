@@ -43,6 +43,7 @@ import { computeNoiseFloor } from "../lib/audio/spectrogram";
 import { SpectrogramViewer } from "./SpectrogramViewer";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useEd25519Support } from "../hooks/useEd25519Support";
+import { usePresentationMode } from "../hooks/usePresentationMode";
 import s from "./EvpEditor.module.css";
 
 interface Props {
@@ -88,6 +89,7 @@ function formatTime(sec: number): string {
 }
 
 export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
+  const { isPro } = usePresentationMode();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [decoded, setDecoded] = useState<{ samples: Float32Array; sampleRate: number; durationSec: number } | null>(null);
@@ -1043,8 +1045,11 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
 
             {/* ── Noise floor banner ─────────────────────────────────────
                 Shown once the noise floor has been computed from the first
-                10 s of the recording. */}
-            {noiseFloor && (
+                10 s of the recording. Pro-only: the p50 / p95 dBFS readouts
+                are calibration coefficients an amateur won't recognise.
+                Simple readers get the waveform + selection workflow,
+                which is enough to scrub through and tag clips. */}
+            {isPro && noiseFloor && (
               <div className={s.noiseFloorBanner}>
                 <span className={s.noiseFloorLabel}>Noise floor</span>
                 <span className={s.noiseFloorStat}>
@@ -1062,22 +1067,28 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
                 editor immediately sees the source format without having
                 to ask: sample rate, channel count, bit depth, exact
                 duration. Same idiom as the spirit-box instrument
-                chrome. */}
-            <div className={s.fileChrome}>
-              <span className={s.fileChromeStat}>
-                fmt <code>WAV · 16-bit · mono</code>
-              </span>
-              <span className={s.fileChromeStat}>
-                sr <code>{decoded.sampleRate.toLocaleString()} Hz</code>
-              </span>
-              <span className={s.fileChromeStat}>
-                dur <code>{formatTime(decoded.durationSec)}</code>
-              </span>
-              <span className={s.fileChromeStat}>
-                samples <code>{decoded.samples.length.toLocaleString()}</code>
-              </span>
-            </div>
-            {/* Tab bar — Waveform / Spectrogram */}
+                chrome. Pro-only: amateurs don't need the bit-depth /
+                sample-count readout to scrub a clip. */}
+            {isPro && (
+              <div className={s.fileChrome}>
+                <span className={s.fileChromeStat}>
+                  fmt <code>WAV · 16-bit · mono</code>
+                </span>
+                <span className={s.fileChromeStat}>
+                  sr <code>{decoded.sampleRate.toLocaleString()} Hz</code>
+                </span>
+                <span className={s.fileChromeStat}>
+                  dur <code>{formatTime(decoded.durationSec)}</code>
+                </span>
+                <span className={s.fileChromeStat}>
+                  samples <code>{decoded.samples.length.toLocaleString()}</code>
+                </span>
+              </div>
+            )}
+            {/* Tab bar — Waveform / Spectrogram. Spectrogram FFT viz is
+                Pro-only — amateurs reading a clip just want to scrub the
+                waveform. Don't tear it down silently if a Pro→Simple
+                toggle happens mid-spectrogram: just hide the chooser. */}
             <div className={s.tabBar}>
               <button
                 type="button"
@@ -1086,13 +1097,15 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
               >
                 Waveform
               </button>
-              <button
-                type="button"
-                className={`${s.tabBtn} ${activeTab === "spectrogram" ? s.tabBtnActive : ""}`}
-                onClick={() => setActiveTab("spectrogram")}
-              >
-                Spectrogram
-              </button>
+              {isPro && (
+                <button
+                  type="button"
+                  className={`${s.tabBtn} ${activeTab === "spectrogram" ? s.tabBtnActive : ""}`}
+                  onClick={() => setActiveTab("spectrogram")}
+                >
+                  Spectrogram
+                </button>
+              )}
             </div>
 
             {activeTab === "waveform" && (
@@ -1177,7 +1190,12 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
                     {loopCount >= 3 && " ✓"}
                   </span>
                 )}
-                {stereoAnalysis && (
+                {/* Stereo analysis chips (ITD/ILD) — psychoacoustic forensic
+                    indicators. Pro reviewers cross-check claimed direction
+                    against head physics; Simple readers wouldn't know what
+                    ITD/ILD mean. Always saved to the audit chain regardless
+                    of whether the chips are surfaced. */}
+                {isPro && stereoAnalysis && (
                   <>
                     <span
                       className={stereoAnalysis.impossibleItd ? s.stereoChipWarn : s.stereoChip}

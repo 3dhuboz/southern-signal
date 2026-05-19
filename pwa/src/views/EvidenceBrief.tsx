@@ -22,6 +22,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { buildEvidenceBrief, findMostRecentInvestigationId, type EvidenceBrief } from "../lib/forensic/evidenceBrief";
 import { describeChannel, describeSector, plainEnglishReason } from "../lib/posterior/plainEnglish";
+import { usePresentationMode } from "../hooks/usePresentationMode";
 import type { ResearchTier } from "../lib/research/api";
 import s from "./EvidenceBrief.module.css";
 
@@ -76,6 +77,7 @@ export function EvidenceBrief() {
   const { investigationId: paramId } = useParams<{ investigationId?: string }>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { isPro } = usePresentationMode();
   const [brief, setBrief] = useState<EvidenceBrief | null>(null);
   const [error, setError] = useState<string | null>(null);
   const autoPrint = searchParams.get("print") === "1";
@@ -409,7 +411,12 @@ export function EvidenceBrief() {
               <><strong>Audit chain BROKEN.</strong> Entry seq {brief.chainStatus.brokenAtSeq} failed verification ({brief.chainStatus.reason}). Treat this case's data with caution.</>
             )}
           </li>
-          {brief.merkleRoot && (
+          {/* Merkle root is forensic-chain detail. Pro reviewers want it
+              for offline verification; amateurs reading the brief just
+              need the "chain verified" assurance one line up. The
+              chainStatus line above keeps the integrity message visible
+              in both modes; this just hides the 64-char hex digest. */}
+          {brief.merkleRoot && isPro && (
             <li>
               <strong>Merkle root: </strong>
               <code>{brief.merkleRoot}</code>
