@@ -214,9 +214,20 @@ describe("streamResearch — soft-cap enforcement", () => {
 
 describe("streamResearch — abort", () => {
   it("threads the AbortController.signal through fetch and rejects on abort", async () => {
+    // Previously this test used `setTimeout(r, 5)` to "let the wrapper kick
+    // off the fetch and capture the signal". That's a wall-clock race — the
+    // wrapper does ~5 awaits (dynamic import, key fetch, REAL SubtleCrypto
+    // SHA-256 digest, sign call) before fetch() is reached, and on a loaded
+    // system that exceeds 5ms ~1 in 30 runs. Replace with a deterministic
+    // ready-signal: the mocked fetch resolves a `fetchCalled` promise the
+    // moment it's invoked, so the test waits exactly until the signal is
+    // capturable, no more, no less. No fake timers needed; no wall clock.
     let capturedSignal: AbortSignal | undefined;
+    let resolveFetchCalled!: () => void;
+    const fetchCalled = new Promise<void>((r) => { resolveFetchCalled = r; });
     globalThis.fetch = vi.fn(async (_input, init) => {
       capturedSignal = (init as RequestInit | undefined)?.signal ?? undefined;
+      resolveFetchCalled();
       return new Promise<Response>((_resolve, reject) => {
         capturedSignal?.addEventListener("abort", () => {
           reject(new DOMException("aborted", "AbortError"));
@@ -225,8 +236,8 @@ describe("streamResearch — abort", () => {
     }) as unknown as typeof fetch;
 
     const handle = streamResearch({ venueName: "V", region: "AU" }, { onFinal: () => {} });
-    // Tiny delay to let the wrapper kick off the fetch and capture the signal.
-    await new Promise((r) => setTimeout(r, 5));
+    // Wait for fetch to actually be called. Deterministic — no wall clock.
+    await fetchCalled;
     expect(capturedSignal).toBeDefined();
     expect(capturedSignal!.aborted).toBe(false);
     handle.abort();
