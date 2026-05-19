@@ -662,7 +662,7 @@ export function Review() {
   // dismissMarker is stable; markers/editingMarkerId/focusedMarkerId/filter
   // are read at fire time, so the effect doesn't need to re-bind on each
   // keystroke — that'd be a re-bind storm. Closures capture the latest.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [markers, markerCategoryFilter, focusedMarkerId, editingMarkerId, jumpToMarker, dismissMarker]);
 
   const handleExportZip = useCallback(async () => {

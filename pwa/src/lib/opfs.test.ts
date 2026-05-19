@@ -25,7 +25,7 @@ function mkDir(name: string): FakeDirectory {
 }
 
 class FakeFileHandle {
-  kind: "file" = "file";
+  kind = "file" as const;
   // No `private` modifier — tsconfig has erasableSyntaxOnly which rejects
   // TS-only access modifiers. Test fakes don't need access control anyway.
   node: FakeFile;
@@ -78,7 +78,7 @@ class FakeFileHandle {
 }
 
 class FakeDirHandle {
-  kind: "directory" = "directory";
+  kind = "directory" as const;
   node: FakeDirectory;
   constructor(node: FakeDirectory) { this.node = node; }
   get name() { return this.node.name; }

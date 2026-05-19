@@ -28,6 +28,16 @@
   --signal-glow:    #7FFCD7;
   --signal-wash:    #0F2A24;
 
+  /* Context-aware accent slot. SimpleMissionView's `.band_*` rules override
+     these locally for risk-tier colouring (signal/warning/danger/critical).
+     Every other surface inherits the cascade default so AuditLogInspector,
+     EvidenceBrief, ManifestVerifier, About, SessionSummaryCard, AppHeader
+     resolve a real colour instead of falling through to `unset`. Theme
+     variants below repeat the alias so the accent tracks scotopic-red and
+     daylight-green automatically. */
+  --accent-strong:  var(--signal);
+  --accent-soft:    var(--signal-dim);
+
   --warning:        #F2B95D;
   --warning-wash:   #2A210F;
   --danger:         #EF6E6E;
@@ -99,6 +109,9 @@
   --signal-dim:     #7C0F1F;
   --signal-glow:    #E33645;
   --signal-wash:    #2A0808;
+
+  --accent-strong:  var(--signal);
+  --accent-soft:    var(--signal-dim);
 
   --warning:        #C41E3A;
   --warning-wash:   #2A0808;
@@ -176,6 +189,9 @@
   --signal-dim:     #14674F;
   --signal-glow:    #2BAE87;
   --signal-wash:    #E6F5EF;
+
+  --accent-strong:  var(--signal);
+  --accent-soft:    var(--signal-dim);
 
   /* Subtle warm amber — readable on white without going neon. */
   --warning:        #B7791F;
