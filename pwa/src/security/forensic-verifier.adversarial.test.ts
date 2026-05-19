@@ -407,7 +407,7 @@ async function verifyBundle(bundle: Bundle): Promise<VerifyResult> {
 
   // Check 3 — recomputed Merkle root from on-disk chain MUST equal the
   // SIGNED manifest claim. Self-attested verification.ok is NOT consulted.
-  let signedRoot: string | null = null;
+  let signedRoot: string | null;
   try {
     const m = JSON.parse(bundle.manifestText) as { global_audit_chain?: { merkle_root?: string | null } };
     signedRoot = m.global_audit_chain?.merkle_root ?? null;
