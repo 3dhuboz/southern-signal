@@ -346,6 +346,25 @@ describe("EvpRecorder — error propagation", () => {
     // Every track in the stream was stopped during teardown.
     expect(harness.tracksStopped).toBe(1);
   });
+
+  it("allows retry from 'error' state (previous failed start doesn't brick the recorder)", async () => {
+    const r = new EvpRecorder();
+    let observed: { status: string } = { status: "" };
+    r.subscribe((s) => { observed = { status: s.status }; });
+
+    // First attempt fails — recorder lands in 'error'.
+    harness.shouldFailGetUserMedia = true;
+    await expect(r.start("cases/x/a.wav")).rejects.toThrow();
+    expect(observed.status).toBe("error");
+
+    // User fixes the underlying issue (e.g. grants mic permission) and
+    // retries. The retry MUST succeed — without the error→idle transition
+    // the start() call would silently no-op forever.
+    harness.shouldFailGetUserMedia = false;
+    await r.start("cases/x/a.wav");
+    expect(observed.status).toBe("recording");
+    await r.stop();
+  });
 });
 
 // ---------------------------------------------------------------------------

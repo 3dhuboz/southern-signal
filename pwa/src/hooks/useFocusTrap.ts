@@ -65,10 +65,21 @@ export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(
     const container = ref.current;
     if (!container) return;
 
-    // Remember where focus was so we can return it on close. Capture by
-    // ref so a re-render of the parent (which can happen between mount
-    // and the initial-focus move) doesn't lose the original anchor.
-    restorePointRef.current = (document.activeElement as HTMLElement) ?? null;
+    // Remember where focus was so we can return it on close. Two
+    // edge cases to defend against:
+    //   1. React StrictMode dev double-invoke: effect mount → cleanup →
+    //      remount. On the second mount, document.activeElement may
+    //      have moved into the modal between the first focusables[0]
+    //      .focus() and the second capture, so naive capture would
+    //      anchor restorePoint to the modal itself.
+    //   2. Parent re-renders mid-open that drop and recreate the modal:
+    //      same shape, focus already inside.
+    // Skip capture entirely if the current activeElement lives inside
+    // the modal container — keep the previously-captured outside anchor.
+    const candidate = (document.activeElement as HTMLElement) ?? null;
+    if (candidate && !container.contains(candidate)) {
+      restorePointRef.current = candidate;
+    }
 
     // Move focus into the modal. Prefer the first natural focusable; fall
     // back to the container itself with tabIndex=-1 so the dialog still

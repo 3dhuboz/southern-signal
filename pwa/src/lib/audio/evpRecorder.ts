@@ -109,7 +109,13 @@ export class EvpRecorder {
   }
 
   async start(opfsPath: string): Promise<void> {
-    if (this.state.status !== "idle") return;
+    // Allow retry from "error" — the catch block below already tore down
+    // audio resources, so an error state is functionally equivalent to idle
+    // (previous attempt failed cleanly). Without this, a single failed
+    // getUserMedia call would brick the recorder until the page reloads
+    // because there's no public reset path. "starting" / "recording" /
+    // "stopping" remain rejected — those represent active in-flight work.
+    if (this.state.status !== "idle" && this.state.status !== "error") return;
     this.update({ status: "starting", error: null });
     try {
       this.mediaStream = await navigator.mediaDevices.getUserMedia({

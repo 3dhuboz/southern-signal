@@ -14,7 +14,12 @@
 
   --text-primary:   #E7ECF3;
   --text-secondary: #9BA6B8;
-  --text-muted:     #5C6677;
+  /* --text-muted bumped from #5C6677 (3.5:1 against bg-canvas) to #757F90
+     (4.93:1) so body-rank "muted" copy actually clears WCAG AA. Hierarchy
+     below --text-secondary preserved (secondary still ~8:1). --text-dim
+     intentionally stays below AA — it's reserved for decorative captions
+     and disabled-button labels, never load-bearing text. */
+  --text-muted:     #757F90;
   --text-dim:       #3F4858;
   --text-on-accent: #021410;
 
