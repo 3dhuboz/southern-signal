@@ -21,7 +21,9 @@
  *   add OPENROUTER_API_KEY (encrypted) and optionally OPENROUTER_DEFAULT_MODEL.
  */
 
-interface Env {
+import { authenticate, recordRequest, type AuthEnv } from "./_auth";
+
+interface Env extends AuthEnv {
   OPENROUTER_API_KEY?: string;
   OPENROUTER_DEFAULT_MODEL?: string;
 }
@@ -85,9 +87,17 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
     return jsonResponse({ error: "Request body too large." }, 413);
   }
 
+  // Consume body bytes ONCE for signature verification, then re-parse as
+  // JSON. Workers Request bodies can only be consumed once.
+  const bodyBytes = new Uint8Array(await request.arrayBuffer());
+  const auth = await authenticate(request, env, { bodyBytes });
+  if (!auth.ok) {
+    return jsonResponse({ error: auth.error, detail: auth.detail }, auth.status);
+  }
+
   let body: ChatRequestBody;
   try {
-    body = await request.json() as ChatRequestBody;
+    body = JSON.parse(new TextDecoder().decode(bodyBytes)) as ChatRequestBody;
   } catch {
     return jsonResponse({ error: "Invalid JSON body." }, 400);
   }
@@ -134,6 +144,12 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
   const text = parsed.choices?.[0]?.message?.content;
   if (typeof text !== "string") {
     return jsonResponse({ error: "Upstream returned no content." }, 502);
+  }
+
+  // Burn the per-device rate-limit slot only on a 2xx response so
+  // transient upstream failures don't deplete the operator's budget.
+  if (auth.signed && auth.pubkeyHex) {
+    try { await recordRequest(env, auth.pubkeyHex); } catch { /* KV write failure shouldn't block response */ }
   }
 
   return jsonResponse({ text, model }, 200);

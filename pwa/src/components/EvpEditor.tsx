@@ -863,11 +863,8 @@ export function EvpEditor({ asset, onClose, onSavedTrim }: Props) {
           dossierFindings: findings,
         },
       };
-      const res = await fetch("/api/ai/evp-review", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      const { signedJson } = await import("../lib/ai/signedFetch");
+      const res = await signedJson("/api/ai/evp-review", body);
       const text = await res.text();
       if (!res.ok) {
         let detail = text;

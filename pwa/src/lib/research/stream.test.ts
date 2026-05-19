@@ -1,5 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// Mock the forensic signing key store so the streaming wrapper can sign
+// requests without reaching into IndexedDB (Node test env has none).
+// Returns a deterministic dummy keypair shape — the test fetch mock
+// doesn't actually verify signatures, only that the headers are present
+// and the request body matches.
+vi.mock("../forensic/signingKeyStore", () => ({
+  getOrCreateSigningKey: vi.fn(async () => ({
+    publicKeyHex: "00".repeat(32),
+    privateKey: {} as unknown as CryptoKey,
+  })),
+  signBytes: vi.fn(async () => new Uint8Array(64)),
+}));
+
 // Same stubGlobal("localStorage") pattern as sessionBaseline.test.ts —
 // the soft-cap helpers in api.ts touch localStorage and vitest's
 // default environment is node, which doesn't provide one.

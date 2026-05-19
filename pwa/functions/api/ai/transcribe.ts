@@ -28,7 +28,9 @@
  *   ALLOW_OPENROUTER_AUDIO    — "1" / "true" to opt into the broken OR path
  */
 
-interface Env {
+import { authenticate, recordRequest, type AuthEnv } from "./_auth";
+
+interface Env extends AuthEnv {
   GROQ_API_KEY?: string;
   OPENAI_API_KEY?: string;
   OPENROUTER_API_KEY?: string;
@@ -142,9 +144,23 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
     return jsonResponse({ error: `Audio over the ${(MAX_AUDIO_BYTES / 1_000_000) | 0} MB cap.` }, 413);
   }
 
+  // Read raw bytes once so authentication can hash them. Then replay the
+  // bytes into a fresh Request so FormData has something to parse —
+  // Workers Request bodies are single-use.
+  const bodyBytes = new Uint8Array(await request.arrayBuffer());
+  const auth = await authenticate(request, env, { bodyBytes });
+  if (!auth.ok) {
+    return jsonResponse({ error: auth.error, detail: auth.detail }, auth.status);
+  }
+
   let form: FormData;
   try {
-    form = await request.formData();
+    const replay = new Request(request.url, {
+      method: "POST",
+      headers: request.headers,
+      body: bodyBytes as BodyInit,
+    });
+    form = await replay.formData();
   } catch {
     return jsonResponse({ error: "Invalid multipart form-data." }, 400);
   }
@@ -208,6 +224,12 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
   }
   if (typeof parsed.text !== "string") {
     return jsonResponse({ error: "Upstream returned no text." }, 502);
+  }
+
+  // Bump per-device counter only on a 2xx so transient upstream failures
+  // don't burn the operator's budget.
+  if (auth.signed && auth.pubkeyHex) {
+    try { await recordRequest(env, auth.pubkeyHex); } catch { /* KV transient — best effort */ }
   }
 
   return jsonResponse({

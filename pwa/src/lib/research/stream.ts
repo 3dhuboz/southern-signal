@@ -36,16 +36,37 @@ export function streamResearch(req: ResearchRequest, callbacks: StreamCallbacks)
 
     let res: Response;
     try {
+      // Lazy import the signer so this module's import graph stays
+      // browser-only — signedFetch reaches into IndexedDB on first call.
+      const { getOrCreateSigningKey, signBytes } = await import("../forensic/signingKeyStore");
+      const bodyJson = JSON.stringify({
+        venueName: req.venueName,
+        locationHint: req.locationHint,
+        region: req.region ?? "AU",
+        culturallySensitive: req.culturallySensitive ?? false,
+        followup: req.followup,
+      });
+      const bodyBytes = new TextEncoder().encode(bodyJson);
+      const timestamp = Date.now();
+      const { publicKeyHex } = await getOrCreateSigningKey();
+      const bodyHash = await crypto.subtle.digest("SHA-256", bodyBytes as BufferSource);
+      const bodyHashHex = Array.from(new Uint8Array(bodyHash))
+        .map((b) => b.toString(16).padStart(2, "0")).join("");
+      const canonical = `${publicKeyHex.toLowerCase()}\nPOST\n/api/ai/research/stream\n${timestamp}\n${bodyHashHex}`;
+      const sigBytes = await signBytes(new TextEncoder().encode(canonical));
+      let sigBin = ""; for (const b of sigBytes) sigBin += String.fromCharCode(b);
+      const signatureB64 = btoa(sigBin);
+
       res = await fetch("/api/ai/research/stream", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
-        body: JSON.stringify({
-          venueName: req.venueName,
-          locationHint: req.locationHint,
-          region: req.region ?? "AU",
-          culturallySensitive: req.culturallySensitive ?? false,
-          followup: req.followup,
-        }),
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "text/event-stream",
+          "X-SS-Pubkey": publicKeyHex,
+          "X-SS-Timestamp": String(timestamp),
+          "X-SS-Signature": signatureB64,
+        },
+        body: bodyBytes,
         signal: controller.signal,
       });
     } catch (err) {

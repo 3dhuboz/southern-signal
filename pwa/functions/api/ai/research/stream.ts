@@ -30,6 +30,9 @@ import {
   type SSEEvent,
   validateAndCleanFindings,
 } from "../_research-shared";
+import { authenticate, recordRequest, type AuthEnv } from "../_auth";
+
+type Env = SharedEnv & AuthEnv;
 
 interface PagesContext<E = unknown> {
   request: Request;
@@ -45,7 +48,7 @@ function jsonError(body: unknown, status: number): Response {
   });
 }
 
-export const onRequestOptions: PagesFn<SharedEnv> = async () => new Response(null, {
+export const onRequestOptions: PagesFn<Env> = async () => new Response(null, {
   status: 204,
   headers: { ...corsHeaders(), "Access-Control-Max-Age": "86400" },
 });
@@ -54,7 +57,7 @@ function sseEncode(payload: SSEEvent): Uint8Array {
   return new TextEncoder().encode(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
-export const onRequestPost: PagesFn<SharedEnv> = async ({ request, env }) => {
+export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
   if (!env.OPENROUTER_API_KEY) {
     return jsonError({ error: "AI Investigator not configured." }, 503);
   }
@@ -64,8 +67,15 @@ export const onRequestPost: PagesFn<SharedEnv> = async ({ request, env }) => {
     return jsonError({ error: "Request body too large." }, 413);
   }
 
+  // Consume body bytes once for signature verification.
+  const bodyBytes = new Uint8Array(await request.arrayBuffer());
+  const auth = await authenticate(request, env, { bodyBytes });
+  if (!auth.ok) {
+    return jsonError({ error: auth.error, detail: auth.detail }, auth.status);
+  }
+
   let body: ResearchRequestBody;
-  try { body = await request.json() as ResearchRequestBody; }
+  try { body = JSON.parse(new TextDecoder().decode(bodyBytes)) as ResearchRequestBody; }
   catch { return jsonError({ error: "Invalid JSON." }, 400); }
 
   const venueName = (body.venueName ?? "").trim();
@@ -245,6 +255,9 @@ export const onRequestPost: PagesFn<SharedEnv> = async ({ request, env }) => {
         });
 
         try { await recordRateLimitRun(env.AI_RATE_LIMIT, rate); } catch { /* */ }
+        if (auth.signed && auth.pubkeyHex) {
+          try { await recordRequest(env, auth.pubkeyHex); } catch { /* */ }
+        }
         controller.close();
       } catch (err) {
         send({ type: "error", message: (err as Error).message ?? "Stream failed" });

@@ -27,6 +27,9 @@ import {
   recordRateLimitRun,
   type SharedEnv,
 } from "./_research-shared";
+import { authenticate, recordRequest, type AuthEnv } from "./_auth";
+
+type Env = SharedEnv & AuthEnv;
 
 interface PagesContext<E = unknown> {
   request: Request;
@@ -98,12 +101,12 @@ function jsonResponse(body: unknown, status: number, extraHeaders: Record<string
   });
 }
 
-export const onRequestOptions: PagesFn<SharedEnv> = async () => new Response(null, {
+export const onRequestOptions: PagesFn<Env> = async () => new Response(null, {
   status: 204,
   headers: { ...corsHeaders(), "Access-Control-Max-Age": "86400" },
 });
 
-export const onRequestPost: PagesFn<SharedEnv> = async ({ request, env }) => {
+export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
   if (!env.OPENROUTER_API_KEY) {
     return jsonResponse({
       error: "AI Investigator is not configured on this deployment.",
@@ -113,12 +116,19 @@ export const onRequestPost: PagesFn<SharedEnv> = async ({ request, env }) => {
 
   // Body parse with hard byte cap — transcripts are usually < 1KB but
   // a malicious caller could send megabytes.
+  const bodyBytes = new Uint8Array(await request.arrayBuffer());
+  if (bodyBytes.byteLength > MAX_BODY_BYTES) {
+    return jsonResponse({ error: `Request body exceeds ${MAX_BODY_BYTES} bytes.` }, 413);
+  }
+
+  const auth = await authenticate(request, env, { bodyBytes });
+  if (!auth.ok) {
+    return jsonResponse({ error: auth.error, detail: auth.detail }, auth.status);
+  }
+
   let body: ReviewRequestBody;
   try {
-    const raw = await request.text();
-    if (raw.length > MAX_BODY_BYTES) {
-      return jsonResponse({ error: `Request body exceeds ${MAX_BODY_BYTES} bytes.` }, 413);
-    }
+    const raw = new TextDecoder().decode(bodyBytes);
     body = raw ? (JSON.parse(raw) as ReviewRequestBody) : {};
   } catch {
     return jsonResponse({ error: "Invalid JSON body." }, 400);
@@ -232,6 +242,9 @@ export const onRequestPost: PagesFn<SharedEnv> = async ({ request, env }) => {
   };
 
   await recordRateLimitRun(env.AI_RATE_LIMIT, state);
+  if (auth.signed && auth.pubkeyHex) {
+    try { await recordRequest(env, auth.pubkeyHex); } catch { /* */ }
+  }
   return jsonResponse(final, 200, rlHeaders);
 };
 

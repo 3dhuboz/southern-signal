@@ -25,6 +25,9 @@ import {
   type SharedEnv,
   validateAndCleanFindings,
 } from "./_research-shared";
+import { authenticate, recordRequest, type AuthEnv } from "./_auth";
+
+type Env = SharedEnv & AuthEnv;
 
 interface PagesContext<E = unknown> {
   request: Request;
@@ -50,12 +53,12 @@ function jsonResponse(body: unknown, status: number, extraHeaders: Record<string
   });
 }
 
-export const onRequestOptions: PagesFn<SharedEnv> = async () => new Response(null, {
+export const onRequestOptions: PagesFn<Env> = async () => new Response(null, {
   status: 204,
   headers: { ...corsHeaders(), "Access-Control-Max-Age": "86400" },
 });
 
-export const onRequestPost: PagesFn<SharedEnv> = async ({ request, env }) => {
+export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
   if (!env.OPENROUTER_API_KEY) {
     return jsonResponse({
       error: "AI Investigator is not configured on this deployment.",
@@ -68,8 +71,15 @@ export const onRequestPost: PagesFn<SharedEnv> = async ({ request, env }) => {
     return jsonResponse({ error: "Request body too large." }, 413);
   }
 
+  // Consume body bytes once for signature verification; re-decode for JSON.
+  const bodyBytes = new Uint8Array(await request.arrayBuffer());
+  const auth = await authenticate(request, env, { bodyBytes });
+  if (!auth.ok) {
+    return jsonResponse({ error: auth.error, detail: auth.detail }, auth.status);
+  }
+
   let body: ResearchRequestBody;
-  try { body = await request.json() as ResearchRequestBody; }
+  try { body = JSON.parse(new TextDecoder().decode(bodyBytes)) as ResearchRequestBody; }
   catch { return jsonResponse({ error: "Invalid JSON body." }, 400); }
 
   const venueName = (body.venueName ?? "").trim();
@@ -179,6 +189,11 @@ export const onRequestPost: PagesFn<SharedEnv> = async ({ request, env }) => {
   // user just gets one bonus run.
   try { await recordRateLimitRun(env.AI_RATE_LIMIT, rate); }
   catch (err) { console.warn("[research] rate-limit KV write failed", err); }
+
+  // Per-device counter when the request was signed.
+  if (auth.signed && auth.pubkeyHex) {
+    try { await recordRequest(env, auth.pubkeyHex); } catch { /* KV transient — best effort */ }
+  }
 
   const newRate = { ...rate, used: rate.used + 1 };
   return jsonResponse({

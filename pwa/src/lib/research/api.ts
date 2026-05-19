@@ -127,16 +127,13 @@ export async function runResearch(req: ResearchRequest): Promise<ResearchResult>
     throw new ResearchRateLimitError(state.used, state.cap, Date.now() - oldest);
   }
 
-  const res = await fetch("/api/ai/research", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      venueName: req.venueName,
-      locationHint: req.locationHint,
-      region: req.region ?? "AU",
-      culturallySensitive: req.culturallySensitive ?? false,
-      followup: req.followup,
-    }),
+  const { signedJson } = await import("../ai/signedFetch");
+  const res = await signedJson("/api/ai/research", {
+    venueName: req.venueName,
+    locationHint: req.locationHint,
+    region: req.region ?? "AU",
+    culturallySensitive: req.culturallySensitive ?? false,
+    followup: req.followup,
   });
 
   if (!res.ok) {
