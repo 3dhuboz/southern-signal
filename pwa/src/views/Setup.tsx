@@ -219,6 +219,45 @@ export function Setup() {
       </section>
 
 
+      {/* Presentation mode — Simple (default, amateur-friendly) vs Pro
+          (forensic detail surfaced). Same data is collected either way;
+          only the presentation changes. The 8 standing disclaimers
+          render in both modes. */}
+      <section className={st.panel}>
+        <header className={st.panelHeader}>
+          <h2 className={st.panelTitle}>Presentation mode</h2>
+        </header>
+        <p className={st.panelLede}>
+          Simple mode hides advanced statistics and forensic-chain details. Pro mode shows everything.
+        </p>
+        <div
+          className={st.modeSegmented}
+          role="radiogroup"
+          aria-label="Presentation mode"
+        >
+          <button
+            type="button"
+            role="radio"
+            aria-checked={prefs.experienceMode === "simple"}
+            className={prefs.experienceMode === "simple" ? `${st.modeSegment} ${st.modeSegmentActive}` : st.modeSegment}
+            onClick={() => setPrefs({ experienceMode: "simple" })}
+          >
+            <span>Simple</span>
+            <span className={st.modeSegmentMeta}>Plain-English verdicts</span>
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={prefs.experienceMode === "pro"}
+            className={prefs.experienceMode === "pro" ? `${st.modeSegment} ${st.modeSegmentActive}` : st.modeSegment}
+            onClick={() => setPrefs({ experienceMode: "pro" })}
+          >
+            <span>Pro</span>
+            <span className={st.modeSegmentMeta}>Posterior · log LR · chain</span>
+          </button>
+        </div>
+      </section>
+
       {/* Pro / Lab mode — surface the demoted MissionControl as a Lab tab */}
       <section className={st.panel}>
         <header className={st.panelHeader}>

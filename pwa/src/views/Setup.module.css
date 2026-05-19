@@ -451,3 +451,55 @@
   text-align: center;
   margin: 0;
 }
+
+/* Simple/Pro segmented control — two equal-width buttons in a single
+   container with a moving "active" pill underneath. Min-height 44px to
+   keep each segment touch-target compliant; container border + radius
+   matches the existing field idioms in this view. */
+.modeSegmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  margin-top: var(--s-8);
+  border: 1px solid var(--border-default);
+  background: var(--bg-inset);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  padding: 4px;
+}
+.modeSegment {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: var(--s-8) var(--s-12);
+  min-height: 44px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-sm);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, box-shadow 120ms ease;
+}
+.modeSegment:hover { color: var(--text-primary); }
+.modeSegmentActive {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px var(--signal-dim), 0 0 8px rgba(93, 242, 199, 0.18);
+}
+.modeSegmentMeta {
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-muted);
+}
+.modeSegmentActive .modeSegmentMeta {
+  color: var(--text-secondary);
+}
