@@ -10,9 +10,17 @@ name: Deploy to Cloudflare Pages
 # build lands on. master → production (the project's primary URL).
 # Any other branch → preview deployment at `https://<branch>.<project>.pages.dev`,
 # so pushing to `dev` produces `https://dev.southern-signal.pages.dev`.
+#
+# Package manager: pnpm. The repo has `pnpm-lock.yaml` as the source of
+# truth (see pwa/package.json `packageManager`). Using `npm ci` against a
+# pnpm-resolved tree silently downloads slightly different versions and
+# breaks `--frozen-lockfile` semantics — the 12-specialist panel flagged
+# this as a P0 CI smell on 2026-05-19.
 
 on:
   push:
+    branches: [master, dev]
+  pull_request:
     branches: [master, dev]
   workflow_dispatch:
 
@@ -35,26 +43,43 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # pnpm/action-setup MUST run before actions/setup-node — setup-node's
+      # `cache: pnpm` looks up the pnpm binary while configuring the cache,
+      # so swapping the order produces "pnpm: command not found".
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
       - name: Set up Node 20
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
-          cache-dependency-path: pwa/package-lock.json
+          cache: "pnpm"
+          cache-dependency-path: pwa/pnpm-lock.yaml
 
       - name: Install dependencies
         working-directory: pwa
-        run: npm ci
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        working-directory: pwa
+        run: pnpm lint
 
       - name: Type-check + build
         working-directory: pwa
-        run: npm run build
+        run: pnpm build
 
       - name: Run tests
         working-directory: pwa
-        run: npm test -- --run
+        run: pnpm test
 
+      # Deploy gated on `push` events only — PR triggers run the build/test
+      # gauntlet against the PR head SHA but don't ship a deploy (deploys on
+      # PR open would race the dev-branch preview alias and leak fork PR
+      # write tokens into wrangler-action).
       - name: Deploy to Cloudflare Pages
+        if: github.event_name == 'push'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -70,5 +95,6 @@ jobs:
           # to the `on.push.branches` list above to extend this.
           # `--commit-dirty=true` silences the warning about untracked dist/
           # files (dist is gitignored, so the runner always sees them as new).
+          packageManager: pnpm
           command: pages deploy dist --project-name=southern-signal --branch=${{ github.ref_name }} --commit-dirty=true
           workingDirectory: pwa
