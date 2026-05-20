@@ -25,7 +25,7 @@
  */
 
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 import { BroadcastPreview } from "./BroadcastPreview";
@@ -60,5 +60,88 @@ describe("<BroadcastPreview />", () => {
     // than per-name so a future caption tweak doesn't break the test.
     const groups = screen.getAllByRole("group", { name: /Broadcast HUD preview/ });
     expect(groups).toHaveLength(4);
+  });
+
+  // ── Per-frame composition rules ──────────────────────────────────────────
+  //
+  // The component-level snapshot tests pin each broadcast component's DOM in
+  // isolation. What they CAN'T catch is "BroadcastPreview accidentally
+  // mounted AudioMeter on the STANDBY frame" — a composition bug. These
+  // tests pin the running-gate contract (which is the same gate CameraScreen
+  // uses in production, so a desync here predicts a desync there).
+
+  it("STANDBY frame omits AudioMeter, SensorHud, LowerThird (production-running-gate parity)", () => {
+    render(
+      <MemoryRouter>
+        <BroadcastPreview />
+      </MemoryRouter>,
+    );
+    const standby = screen.getByRole("group", { name: /Standby \(idle\)/ });
+    // AudioMeter mounts as role="meter". Standby must NOT contain one.
+    expect(within(standby).queryByRole("meter")).toBeNull();
+    // SensorHud mounts as role="group" labelled "Live sensor readings".
+    expect(within(standby).queryByRole("group", { name: /Live sensor readings/i })).toBeNull();
+    // LowerThird mounts as role="region" labelled "Investigation slate".
+    expect(within(standby).queryByRole("region", { name: /Investigation slate/i })).toBeNull();
+    // BroadcastBug and BroadcastSceneSelector are always rendered — verify
+    // STANDBY still has them so the omissions are intentional, not a mount
+    // failure.
+    expect(within(standby).getByRole("status")).toBeInTheDocument();
+    expect(within(standby).getByRole("button", { name: /Scene: Walkthrough/ })).toBeInTheDocument();
+  });
+
+  it("each running frame mounts AudioMeter + SensorHud + LowerThird (the full HUD)", () => {
+    render(
+      <MemoryRouter>
+        <BroadcastPreview />
+      </MemoryRouter>,
+    );
+    for (const captionRe of [/Ready \(pre-roll\)/, /Recording \(REC 0:42\)/, /Going live \(LIVE 1:23\)/]) {
+      const frame = screen.getByRole("group", { name: captionRe });
+      expect(within(frame).getByRole("meter")).toBeInTheDocument();
+      expect(within(frame).getByRole("group", { name: /Live sensor readings/i })).toBeInTheDocument();
+      expect(within(frame).getByRole("region", { name: /Investigation slate/i })).toBeInTheDocument();
+    }
+  });
+
+  // ── Header preview-controls ──────────────────────────────────────────────
+  //
+  // The theme toggle is the visual differentiator for the design-review
+  // session — losing a segment silently would force the reviewer to leave
+  // the page to compare scotopic vs daylight. Pin all three.
+
+  it("theme segmented control renders all three options as radios", () => {
+    render(
+      <MemoryRouter>
+        <BroadcastPreview />
+      </MemoryRouter>,
+    );
+    const themeGroup = screen.getByRole("radiogroup", { name: /Theme/i });
+    const radios = within(themeGroup).getAllByRole("radio");
+    expect(radios).toHaveLength(3);
+    expect(radios.map((r) => r.textContent)).toEqual(["phosphor", "scotopic", "daylight"]);
+    // The default radio (phosphor) is the only one checked at mount because
+    // usePreferences() returns the persisted default; no other radio should
+    // already be aria-checked or screen readers would announce two states.
+    const checked = radios.filter((r) => r.getAttribute("aria-checked") === "true");
+    expect(checked).toHaveLength(1);
+  });
+
+  it("reduced-motion toggle flips the page-level data attribute", () => {
+    render(
+      <MemoryRouter>
+        <BroadcastPreview />
+      </MemoryRouter>,
+    );
+    const toggle = screen.getByRole("checkbox", { name: /Reduced motion/i });
+    // The data attribute is on the .page root that wraps everything; we read
+    // it via the toggle's nearest data-prefers-reduced-motion ancestor so
+    // this test stays decoupled from any DOM-tree restructure that doesn't
+    // change the contract.
+    const page = toggle.closest("[data-prefers-reduced-motion]");
+    expect(page).not.toBeNull();
+    expect(page!.getAttribute("data-prefers-reduced-motion")).toBe("no-preference");
+    fireEvent.click(toggle);
+    expect(page!.getAttribute("data-prefers-reduced-motion")).toBe("reduce");
   });
 });

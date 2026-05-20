@@ -36,6 +36,13 @@ const About = lazy(() => import("./views/About").then((m) => ({ default: m.About
 // STANDBY, READY, REC and LIVE side-by-side without starting a real
 // investigation. Lazy-loaded so it doesn't bloat the main entry chunk.
 const BroadcastPreview = lazy(() => import("./views/BroadcastPreview").then((m) => ({ default: m.BroadcastPreview })));
+// /broadcast/chrome is the Pi 5 kiosk variant — a single full-bleed 16:9
+// frame meant to be displayed on an HDMI-connected screen via Chromium
+// kiosk mode. URL query params drive the lifecycle state (?state=live,
+// ?elapsed=125, ?scene=…, ?investigation=hidden) so the same kiosk
+// surface serves any operator-configured broadcast moment without
+// re-routing. See BroadcastChrome.tsx for the full param contract.
+const BroadcastChrome = lazy(() => import("./views/BroadcastChrome").then((m) => ({ default: m.BroadcastChrome })));
 
 function RouteFallback() {
   return (
@@ -158,6 +165,10 @@ export default function App() {
                 production too (prospects, reviewers). No nav link; reachable
                 via direct URL only. */}
             <Route path="/preview/broadcast" element={<BroadcastPreview />} />
+            {/* Pi 5 HDMI kiosk surface. Full-bleed 16:9 broadcast HUD with
+                URL-query-driven lifecycle state. See BroadcastChrome.tsx
+                for the full param contract. No nav link. */}
+            <Route path="/broadcast/chrome" element={<BroadcastChrome />} />
           </Routes>
         </Suspense>
       </main>

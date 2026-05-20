@@ -1,0 +1,113 @@
+/* ============================================================================
+   BroadcastChrome — HDMI-output surface for Pi 5 broadcast.
+
+   Layout contract:
+     - .stage fills the entire viewport (100vw × 100dvh) with a solid
+       dark background. The viewport is whatever the Pi 5's HDMI display
+       provides — typically 1920×1080, but the layout is fluid so a
+       4K display or a 720p monitor both work.
+     - .frame is a centred 16:9 box that fills the SMALLER of the
+       viewport's height-times-16/9 or width. So on a 1920×1080 display
+       the frame is exactly 1920×1080; on a 1920×1200 display the frame
+       is 1920×1080 letterboxed top + bottom; on a 1280×800 display the
+       frame is 1280×720 letterboxed.
+     - Letterbox bars are pure black (#000) — broadcast-grade, matches
+       what a downstream OBS Browser Source compositor expects to see
+       around a frame source.
+     - The frame establishes its own positioning context so the six
+       broadcast components' `position: absolute` offsets anchor to the
+       frame edges (same contract BroadcastPreview uses for its 4
+       review frames).
+
+   Background opacity contract (re: 2026-05-19 backdrop-bleed audit):
+     .stage has a fully-opaque background. .frame has a fully-opaque
+     background. The six glass-blur chrome components composite over
+     opaque backgrounds at every layer, so the bleed-through bug class
+     documented in docs/backdrop-blur-audit-2026-05-20.md does not
+     apply here.
+   ============================================================================ */
+
+.stage {
+  position: fixed;
+  inset: 0;
+  /* z-index above AppHeader (30) and BottomNav (40) so the kiosk surface
+     fills the entire viewport regardless of the app's chrome rendering.
+     This keeps the Pi 5 output a clean broadcast frame without forcing a
+     refactor of every banner / nav component to learn the kiosk route.
+     The acknowledgement-gate modal (which sits above this in stacking
+     order) is the one exception — Pi 5 operators click through it once
+     on first launch, then storage remembers and the kiosk surface owns
+     the screen from there. */
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  /* Hide overflow in case the frame's children misbehave on a tight
+     viewport — the broadcast chrome should never spill past the frame
+     edge onto the letterbox bars. */
+  overflow: hidden;
+  /* Pi 5 kiosk Chromium doesn't accept user input on this surface; we
+     suppress the OS text-selection chrome so a mouse-drag (e.g. if
+     someone plugs in a keyboard) doesn't highlight the chrome glyphs. */
+  -webkit-user-select: none;
+  user-select: none;
+  /* Disable the iOS double-tap zoom in case anyone hits this URL on a
+     phone — the chrome would otherwise zoom and the layout would
+     break. */
+  touch-action: manipulation;
+}
+
+.frame {
+  /* 16:9 box sized to fit inside the viewport. We use `aspect-ratio` +
+     `min(...)` so the frame is the larger of width-driven or height-driven
+     sizing, capped at the viewport's smaller dimension. */
+  position: relative;
+  aspect-ratio: 16 / 9;
+  width: min(100vw, calc(100dvh * 16 / 9));
+  height: min(100dvh, calc(100vw * 9 / 16));
+  background: var(--bg-app, #0B0F14);
+  overflow: hidden;
+  /* Crisp edges — the frame should feel like a video source not a web
+     page. No rounded corners, no border. */
+  border-radius: 0;
+}
+
+.backdrop {
+  /* Subtle vignette so the chrome doesn't read as floating on flat
+     black. The PI 5 output may be composited into a downstream scene
+     by an OBS/vMix operator who wants a video underneath; in that case
+     the operator can swap this backdrop with a transparent layer using
+     a downstream chroma-key. For now a vignetted dark wash gives the
+     chrome enough contrast against typical low-light hunt footage. */
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(
+      ellipse 70% 60% at 50% 45%,
+      rgba(93, 242, 199, 0.025) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      circle at 50% 50%,
+      rgba(7, 9, 12, 0) 0%,
+      rgba(7, 9, 12, 0.45) 75%,
+      rgba(7, 9, 12, 0.7) 100%
+    );
+  pointer-events: none;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Reduced motion: honour the OS preference. The broadcast components ship
+   with their own animation rules; this is a defence-in-depth backstop for
+   any future child that doesn't respect the OS query.
+   ──────────────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .frame *,
+  .frame *::before,
+  .frame *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
