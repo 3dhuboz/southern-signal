@@ -163,6 +163,15 @@ interface LiveStreamViewProps {
    */
   defaultFacing?: "environment" | "user";
   defaultTorch?: boolean;
+  /**
+   * Bubbles the open-state machine (idle / opening / streaming / error)
+   * + the error text up to the parent so a fullscreen host (CameraScreen)
+   * can render its OWN permission / starting / error fallback over a
+   * solid dark backdrop. Fullscreen mode suppresses the in-component
+   * error/openButton/controls chrome — see `fullscreen` prop — so the
+   * parent needs this signal to surface the same UX cleanly.
+   */
+  onOpenStateChange?: (s: { state: "idle" | "opening" | "streaming" | "error"; error: string | null }) => void;
 }
 
 function LiveStreamViewImpl(props: LiveStreamViewProps) {
@@ -174,6 +183,7 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
     flipCameraRef, startCameraRef, torchToggleRef, refocusRef, onSourceStream,
     snapThumbnailRef,
     defaultFacing, defaultTorch,
+    onOpenStateChange,
   } = props;
 
   const [prefs] = usePreferences();
@@ -787,6 +797,37 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
     onCameraState?.({ streamOn, whipConfigured, torchSupported, torchOn, facingMode });
   }, [onCameraState, streamOn, whipConfigured, torchSupported, torchOn, facingMode]);
 
+  // Bubble the open-state machine to the parent. Fullscreen hosts
+  // (CameraScreen) hide LiveStreamView's own error/openButton chrome and
+  // render their own permission/starting/error fallback over a solid dark
+  // backdrop — they need this signal to know which to render.
+  //
+  // The machine is collapsed to four states:
+  //   idle      — no stream, no error, not opening
+  //   opening   — getUserMedia in flight (busy && !streamOn)
+  //   streaming — preview is live
+  //   error     — last open failed (permission denied, hardware busy, etc.)
+  // `streamOn && error` shouldn't normally happen, but if it does we prefer
+  // streaming so the operator sees the live feed.
+  useEffect(() => {
+    if (!onOpenStateChange) return;
+    const state: "idle" | "opening" | "streaming" | "error" =
+      streamOn ? "streaming"
+      : busy ? "opening"
+      : error ? "error"
+      : "idle";
+    onOpenStateChange({ state, error });
+  }, [onOpenStateChange, streamOn, busy, error]);
+
+  // Internal helper for the parent: dismissing the error from the parent's
+  // own UI needs to reset our local error state too, otherwise the next
+  // `start()` will re-evaluate against a stale error. Exposed via a ref so
+  // we don't have to add yet another callback prop.
+  const dismissError = useCallback(() => setError(null), []);
+  // (no public ref yet — parent dismisses by re-calling start(); kept here
+  // for future use if we need explicit Dismiss UX.)
+  void dismissError;
+
   const handleProviderChange = useCallback((nextKey: WhipProviderKey) => {
     setWhipProvider(nextKey);
     try { localStorage.setItem(WHIP_PROVIDER_KEY, nextKey); } catch { /* ignore */ }
@@ -862,7 +903,14 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
       {/* Hidden source video — feeds the compositor. */}
       <video ref={sourceVideoRef} className={s.hidden} playsInline muted />
 
-      {!streamOn && !error && (
+      {/* Fullscreen mode (CameraScreen) hides the in-component openButton +
+          error div + controls dock; the parent renders its own permission /
+          starting / error fallback over a solid #000 backdrop AND owns the
+          BIG SHUTTER + slim dock. Without this gate, those controls
+          rendered in flex flow, took space from the camera stage, and the
+          parent's overlays sat on top of them — see CameraScreen.tsx where
+          the shutter is absolute-positioned at the same bottom region. */}
+      {!fullscreen && !streamOn && !error && (
         <button
           type="button"
           className={openBtnCls}
@@ -871,15 +919,25 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
         >
           <span className={s.openIcon} aria-hidden="true">📡</span>
           <span className={s.openLabel}>{busy ? "Opening…" : "Open camera"}</span>
-          {!fullscreen && <span className={s.openHint}>One-stream output. Record locally and/or go live with overlays.</span>}
+          <span className={s.openHint}>One-stream output. Record locally and/or go live with overlays.</span>
         </button>
       )}
 
-      {error && (
+      {!fullscreen && error && (
         <div className={s.error}>
           <strong>{error}</strong>
           <button type="button" className={s.errorRetry} onClick={() => { setError(null); }}>Dismiss</button>
         </div>
+      )}
+
+      {/* Fullscreen + no stream + no error: render the always-present stage
+          shell so its #000 background covers the wrap. The parent renders the
+          actual permission-prompt UI on top via onOpenStateChange. Without
+          this shell, the wrap shrinks to its other content (just the hidden
+          source video) and the cameraWrap behind it would show through any
+          translucent HUD glass. */}
+      {fullscreen && !streamOn && (
+        <div className={stageCls} aria-hidden="true" />
       )}
 
       {streamOn && (
@@ -920,8 +978,10 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
           {/* Overlay channels — operator picks which baked-in elements
               show on the composite. Collapsed by default; the count tells
               them at a glance how many are on without opening it.
-              Hidden when CameraScreen's external dock drives channels. */}
-          {!externalChannels && <details className={s.channels}>
+              Hidden when CameraScreen's external dock drives channels
+              OR when we're in fullscreen camera mode (the broadcast setup
+              panel lives elsewhere when the camera is the primary surface). */}
+          {!fullscreen && !externalChannels && <details className={s.channels}>
             <summary className={s.channelsSummary}>
               <span>Overlay channels</span>
               <span className={s.channelsCount}>{enabledChannelCount}/{CHANNEL_KEYS.length} on</span>
@@ -962,7 +1022,13 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
           </details>}
 
 
-          <div className={s.controls}>
+          {/* In-component primary controls — Record clip / Go live / Close.
+              Hidden in fullscreen camera mode where CameraScreen owns the
+              BIG SHUTTER + slim dock affordances. Without this gate, these
+              three buttons rendered in normal flex flow, pushed the camera
+              stage upward, and the absolute-positioned shutter sat on top
+              of them — the exact bug visible in the broken-Camera screenshot. */}
+          {!fullscreen && <div className={s.controls}>
             <button
               type="button"
               className={`${s.action} ${recording ? s.actionRec : ""}`.trim()}
@@ -982,9 +1048,9 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
               {liveOn ? "End live" : "Go live"}
             </button>
             <button type="button" className={s.actionGhost} onClick={stop}>Close camera</button>
-          </div>
+          </div>}
 
-          {(liveOn || whipState !== "idle") && (
+          {!fullscreen && (liveOn || whipState !== "idle") && (
             <div className={s.liveStatus}>
               <span className={`${s.liveStatusDot} ${s[`liveStatusDot_${whipState}`] ?? ""}`.trim()} />
               <span className={s.liveStatusLabel}>{whipState.toUpperCase()}</span>
@@ -998,7 +1064,12 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
             </div>
           )}
 
-          <div className={s.live}>
+          {/* WHIP broadcast setup panel — hidden in fullscreen mode. Live
+              streaming configuration belongs on a dedicated setup surface,
+              not crammed under the camera viewport where it competes with
+              the shutter and the BroadcastSceneSelector. The non-fullscreen
+              /lab Mission Control surface keeps the full setup affordance. */}
+          {!fullscreen && <div className={s.live}>
             <label className={s.field}>
               <span className={s.fieldLabel}>Where do you want to broadcast?</span>
               <select
@@ -1105,9 +1176,9 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
                 />
               </label>
             </details>
-          </div>
+          </div>}
 
-          {statusMsg && <p className={s.statusLine}>{statusMsg}{recordingsCount > 0 ? ` · ${recordingsCount} clips saved` : ""}</p>}
+          {!fullscreen && statusMsg && <p className={s.statusLine}>{statusMsg}{recordingsCount > 0 ? ` · ${recordingsCount} clips saved` : ""}</p>}
         </>
       )}
     </div>
