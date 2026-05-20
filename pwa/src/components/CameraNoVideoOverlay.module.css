@@ -1,0 +1,116 @@
+/* ============================================================================
+   CameraNoVideoOverlay — the dark fallback that paints over the camera
+   surface when the live preview isn't actually rendering (idle, opening,
+   or error state).
+
+   Visual contract:
+     - Solid dark wash (--bg-canvas at 86% opacity) over the full camera
+       area so the underlying browser composite NEVER bleeds through. The
+       backdrop-blur is *additive* on top — without backdrop-filter support
+       (older Android Chrome, some embedded webviews) the wash is still
+       fully opaque enough to hide whatever sits beneath the page.
+     - Centred glass card with the prompt copy + CTA.
+     - z-index 15 — above the HUD chrome (z-index 5) and BIG SHUTTER
+       (z-index 6), below the preflight blocker modal.
+
+   The lifted CSS keeps the same selectors the original .module.css used
+   inside CameraScreen so the camera-state attribute dimming contract is
+   preserved (the parent still owns `data-camera-state` on .cameraWrap).
+   ============================================================================ */
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(24px + var(--safe-top, 0px)) 24px calc(24px + var(--safe-bottom, 0px));
+  background: rgba(7, 9, 12, 0.86);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  pointer-events: auto;
+  animation: noVideoFadeIn 220ms ease-out;
+}
+
+@keyframes noVideoFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.card {
+  width: min(86vw, 360px);
+  padding: 22px 22px 20px;
+  background: rgba(20, 24, 30, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 16px;
+  color: #f4f4f4;
+  text-align: center;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(93, 242, 199, 0.12);
+  color: var(--signal, #5DF2C7);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(93, 242, 199, 0.35);
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: #fff;
+}
+
+.body {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: rgba(244, 244, 244, 0.78);
+}
+
+.cta {
+  appearance: none;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 16px;
+  margin-top: 4px;
+  background: var(--signal, #5DF2C7);
+  border: 1px solid var(--signal, #5DF2C7);
+  border-radius: 10px;
+  color: #07090C;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 100ms ease, transform 80ms ease;
+}
+.cta:hover  { background: color-mix(in srgb, var(--signal, #5DF2C7) 85%, #fff); }
+.cta:active { transform: scale(0.97); }
+.cta:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+.hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: rgba(244, 244, 244, 0.55);
+  font-style: italic;
+}
