@@ -98,19 +98,14 @@
       "d1_databases": [
         {
           // PREVIEW D1 — dev branch + any preview branch binds this.
-          //
-          // ACTION REQUIRED before first preview deploy after this commit:
-          //   1. Create the preview DB:
-          //        wrangler d1 create southern-signal-community-preview
-          //   2. Copy the returned UUID into `database_id` below.
-          //   3. (Optional) The first request to /api/community/* will
-          //      create the schema on demand via ensureCommunitySchema;
-          //      no manual migration needed.
-          //   4. CI wipes the preview DB before every push to dev — see
-          //      the "Reset preview D1" step in .github/workflows/deploy.yml.
+          // Created 2026-05-20 via `wrangler d1 create
+          // southern-signal-community-preview` against
+          // steve@3dhub.au's Cloudflare account. Schema initialised on
+          // demand by ensureCommunitySchema; CI wipes between dev pushes
+          // (Reset preview D1 step in .github/workflows/deploy.yml).
           "binding": "COMMUNITY_DB",
           "database_name": "southern-signal-community-preview",
-          "database_id": "REPLACE_WITH_PREVIEW_D1_UUID"
+          "database_id": "f1090b65-3f78-4e42-97a6-2ef5df145d6e"
         }
       ]
     }
