@@ -48,9 +48,11 @@ to a wrong-pattern academic address bounce silently and you never know.)
 > I'm building a paranormal-investigation PWA, *Southern Signal*, with
 > a YouTube series premiere on YEP The Boys (6.39M subs). The on-screen
 > headline is a Site Posterior Bar driven by named channel likelihood
-> ratios — EMF z-score, SRP-PHAT-with-MSC sector confidence, AGC-envelope
-> infrasound — fused via a τ=20 min temporal decay and clamped at ±4 in
-> log-odds.
+> ratios — EMF z-score (|z|>3 sustained ≥200 ms), SRP-PHAT-with-MSC
+> 6-sector indicator (MSC ≥ 0.7 in ≥3 non-adjacent 1/3-octave bands),
+> AGC-envelope infrasound (narrowband peak in 7–19 Hz, ≥+6 dB above
+> baseline, sustained ≥10 s) — fused additively in log-odds via a
+> τ = 20 min exponential decay and clamped at ±4 per channel emission.
 >
 > Before air I need an external Bayesian to either sign off or shred
 > the math. Your work on simulation-based inference and intractable-
@@ -94,8 +96,9 @@ option, paste the email body below.
 > paranormal-investigation PWA with a YouTube series premiere on YEP
 > The Boys (6.39M subs). The on-screen headline is a Bayesian site
 > posterior derived from three named channel likelihood ratios (EMF,
-> directional acoustic, infrasound), fused over a τ=20 min decay window
-> and clamped at ±4 in log-odds.
+> SRP-PHAT-MSC 6-sector indicator, AGC-envelope infrasound), fused
+> additively in log-odds over a τ = 20 min exponential decay window
+> and clamped at ±4 per channel emission.
 >
 > The pitch is your sweet spot: independent chartered statistician with
 > a focus on communicating Bayesian results to non-technical audiences,
@@ -144,10 +147,13 @@ of Architecture, Design and Planning staff page.)
 > coherent source in the room.
 >
 > Before air I need an external acoustician to sign off (or shred) the
-> source-localisation claim. Your work on room acoustics and spatial
-> hearing — particularly anything published on coherence-weighted
-> directional estimators in reverberant rooms — is the closest match
-> to what we're asking viewers to take at face value.
+> source-localisation claim. We do NOT publish a continuous bearing —
+> the indicator quantises to 6 discrete 60° sectors and is gated by
+> magnitude-squared-coherence (MSC ≥ 0.7) across ≥3 non-adjacent
+> 1/3-octave bands. Your work on room acoustics and spatial hearing,
+> particularly anything on coherence-weighted directional estimators
+> in reverberant rooms, is the closest match to what we're asking
+> viewers to take at face value.
 >
 > Ask: written 1-2 page sign-off (or refusal), optional 30-min
 > on-camera segment, $2,500 AUD flat, 4-week deliverable. You keep
@@ -184,9 +190,11 @@ To: `carl.howard@adelaide.edu.au`
 > I'm building *Southern Signal*, a paranormal-investigation PWA with
 > a YouTube series premiere on YEP The Boys (6.39M subs). One of the
 > on-screen indicators is an AGC-envelope infrasound detector running
-> on the phone's mic — sub-20 Hz band, automatic-gain-controlled
-> envelope, raises an LR when the running envelope crosses a 3σ
-> threshold sustained for ≥4 seconds.
+> on the phone's mic — 8th-order Butterworth bandpass centred at 9 Hz
+> with 17 Hz bandwidth (covering 0.5–18 Hz), dB-envelope tracked against
+> a ~30 s exponentially-smoothed baseline, fires a likelihood ratio when
+> a narrowband peak in 7–19 Hz holds ≥+6 dB above baseline for ≥10 s,
+> rate-limited to one fire per 30 s.
 >
 > Before air I need an external acoustic-engineering review. Your work
 > on the *Engineering Noise Control* textbook (5th ed.) and the MATLAB/
