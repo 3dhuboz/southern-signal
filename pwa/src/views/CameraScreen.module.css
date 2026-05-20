@@ -8,6 +8,28 @@
        Clip Rec) that lets the camera bleed through
    AppHeader is suppressed on this route (App.tsx → ChromeHeader); BottomNav
    stays so cross-route navigation remains thumb-friendly.
+
+   ─────────────────────────────────────────────────────────────────────────────
+   Z-INDEX SCALE (authoritative for this surface)
+   ─────────────────────────────────────────────────────────────────────────────
+     0    LiveStreamView <video> preview (default stacking context)
+     3    .dockSlim (slim secondary dock above the BottomNav)
+     4    .focusPulse, dockSlim deep elements
+     5    BroadcastBug / BroadcastSceneSelector / BroadcastSensorHud /
+          BroadcastAudioMeter / BroadcastTimestamp / .evpDock /
+          .deviceChip / .snoozeChip / .markerCountPillWrap
+     6    .shutter (BIG SHUTTER), .markerToast, .markerPicker,
+          .markerPickerWrap, .watchdogToast, .markerCountPopover
+     8    .welcomeCard (first-run helper, modal-style)
+    12    .preflightBlocker (pre-flight blocker modal)
+    15    .noVideoOverlay (camera permission / starting / error prompt)
+   1000+  Toasts and route-level modals (DispositionPicker)
+
+   Sibling components (BroadcastBug etc.) own their own z-index values via
+   their own modules; the BroadcastSceneSelector et al. set z-index: 5
+   explicitly, so this scale documents the SHARED stacking contract, not the
+   one source of truth for any single component. New camera-surface chrome
+   should slot into the scale rather than inventing a new layer.
    ============================================================================ */
 
 /* Full-viewport stage */
@@ -20,7 +42,12 @@
   flex-direction: column;
 }
 
-/* Camera area — full bleed, no card chrome, no padding, no border. */
+/* Camera area — full bleed, no card chrome, no padding, no border. The
+   data-camera-state attribute is set by CameraScreen.tsx and lets us dim
+   the HUD chrome when the camera isn't actually streaming (idle / opening
+   / error). Without that signal, glass-blur panels look identical whether
+   or not there's a live feed behind them — exactly the bug visible in the
+   broken-Camera screenshot the user reported. */
 .cameraWrap {
   flex: 1;
   position: relative;
@@ -32,9 +59,140 @@
   user-select: none;
 }
 
+/* HUD chrome dim — applied via attribute selector so we don't have to plumb
+   a dimmed prop through every Broadcast* component. When the camera isn't
+   streaming we drop the HUD to 55% opacity so it reads as "muted / waiting"
+   rather than "live data". `.shutter` and `.dockSlim` keep full opacity
+   because they're the primary affordances the operator needs to interact
+   with from this state.
+   Children selector is broad on purpose: the HUD includes 10+ components
+   from /components/broadcast/ + several inline blocks (markerToast,
+   markerCountPillWrap, etc). All of them are decorative when there's no
+   video, so blanket-dim is correct UX. */
+.cameraWrap[data-camera-state="idle"] > *:not([data-novideo-pinned]),
+.cameraWrap[data-camera-state="opening"] > *:not([data-novideo-pinned]),
+.cameraWrap[data-camera-state="error"] > *:not([data-novideo-pinned]) {
+  opacity: 0.55;
+  transition: opacity 180ms ease;
+}
+/* The LiveStreamView root (the wrap which holds the video preview shell)
+   should stay full-opacity so its #000 backdrop continues to cover the
+   route below. The opacity dim is purely a chrome-readability cue. */
+.cameraWrap > div:first-child {
+  opacity: 1 !important;
+}
+/* The no-video overlay itself sits inside cameraWrap too — keep it crisp. */
+.cameraWrap[data-camera-state="idle"] .noVideoOverlay,
+.cameraWrap[data-camera-state="opening"] .noVideoOverlay,
+.cameraWrap[data-camera-state="error"] .noVideoOverlay {
+  opacity: 1;
+}
+
 /* LiveStreamView's wrapFullscreen sizes itself; height: 100% picks it up. */
 .cameraWrap > * {
   height: 100%;
+}
+
+/* ── No-video fallback overlay ─────────────────────────────────────────────
+   Renders over the camera area when the stream isn't actually showing:
+   first-load idle, getUserMedia in flight, or permission/hardware error.
+   The dark backdrop (--bg-canvas → #07090C) plus the centred glass card
+   replace what would otherwise be a transparent backdrop-blur HUD over the
+   browser's previous-tab compositor — the visible bug on mobile Chrome.
+   z-index 15 sits above the HUD chrome (z-index 5) and the BIG SHUTTER
+   (z-index 6) but below the preflightBlocker modal (z-index 12 elevated
+   by stacking context — preflight stays the heavier hammer for hard
+   stops). pointer-events on the card itself is auto so the Retry CTA
+   captures taps; the surrounding wash is auto too so a tap on the dark
+   backdrop doesn't fall through to the camera viewport beneath. */
+.noVideoOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(24px + var(--safe-top, 0px)) 24px calc(24px + var(--safe-bottom, 0px));
+  background: rgba(7, 9, 12, 0.86);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  pointer-events: auto;
+  animation: noVideoFadeIn 220ms ease-out;
+}
+@keyframes noVideoFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.noVideoCard {
+  width: min(86vw, 360px);
+  padding: 22px 22px 20px;
+  background: rgba(20, 24, 30, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 16px;
+  color: #f4f4f4;
+  text-align: center;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.noVideoIcon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(93, 242, 199, 0.12);
+  color: var(--signal, #5DF2C7);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(93, 242, 199, 0.35);
+}
+.noVideoTitle {
+  margin: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: #fff;
+}
+.noVideoBody {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: rgba(244, 244, 244, 0.78);
+}
+.noVideoCta {
+  appearance: none;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 16px;
+  margin-top: 4px;
+  background: var(--signal, #5DF2C7);
+  border: 1px solid var(--signal, #5DF2C7);
+  border-radius: 10px;
+  color: #07090C;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 100ms ease, transform 80ms ease;
+}
+.noVideoCta:hover  { background: color-mix(in srgb, var(--signal, #5DF2C7) 85%, #fff); }
+.noVideoCta:active { transform: scale(0.97); }
+.noVideoCta:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+.noVideoHint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: rgba(244, 244, 244, 0.55);
+  font-style: italic;
 }
 
 /* The floating top-left status pill and top-right scene chip that used to

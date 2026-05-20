@@ -274,6 +274,47 @@ export function CameraScreen() {
     );
   }, []);
 
+  // ── Camera open-state machine ─────────────────────────────────────────────
+  // LiveStreamView bubbles its internal state up through onOpenStateChange.
+  // We mirror it here so the no-video fallback overlay can render the right
+  // prompt without LiveStreamView's own (now-suppressed) error / openButton
+  // chrome — fullscreen mode hides those because they used to collide with
+  // the absolute-positioned BIG SHUTTER + slim dock.
+  //
+  // States:
+  //   idle      — never requested; show "Open camera" prompt
+  //   opening   — getUserMedia in flight; show "Starting camera…" spinner
+  //   streaming — live preview is showing; overlay hidden
+  //   error     — last attempt failed (permission denied, hardware busy,
+  //               security/abort); show the error text + a Retry button
+  //
+  // Without this overlay, the camera surface used to render as a stack of
+  // backdrop-blur glass panels (BroadcastBug, BroadcastSceneSelector, etc.)
+  // over whatever browser layer was beneath — which on mobile Chrome looked
+  // like the previous tab. The mounted #000 cameraWrap was eclipsed by the
+  // LiveStreamView wrapping flex (which had been reshaped by the
+  // now-removed controls dock).
+  type CameraOpenState = "idle" | "opening" | "streaming" | "error";
+  const [cameraOpen, setCameraOpen] = useState<{ state: CameraOpenState; error: string | null }>({
+    state: "idle", error: null,
+  });
+  const handleOpenStateChange = useCallback(
+    (next: { state: CameraOpenState; error: string | null }) => {
+      setCameraOpen((prev) =>
+        prev.state === next.state && prev.error === next.error ? prev : next,
+      );
+    },
+    [],
+  );
+  // Retry-from-overlay handler — re-fires the camera open. Plumbed through
+  // startCameraRef which LiveStreamView populates with its internal start()
+  // (same path that handleBegin uses for the first open). Captures user
+  // activation when the retry button is the source of the click, so iOS
+  // Safari doesn't strip the permission prompt.
+  const retryOpenCamera = useCallback(() => {
+    void startCameraRef.current?.();
+  }, []);
+
   // ITC quick-dock tools — phoneme cycle (spirit box) and word-gen (ovilus).
   // Both publish to the module-scope ITC channel store which the compositor
   // reads each frame; the `itc` overlay channel must be enabled to show them.
@@ -1251,9 +1292,13 @@ export function CameraScreen() {
       {/* Full-bleed camera. Three viewport gestures composed together —
           composeHandlers chains the onPointerDown across long-press +
           double-tap + swipe so a single touch can prime any of them
-          depending on how the operator follows through. */}
+          depending on how the operator follows through. The
+          data-camera-state attribute drives the HUD-dim CSS so chrome
+          components don't pretend to be over a live feed when video
+          isn't running. */}
       <div
         className={s.cameraWrap}
+        data-camera-state={cameraOpen.state}
         onPointerDown={composeHandlers(longPressProps.onPointerDown, doubleTapProps.onPointerDown, swipeProps.onPointerDown)}
         onPointerMove={swipeProps.onPointerMove}
         onPointerUp={composeHandlers(longPressProps.onPointerUp, swipeProps.onPointerUp)}
@@ -1288,6 +1333,7 @@ export function CameraScreen() {
           defaultFacing={activeScene?.cameraDefaults.facing}
           defaultTorch={activeScene?.cameraDefaults.torch}
           onCameraState={handleCameraState}
+          onOpenStateChange={handleOpenStateChange}
           fullscreen
         />
 
@@ -1629,6 +1675,81 @@ export function CameraScreen() {
             >
               Snooze 10m
             </button>
+          </div>
+        )}
+
+        {/* ── No-video fallback overlay ──────────────────────────────────
+             When the camera stream isn't actually rendering, this overlay
+             paints a solid dark backdrop + centred prompt over the camera
+             area. Sits above the HUD chrome (z-index 15) so the operator
+             can see what to do; HUD chrome stays mounted underneath but
+             dimmed via the `data-camera-state` attribute on `.cameraWrap`.
+             Without this, the wrap shrank around the (now-hidden)
+             LiveStreamView controls and the backdrop-blur HUD panels
+             showed through to whichever browser layer sat beneath the
+             page on mobile Chrome — see the broken-Camera screenshot.
+
+             States:
+               idle      — first-load prompt: tap to grant + open
+               opening   — getUserMedia in flight; show a spinner
+               error     — permission denied / hardware busy / etc.;
+                           surface error text + a Retry button
+             `streaming` short-circuits the render — the live preview
+             owns the surface from there. */}
+        {cameraOpen.state !== "streaming" && (
+          <div
+            className={s.noVideoOverlay}
+            role="dialog"
+            aria-modal="false"
+            aria-labelledby="ss-novideo-title"
+          >
+            <div className={s.noVideoCard}>
+              <div className={s.noVideoIcon} aria-hidden="true">
+                {cameraOpen.state === "opening" ? (
+                  <svg viewBox="0 0 24 24" width="36" height="36" fill="none">
+                    <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" strokeOpacity="0.25" />
+                    <path d="M12 3 a9 9 0 0 1 9 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite" />
+                    </path>
+                  </svg>
+                ) : cameraOpen.state === "error" ? (
+                  <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="2.5" y="6.5" width="14" height="11" rx="2" />
+                    <path d="M16.5 10 L21 7.5 V16.5 L16.5 14 Z" />
+                    <line x1="3" y1="3" x2="21" y2="21" stroke="currentColor" strokeWidth="2" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="2.5" y="6.5" width="14" height="11" rx="2" />
+                    <path d="M16.5 10 L21 7.5 V16.5 L16.5 14 Z" />
+                  </svg>
+                )}
+              </div>
+              <h2 id="ss-novideo-title" className={s.noVideoTitle}>
+                {cameraOpen.state === "opening" ? "Starting camera…"
+                  : cameraOpen.state === "error" ? "Camera unavailable"
+                  : "Camera permission required"}
+              </h2>
+              <p className={s.noVideoBody}>
+                {cameraOpen.state === "opening" ? "Waiting on the browser to hand us the camera + mic."
+                  : cameraOpen.state === "error" ? (cameraOpen.error ?? "We couldn't open the camera.")
+                  : "Southern Signal needs camera + microphone access to show the live feed, record clips, and stream. Your video stays on this device unless you go live."}
+              </p>
+              {cameraOpen.state !== "opening" && (
+                <button
+                  type="button"
+                  className={s.noVideoCta}
+                  onClick={retryOpenCamera}
+                >
+                  {cameraOpen.state === "error" ? "Retry" : "Allow camera + mic"}
+                </button>
+              )}
+              {cameraOpen.state === "error" && (
+                <p className={s.noVideoHint}>
+                  If the prompt didn't appear, open your browser's site settings and re-enable camera and microphone for this page.
+                </p>
+              )}
+            </div>
           </div>
         )}
 
