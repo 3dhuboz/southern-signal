@@ -24,6 +24,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LiveStreamView } from "../components/LiveStreamView";
+import { CameraNoVideoOverlay } from "../components/CameraNoVideoOverlay";
 import { ScreenRecordButton } from "../components/ScreenRecordButton";
 import { SceneSheet } from "../components/SceneSheet";
 import { EvpRecorderControl } from "../components/EvpRecorderControl";
@@ -1683,69 +1684,18 @@ export function CameraScreen() {
              showed through to whichever browser layer sat beneath the
              page on mobile Chrome — see the broken-Camera screenshot.
 
-             States:
-               idle      — first-load prompt: tap to grant + open
-               opening   — getUserMedia in flight; show a spinner
-               error     — permission denied / hardware busy / etc.;
-                           surface error text + a Retry button
-             `streaming` short-circuits the render — the live preview
-             owns the surface from there. */}
-        {cameraOpen.state !== "streaming" && (
-          <div
-            className={s.noVideoOverlay}
-            role="dialog"
-            aria-modal="false"
-            aria-labelledby="ss-novideo-title"
-          >
-            <div className={s.noVideoCard}>
-              <div className={s.noVideoIcon} aria-hidden="true">
-                {cameraOpen.state === "opening" ? (
-                  <svg viewBox="0 0 24 24" width="36" height="36" fill="none">
-                    <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" strokeOpacity="0.25" />
-                    <path d="M12 3 a9 9 0 0 1 9 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                      <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite" />
-                    </path>
-                  </svg>
-                ) : cameraOpen.state === "error" ? (
-                  <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="2.5" y="6.5" width="14" height="11" rx="2" />
-                    <path d="M16.5 10 L21 7.5 V16.5 L16.5 14 Z" />
-                    <line x1="3" y1="3" x2="21" y2="21" stroke="currentColor" strokeWidth="2" />
-                  </svg>
-                ) : (
-                  <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="2.5" y="6.5" width="14" height="11" rx="2" />
-                    <path d="M16.5 10 L21 7.5 V16.5 L16.5 14 Z" />
-                  </svg>
-                )}
-              </div>
-              <h2 id="ss-novideo-title" className={s.noVideoTitle}>
-                {cameraOpen.state === "opening" ? "Starting camera…"
-                  : cameraOpen.state === "error" ? "Camera unavailable"
-                  : "Camera permission required"}
-              </h2>
-              <p className={s.noVideoBody}>
-                {cameraOpen.state === "opening" ? "Waiting on the browser to hand us the camera + mic."
-                  : cameraOpen.state === "error" ? (cameraOpen.error ?? "We couldn't open the camera.")
-                  : "Southern Signal needs camera + microphone access to show the live feed, record clips, and stream. Your video stays on this device unless you go live."}
-              </p>
-              {cameraOpen.state !== "opening" && (
-                <button
-                  type="button"
-                  className={s.noVideoCta}
-                  onClick={retryOpenCamera}
-                >
-                  {cameraOpen.state === "error" ? "Retry" : "Allow camera + mic"}
-                </button>
-              )}
-              {cameraOpen.state === "error" && (
-                <p className={s.noVideoHint}>
-                  If the prompt didn't appear, open your browser's site settings and re-enable camera and microphone for this page.
-                </p>
-              )}
-            </div>
-          </div>
-        )}
+             The JSX + CSS lives in components/CameraNoVideoOverlay so the
+             state-machine behaviour can be pinned by focused tests without
+             dragging CameraScreen's 30+ heavy dependencies into the test
+             runner. CameraScreen still owns the state machine itself
+             (`cameraOpen`, fed by LiveStreamView.onOpenStateChange); this
+             component is pure presentation. */}
+        <CameraNoVideoOverlay
+          state={cameraOpen.state}
+          errorText={cameraOpen.error}
+          onAllowAccess={retryOpenCamera}
+          onRetry={retryOpenCamera}
+        />
 
         {/* ── Pre-flight blocker — only shown when a critical check failed
              (camera/mic permission denied, storage critically low). The
