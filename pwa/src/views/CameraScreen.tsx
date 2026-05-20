@@ -108,7 +108,9 @@ const MARKER_BREAKDOWN: ReadonlyArray<{ id: "sound" | "movement" | "felt" | "unt
 ];
 
 // ── Dock button icons ──────────────────────────────────────────────────────
-// Slim dock holds: Scenes (text), Settings, ScreenRec, Clip Rec, Flip, Torch.
+// Slim dock holds: Scenes (text), ScreenRec, Clip Rec, Flip, Torch.
+// The legacy Settings cog was removed — BottomNav owns /setup and the dock
+// was cramming six chips into a 56-px-tall row on 360-px-wide phones.
 // Viewport gestures:
 //   • long-press anywhere   → push-to-talk (ducks ITC mixer -18dB)
 //   • double-tap anywhere   → drop a moment marker into the audit chain
@@ -118,14 +120,6 @@ function IconRecord() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
       <circle cx="12" cy="12" r="7" fill="currentColor" />
-    </svg>
-  );
-}
-function IconSettings() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
   );
 }
@@ -1837,15 +1831,12 @@ export function CameraScreen() {
             <span className={s.dockSlimLabel}>Scenes</span>
           </button>
 
-          <button
-            type="button"
-            className={s.dockSlimBtn}
-            onClick={() => navigate("/setup")}
-            aria-label="Open settings"
-            title="Settings"
-          >
-            <span className={s.dockSlimIcon} aria-hidden="true"><IconSettings /></span>
-          </button>
+          {/* Settings cog removed from the dock — the BottomNav already
+              owns the route at /setup, and on a 360px-wide phone the dock
+              row was cramming Scenes / Settings / ScreenRec / ClipRec /
+              Flip / Torch into 56px tall slots with the SCENES picker chip
+              colliding with the cog icon. Operators reach settings via the
+              BottomNav Setup tab; this dock stays camera-affordances-only. */}
 
           {/* Simplified-dock scenes (Vigil) hide the secondary buttons so
               the cinematic framing isn't broken by chip-shaped chrome. The
