@@ -13,11 +13,13 @@
    Z-INDEX SCALE (authoritative for this surface)
    ─────────────────────────────────────────────────────────────────────────────
      0    LiveStreamView <video> preview (default stacking context)
-     3    .dockSlim (slim secondary dock above the BottomNav)
-     4    .focusPulse, dockSlim deep elements
+     1    .screen (fixed inset:0 stage)
+     4    .dockSlim (slim secondary dock above the BottomNav),
+          .focusPulse (tap-to-focus ring),
+          BroadcastLowerThird (slate-style title at bottom)
      5    BroadcastBug / BroadcastSceneSelector / BroadcastSensorHud /
           BroadcastAudioMeter / BroadcastTimestamp / .evpDock /
-          .deviceChip / .snoozeChip / .markerCountPillWrap
+          .deviceChip / .snoozeChip / .markerCountPillWrap / .markerCountPill
      6    .shutter (BIG SHUTTER), .markerToast, .markerPicker,
           .markerPickerWrap, .watchdogToast, .markerCountPopover
      8    .welcomeCard (first-run helper, modal-style)
@@ -30,6 +32,14 @@
    explicitly, so this scale documents the SHARED stacking contract, not the
    one source of truth for any single component. New camera-surface chrome
    should slot into the scale rather than inventing a new layer.
+
+   Stacking order, top to bottom (top = drawn last):
+       noVideoOverlay → preflightBlocker → welcomeCard → toasts/popovers (6)
+       → shutter (6) → HUD chrome (5) → dock/focusPulse/LowerThird (4)
+       → video preview (0).
+   Same-z elements draw in document source order — the JSX in CameraScreen
+   keeps that order: LiveStreamView first, then HUD chrome, then dock + shutter
+   + toasts + modals.
    ============================================================================ */
 
 /* Full-viewport stage */
