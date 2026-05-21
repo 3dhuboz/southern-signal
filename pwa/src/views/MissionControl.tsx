@@ -4,6 +4,7 @@ import { AiAssistant } from "../components/AiAssistant";
 import { CameraCapture } from "../components/CameraCapture";
 import { ContaminationMarker } from "../components/ContaminationMarker";
 import { DispositionPicker } from "../components/DispositionPicker";
+import { EntertainmentOnlyLabel } from "../components/EntertainmentOnlyLabel";
 import { LiveARView } from "../components/LiveARView";
 import { LiveStreamView } from "../components/LiveStreamView";
 import { SensorsPanel } from "../components/SensorsPanel";
@@ -522,6 +523,12 @@ export function MissionControl() {
 
   return (
     <section className={s.view}>
+      {/* Hard constraint #3 — Entertainment-only label is rendered inline at
+          the top of MissionControl. Pulls its copy from the frozen
+          module-load constant in src/lib/legal/disclaimers.ts so it cannot
+          be removed at runtime. Inline variant flows with document layout
+          (no live video to overlay here). */}
+      <EntertainmentOnlyLabel variant="inline" />
       {/* ROOM BASELINE — capture noise floor before the session, render above
           the activity dial in both Simple and Pro modes. */}
       <SessionBaselineCard

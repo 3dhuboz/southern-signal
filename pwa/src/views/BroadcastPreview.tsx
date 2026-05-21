@@ -12,11 +12,12 @@
  *   ladder at once.
  *
  * Production note:
- *   This is also useful in production — the YEP The Boys management folks
- *   have asked for "what does it actually look like on camera", and a
- *   /preview/broadcast URL we can drop in an email is a far better answer
- *   than a video walkthrough. Always-accessible by design; not surfaced in
- *   the main nav so it doesn't muddy the operator's daily routes.
+ *   This is also useful in production — prospective production / reviewer
+ *   contacts have asked for "what does it actually look like on camera",
+ *   and a /preview/broadcast URL we can drop in an email is a far better
+ *   answer than a video walkthrough. Always-accessible by design; not
+ *   surfaced in the main nav so it doesn't muddy the operator's daily
+ *   routes.
  *
  * Implementation:
  *   Each "frame" is a relatively-positioned ~16:9 div that establishes a

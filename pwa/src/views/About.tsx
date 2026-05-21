@@ -290,7 +290,7 @@ export function About() {
                 className={s.betaInput}
                 value={teamName}
                 onChange={(e) => setTeamName(e.target.value)}
-                placeholder="e.g. YEP The Boys, Solo investigator…"
+                placeholder="e.g. solo investigator, paranormal team…"
                 autoComplete="organization"
               />
             </label>

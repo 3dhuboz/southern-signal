@@ -6,6 +6,7 @@ import { AHT_H0_SUSPEND_THRESHOLD, computeH0Confidence } from "../lib/posterior/
 import { buildEvidenceBrief, findMostRecentInvestigationId, type EvidenceBrief } from "../lib/forensic/evidenceBrief";
 import { NullRateDashboard } from "../components/NullRateDashboard";
 import { CaseManager } from "../components/CaseManager";
+import { EntertainmentOnlyLabel } from "../components/EntertainmentOnlyLabel";
 import { InterviewsList } from "../components/InterviewsList";
 import { query } from "../lib/db/db";
 import { verifyAuditChain, appendAuditEntry } from "../lib/db/auditLog";
@@ -696,6 +697,11 @@ export function Review() {
 
   return (
     <section className={s.view}>
+      {/* Hard constraint #3 — Entertainment-only label on every Case Card
+          surface. Inline variant since Review is document-flow (no live
+          video to overlay). Copy ships from a frozen module-load constant
+          in src/lib/legal/disclaimers.ts; cannot be removed at runtime. */}
+      <EntertainmentOnlyLabel variant="inline" />
       <div className={s.titleBlock}>
         <span className={s.eyebrow}>{isPro ? "Review · Post-roll" : "Review"}</span>
         <h1 className={s.title}>{isPro ? "All cases · all data" : "Your cases"}</h1>
