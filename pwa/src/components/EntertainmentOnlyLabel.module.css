@@ -1,0 +1,69 @@
+/* Entertainment-only label styles.
+   Hard constraint #3: cannot be removed at runtime; sits at the render
+   layer of every Case Card / session screen.
+
+   Two variants share the same chip aesthetics — semi-transparent dark
+   pill with backdrop-blur so it reads over both the camera video and
+   document-flow surfaces. Mobile-first sizing: 11px text at 360 px wide
+   is the minimum that still passes a 4.5:1 contrast check against
+   var(--bg-deep) with var(--text-secondary). */
+
+.inline,
+.fixed {
+  font-family: var(--font-mono, "VT323", ui-monospace, monospace);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  /* Use a darker neutral with a soft glow so the chip reads as
+     "official notice", not "navigation". */
+  color: var(--text-secondary, #c2cad6);
+  background: rgba(7, 9, 12, 0.78);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  padding: 6px 14px;
+  text-align: center;
+  /* Tabular-nums kills jitter when a future copy edit slots in
+     numbers (e.g. "v0.1.0"). */
+  font-variant-numeric: tabular-nums;
+  /* Make sure long lines wrap rather than overflowing the chip. */
+  white-space: normal;
+  word-break: break-word;
+  /* Some surfaces (CameraScreen) place this above the BottomNav at
+     bottom: 0; the chip needs to sit just above the nav. The fixed
+     variant overrides this; inline keeps the default. */
+}
+
+.fixed {
+  position: fixed;
+  /* Sit above the BottomNav (which is ~56 px tall + safe-area). The
+     env() add keeps this clear of iPhone home-indicator. */
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  /* Z-index puts this above the camera surface but below modals + the
+     primary action shutter (which lives at z-index ~30 on the camera). */
+  z-index: 12;
+  /* Allow the chip to stretch up to 92% of the viewport on narrow
+     phones but stay readable on tablets. */
+  max-width: 92vw;
+  pointer-events: none;
+  user-select: none;
+}
+
+.inline {
+  margin: 16px auto;
+  display: inline-block;
+}
+
+/* Scotopic theme override — the chip's dark backdrop already reads on
+   the deep-red surface, but the text colour needs the scotopic palette
+   to avoid white-against-red. */
+:global([data-theme="scotopic"]) .inline,
+:global([data-theme="scotopic"]) .fixed {
+  color: var(--scotopic-text, #c43c3c);
+  background: rgba(10, 0, 0, 0.82);
+  border-color: rgba(196, 60, 60, 0.18);
+}

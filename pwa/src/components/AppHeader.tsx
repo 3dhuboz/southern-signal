@@ -9,6 +9,13 @@ import styles from "./AppHeader.module.css";
 
 const BATTERY_DANGER_PCT = 20;
 const STORAGE_DANGER_FREE_MB = 500;
+/**
+ * Hard constraint #7 (iOS PWA OPFS quota warning at 80%): the storage
+ * pill must turn red at 80% used, not just on absolute-free-MB. iPhone
+ * OPFS realistically caps at ~1–4 GiB; relying on free-MB alone means
+ * a 1.5 GiB iPhone hits the limit before the chip ever turns red.
+ */
+const STORAGE_DANGER_USED_PCT = 80;
 
 function formatStorageFree(mb: number): string {
   if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB free`;
@@ -29,7 +36,15 @@ export function AppHeader() {
   const batteryDanger = showBattery && batteryPct !== null && batteryPct < BATTERY_DANGER_PCT && !charging;
 
   const showStorage = storageFreeMB !== null;
-  const storageDanger = showStorage && storageFreeMB !== null && storageFreeMB < STORAGE_DANGER_FREE_MB;
+  // Two-axis danger gate: either absolute-free OR pct-used trips the pill.
+  // Constraint #7 demands the 80%-used threshold; STORAGE_DANGER_FREE_MB
+  // is kept as a belt-and-braces lower bound for very large quotas where
+  // 80% used still leaves a lot of headroom in absolute terms.
+  const storageDanger =
+    showStorage &&
+    storageFreeMB !== null &&
+    (storageFreeMB < STORAGE_DANGER_FREE_MB ||
+      (storageUsedPct !== null && storageUsedPct >= STORAGE_DANGER_USED_PCT));
 
   return (
     <header className={styles.header}>

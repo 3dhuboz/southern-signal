@@ -24,6 +24,7 @@ import { buildEvidenceBrief, findMostRecentInvestigationId, type EvidenceBrief }
 import { describeChannel, describeSector, plainEnglishReason } from "../lib/posterior/plainEnglish";
 import { usePresentationMode } from "../hooks/usePresentationMode";
 import type { ResearchTier } from "../lib/research/api";
+import { EntertainmentOnlyLabel } from "../components/EntertainmentOnlyLabel";
 import s from "./EvidenceBrief.module.css";
 
 const TIER_LABEL: Record<ResearchTier, string> = {
@@ -147,6 +148,10 @@ export function EvidenceBrief() {
       {/* COVER */}
       <section className={s.cover}>
         <span className={s.brand}>SOUTHERN SIGNAL · CASE BRIEF</span>
+        {/* Hard constraint #3 — Entertainment-only label on the Case
+            Card / brief cover. Module-load constant; cannot be removed
+            at runtime. Renders inline so it prints on the PDF too. */}
+        <EntertainmentOnlyLabel variant="inline" />
         <h1 className={s.title}>{inv.title}</h1>
         {inv.location_name && <p className={s.location}>{inv.location_name}</p>}
         <dl className={s.coverGrid}>

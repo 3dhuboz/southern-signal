@@ -25,6 +25,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LiveStreamView } from "../components/LiveStreamView";
 import { CameraNoVideoOverlay } from "../components/CameraNoVideoOverlay";
+import { EntertainmentOnlyLabel } from "../components/EntertainmentOnlyLabel";
 import { ScreenRecordButton } from "../components/ScreenRecordButton";
 import { SceneSheet } from "../components/SceneSheet";
 import { EvpRecorderControl } from "../components/EvpRecorderControl";
@@ -1274,6 +1275,12 @@ export function CameraScreen() {
           needs an h1 so screen-reader navigation by heading works and
           Lighthouse / axe stop flagging the page. */}
       <h1 className="visually-hidden">Camera</h1>
+      {/* Hard constraint #3 — Entertainment-only label ALWAYS rendered on
+          the session screen. The component pulls its copy from a frozen
+          module-load constant in src/lib/legal/disclaimers.ts so it cannot
+          be removed at runtime. The chip is fixed-position bottom-centre
+          and does not eat the live video frame. */}
+      <EntertainmentOnlyLabel variant="fixed" />
       {/* Mandatory disposition prompt — appears immediately after a session
           stops so the operator can't wander off without classifying. Mirrors
           MissionControl's post-stop flow; without this the base-rate
