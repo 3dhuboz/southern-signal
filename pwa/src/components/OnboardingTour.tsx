@@ -9,8 +9,9 @@
  * file owned by another worker for this iteration, so we keep this orthogonal.
  */
 
-import { useEffect, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { usePreferences } from "../lib/preferences";
+import { usePwaInstall } from "../lib/system/usePwaInstall";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import s from "./OnboardingTour.module.css";
 
@@ -62,6 +63,23 @@ const cuePrivacy = (
   </svg>
 );
 
+// iOS install-funnel cue — Safari Share icon (rounded square with up
+// arrow) above a plus-on-rect "Add to Home Screen" hint. Visual mirror
+// of the system Share sheet flow so an operator who's never installed
+// a PWA before recognises the icon they're looking for.
+const cueIosInstall = (
+  <svg viewBox="0 0 64 64" aria-hidden="true" className={s.cueSvg}>
+    {/* Phone outline */}
+    <rect x="14" y="6" width="36" height="52" rx="5" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.65" />
+    {/* Share icon — square with up arrow */}
+    <rect x="22" y="28" width="20" height="22" rx="2" fill="none" stroke="currentColor" strokeWidth="1.4" opacity="0.95" />
+    <path d="M32 22 L32 40" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" opacity="0.95" />
+    <path d="M27 28 L32 22 L37 28" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" opacity="0.95" />
+    {/* Tiny "home" indicator */}
+    <path d="M28 53 L36 53" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" opacity="0.55" />
+  </svg>
+);
+
 // Archive-folder cue for the AI Investigator step: a stack of three
 // tabbed cards with a sourced citation indicator. Mirrors the dossier
 // metaphor used throughout the Research view.
@@ -87,7 +105,7 @@ interface RawStep {
   cue: ReactElement;
 }
 
-const RAW_STEPS: RawStep[] = [
+const BASE_RAW_STEPS: RawStep[] = [
   {
     title: "Welcome to Southern Signal",
     body: "A phone-first paranormal investigation tool that fuses sensor data, transparent statistics, and on-device storage into a defensible record. Start a hunt from the Camera tab, or flip Switch to Pro if you want the math exposed.",
@@ -115,10 +133,19 @@ const RAW_STEPS: RawStep[] = [
   },
 ];
 
-const STEPS: Step[] = RAW_STEPS.map((step, i) => ({
-  ...step,
-  eyebrow: `Step ${i + 1} of ${RAW_STEPS.length}`,
-}));
+// Conditional install step — only injected when the device is iOS Safari
+// and the app isn't already installed. iOS Safari doesn't fire the
+// `beforeinstallprompt` event so users must manually use Share → Add to
+// Home Screen; without this onboarding cue most users will never find it
+// and lose the fullscreen camera surface, persistent permissions, and
+// home-screen icon. The step is injected as step 2 (right after the
+// welcome) so the install-funnel happens before the user invests time in
+// learning the rest of the app.
+const IOS_INSTALL_STEP: RawStep = {
+  title: "Install Southern Signal first",
+  body: "iOS Safari needs a manual install — tap the Share button at the bottom of the screen, then choose Add to Home Screen. The home-screen icon opens straight into the camera with fullscreen capture, keeps your microphone and camera permissions across launches, and unlocks the broadcast HUD.",
+  cue: cueIosInstall,
+};
 
 function isCompleted(): boolean {
   try {
@@ -143,6 +170,21 @@ export function OnboardingTour() {
   const [stepIndex, setStepIndex] = useState(0);
   const [prefs] = usePreferences();
   const aocAccepted = prefs.acknowledgementOfCountry.accepted;
+  const installStatus = usePwaInstall();
+
+  // Inject the iOS install step at position 1 (right after welcome) when
+  // the device is iOS Safari and the app is not yet installed. Memoised
+  // so step references stay stable across re-renders and the Back / Next
+  // pointer doesn't jump when an install completes mid-tour.
+  const STEPS: Step[] = useMemo(() => {
+    const raw = installStatus.kind === "ios-manual"
+      ? [BASE_RAW_STEPS[0], IOS_INSTALL_STEP, ...BASE_RAW_STEPS.slice(1)]
+      : BASE_RAW_STEPS;
+    return raw.map((step, i) => ({
+      ...step,
+      eyebrow: `Step ${i + 1} of ${raw.length}`,
+    }));
+  }, [installStatus.kind]);
 
   // The AcknowledgementGate is the ethical floor and must clear FIRST on
   // a fresh device. Without this gate, the tour rendered over the AoC
