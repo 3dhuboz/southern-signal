@@ -78,6 +78,69 @@
 
   /* Layout */
   --bottom-nav-height: 64px;
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     HUD / camera-surface tokens
+     ─────────────────────────────────────────────────────────────────────────
+     Surfaces the camera-surface chrome (Broadcast* components + CameraScreen)
+     paints against. Previously each component burned literal RGBs which meant
+     scotopic / daylight themes were silently bypassed on the camera surface.
+     Default values match the legacy "forensic OB-van" palette so the default
+     dark theme looks identical to before; scotopic / daylight overrides live
+     in the theme-specific blocks further down.
+     ───────────────────────────────────────────────────────────────────────── */
+
+  /* Glass chrome — the dark-blue translucent shell common to Bug, AudioMeter,
+     SensorHud, SceneSelector, Timestamp, and LowerThird. */
+  --hud-glass-bg:        rgba(8, 12, 18, 0.62);
+  --hud-glass-bg-strong: rgba(8, 12, 18, 0.78);
+
+  /* Hairline rim. Active = focus-visible / live-state pop, glow = box-shadow
+     halo around active rims so they read on bright video frames. */
+  --hud-rim:             rgba(93, 242, 199, 0.18);
+  --hud-rim-strong:      rgba(93, 242, 199, 0.45);
+  --hud-rim-active:      rgba(93, 242, 199, 0.55);
+  --hud-rim-glow:        rgba(93, 242, 199, 0.55);
+
+  /* Audio-meter gradient stops. Green→amber→red carries the same semantic
+     meaning across themes by default, but scotopic re-skins these to the
+     deep-red ramp so the meter doesn't break dark-vision adaptation. */
+  --meter-low:           #48c882;
+  --meter-mid:           #d4c026;
+  --meter-high:          #ef6e6e;
+
+  /* Chip chrome (deviceChip, snoozeChip, markerCountPill, dock buttons). */
+  --chip-bg:             rgba(0, 0, 0, 0.55);
+  --chip-rim:            rgba(255, 255, 255, 0.16);
+  --chip-text:           #e8e8e8;
+  --chip-warn-bg:        rgba(212, 192, 38, 0.16);
+  --chip-warn-rim:       rgba(212, 192, 38, 0.55);
+  --chip-warn-text:      #ffe089;
+
+  /* Warning pill — the solid-amber snooze indicator + watchdog warn toast. */
+  --warn-pill-bg:        rgba(212, 192, 38, 0.78);
+  --warn-pill-text:      #1a1604;
+
+  /* BIG SHUTTER + slim dock palette. */
+  --shutter-bg:          #d8392c;
+  --shutter-ring:        #ffffff;
+  --shutter-rec-bg:      #ffffff;
+  --shutter-rec-core:    #d8392c;
+  --dock-bg:             rgba(0, 0, 0, 0.45);
+  --dock-rim:            rgba(255, 255, 255, 0.12);
+  --dock-text:           #ffffff;
+  --dock-rec-bg:         rgba(216, 57, 44, 0.18);
+  --dock-rec-rim:        rgba(216, 57, 44, 0.6);
+  --dock-rec-text:       #ffb1a8;
+
+  /* Tap-to-focus ring + generic focus indicator. */
+  --focus-ring:          rgba(255, 255, 255, 0.9);
+
+  /* Marker category dot palette (sound / movement / felt / other). */
+  --marker-sound:        #38bdf8;
+  --marker-movement:     #a855f7;
+  --marker-felt:         #d4a017;
+  --marker-other:        rgba(255, 255, 255, 0.45);
 }
 
 /* ==========================================================================
@@ -123,6 +186,53 @@
      in context but stay >=650nm. */
   --success:        #7C0F1F;
   --success-wash:   #2A0808;
+
+  /* HUD overrides — keep the entire camera surface inside the ≥650 nm band
+     so the chrome doesn't burn rod-cell adaptation. Cyan rims swap to deep
+     red, the audio-meter green/amber/red ramp collapses to a single-hue red
+     gradient (still informational via luminance), and chip whites resolve
+     through the theme's text tokens. */
+  --hud-glass-bg:        rgba(20, 0, 0, 0.72);
+  --hud-glass-bg-strong: rgba(26, 2, 2, 0.85);
+  --hud-rim:             rgba(196, 30, 58, 0.28);
+  --hud-rim-strong:      rgba(196, 30, 58, 0.55);
+  --hud-rim-active:      rgba(227, 54, 69, 0.7);
+  --hud-rim-glow:        rgba(196, 30, 58, 0.45);
+
+  --meter-low:           #5C0808;
+  --meter-mid:           #8B1010;
+  --meter-high:          #E33645;
+
+  --chip-bg:             rgba(20, 0, 0, 0.75);
+  --chip-rim:            rgba(139, 16, 16, 0.4);
+  --chip-text:           var(--text-primary);
+  --chip-warn-bg:        rgba(196, 30, 58, 0.18);
+  --chip-warn-rim:       rgba(196, 30, 58, 0.55);
+  --chip-warn-text:      var(--text-primary);
+
+  --warn-pill-bg:        rgba(124, 15, 31, 0.78);
+  --warn-pill-text:      var(--bg-canvas, #0A0000);
+
+  --shutter-bg:          #5C0808;
+  --shutter-ring:        #8B1010;
+  --shutter-rec-bg:      #8B1010;
+  --shutter-rec-core:    #5C0808;
+  --dock-bg:             rgba(20, 0, 0, 0.6);
+  --dock-rim:            rgba(139, 16, 16, 0.32);
+  --dock-text:           var(--text-primary);
+  --dock-rec-bg:         rgba(124, 15, 31, 0.22);
+  --dock-rec-rim:        rgba(196, 30, 58, 0.55);
+  --dock-rec-text:       var(--text-primary);
+
+  --focus-ring:          var(--signal);
+
+  /* Marker category dots: in scotopic, all four collapse to the deep-red
+     ramp so coloured dots don't punch through dark-adapted vision. The
+     icon labels still carry the category — colour is supplementary. */
+  --marker-sound:        #7a3030;
+  --marker-movement:     #5C0808;
+  --marker-felt:         #8B1010;
+  --marker-other:        rgba(196, 30, 58, 0.45);
 }
 
 /* No additive cyan glow in scotopic mode — replace with deep-red glow. */
@@ -202,6 +312,16 @@
   /* Darker success green for AA contrast on white. */
   --success:        #1F8F5C;
   --success-wash:   #E6F5EC;
+
+  /* HUD overrides — daylight surface is mostly camera viewfinder anyway,
+     so the chrome stays dark-glass to read on bright video; only the rim
+     hue tracks the darkened-green signal. Keeps the OB-van look usable in
+     direct sun without forcing the operator to read white text on white
+     glass. */
+  --hud-rim:             rgba(31, 143, 110, 0.32);
+  --hud-rim-strong:      rgba(31, 143, 110, 0.55);
+  --hud-rim-active:      rgba(31, 143, 110, 0.7);
+  --hud-rim-glow:        rgba(31, 143, 110, 0.45);
 }
 
 /* Replace dark radial wash with a soft warm overlay so light theme stays bright. */

@@ -17,10 +17,10 @@
   height: 36px;
   padding: 0 12px 0 14px;
 
-  background: rgba(8, 12, 18, 0.62);
+  background: var(--hud-glass-bg);
   backdrop-filter: blur(14px) saturate(140%);
   -webkit-backdrop-filter: blur(14px) saturate(140%);
-  border: 1px solid rgba(93, 242, 199, 0.18);
+  border: 1px solid var(--hud-rim);
   border-radius: 10px;
   box-shadow:
     0 6px 16px rgba(0, 0, 0, 0.55),
@@ -53,8 +53,8 @@
 }
 
 .chip:hover {
-  background: rgba(8, 14, 18, 0.72);
-  border-color: rgba(93, 242, 199, 0.32);
+  background: var(--hud-glass-bg-strong);
+  border-color: var(--hud-rim-strong);
 }
 .chip:active { transform: scale(0.97); }
 .chip:focus-visible {

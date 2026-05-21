@@ -24,10 +24,10 @@
   max-width: 156px;
   padding: 8px 10px;
 
-  background: rgba(8, 12, 18, 0.62);
+  background: var(--hud-glass-bg);
   backdrop-filter: blur(14px) saturate(140%);
   -webkit-backdrop-filter: blur(14px) saturate(140%);
-  border: 1px solid rgba(93, 242, 199, 0.18);
+  border: 1px solid var(--hud-rim);
   border-radius: 10px;
   box-shadow:
     0 6px 16px rgba(0, 0, 0, 0.55),
@@ -65,7 +65,7 @@
 
 @keyframes ss-hud-row-flash {
   0% {
-    background: rgba(93, 242, 199, 0.22);
+    background: var(--hud-rim-glow);
     color: var(--signal, #5DF2C7);
   }
   100% {
