@@ -10,16 +10,25 @@
  *      running; otherwise shows the dim placeholder T—:—— so the slot
  *      stays the same height (no layout shift on Begin).
  *
- * Update cadence: a single window.setInterval at 1 Hz drives the wall-clock
- * lines via local state — that's the only periodic render this component
- * causes. Elapsed seconds come from the parent so the source of truth stays
- * in CameraScreen's existing session timer.
+ * Clock source: the wall-clock + UTC text come from `useBroadcastClock`,
+ * the same hook the canvas compositor's `getBroadcastClockSnapshot()`
+ * formatter pulls from. That guarantees the on-screen slate and the
+ * burned-in timestamp on each recorded frame can't disagree — they share
+ * one moment of `Date.now()` per tick.
+ *
+ * Update cadence: the hook ticks at 250ms. The component re-renders only
+ * when the snapshot changes; the elapsed slot uses its own `fmtElapsed`
+ * (`+m:ss` without leading zero on minutes) so the existing DOM-structure
+ * snapshot tests stay valid — the hook exposes `elapsedText` as HH:MM:SS
+ * for the compositor's burn-in, but the operator chrome here prefers the
+ * shorter humane form. Elapsed seconds still come from the parent so the
+ * source of truth stays in CameraScreen's existing session timer.
  *
  * Glass shell + tabular-nums match the BroadcastBug / AudioMeter so the
  * three pieces of corner chrome read as one composed broadcast system.
  */
-import { useEffect, useState } from "react";
 import s from "./BroadcastTimestamp.module.css";
+import { useBroadcastClock } from "../../hooks/useBroadcastClock";
 
 interface Props {
   /** True while a hunt session is active. Drives the elapsed timecode and
@@ -30,23 +39,11 @@ interface Props {
   elapsedSec: number;
 }
 
-/** Format a Date as HH:MM:SS in a given timezone. We use Intl.DateTimeFormat
- *  with `hour12: false` so the wall-clock matches the convention production
- *  editors expect on a slate. UTC is forced by passing `timeZone: "UTC"`. */
-function fmtClock(d: Date, utc: boolean): string {
-  // toLocaleTimeString without options also works on modern engines but
-  // we want explicit hour12=false because some platforms default to 12 h.
-  return d.toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-    timeZone: utc ? "UTC" : undefined,
-  });
-}
-
 /** Format the elapsed counter. Matches CameraScreen.fmtSecs format
- *  (mm:ss) so the timecode reads consistently next to the BroadcastBug. */
+ *  (mm:ss) so the timecode reads consistently next to the BroadcastBug.
+ *  Lives in the component (not the hook) to keep its DOM-structure
+ *  snapshots stable across the shared-clock refactor — the hook exposes
+ *  the hour-padded `HH:MM:SS` form for the compositor's pills. */
 function fmtElapsed(total: number): string {
   const safe = Math.max(0, Math.floor(total));
   const m = Math.floor(safe / 60);
@@ -55,33 +52,24 @@ function fmtElapsed(total: number): string {
 }
 
 export function BroadcastTimestamp({ running, elapsedSec }: Props) {
-  // Wall-clock state. Re-rendered once per second. Initialised eagerly so
-  // the first paint already has the current time (no "00:00:00" flash).
-  const [now, setNow] = useState<Date>(() => new Date());
+  // Derive the session start anchor from the parent-owned elapsedSec. We
+  // recompute it on each render — that's fine: the hook's elapsedSec output
+  // is itself derived from `now() - startedAtMs`, so as long as the parent's
+  // elapsedSec advances roughly with wall time the two stay in step. The
+  // operator's source of truth is still CameraScreen's session timer; the
+  // hook just exposes a shared *formatter* for wall + UTC text.
+  const startedAtMs = running ? Date.now() - elapsedSec * 1000 : null;
+  const snapshot = useBroadcastClock({ running, startedAtMs });
 
-  useEffect(() => {
-    // Align the first tick to the next whole-second boundary so the
-    // blinking colon stays in sync with the actual clock — otherwise the
-    // colon flickers at an arbitrary phase offset and looks janky.
-    const align = 1000 - (Date.now() % 1000);
-    let interval: number | null = null;
-    const start = window.setTimeout(() => {
-      setNow(new Date());
-      interval = window.setInterval(() => setNow(new Date()), 1000);
-    }, align);
-    return () => {
-      window.clearTimeout(start);
-      if (interval != null) window.clearInterval(interval);
-    };
-  }, []);
-
-  const local = fmtClock(now, false);
-  const utc = fmtClock(now, true);
+  const local = snapshot.wallClockText;
+  const utc = snapshot.utcText;
   // Insert blinking colons. We swap the visible colon for a CSS-hidden span
   // on even seconds so the cadence is exactly 1 Hz and matches the wall.
   // The DOM stays stable — only the .blink class toggles — so a screen
   // reader sees the same text across ticks.
-  const blinkOn = now.getSeconds() % 2 === 0;
+  // Read seconds from the snapshot's numeric wallClock so the blink stays in
+  // phase with the same Date.now() value the burn-in uses.
+  const blinkOn = Math.floor(snapshot.wallClock / 1000) % 2 === 0;
 
   return (
     <div
