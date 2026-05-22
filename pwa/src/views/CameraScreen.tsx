@@ -26,12 +26,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { LiveStreamView } from "../components/LiveStreamView";
 import { CameraNoVideoOverlay } from "../components/CameraNoVideoOverlay";
 import { EntertainmentOnlyLabel } from "../components/EntertainmentOnlyLabel";
-import { ScreenRecordButton } from "../components/ScreenRecordButton";
 import { SceneSheet } from "../components/SceneSheet";
 import { EvpRecorderControl } from "../components/EvpRecorderControl";
 import { DispositionPicker } from "../components/DispositionPicker";
 import { BroadcastTimestamp } from "../components/broadcast/BroadcastTimestamp";
 import { CameraHud } from "../components/broadcast/CameraHud";
+import { CameraDock } from "../components/camera/CameraDock";
 import { useLiveBroadcastState } from "../lib/system/liveBroadcast";
 import { usePushToTalk } from "../lib/audio/usePushToTalk";
 import { startVad, type VadHandle } from "../lib/audio/vad";
@@ -96,45 +96,14 @@ const PICKER_CATEGORIES: ReadonlyArray<{ id: MarkerCat; label: string }> = [
   { id: "movement", label: "Movement" },
   { id: "felt",     label: "Felt" },
 ];
-// MARKER_BREAKDOWN moved to broadcast/CameraHud.tsx with the wrapper that
-// owns its render. The dock icon helpers below stay in CameraScreen for
-// now — the dock-redesign commit retires them when CameraDock lands.
-
-// ── Dock button icons ──────────────────────────────────────────────────────
-// Slim dock holds: Scenes (text), ScreenRec, Clip Rec, Flip, Torch.
-// The legacy Settings cog was removed — BottomNav owns /setup and the dock
-// was cramming six chips into a 56-px-tall row on 360-px-wide phones.
 // Viewport gestures:
 //   • long-press anywhere   → push-to-talk (ducks ITC mixer -18dB)
 //   • double-tap anywhere   → drop a moment marker into the audit chain
 //   • horizontal swipe      → cycle scene (prev / next from BUILT_IN_SCENES)
-
-function IconRecord() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
-      <circle cx="12" cy="12" r="7" fill="currentColor" />
-    </svg>
-  );
-}
-function IconFlip() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
-      <rect x="2" y="7" width="20" height="14" rx="2.5" stroke="currentColor" strokeWidth="1.5" />
-      <circle cx="12" cy="14" r="4" stroke="currentColor" strokeWidth="1.4" />
-      <path d="M9 4.5 Q12 2 15 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
-      <polyline points="13.5,3 15,4.5 13.5,6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-function IconTorch() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
-      <path d="M9 2 H15 L20 21 H4 Z" fill="currentColor" opacity="0.2" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-      <rect x="8.5" y="0.5" width="7" height="3.5" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
-      <circle cx="12" cy="2.25" r="1" fill="currentColor" />
-    </svg>
-  );
-}
+// MARKER_BREAKDOWN + the dock icon helpers (IconRecord / IconFlip / IconTorch)
+// moved to their respective component files (broadcast/CameraHud.tsx,
+// camera/CameraDock.tsx). The 2026-05-22 camera overhaul collapsed the
+// scattered chrome state into one grid wrapper + one dock.
 
 // Top-left status state — passed through to the BroadcastBug component
 // which owns label + visual treatment. Kept here so the priority ladder
@@ -1637,98 +1606,22 @@ export function CameraScreen() {
           <span className={s.shutterCore} aria-hidden="true" />
         </button>
 
-        {/* ── Slim secondary dock — Scenes · Settings · Clip Rec ────────
-             Sits BETWEEN the shutter and the BottomNav. Semi-transparent
-             gradient so the camera feed bleeds through. When the active
-             scene asks for a simplified dock (Vigil) we drop the
-             modifier class that centres the remaining two buttons so they
-             don't end up stranded at opposite edges of the 56px bar. */}
-        <div
-          className={`${s.dockSlim} ${activeScene?.simplifiedDock ? s.dockSlimSimplified : ""}`.trim()}
-          role="toolbar"
-          aria-label="Camera secondary controls"
-        >
-          <button
-            type="button"
-            className={s.dockSlimBtn}
-            onClick={() => setSceneSheetOpen(true)}
-            aria-label="Open scene picker"
-            title="Scenes"
-          >
-            <span className={s.dockSlimLabel}>Scenes</span>
-          </button>
-
-          {/* Settings cog removed from the dock — the BottomNav already
-              owns the route at /setup, and on a 360px-wide phone the dock
-              row was cramming Scenes / Settings / ScreenRec / ClipRec /
-              Flip / Torch into 56px tall slots with the SCENES picker chip
-              colliding with the cog icon. Operators reach settings via the
-              BottomNav Setup tab; this dock stays camera-affordances-only. */}
-
-          {/* Simplified-dock scenes (Vigil) hide the secondary buttons so
-              the cinematic framing isn't broken by chip-shaped chrome. The
-              BIG SHUTTER still handles start/stop; everything else lives one
-              tap away via Scenes or Settings. */}
-          {!activeScene?.simplifiedDock && (
-            <>
-              <ScreenRecordButton
-                investigationId={session.current?.id ?? null}
-                classNames={{
-                  idle:   s.dockSlimBtn,
-                  active: `${s.dockSlimBtn} ${s.dockSlimBtnRec}`,
-                  icon:   s.dockSlimIcon,
-                  label:  s.dockSlimLabel,
-                }}
-              />
-
-              {/* Inline compositor clip-record — small (not the primary button).
-                  Honours the same recordToggleRef the shutter would use if the
-                  operator wanted a clip without ending the session. */}
-              <button
-                type="button"
-                className={`${s.dockSlimBtn} ${broadcastState.recording ? s.dockSlimBtnRec : ""}`.trim()}
-                onClick={() => recordToggleRef.current?.()}
-                disabled={!cameraState.streamOn}
-                aria-pressed={broadcastState.recording}
-                aria-label={broadcastState.recording ? "Stop clip recording" : "Record clip"}
-                title={broadcastState.recording ? "Stop clip" : "Clip Rec"}
-              >
-                <span className={s.dockSlimIcon} aria-hidden="true"><IconRecord /></span>
-                <span className={s.dockSlimLabel}>{broadcastState.recording ? "Stop" : "Clip"}</span>
-              </button>
-
-              {/* Flip camera — single tap toggles rear ↔ front. (Was previously
-                  wired as a double-tap gesture; double-tap is now marker drop.) */}
-              <button
-                type="button"
-                className={s.dockSlimBtn}
-                onClick={() => flipCameraRef.current?.()}
-                disabled={!cameraState.streamOn}
-                aria-label={cameraState.facingMode === "environment" ? "Switch to front camera" : "Switch to rear camera"}
-                title="Flip camera"
-              >
-                <span className={s.dockSlimIcon} aria-hidden="true"><IconFlip /></span>
-                <span className={s.dockSlimLabel}>{cameraState.facingMode === "environment" ? "Rear" : "Front"}</span>
-              </button>
-
-              {/* Torch — only rendered when the active camera reports torch
-                  support. Front cameras and most laptops won't expose it. */}
-              {cameraState.torchSupported && (
-                <button
-                  type="button"
-                  className={`${s.dockSlimBtn} ${cameraState.torchOn ? s.dockSlimBtnRec : ""}`.trim()}
-                  onClick={() => torchToggleRef.current?.()}
-                  aria-pressed={cameraState.torchOn}
-                  aria-label={cameraState.torchOn ? "Turn torch off" : "Turn torch on"}
-                  title="Torch"
-                >
-                  <span className={s.dockSlimIcon} aria-hidden="true"><IconTorch /></span>
-                  <span className={s.dockSlimLabel}>Torch</span>
-                </button>
-              )}
-            </>
-          )}
-        </div>
+        {/* ── Bottom dock — redesigned, full-word labels + icons ───────
+             CameraDock replaces the inline dockSlim. Visibility / wiring
+             contract documented in components/camera/CameraDock.tsx.
+             It mounts ScreenRecordButton internally so the iOS-tip /
+             MediaRecorder branch the button owns stays one level deep. */}
+        <CameraDock
+          simplifiedDock={activeScene?.simplifiedDock === true}
+          broadcastRecording={broadcastState.recording}
+          cameraState={cameraState}
+          recordToggleRef={recordToggleRef}
+          flipCameraRef={flipCameraRef}
+          torchToggleRef={torchToggleRef}
+          onScenesOpen={() => setSceneSheetOpen(true)}
+          onMarkersOpen={() => navigate("/review")}
+          investigationId={session.current?.id ?? null}
+        />
       </div>
 
       {/* Bottom-sheet scene picker — owned by Worker C. Opens when the
