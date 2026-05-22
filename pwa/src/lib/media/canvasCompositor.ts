@@ -382,6 +382,32 @@ interface MeterTokens {
   evpPaperInk: string;
   evpPaperStamp: string;
   evpPaperShadow: string;
+  // Phase B — Faux-IR full-spectrum badge (filter math itself doesn't depend
+  // on theme tokens; this palette only colours the on-frame label pill).
+  fullspecBadgeBg: string;
+  fullspecBadgeRim: string;
+  fullspecBadgeText: string;
+  // Phase B — Analog EMF galvanometer (brushed-aluminum bezel + cream face).
+  galvoBody: string;
+  galvoBodyEdge: string;
+  galvoFace: string;
+  galvoFaceEdge: string;
+  galvoTick: string;
+  galvoNeedle: string;
+  galvoRedzone: string;
+  galvoSilkscreen: string;
+  galvoPivot: string;
+  // Phase B — PIR motion detector (Fresnel dome + trigger LED).
+  motionDomeBody: string;
+  motionDomeEdge: string;
+  motionDomeLens: string;
+  motionDomeLine: string;
+  motionBody: string;
+  motionBodyEdge: string;
+  motionSilkscreen: string;
+  motionLedIdle: string;
+  motionLedTrigger: string;
+  motionLedGlow: string;
 }
 
 /** Hardcoded fallback palette — matches the default `:root` block in tokens.css. */
@@ -447,6 +473,29 @@ const METER_TOKEN_FALLBACK: MeterTokens = {
   evpPaperInk:         "#3a2a16",
   evpPaperStamp:       "#9a3018",
   evpPaperShadow:      "rgba(0, 0, 0, 0.32)",
+  // Phase B fallbacks — kept in sync with the :root defaults in tokens.css.
+  fullspecBadgeBg:     "rgba(70, 18, 84, 0.78)",
+  fullspecBadgeRim:    "#c47ad8",
+  fullspecBadgeText:   "#f0e0ff",
+  galvoBody:           "#b8bcc0",
+  galvoBodyEdge:       "#6a6e72",
+  galvoFace:           "#f4f1e8",
+  galvoFaceEdge:       "#c8c0a4",
+  galvoTick:           "#1a1a1a",
+  galvoNeedle:         "#2a2a2a",
+  galvoRedzone:        "#c41e1e",
+  galvoSilkscreen:     "#2a2a2a",
+  galvoPivot:          "#4a4a4a",
+  motionDomeBody:      "#e8e4d8",
+  motionDomeEdge:      "#b8b4a8",
+  motionDomeLens:      "#cac6b8",
+  motionDomeLine:      "rgba(46, 46, 50, 0.45)",
+  motionBody:          "#2a2a2c",
+  motionBodyEdge:      "#0e0e10",
+  motionSilkscreen:    "#d8d8d8",
+  motionLedIdle:       "#3a0e0e",
+  motionLedTrigger:    "#ff3a3a",
+  motionLedGlow:       "rgba(255, 58, 58, 0.55)",
 };
 
 /**
@@ -529,6 +578,29 @@ function readMeterTokens(): MeterTokens {
     evpPaperInk:         pick("--evp-paper-ink",         METER_TOKEN_FALLBACK.evpPaperInk),
     evpPaperStamp:       pick("--evp-paper-stamp",       METER_TOKEN_FALLBACK.evpPaperStamp),
     evpPaperShadow:      pick("--evp-paper-shadow",      METER_TOKEN_FALLBACK.evpPaperShadow),
+    // Phase B — Faux-IR full-spectrum + EMF galvanometer + PIR motion detector.
+    fullspecBadgeBg:     pick("--fullspec-badge-bg",     METER_TOKEN_FALLBACK.fullspecBadgeBg),
+    fullspecBadgeRim:    pick("--fullspec-badge-rim",    METER_TOKEN_FALLBACK.fullspecBadgeRim),
+    fullspecBadgeText:   pick("--fullspec-badge-text",   METER_TOKEN_FALLBACK.fullspecBadgeText),
+    galvoBody:           pick("--galvo-body",            METER_TOKEN_FALLBACK.galvoBody),
+    galvoBodyEdge:       pick("--galvo-body-edge",       METER_TOKEN_FALLBACK.galvoBodyEdge),
+    galvoFace:           pick("--galvo-face",            METER_TOKEN_FALLBACK.galvoFace),
+    galvoFaceEdge:       pick("--galvo-face-edge",       METER_TOKEN_FALLBACK.galvoFaceEdge),
+    galvoTick:           pick("--galvo-tick",            METER_TOKEN_FALLBACK.galvoTick),
+    galvoNeedle:         pick("--galvo-needle",          METER_TOKEN_FALLBACK.galvoNeedle),
+    galvoRedzone:        pick("--galvo-redzone",         METER_TOKEN_FALLBACK.galvoRedzone),
+    galvoSilkscreen:     pick("--galvo-silkscreen",      METER_TOKEN_FALLBACK.galvoSilkscreen),
+    galvoPivot:          pick("--galvo-pivot",           METER_TOKEN_FALLBACK.galvoPivot),
+    motionDomeBody:      pick("--motion-dome-body",      METER_TOKEN_FALLBACK.motionDomeBody),
+    motionDomeEdge:      pick("--motion-dome-edge",      METER_TOKEN_FALLBACK.motionDomeEdge),
+    motionDomeLens:      pick("--motion-dome-lens",      METER_TOKEN_FALLBACK.motionDomeLens),
+    motionDomeLine:      pick("--motion-dome-line",      METER_TOKEN_FALLBACK.motionDomeLine),
+    motionBody:          pick("--motion-body",           METER_TOKEN_FALLBACK.motionBody),
+    motionBodyEdge:      pick("--motion-body-edge",      METER_TOKEN_FALLBACK.motionBodyEdge),
+    motionSilkscreen:    pick("--motion-silkscreen",     METER_TOKEN_FALLBACK.motionSilkscreen),
+    motionLedIdle:       pick("--motion-led-idle",       METER_TOKEN_FALLBACK.motionLedIdle),
+    motionLedTrigger:    pick("--motion-led-trigger",    METER_TOKEN_FALLBACK.motionLedTrigger),
+    motionLedGlow:       pick("--motion-led-glow",       METER_TOKEN_FALLBACK.motionLedGlow),
   };
 }
 

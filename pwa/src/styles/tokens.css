@@ -263,6 +263,65 @@
   --evp-paper-ink:         #3a2a16;     /* sepia ink text */
   --evp-paper-stamp:       #9a3018;     /* red rubber-stamp tag colour */
   --evp-paper-shadow:      rgba(0, 0, 0, 0.32);  /* drop shadow under the slip */
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     Skeuomorphic gear meters — Phase B: false-color filter, analog EMF
+     galvanometer, PIR motion sensor
+     ─────────────────────────────────────────────────────────────────────────
+     Phase B fills in the last three instruments from the original tool
+     catalog:
+
+       1. Full-spectrum camera — a false-color video filter. Phone cameras
+          have an IR-cut filter; we can't remove it in software. What we CAN
+          do is shift hue + boost contrast so the feed reads like a modified
+          DSLR — magenta/violet tint, slight saturation bump, +contrast. The
+          on-screen pill labels this "FAUX-IR PROCESSING" (never "infrared").
+          Only the badge palette lives here; the actual filter math is
+          inside canvasCompositor.applyFullSpectrumFilter so the gear feel
+          is consistent across recordings + the live preview.
+
+       2. EMF galvanometer — analog needle-meter mockup (1960s field-meter
+          aesthetic). White face, black tick marks, brushed-aluminum bezel,
+          red zone past 80%. Reads the SAME magnetometer z-score as the
+          K-II — different gear, same signal. Silkscreen reads "EMF FIELD
+          METER" / "MAG FLUX" — gear-style label, no anomaly claim.
+
+       3. PIR motion detector — passive-infrared sensor mockup. White
+          plastic Fresnel-lens dome (concentric circles), red trigger LED
+          below that pulses on detected motion. Honest framing: this is
+          accelerometer-driven, NOT a real PIR sensor. Silkscreen reads
+          "PIR MOTION SENSE / ACCEL TRIGGER" to make the data source
+          explicit.
+     ───────────────────────────────────────────────────────────────────────── */
+
+  /* Faux-IR full-spectrum filter — badge palette only; the filter itself is
+     hue-rotation + saturation + contrast applied to the video frame. */
+  --fullspec-badge-bg:     rgba(70, 18, 84, 0.78);  /* deep violet pill */
+  --fullspec-badge-rim:    #c47ad8;                 /* magenta rim */
+  --fullspec-badge-text:   #f0e0ff;                 /* near-white pill text */
+
+  /* EMF galvanometer — analog needle, brushed-aluminum bezel */
+  --galvo-body:        #b8bcc0;     /* brushed aluminum bezel */
+  --galvo-body-edge:   #6a6e72;     /* darker rim shadow */
+  --galvo-face:        #f4f1e8;     /* cream/white scale face */
+  --galvo-face-edge:   #c8c0a4;     /* face rim */
+  --galvo-tick:        #1a1a1a;     /* black ink tick marks + numbers */
+  --galvo-needle:      #2a2a2a;     /* black pivot needle */
+  --galvo-redzone:     #c41e1e;     /* red overload zone past 80% */
+  --galvo-silkscreen:  #2a2a2a;     /* dark grey "EMF" label on bezel */
+  --galvo-pivot:       #4a4a4a;     /* dark grey pivot cap */
+
+  /* PIR motion detector — Fresnel dome + trigger LED */
+  --motion-dome-body:    #e8e4d8;       /* white plastic dome */
+  --motion-dome-edge:    #b8b4a8;       /* dome rim shadow */
+  --motion-dome-lens:    #cac6b8;       /* Fresnel lens segment fill */
+  --motion-dome-line:    rgba(46, 46, 50, 0.45);  /* lens segment lines */
+  --motion-body:         #2a2a2c;       /* PIR case under the dome */
+  --motion-body-edge:    #0e0e10;       /* case edge */
+  --motion-silkscreen:   #d8d8d8;       /* white label on case */
+  --motion-led-idle:     #3a0e0e;       /* dim red when idle */
+  --motion-led-trigger:  #ff3a3a;       /* bright red when triggered */
+  --motion-led-glow:     rgba(255, 58, 58, 0.55);  /* halo on trigger */
 }
 
 /* ==========================================================================
@@ -442,6 +501,40 @@
   --evp-paper-ink:         #c41e3a;
   --evp-paper-stamp:       #c41e3a;
   --evp-paper-shadow:      rgba(196, 30, 58, 0.28);
+
+  /* Phase B Faux-IR full-spectrum badge — magenta tint would burn dark-adapted
+     vision; collapse to the deep-red band. Filter strength is also reduced in
+     scotopic so the operator's eye-adaptation isn't washed out. */
+  --fullspec-badge-bg:     rgba(74, 14, 14, 0.78);
+  --fullspec-badge-rim:    #c41e3a;
+  --fullspec-badge-text:   #e33645;
+
+  /* Phase B EMF galvanometer — brushed aluminum + cream face would punch
+     short-wavelength light through; collapse to the deep-red band while
+     keeping luminance contrast between face, ticks, and needle. */
+  --galvo-body:        #2a0808;
+  --galvo-body-edge:   #1a0606;
+  --galvo-face:        #1a0404;
+  --galvo-face-edge:   #2a0808;
+  --galvo-tick:        #c41e3a;
+  --galvo-needle:      #e33645;
+  --galvo-redzone:     #c41e3a;
+  --galvo-silkscreen:  #7a1a1a;
+  --galvo-pivot:       #5a1010;
+
+  /* Phase B PIR motion detector — white plastic dome + bright trigger LED
+     would both burn dark-adapted vision; collapse to deep red. The IDLE / TRIG
+     luminance step is preserved so the dome still pulses visibly on motion. */
+  --motion-dome-body:    #2a0808;
+  --motion-dome-edge:    #5a1010;
+  --motion-dome-lens:    #3a0c0c;
+  --motion-dome-line:    rgba(196, 30, 58, 0.30);
+  --motion-body:         #0a0202;
+  --motion-body-edge:    #050000;
+  --motion-silkscreen:   #7a1a1a;
+  --motion-led-idle:     #3a0808;
+  --motion-led-trigger:  #c41e3a;
+  --motion-led-glow:     rgba(196, 30, 58, 0.45);
 }
 
 /* No additive cyan glow in scotopic mode — replace with deep-red glow. */
