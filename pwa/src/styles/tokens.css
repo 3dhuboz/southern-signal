@@ -219,6 +219,50 @@
   --ovilus-lcd-green:    #5cff85;     /* bright lit pixel */
   --ovilus-lcd-glow:     rgba(92, 255, 133, 0.40);
   --ovilus-lcd-silkscreen: #c8c8c8;   /* "OVILUS" label on bezel */
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     Skeuomorphic gear meters — sensors lab panel + EVP paper (Phase A.3)
+     ─────────────────────────────────────────────────────────────────────────
+     Phase A.3 swaps the last flat-styled meter surface for a rack-mount lab
+     panel: a dark anodized-steel faceplate with four corner screws, each
+     sensor (MAG / ACC / GYRO / BARO) rendered as a label-LCD + value-LCD
+     pair using the same dot-matrix + 7-segment glyph helpers the Spirit Box
+     and Ovilus LCDs already use. Honest copy only — silkscreen reads "FIELD
+     SENSORS"; per-row labels are literal sensor abbreviations.
+
+     EVP readout — formerly drawItcReadout, now EVP-only after A.2 moved
+     Spirit Box + Ovilus to dedicated LCDs. Gains a thin sepia paper-teletype
+     frame so the transcript reads as a printed evidence slip rather than a
+     plain text block. Stamps remain literal ("EVP CAPTURE", "ON-DEVICE
+     WHISPER") — no real-ghost claims.
+     ───────────────────────────────────────────────────────────────────────── */
+
+  /* Sensors lab panel — rack-mount anodized steel faceplate */
+  --lab-panel-body:        #1f2326;     /* anodized dark steel */
+  --lab-panel-body-edge:   #0e1012;     /* recessed edge shadow */
+  --lab-panel-faceplate:   #2a2e32;     /* brushed face plate highlight */
+  --lab-panel-screw:       #6a6f74;     /* brushed chrome screw head */
+  --lab-panel-screw-slot:  #1a1c1e;     /* dark phillips/slot inset */
+  --lab-panel-silkscreen:  #c8c8c8;     /* "FIELD SENSORS" + per-row label ink */
+  --lab-panel-rail:        #0a0b0c;     /* recessed LCD strip backplane */
+  /* Per-row mini-LCD palettes — reuse the same green dot-matrix + amber
+     7-segment palette the Ovilus + Spirit Box already use, but with a slight
+     dim so the panel doesn't outshine the dedicated ITC LCDs. */
+  --lab-lcd-label-bg:      #050a06;     /* mini dot-matrix backplane */
+  --lab-lcd-label-off:     #0d1f10;     /* off pixel */
+  --lab-lcd-label-on:      #4ed876;     /* lit pixel (dimmer green than Ovilus) */
+  --lab-lcd-label-glow:    rgba(78, 216, 118, 0.32);
+  --lab-lcd-value-bg:      #100800;     /* mini 7-segment backplane */
+  --lab-lcd-value-off:     #1f1300;     /* off segment */
+  --lab-lcd-value-on:      #e8a020;     /* lit segment (dimmer amber than Spirit Box) */
+  --lab-lcd-value-glow:    rgba(232, 160, 32, 0.40);
+
+  /* EVP readout — sepia paper teletype frame around the transcript */
+  --evp-paper-bg:          #d8c89c;     /* warm cream paper face */
+  --evp-paper-edge:        #b09a64;     /* darker paper rim shadow */
+  --evp-paper-ink:         #3a2a16;     /* sepia ink text */
+  --evp-paper-stamp:       #9a3018;     /* red rubber-stamp tag colour */
+  --evp-paper-shadow:      rgba(0, 0, 0, 0.32);  /* drop shadow under the slip */
 }
 
 /* ==========================================================================
@@ -369,6 +413,35 @@
   --ovilus-lcd-green:    #c41e3a;   /* "green" stays red under scotopic */
   --ovilus-lcd-glow:     rgba(196, 30, 58, 0.40);
   --ovilus-lcd-silkscreen: #7a1a1a;
+
+  /* Sensors lab panel — scotopic-safe re-skin. Brushed steel + green/amber
+     mini-LCDs would burn dark-adapted vision; collapse everything to the
+     ≥650 nm red band while keeping the luminance step between body / face /
+     LCD lit segments so the panel still reads as moulded gear. */
+  --lab-panel-body:        #0a0202;
+  --lab-panel-body-edge:   #050000;
+  --lab-panel-faceplate:   #1a0606;
+  --lab-panel-screw:       #5a1010;
+  --lab-panel-screw-slot:  #0a0202;
+  --lab-panel-silkscreen:  #7a1a1a;
+  --lab-panel-rail:        #050000;
+  --lab-lcd-label-bg:      #0a0202;
+  --lab-lcd-label-off:     #2a0808;
+  --lab-lcd-label-on:      #c41e3a;   /* "green" mini-LCD stays red */
+  --lab-lcd-label-glow:    rgba(196, 30, 58, 0.32);
+  --lab-lcd-value-bg:      #0a0202;
+  --lab-lcd-value-off:     #2a0808;
+  --lab-lcd-value-on:      #c41e3a;   /* "amber" mini-LCD stays red */
+  --lab-lcd-value-glow:    rgba(196, 30, 58, 0.40);
+
+  /* EVP paper teletype — cream paper + sepia ink would both burn dark-adapted
+     vision. Collapse to deep-red paper + brighter-red ink so the slip still
+     reads as printed evidence without leaking short-wavelength light. */
+  --evp-paper-bg:          #2a0808;
+  --evp-paper-edge:        #5a1010;
+  --evp-paper-ink:         #c41e3a;
+  --evp-paper-stamp:       #c41e3a;
+  --evp-paper-shadow:      rgba(196, 30, 58, 0.28);
 }
 
 /* No additive cyan glow in scotopic mode — replace with deep-red glow. */
