@@ -267,6 +267,12 @@ function scaleFactor(W: number, H: number): number {
  * Lives on the compositor closure so allocations survive only as long as the
  * compositor instance. Each gradient is keyed by the inputs that affect its
  * geometry/colour; invalidation happens via cache.key string compare.
+ *
+ * The skeuomorphic gear meters (K-II + REM Pod) also pin smoothing state and
+ * theme-token snapshots here so each compositor instance keeps its own LED
+ * smoother (no cross-talk between recorder + broadcast compositors that may
+ * co-exist on the same page) and a single resolved theme palette (cheap re-
+ * read on theme flip rather than 30 reads/sec).
  */
 interface FrameContext {
   W: number;
@@ -274,6 +280,138 @@ interface FrameContext {
   s: number;
   edgeGlow: { key: string; grad: CanvasGradient } | null;
   audioBar: { key: string; grad: CanvasGradient } | null;
+  /**
+   * Resolved meter palette (CSS custom properties → hex / rgba strings).
+   * `themeKey` is `data-theme` + `data-scotopic-level` concatenated; re-resolves
+   *  when the operator flips themes mid-session. `null` = not yet resolved.
+   */
+  meterTokens: { themeKey: string; tokens: MeterTokens } | null;
+  /**
+   * K-II LED smoother — tracks the displayed LED count as a float so we can
+   * lerp towards the target (integer 1–5) over ~200 ms. Without this the LEDs
+   * pop frame-to-frame on every EMF z-score wobble, which looks fake.
+   * `lastMs` = last update wall-clock so the lerp is frame-rate independent.
+   */
+  kiiSmooth: { led: number; lastMs: number } | null;
+  /**
+   * REM Pod pulse — emitted on z-score ≥ 2.5σ. `startedAtMs` lets the next 600 ms
+   * of frames draw the expanding/fading ring without restarting unless a new
+   * trigger fires while a pulse is still in-flight.
+   */
+  remPulse: { startedAtMs: number; lastZ: number } | null;
+}
+
+/**
+ * Resolved theme tokens for the skeuomorphic gear meters. Read once per theme
+ * flip from `document.documentElement` (via `getComputedStyle`) and cached on
+ * the FrameContext. Fallbacks here match the default-theme values from
+ * `tokens.css` so the meters still render in jsdom / SSR / detached-canvas
+ * contexts where `getComputedStyle` returns empty strings for custom props.
+ */
+interface MeterTokens {
+  kiiBody: string;
+  kiiBodyEdge: string;
+  kiiSilkscreen: string;
+  kiiBezel: string;
+  kiiLedOff: string;
+  kiiLedGreen: string;
+  kiiLedYellow: string;
+  kiiLedOrange: string;
+  kiiLedRed: string;
+  kiiLedGlow: string;
+  remBody: string;
+  remBodyEdge: string;
+  remSilkscreen: string;
+  remAntenna: string;
+  remLedR: string;
+  remLedG: string;
+  remLedB: string;
+  remLedY: string;
+  remLedOff: string;
+  remPulse: string;
+}
+
+/** Hardcoded fallback palette — matches the default `:root` block in tokens.css. */
+const METER_TOKEN_FALLBACK: MeterTokens = {
+  kiiBody:       "#d4b829",
+  kiiBodyEdge:   "#a08a17",
+  kiiSilkscreen: "#1a1a1a",
+  kiiBezel:      "#0a0a0a",
+  kiiLedOff:     "#2a2a2a",
+  kiiLedGreen:   "#2eee5e",
+  kiiLedYellow:  "#f5d028",
+  kiiLedOrange:  "#f78a1c",
+  kiiLedRed:     "#ef2e2e",
+  kiiLedGlow:    "rgba(255, 255, 255, 0.55)",
+  remBody:       "#1a1a1a",
+  remBodyEdge:   "#2e2e2e",
+  remSilkscreen: "#d8d8d8",
+  remAntenna:    "#d4d4d4",
+  remLedR:       "#ef2e2e",
+  remLedG:       "#2eee5e",
+  remLedB:       "#2eb6ef",
+  remLedY:       "#f5d028",
+  remLedOff:     "#1a1a1a",
+  remPulse:      "rgba(46, 182, 239, 0.6)",
+};
+
+/**
+ * Snapshot the meter palette from `:root` custom properties. Falls back per-
+ * token to the default values from tokens.css when `getComputedStyle` returns
+ * an empty string — which happens in three real cases:
+ *   1. jsdom/happy-dom tests where custom-prop computation isn't wired,
+ *   2. SSR where `document` exists but no stylesheet has been applied yet,
+ *   3. a future stylesheet split where the theme block hasn't been loaded.
+ * In all three the burn-in still renders correct default colours.
+ */
+function readMeterTokens(): MeterTokens {
+  if (typeof document === "undefined" || !document.documentElement) {
+    return METER_TOKEN_FALLBACK;
+  }
+  const cs = getComputedStyle(document.documentElement);
+  const pick = (name: string, fallback: string): string => {
+    const v = cs.getPropertyValue(name).trim();
+    return v.length > 0 ? v : fallback;
+  };
+  return {
+    kiiBody:       pick("--kii-body",       METER_TOKEN_FALLBACK.kiiBody),
+    kiiBodyEdge:   pick("--kii-body-edge",  METER_TOKEN_FALLBACK.kiiBodyEdge),
+    kiiSilkscreen: pick("--kii-silkscreen", METER_TOKEN_FALLBACK.kiiSilkscreen),
+    kiiBezel:      pick("--kii-bezel",      METER_TOKEN_FALLBACK.kiiBezel),
+    kiiLedOff:     pick("--kii-led-off",    METER_TOKEN_FALLBACK.kiiLedOff),
+    kiiLedGreen:   pick("--kii-led-green",  METER_TOKEN_FALLBACK.kiiLedGreen),
+    kiiLedYellow:  pick("--kii-led-yellow", METER_TOKEN_FALLBACK.kiiLedYellow),
+    kiiLedOrange:  pick("--kii-led-orange", METER_TOKEN_FALLBACK.kiiLedOrange),
+    kiiLedRed:     pick("--kii-led-red",    METER_TOKEN_FALLBACK.kiiLedRed),
+    kiiLedGlow:    pick("--kii-led-glow",   METER_TOKEN_FALLBACK.kiiLedGlow),
+    remBody:       pick("--rem-body",       METER_TOKEN_FALLBACK.remBody),
+    remBodyEdge:   pick("--rem-body-edge",  METER_TOKEN_FALLBACK.remBodyEdge),
+    remSilkscreen: pick("--rem-silkscreen", METER_TOKEN_FALLBACK.remSilkscreen),
+    remAntenna:    pick("--rem-antenna",    METER_TOKEN_FALLBACK.remAntenna),
+    remLedR:       pick("--rem-led-r",      METER_TOKEN_FALLBACK.remLedR),
+    remLedG:       pick("--rem-led-g",      METER_TOKEN_FALLBACK.remLedG),
+    remLedB:       pick("--rem-led-b",      METER_TOKEN_FALLBACK.remLedB),
+    remLedY:       pick("--rem-led-y",      METER_TOKEN_FALLBACK.remLedY),
+    remLedOff:     pick("--rem-led-off",    METER_TOKEN_FALLBACK.remLedOff),
+    remPulse:      pick("--rem-pulse",      METER_TOKEN_FALLBACK.remPulse),
+  };
+}
+
+/**
+ * Cache-aware meter-token getter. The `data-theme` + `data-scotopic-level`
+ * tuple is the cache key, so flipping scotopic on/off rebuilds the palette
+ * exactly once on the next frame.
+ */
+function getMeterTokens(frame: FrameContext): MeterTokens {
+  if (typeof document === "undefined" || !document.documentElement) {
+    return frame.meterTokens?.tokens ?? METER_TOKEN_FALLBACK;
+  }
+  const root = document.documentElement;
+  const themeKey = `${root.getAttribute("data-theme") ?? ""}|${root.getAttribute("data-scotopic-level") ?? ""}`;
+  if (!frame.meterTokens || frame.meterTokens.themeKey !== themeKey) {
+    frame.meterTokens = { themeKey, tokens: readMeterTokens() };
+  }
+  return frame.meterTokens.tokens;
 }
 
 export function createCanvasCompositor(opts: CanvasCompositorOptions): CanvasCompositor {
@@ -288,7 +426,11 @@ export function createCanvasCompositor(opts: CanvasCompositorOptions): CanvasCom
   // Frame-geometry + gradient caches. Recomputed only when source dimensions
   // change — sizeCanvas reads video.videoWidth every tick (cheap), but the
   // derived scale factor + gradient objects are stable per resolution.
-  const frame: FrameContext = { W: 0, H: 0, s: 1, edgeGlow: null, audioBar: null };
+  const frame: FrameContext = {
+    W: 0, H: 0, s: 1,
+    edgeGlow: null, audioBar: null,
+    meterTokens: null, kiiSmooth: null, remPulse: null,
+  };
 
   // Context handle is also stable — getContext returns a cached instance, but
   // we hoist the call so the hot path doesn't even round-trip through it.
@@ -304,7 +446,9 @@ export function createCanvasCompositor(opts: CanvasCompositorOptions): CanvasCom
       frame.H = h;
       frame.s = scaleFactor(w, h);
       // Geometry shifted — gradient objects baked against the old coords are
-      // now wrong. Drop them so the next frame rebuilds.
+      // now wrong. Drop them so the next frame rebuilds. LED smoothing state
+      // is geometry-independent (just a float count) so we keep it across
+      // size changes; the pulse animation likewise keeps running.
       frame.edgeGlow = null;
       frame.audioBar = null;
     }
@@ -412,12 +556,16 @@ function renderFrame(
     drawSensorReadout(ctx, W, H, overlay, band, s);
   }
 
-  // 4. Right-edge vertical instrument stack — K-II on top, REM Pod below.
+  // 4. Right-edge vertical instrument stack — skeuomorphic gear meters.
+  //    K-II EMF (yellow handheld) on top, REM Pod (black tower) below.
+  //    Top anchor is shared so the two meters always line up; each meter
+  //    function owns its own height + 8 px gap to the next.
+  const meterTopY = Math.round(H * 0.30);
   if (channels.kiiMeter) {
-    drawKiiMeter(ctx, W, H, overlay.activityBand, overlay.emfZScore, s);
+    drawKiiMeter(ctx, W, overlay.activityBand, overlay.emfZScore, s, meterTopY, frame);
   }
   if (channels.remPod) {
-    drawRemPod(ctx, W, H, overlay.activityBand, overlay.emfZScore, s);
+    drawRemPod(ctx, W, overlay.activityBand, overlay.emfZScore, s, meterTopY, frame);
   }
 
   // 5. Audio meter — left edge, vertical bar.
@@ -944,80 +1092,202 @@ const REM_Z_TABLE: ReadonlyArray<readonly [number, number]> = [
   [5.0, 6], [3.5, 5], [2.5, 4], [2.0, 3], [1.5, 2], [1.0, 1], [0, 0],
 ];
 
+/** K-II body dimensions (logical px @ s=1). Wider than tall — it's a handheld. */
+const KII_BODY_W = 96;
+const KII_BODY_H = 40;
+/** Skeuomorphic K-II LED palette indexed bottom→top of bar: 2× green, yellow, orange, red. */
+type KiiLedSlot = "green" | "yellow" | "orange" | "red";
+const KII_LED_RAMP: readonly KiiLedSlot[] = ["green", "green", "yellow", "orange", "red"];
+
 /**
- * Virtual K-II EMF Meter — five-LED stack mounted on the RIGHT EDGE.
+ * Skeuomorphic K-II EMF Meter — yellow handheld, drawn at the right edge.
  *
- * Layout (spec):
- *   width  ~40px
- *   height ~120px (5 LEDs × ~18px stride + label + padding)
- *   "K-II" label (10px) above the LEDs
- *   background rgba(0,0,0,0.35) rounded box
- *   LED colour ramp: green → green → yellow → orange → red (1=bottom, 5=top)
- *   Lit count driven by emfZScore (primary) or activityBand (fallback)
+ * Anatomy (logical px, s scales everything):
+ *   ┌────────────────────────────┐  ← 96 × 40
+ *   │  ▮  K-II EMF METER         │  antenna nub + black silkscreen
+ *   │  ╔══════════════════════╗  │  recessed black bezel
+ *   │  ║  ●  ●  ●  ●  ●       ║  │  5 LEDs (g g y o r) — first N lit
+ *   │  ╚══════════════════════╝  │
+ *   └────────────────────────────┘
+ *
+ * LED count is driven by `emfZScore` (z ≥ 5σ → 5 LEDs; z < 0σ → 1 LED resting)
+ * with `activityBand` as the fallback when the sensor isn't reporting. The
+ * display LED count is smoothed via `frame.kiiSmooth` so a single noisy z-score
+ * frame doesn't pop the LEDs on/off — the bar lerps to the target over ~200 ms.
+ * All colours resolve through `getMeterTokens(frame)` so the scotopic theme
+ * automatically re-skins the meter without touching this draw code.
  */
 function drawKiiMeter(
   ctx: CanvasRenderingContext2D,
   W: number,
-  H: number,
   band: OverlayState["activityBand"],
   emfZScore: number | undefined,
   s: number,
+  topY: number,
+  frame: FrameContext,
 ): void {
-  const litCount = (typeof emfZScore === "number" && Number.isFinite(emfZScore))
+  const tokens = getMeterTokens(frame);
+
+  // Target LED count from z-score (preferred) or activityBand (fallback).
+  const targetLed = (typeof emfZScore === "number" && Number.isFinite(emfZScore))
     ? zScoreToLeds(Math.abs(emfZScore), KII_Z_TABLE)
     : (KII_LIT[band] ?? 1);
 
-  // Size constants
-  const widgetW = Math.round(40 * s);
-  const widgetH = Math.round(120 * s);
-  const labelFontPx = Math.round(10 * s);
-  const margin = Math.round(12 * s);
-  const padY = Math.round(6 * s);
-  // Anchored under the data column (sensor block); offset 30% from top to
-  // keep both K-II and REM Pod visible while staying clear of the data block.
-  const x = W - margin - widgetW;
-  const y = Math.round(H * 0.30);
+  // Smooth towards the target. ~200 ms time-constant gives a soft glide
+  // without smearing real activity spikes longer than ~3 frames at 30fps.
+  const nowMs = (typeof performance !== "undefined" && typeof performance.now === "function")
+    ? performance.now()
+    : Date.now();
+  if (!frame.kiiSmooth) {
+    // Cold start — pin the smoother at the target so the first frame looks
+    // settled instead of lerping in from zero.
+    frame.kiiSmooth = { led: targetLed, lastMs: nowMs };
+  } else {
+    const dtMs = Math.max(0, nowMs - frame.kiiSmooth.lastMs);
+    const tau = 200; // ms time-constant
+    const alpha = 1 - Math.exp(-dtMs / tau);
+    frame.kiiSmooth.led += (targetLed - frame.kiiSmooth.led) * alpha;
+    frame.kiiSmooth.lastMs = nowMs;
+  }
+  // Round to the nearest LED; the smoother already prevents single-frame pops.
+  const litCount = Math.max(0, Math.min(5, Math.round(frame.kiiSmooth.led)));
 
-  drawSoftBox(ctx, x, y, widgetW, widgetH, "rgba(0,0,0,0.35)", "rgba(255,255,255,0.18)", 0.5);
+  // Geometry — body anchored against the right edge with a 12 px margin.
+  const bodyW = Math.round(KII_BODY_W * s);
+  const bodyH = Math.round(KII_BODY_H * s);
+  const margin = Math.round(12 * s);
+  const x = W - margin - bodyW;
+  const y = topY;
+  const radius = Math.round(6 * s);
 
   ctx.save();
-  // Label
-  ctx.font = `700 ${labelFontPx}px "JetBrains Mono", monospace`;
+
+  // 1. Drop shadow — soft, offset down so the body looks lifted off the frame.
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
+  ctx.shadowBlur = 6 * s;
+  ctx.shadowOffsetY = 3 * s;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.01)"; // shadow caster (alpha 0 wouldn't cast)
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.fill();
+  ctx.restore();
+
+  // 2. Body fill — vertical gradient (edge → body → edge) to fake plastic curvature.
+  const bodyGrad = ctx.createLinearGradient(0, y, 0, y + bodyH);
+  bodyGrad.addColorStop(0,    tokens.kiiBodyEdge);
+  bodyGrad.addColorStop(0.5,  tokens.kiiBody);
+  bodyGrad.addColorStop(1,    tokens.kiiBodyEdge);
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.fillStyle = bodyGrad;
+  ctx.fill();
+
+  // 3. Outline — darker rim picks out the body edge.
+  ctx.strokeStyle = tokens.kiiBodyEdge;
+  ctx.lineWidth = 1.5;
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.stroke();
+
+  // 4. Antenna nub — tiny black rectangle at the top centre.
+  const antennaW = Math.round(8 * s);
+  const antennaH = Math.round(6 * s);
+  const antennaX = x + (bodyW - antennaW) / 2;
+  const antennaY = y - antennaH + 1;
+  const antennaGrad = ctx.createLinearGradient(0, antennaY, 0, antennaY + antennaH);
+  antennaGrad.addColorStop(0, "#202020");
+  antennaGrad.addColorStop(1, "#080808");
+  ctx.fillStyle = antennaGrad;
+  ctx.fillRect(antennaX, antennaY, antennaW, antennaH);
+
+  // 5. "K-II EMF METER" silkscreen — black text, top-centred just below the
+  //    antenna. Uppercase / small-caps reads as moulded into the plastic.
+  const silkPx = Math.max(8, Math.round(9 * s));
+  ctx.font = `700 ${silkPx}px "Inter", system-ui, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
-  ctx.fillStyle = "rgba(255,255,255,0.78)";
-  ctx.fillText("K-II", x + widgetW / 2, y + padY);
+  ctx.fillStyle = tokens.kiiSilkscreen;
+  ctx.fillText("K-II EMF METER", x + bodyW / 2, y + Math.round(4 * s));
 
-  // LEDs — stacked vertically. Bottom LED = LED index 0 (green); top = 4 (red).
-  const labelArea = padY + labelFontPx + Math.round(4 * s);
-  const ledArea = widgetH - labelArea - padY;
-  const ledStride = ledArea / 5;
-  const ledR = Math.min(ledStride * 0.35, widgetW * 0.30);
-  const LED_COLORS = ["#33EE55", "#33EE55", "#FFDD00", "#FF8800", "#FF2222"] as const;
+  // 6. Recessed LED bezel — dark inset rounded rectangle near the bottom.
+  const bezelW = Math.round(80 * s);
+  const bezelH = Math.round(16 * s);
+  const bezelX = x + (bodyW - bezelW) / 2;
+  const bezelY = y + bodyH - bezelH - Math.round(4 * s);
+  const bezelR = Math.round(4 * s);
+  roundedRectPath(ctx, bezelX, bezelY, bezelW, bezelH, bezelR);
+  ctx.fillStyle = tokens.kiiBezel;
+  ctx.fill();
 
-  for (let i = 0; i < 5; i++) {
+  // 7. 5 LEDs evenly spaced horizontally inside the bezel.
+  const ledCount = 5;
+  const ledPadX = Math.round(6 * s);
+  const ledTrackW = bezelW - ledPadX * 2;
+  const ledStride = ledTrackW / ledCount;
+  const ledR = Math.min(ledStride * 0.40, bezelH * 0.40);
+  const ledCy = bezelY + bezelH / 2;
+  for (let i = 0; i < ledCount; i++) {
     const lit = i < litCount;
-    const col = LED_COLORS[i];
-    // Stack bottom-up: i=0 is the bottom-most LED.
-    const cy = y + labelArea + ledArea - ledStride * (i + 0.5);
-    const cx = x + widgetW / 2;
-    ctx.beginPath();
-    ctx.arc(cx, cy, ledR, 0, Math.PI * 2);
+    const slot = KII_LED_RAMP[i];
+    const litColor =
+      slot === "green"  ? tokens.kiiLedGreen :
+      slot === "yellow" ? tokens.kiiLedYellow :
+      slot === "orange" ? tokens.kiiLedOrange :
+                          tokens.kiiLedRed;
+    const cx = bezelX + ledPadX + ledStride * (i + 0.5);
+
     if (lit) {
-      ctx.shadowColor = col;
-      ctx.shadowBlur = ledR * 2.2;
-      ctx.fillStyle = col;
+      // Soft white halo behind lit LEDs — fakes the glow leaking past the
+      // plastic dome without needing a real bloom pass.
+      ctx.save();
+      const haloGrad = ctx.createRadialGradient(cx, ledCy, 0, cx, ledCy, ledR * 2.2);
+      haloGrad.addColorStop(0, tokens.kiiLedGlow);
+      haloGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
+      ctx.fillStyle = haloGrad;
+      ctx.beginPath();
+      ctx.arc(cx, ledCy, ledR * 2.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      ctx.beginPath();
+      ctx.arc(cx, ledCy, ledR, 0, Math.PI * 2);
+      ctx.fillStyle = litColor;
+      ctx.fill();
     } else {
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = "rgba(25,25,25,0.85)";
+      ctx.beginPath();
+      ctx.arc(cx, ledCy, ledR, 0, Math.PI * 2);
+      ctx.fillStyle = tokens.kiiLedOff;
+      ctx.fill();
     }
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.strokeStyle = lit ? col : "rgba(70,70,70,0.6)";
-    ctx.lineWidth = 1;
-    ctx.stroke();
   }
+
   ctx.restore();
+}
+
+/**
+ * Trace a rounded-rectangle path. Used by the skeuomorphic meters where we
+ * need to fill, stroke, and shadow the same shape multiple times without
+ * re-listing the moveTo/arcTo sequence. Radius is clamped to half the smaller
+ * dimension so tiny boxes still produce a sensible shape.
+ */
+function roundedRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+): void {
+  const rr = Math.max(0, Math.min(r, w / 2, h / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.lineTo(x + w - rr, y);
+  ctx.arcTo(x + w, y, x + w, y + rr, rr);
+  ctx.lineTo(x + w, y + h - rr);
+  ctx.arcTo(x + w, y + h, x + w - rr, y + h, rr);
+  ctx.lineTo(x + rr, y + h);
+  ctx.arcTo(x, y + h, x, y + h - rr, rr);
+  ctx.lineTo(x, y + rr);
+  ctx.arcTo(x, y, x + rr, y, rr);
+  ctx.closePath();
 }
 
 /** Maps activityBand → number of REM pod LEDs lit (0–6). Fallback when no z-score. */
@@ -1041,23 +1311,27 @@ const REM_LIT_BY_BAND: Record<OverlayState["activityBand"], number> = {
 function drawRemPod(
   ctx: CanvasRenderingContext2D,
   W: number,
-  H: number,
   activityBand: OverlayState["activityBand"],
   emfZScore: number | undefined,
   s: number,
+  topY: number,
+  _frame: FrameContext,
 ): void {
   const hasZ = typeof emfZScore === "number" && Number.isFinite(emfZScore);
   const zAbs = hasZ ? Math.abs(emfZScore as number) : 0;
   const litLeds = hasZ ? zScoreToLeds(zAbs, REM_Z_TABLE) : (REM_LIT_BY_BAND[activityBand] ?? 0);
 
   // Size constants — match K-II so the two stacks visually pair.
+  // NOTE: this is the legacy flat REM Pod; commit 3 swaps it for the
+  // skeuomorphic black-tower variant with antenna + 4-LED ring + pulse.
   const widgetW = Math.round(40 * s);
   const widgetH = Math.round(120 * s);
   const labelFontPx = Math.round(10 * s);
   const margin = Math.round(12 * s);
   const padY = Math.round(6 * s);
-  // Sit directly below the K-II meter (which lives at H*0.30) with an 8px gap.
-  const kiiBottom = Math.round(H * 0.30) + widgetH;
+  // Sit directly below the K-II meter (now ~40 px tall, not 120). Use the
+  // shared topY anchor + the new K-II body height + an 8 px gap.
+  const kiiBottom = topY + Math.round(KII_BODY_H * s);
   const x = W - margin - widgetW;
   const y = kiiBottom + Math.round(8 * s);
 
