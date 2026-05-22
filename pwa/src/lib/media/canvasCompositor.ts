@@ -866,6 +866,16 @@ function renderFrame(
     drawOvilusLcd(ctx, H, overlay.itc?.ovilus, overlay.sensors?.magnetometer, s, frame);
   }
 
+  // 5d. PIR motion detector — Fresnel-lens dome + trigger LED, anchored to
+  //     the right edge below the EMF galvanometer. Driven by the accel-
+  //     magnitude delta over frames, NOT a real PIR sensor (the silkscreen
+  //     and registry description both say so). Trigger fires on a
+  //     0.5 m/s^2 delta and latches the LED for 1 s before decaying back
+  //     to idle — same way a real PIR pulses its output on motion.
+  if (channels.motionDetector) {
+    drawMotionDetector(ctx, W, H, overlay.sensors?.motion, s, frame);
+  }
+
   // 6. Direction arrow (only if sector + coherence are valid).
   if (channels.directionArrow && overlay.sector && overlay.coherence >= 0.5) {
     drawDirectionArrow(ctx, W, H, overlay.sector, overlay.coherence, band);
@@ -2271,6 +2281,187 @@ function drawEmfGalvanometer(
   ctx.textBaseline = "middle";
   ctx.fillStyle = tokens.galvoSilkscreen;
   ctx.fillText("EMF FIELD METER", x + bodyW / 2, y + bodyH - Math.round(10 * s));
+
+  ctx.restore();
+}
+
+// ─── PIR motion detector (right edge, Fresnel dome + trigger LED) ───────────
+
+/** Motion-detector body (logical px @ s=1). Same width as K-II/galvo so the
+ *  right-edge stack stays visually aligned. */
+const MOTION_BODY_W = 60;
+const MOTION_BODY_H = 78;
+/** Magnitude delta (m/s^2) above which we count a frame as "motion detected". */
+const MOTION_TRIGGER_DELTA = 0.5;
+/** Trigger latch — once fired, the LED stays bright for this long after motion
+ *  stops. Real PIR sensors latch their output high for ~1 s on a single
+ *  pulse; we mirror that so the LED isn't strobing in flickery feeds. */
+const MOTION_TRIGGER_LATCH_MS = 1000;
+
+/**
+ * Skeuomorphic PIR motion detector — white plastic Fresnel-lens dome at top,
+ * trigger LED below it that pulses on accelerometer-magnitude deltas. Sits
+ * on the right edge below the EMF galvanometer.
+ *
+ * Anatomy (logical px @ s=1, 60 × 78):
+ *      ╱──╲             ← white plastic dome with Fresnel-lens lines
+ *     ╱    ╲              (concentric arcs faking the lens segments)
+ *    │  ◯   │
+ *    │      │
+ *   ┌────────┐           ← dark grey case below the dome
+ *   │   ●    │             red trigger LED (idle dim / pulse bright)
+ *   │PIR MOTN│             white silkscreen
+ *   │ ACCEL  │
+ *   └────────┘
+ *
+ * Motion detection: compare current accel magnitude to last-seen magnitude.
+ * If |delta| > 0.5 m/s^2, latch the trigger for 1 s. The LED brightness
+ * lerps from idle → trigger over a fast attack and decays back exponentially
+ * over the latch window so it pulses naturally on a single shake.
+ *
+ * Honest copy — silkscreen says "PIR MOTN ACCEL" (the body is too narrow
+ * for the full "PIR MOTION SENSE / ACCEL TRIGGER" string). The registry
+ * description in commit 3 spells it out completely: this is accelerometer-
+ * driven, NOT a real passive-infrared sensor.
+ */
+function drawMotionDetector(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  H: number,
+  motionMag: number | undefined,
+  s: number,
+  frame: FrameContext,
+): void {
+  const tokens = getMeterTokens(frame);
+
+  // Motion-state update. We track the last magnitude on the FrameContext so
+  // the delta is computed across frames, not per-frame from a stale value.
+  const nowMs = (typeof performance !== "undefined" && typeof performance.now === "function")
+    ? performance.now()
+    : Date.now();
+  const hasMag = typeof motionMag === "number" && Number.isFinite(motionMag);
+  const mag = hasMag ? (motionMag as number) : 0;
+  if (!frame.motionDetector) {
+    frame.motionDetector = { lastMag: mag, lastMs: nowMs, lastTriggerMs: 0 };
+  } else {
+    const delta = Math.abs(mag - frame.motionDetector.lastMag);
+    if (delta > MOTION_TRIGGER_DELTA) {
+      frame.motionDetector.lastTriggerMs = nowMs;
+    }
+    frame.motionDetector.lastMag = mag;
+    frame.motionDetector.lastMs = nowMs;
+  }
+  const sinceTrigger = nowMs - frame.motionDetector.lastTriggerMs;
+  const triggerAlpha = sinceTrigger < MOTION_TRIGGER_LATCH_MS
+    ? 1 - (sinceTrigger / MOTION_TRIGGER_LATCH_MS)
+    : 0;
+
+  // Geometry — right edge, below the galvanometer (which is below REM Pod).
+  // Mirror renderFrame's H * 0.30 meter-top anchor + the stack heights so the
+  // motion box sits flush under the galvo without threading a shared anchor.
+  const bodyW = Math.round(MOTION_BODY_W * s);
+  const bodyH = Math.round(MOTION_BODY_H * s);
+  const margin = Math.round(12 * s);
+  const x = W - margin - bodyW;
+  const meterTopY = Math.round(H * 0.30);
+  const galvoEnd = meterTopY
+    + Math.round((KII_BODY_H + 8 + REM_BODY_H + 8 + GALVO_BODY_H) * s);
+  const y = galvoEnd + Math.round(8 * s);
+
+  ctx.save();
+
+  // 1. Drop shadow under the case.
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
+  ctx.shadowBlur = 6 * s;
+  ctx.shadowOffsetY = 3 * s;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.01)";
+  roundedRectPath(ctx, x, y, bodyW, bodyH, Math.round(4 * s));
+  ctx.fill();
+  ctx.restore();
+
+  // 2. Case body — dark grey, holds the dome + LED + silkscreen.
+  const caseRadius = Math.round(4 * s);
+  const caseGrad = ctx.createLinearGradient(0, y, 0, y + bodyH);
+  caseGrad.addColorStop(0,    tokens.motionBodyEdge);
+  caseGrad.addColorStop(0.4,  tokens.motionBody);
+  caseGrad.addColorStop(1,    tokens.motionBodyEdge);
+  roundedRectPath(ctx, x, y, bodyW, bodyH, caseRadius);
+  ctx.fillStyle = caseGrad;
+  ctx.fill();
+  ctx.strokeStyle = tokens.motionBodyEdge;
+  ctx.lineWidth = 1.5;
+  roundedRectPath(ctx, x, y, bodyW, bodyH, caseRadius);
+  ctx.stroke();
+
+  // 3. Fresnel-lens dome — a half-circle (lower half flat) at the top of the
+  //    case. Concentric arcs fake the segmented Fresnel lens look.
+  const domeCx = x + bodyW / 2;
+  const domeCy = y + Math.round(20 * s);
+  const domeR = Math.round(18 * s);
+  // Dome fill — radial gradient (centre highlight → rim shadow) gives the
+  // plastic sphere read.
+  const domeGrad = ctx.createRadialGradient(
+    domeCx - domeR * 0.25, domeCy - domeR * 0.30, domeR * 0.1,
+    domeCx, domeCy, domeR,
+  );
+  domeGrad.addColorStop(0, tokens.motionDomeBody);
+  domeGrad.addColorStop(1, tokens.motionDomeEdge);
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(domeCx, domeCy, domeR, Math.PI, 0, false); // upper half-circle
+  ctx.closePath();
+  ctx.fillStyle = domeGrad;
+  ctx.fill();
+  // Fresnel-lens segment lines — two concentric arcs + a centre spine.
+  ctx.strokeStyle = tokens.motionDomeLine;
+  ctx.lineWidth = Math.max(0.6, 0.7 * s);
+  ctx.beginPath();
+  ctx.arc(domeCx, domeCy, domeR * 0.66, Math.PI, 0, false);
+  ctx.moveTo(domeCx + domeR * 0.33, domeCy);
+  ctx.arc(domeCx, domeCy, domeR * 0.33, 0, Math.PI, true);
+  ctx.moveTo(domeCx, domeCy - domeR);
+  ctx.lineTo(domeCx, domeCy);
+  ctx.stroke();
+  ctx.restore();
+
+  // 4. Trigger LED — red dot below the dome. Idle base + alpha-blended
+  //    trigger colour on top, so a single fillStyle hex doesn't need an
+  //    inline rgb-lerp helper.
+  const ledCx = domeCx;
+  const ledCy = y + Math.round(46 * s);
+  const ledR = Math.max(2.5, Math.round(3.5 * s));
+  ctx.beginPath();
+  ctx.arc(ledCx, ledCy, ledR, 0, Math.PI * 2);
+  ctx.fillStyle = tokens.motionLedIdle;
+  ctx.fill();
+  if (triggerAlpha > 0.02) {
+    ctx.save();
+    // Halo behind the LED on trigger.
+    const haloGrad = ctx.createRadialGradient(ledCx, ledCy, 0, ledCx, ledCy, ledR * 3);
+    haloGrad.addColorStop(0, tokens.motionLedGlow);
+    haloGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
+    ctx.fillStyle = haloGrad;
+    ctx.globalAlpha = triggerAlpha;
+    ctx.beginPath();
+    ctx.arc(ledCx, ledCy, ledR * 3, 0, Math.PI * 2);
+    ctx.fill();
+    // Bright trigger colour fades in over the idle base.
+    ctx.fillStyle = tokens.motionLedTrigger;
+    ctx.beginPath();
+    ctx.arc(ledCx, ledCy, ledR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // 5. Silkscreen — single honest label. "ACCEL" makes it clear the trigger
+  //    is accelerometer-driven, not a real PIR sensor.
+  const silkPx = Math.max(6, Math.round(7 * s));
+  ctx.font = `700 ${silkPx}px "Inter", system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = tokens.motionSilkscreen;
+  ctx.fillText("ACCEL MOTN", x + bodyW / 2, y + bodyH - Math.round(8 * s));
 
   ctx.restore();
 }
