@@ -1,0 +1,1652 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`<CameraHud /> grid structure snapshot > idle — only scene chip in sense rail, no running-gated chrome 1`] = `
+<div
+  class="hud"
+>
+  <div
+    class="statusRail"
+  >
+    <div
+      aria-label="Broadcast status: STANDBY"
+      aria-live="polite"
+      class="bug idle"
+      role="status"
+    >
+      <span
+        aria-hidden="true"
+        class="mark"
+      >
+        <svg
+          aria-hidden="true"
+          class="markGlyph"
+          focusable="false"
+          viewBox="0 0 14 14"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <circle
+            cx="3"
+            cy="7"
+            fill="currentColor"
+            r="1.3"
+          />
+          <path
+            d="M5.5 4.5 Q7.5 7 5.5 9.5"
+            fill="none"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-width="1.2"
+          />
+          <path
+            d="M8 3 Q11 7 8 11"
+            fill="none"
+            opacity="0.7"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-width="1.2"
+          />
+        </svg>
+        <span
+          class="markText"
+        >
+          SS
+        </span>
+      </span>
+      <span
+        class="body"
+      >
+        <span
+          aria-hidden="true"
+          class="dot"
+        />
+        <span
+          class="label"
+        >
+          STANDBY
+        </span>
+      </span>
+    </div>
+  </div>
+  <div
+    class="senseRail"
+  >
+    <button
+      aria-haspopup="dialog"
+      aria-label="Scene: Walkthrough. Tap to change."
+      class="chip"
+      title="Change scene"
+      type="button"
+    >
+      <span
+        class="body"
+      >
+        <span
+          class="eyebrow"
+        >
+          SCENE
+        </span>
+        <span
+          class="name"
+        >
+          Walkthrough
+        </span>
+      </span>
+      <svg
+        aria-hidden="true"
+        class="chevron"
+        focusable="false"
+        viewBox="0 0 12 8"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path
+          d="M1.5 2 L6 6 L10.5 2"
+          fill="none"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="1.6"
+        />
+      </svg>
+    </button>
+  </div>
+  <div
+    class="lowerThirdRow"
+  />
+</div>
+`;
+
+exports[`<CameraHud /> grid structure snapshot > running — Pro mode shows BroadcastAudioMeter + BroadcastSensorHud 1`] = `
+<div
+  class="hud"
+>
+  <div
+    class="statusRail"
+  >
+    <div
+      aria-label="Broadcast status: READY, 00:42 elapsed"
+      aria-live="polite"
+      class="bug ready"
+      role="status"
+    >
+      <span
+        aria-hidden="true"
+        class="mark"
+      >
+        <svg
+          aria-hidden="true"
+          class="markGlyph"
+          focusable="false"
+          viewBox="0 0 14 14"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <circle
+            cx="3"
+            cy="7"
+            fill="currentColor"
+            r="1.3"
+          />
+          <path
+            d="M5.5 4.5 Q7.5 7 5.5 9.5"
+            fill="none"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-width="1.2"
+          />
+          <path
+            d="M8 3 Q11 7 8 11"
+            fill="none"
+            opacity="0.7"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-width="1.2"
+          />
+        </svg>
+        <span
+          class="markText"
+        >
+          SS
+        </span>
+      </span>
+      <span
+        class="body"
+      >
+        <span
+          aria-hidden="true"
+          class="dot"
+        />
+        <span
+          class="label"
+        >
+          READY
+        </span>
+        <span
+          class="elapsed"
+        >
+          00:42
+        </span>
+      </span>
+    </div>
+    <div
+      aria-label="Microphone level: -26 dBFS"
+      aria-valuemax="0"
+      aria-valuemin="-60"
+      aria-valuenow="-26"
+      class="meter"
+      role="meter"
+    >
+      <span
+        aria-hidden="true"
+        class="label"
+      >
+        MIC
+      </span>
+      <div
+        aria-hidden="true"
+        class="barRow"
+      >
+        <div
+          class="barTrack"
+        >
+          <span
+            class="barFill"
+            style="transform: scaleY(0.5663233347786729);"
+          />
+          <span
+            class="peakHold peakHoldHidden"
+            style="bottom: 0%;"
+          />
+        </div>
+        <div
+          class="ticks"
+        >
+          <span
+            class="tick tick0"
+            style="bottom: 100%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              0
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 95%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −3
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 90%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −6
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 80%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −12
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 70%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −18
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 50%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −30
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 0%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −60
+            </span>
+          </span>
+        </div>
+      </div>
+      <span
+        aria-hidden="true"
+        class="value"
+      >
+        <span>
+          −26.0
+        </span>
+        <span
+          class="valueUnit"
+        >
+          dBFS
+        </span>
+      </span>
+    </div>
+    <div
+      aria-label="Device state"
+      class="deviceChip"
+    >
+      <span
+        class="deviceChipReading"
+      >
+        <span
+          class="deviceChipValue"
+        >
+          73
+          %
+        </span>
+      </span>
+      <span
+        aria-hidden="true"
+        class="deviceChipSep"
+      >
+        ·
+      </span>
+      <span
+        class="deviceChipReading"
+      >
+        <span
+          class="deviceChipValue"
+        >
+          1.8GB
+        </span>
+        <span
+          class="deviceChipUnit"
+        >
+          free
+        </span>
+      </span>
+    </div>
+  </div>
+  <div
+    class="senseRail"
+  >
+    <button
+      aria-haspopup="dialog"
+      aria-label="Scene: Walkthrough. Tap to change."
+      class="chip"
+      title="Change scene"
+      type="button"
+    >
+      <span
+        class="body"
+      >
+        <span
+          class="eyebrow"
+        >
+          SCENE
+        </span>
+        <span
+          class="name"
+        >
+          Walkthrough
+        </span>
+      </span>
+      <svg
+        aria-hidden="true"
+        class="chevron"
+        focusable="false"
+        viewBox="0 0 12 8"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path
+          d="M1.5 2 L6 6 L10.5 2"
+          fill="none"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="1.6"
+        />
+      </svg>
+    </button>
+    <div
+      aria-label="Live sensor readings"
+      class="hud"
+      role="group"
+    >
+      <div
+        class="row"
+        data-alert="0"
+      >
+        <span
+          class="key"
+        >
+          EMF
+        </span>
+        <span
+          class="value"
+        >
+          <span
+            class="num"
+          >
+            42.5
+          </span>
+          <span
+            class="unit"
+          >
+            µT
+          </span>
+        </span>
+      </div>
+      <div
+        class="row"
+        data-alert="0"
+      >
+        <span
+          class="key"
+        >
+          LUX
+        </span>
+        <span
+          class="value"
+        >
+          <span
+            class="num"
+          >
+            35
+          </span>
+          <span
+            class="unit"
+          >
+            lx
+          </span>
+        </span>
+      </div>
+      <div
+        class="row"
+        data-alert="0"
+      >
+        <span
+          class="key"
+        >
+          ACC
+        </span>
+        <span
+          class="value"
+        >
+          <span
+            class="num"
+          >
+            1.20
+          </span>
+          <span
+            class="unit"
+          >
+            m/s²
+          </span>
+        </span>
+      </div>
+      <span
+        aria-atomic="true"
+        aria-live="polite"
+        style="position: absolute; width: 1px; height: 1px; padding: 0px; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0px;"
+      />
+    </div>
+  </div>
+  <div
+    class="lowerThirdRow"
+  >
+    <div
+      aria-hidden="false"
+      aria-label="Investigation slate"
+      class="slate visible"
+      role="region"
+    >
+      <h2
+        class="title"
+      >
+        Cold Spot Sweep
+      </h2>
+      <div
+        class="subtitle"
+      >
+        <span
+          class="location"
+        >
+          Hill End Hospital
+        </span>
+        <span
+          aria-hidden="true"
+          class="sep"
+        >
+          ·
+        </span>
+        <span
+          class="date"
+        >
+          Wed 8 May 2026
+        </span>
+      </div>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`<CameraHud /> grid structure snapshot > running — Simple mode suppresses BroadcastSensorHud 1`] = `
+<div
+  class="hud"
+>
+  <div
+    class="statusRail"
+  >
+    <div
+      aria-label="Broadcast status: READY, 00:42 elapsed"
+      aria-live="polite"
+      class="bug ready"
+      role="status"
+    >
+      <span
+        aria-hidden="true"
+        class="mark"
+      >
+        <svg
+          aria-hidden="true"
+          class="markGlyph"
+          focusable="false"
+          viewBox="0 0 14 14"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <circle
+            cx="3"
+            cy="7"
+            fill="currentColor"
+            r="1.3"
+          />
+          <path
+            d="M5.5 4.5 Q7.5 7 5.5 9.5"
+            fill="none"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-width="1.2"
+          />
+          <path
+            d="M8 3 Q11 7 8 11"
+            fill="none"
+            opacity="0.7"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-width="1.2"
+          />
+        </svg>
+        <span
+          class="markText"
+        >
+          SS
+        </span>
+      </span>
+      <span
+        class="body"
+      >
+        <span
+          aria-hidden="true"
+          class="dot"
+        />
+        <span
+          class="label"
+        >
+          READY
+        </span>
+        <span
+          class="elapsed"
+        >
+          00:42
+        </span>
+      </span>
+    </div>
+    <div
+      aria-label="Microphone level: -26 dBFS"
+      aria-valuemax="0"
+      aria-valuemin="-60"
+      aria-valuenow="-26"
+      class="meter"
+      role="meter"
+    >
+      <span
+        aria-hidden="true"
+        class="label"
+      >
+        MIC
+      </span>
+      <div
+        aria-hidden="true"
+        class="barRow"
+      >
+        <div
+          class="barTrack"
+        >
+          <span
+            class="barFill"
+            style="transform: scaleY(0.5663233347786729);"
+          />
+          <span
+            class="peakHold peakHoldHidden"
+            style="bottom: 0%;"
+          />
+        </div>
+        <div
+          class="ticks"
+        >
+          <span
+            class="tick tick0"
+            style="bottom: 100%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              0
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 95%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −3
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 90%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −6
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 80%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −12
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 70%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −18
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 50%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −30
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 0%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −60
+            </span>
+          </span>
+        </div>
+      </div>
+      <span
+        aria-hidden="true"
+        class="value"
+      >
+        <span>
+          −26.0
+        </span>
+        <span
+          class="valueUnit"
+        >
+          dBFS
+        </span>
+      </span>
+    </div>
+    <div
+      aria-label="Device state"
+      class="deviceChip"
+    >
+      <span
+        class="deviceChipReading"
+      >
+        <span
+          class="deviceChipValue"
+        >
+          73
+          %
+        </span>
+      </span>
+      <span
+        aria-hidden="true"
+        class="deviceChipSep"
+      >
+        ·
+      </span>
+      <span
+        class="deviceChipReading"
+      >
+        <span
+          class="deviceChipValue"
+        >
+          1.8GB
+        </span>
+        <span
+          class="deviceChipUnit"
+        >
+          free
+        </span>
+      </span>
+    </div>
+  </div>
+  <div
+    class="senseRail"
+  >
+    <button
+      aria-haspopup="dialog"
+      aria-label="Scene: Walkthrough. Tap to change."
+      class="chip"
+      title="Change scene"
+      type="button"
+    >
+      <span
+        class="body"
+      >
+        <span
+          class="eyebrow"
+        >
+          SCENE
+        </span>
+        <span
+          class="name"
+        >
+          Walkthrough
+        </span>
+      </span>
+      <svg
+        aria-hidden="true"
+        class="chevron"
+        focusable="false"
+        viewBox="0 0 12 8"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path
+          d="M1.5 2 L6 6 L10.5 2"
+          fill="none"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="1.6"
+        />
+      </svg>
+    </button>
+  </div>
+  <div
+    class="lowerThirdRow"
+  />
+</div>
+`;
+
+exports[`<CameraHud /> grid structure snapshot > running — marker pill closed (count > 0, popover absent) 1`] = `
+<div
+  class="hud"
+>
+  <div
+    class="statusRail"
+  >
+    <div
+      aria-label="Broadcast status: READY, 00:42 elapsed"
+      aria-live="polite"
+      class="bug ready"
+      role="status"
+    >
+      <span
+        aria-hidden="true"
+        class="mark"
+      >
+        <svg
+          aria-hidden="true"
+          class="markGlyph"
+          focusable="false"
+          viewBox="0 0 14 14"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <circle
+            cx="3"
+            cy="7"
+            fill="currentColor"
+            r="1.3"
+          />
+          <path
+            d="M5.5 4.5 Q7.5 7 5.5 9.5"
+            fill="none"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-width="1.2"
+          />
+          <path
+            d="M8 3 Q11 7 8 11"
+            fill="none"
+            opacity="0.7"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-width="1.2"
+          />
+        </svg>
+        <span
+          class="markText"
+        >
+          SS
+        </span>
+      </span>
+      <span
+        class="body"
+      >
+        <span
+          aria-hidden="true"
+          class="dot"
+        />
+        <span
+          class="label"
+        >
+          READY
+        </span>
+        <span
+          class="elapsed"
+        >
+          00:42
+        </span>
+      </span>
+    </div>
+    <div
+      aria-label="Microphone level: -26 dBFS"
+      aria-valuemax="0"
+      aria-valuemin="-60"
+      aria-valuenow="-26"
+      class="meter"
+      role="meter"
+    >
+      <span
+        aria-hidden="true"
+        class="label"
+      >
+        MIC
+      </span>
+      <div
+        aria-hidden="true"
+        class="barRow"
+      >
+        <div
+          class="barTrack"
+        >
+          <span
+            class="barFill"
+            style="transform: scaleY(0.5663233347786729);"
+          />
+          <span
+            class="peakHold peakHoldHidden"
+            style="bottom: 0%;"
+          />
+        </div>
+        <div
+          class="ticks"
+        >
+          <span
+            class="tick tick0"
+            style="bottom: 100%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              0
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 95%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −3
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 90%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −6
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 80%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −12
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 70%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −18
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 50%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −30
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 0%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −60
+            </span>
+          </span>
+        </div>
+      </div>
+      <span
+        aria-hidden="true"
+        class="value"
+      >
+        <span>
+          −26.0
+        </span>
+        <span
+          class="valueUnit"
+        >
+          dBFS
+        </span>
+      </span>
+    </div>
+  </div>
+  <div
+    class="senseRail"
+  >
+    <button
+      aria-haspopup="dialog"
+      aria-label="Scene: Walkthrough. Tap to change."
+      class="chip"
+      title="Change scene"
+      type="button"
+    >
+      <span
+        class="body"
+      >
+        <span
+          class="eyebrow"
+        >
+          SCENE
+        </span>
+        <span
+          class="name"
+        >
+          Walkthrough
+        </span>
+      </span>
+      <svg
+        aria-hidden="true"
+        class="chevron"
+        focusable="false"
+        viewBox="0 0 12 8"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path
+          d="M1.5 2 L6 6 L10.5 2"
+          fill="none"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="1.6"
+        />
+      </svg>
+    </button>
+  </div>
+  <div
+    class="lowerThirdRow"
+  />
+  <div
+    class="markerPillWrap"
+  >
+    <button
+      aria-expanded="false"
+      aria-label="3 markers this session — tap for breakdown"
+      class="markerCountPill"
+      title="Tap to see this session's marker breakdown"
+      type="button"
+    >
+      <span
+        aria-hidden="true"
+        class="markerCountIcon"
+      >
+        ●
+      </span>
+      <span
+        class="markerCountValue"
+      >
+        3
+      </span>
+      <span
+        class="markerCountLabel"
+      >
+        marker
+        s
+      </span>
+    </button>
+  </div>
+</div>
+`;
+
+exports[`<CameraHud /> grid structure snapshot > running — marker pill open: popover with category list + Review link visible 1`] = `
+<div
+  class="hud"
+>
+  <div
+    class="statusRail"
+  >
+    <div
+      aria-label="Broadcast status: READY, 00:42 elapsed"
+      aria-live="polite"
+      class="bug ready"
+      role="status"
+    >
+      <span
+        aria-hidden="true"
+        class="mark"
+      >
+        <svg
+          aria-hidden="true"
+          class="markGlyph"
+          focusable="false"
+          viewBox="0 0 14 14"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <circle
+            cx="3"
+            cy="7"
+            fill="currentColor"
+            r="1.3"
+          />
+          <path
+            d="M5.5 4.5 Q7.5 7 5.5 9.5"
+            fill="none"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-width="1.2"
+          />
+          <path
+            d="M8 3 Q11 7 8 11"
+            fill="none"
+            opacity="0.7"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-width="1.2"
+          />
+        </svg>
+        <span
+          class="markText"
+        >
+          SS
+        </span>
+      </span>
+      <span
+        class="body"
+      >
+        <span
+          aria-hidden="true"
+          class="dot"
+        />
+        <span
+          class="label"
+        >
+          READY
+        </span>
+        <span
+          class="elapsed"
+        >
+          00:42
+        </span>
+      </span>
+    </div>
+    <div
+      aria-label="Microphone level: -26 dBFS"
+      aria-valuemax="0"
+      aria-valuemin="-60"
+      aria-valuenow="-26"
+      class="meter"
+      role="meter"
+    >
+      <span
+        aria-hidden="true"
+        class="label"
+      >
+        MIC
+      </span>
+      <div
+        aria-hidden="true"
+        class="barRow"
+      >
+        <div
+          class="barTrack"
+        >
+          <span
+            class="barFill"
+            style="transform: scaleY(0.5663233347786729);"
+          />
+          <span
+            class="peakHold peakHoldHidden"
+            style="bottom: 0%;"
+          />
+        </div>
+        <div
+          class="ticks"
+        >
+          <span
+            class="tick tick0"
+            style="bottom: 100%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              0
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 95%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −3
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 90%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −6
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 80%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −12
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 70%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −18
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 50%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −30
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 0%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −60
+            </span>
+          </span>
+        </div>
+      </div>
+      <span
+        aria-hidden="true"
+        class="value"
+      >
+        <span>
+          −26.0
+        </span>
+        <span
+          class="valueUnit"
+        >
+          dBFS
+        </span>
+      </span>
+    </div>
+  </div>
+  <div
+    class="senseRail"
+  >
+    <button
+      aria-haspopup="dialog"
+      aria-label="Scene: Walkthrough. Tap to change."
+      class="chip"
+      title="Change scene"
+      type="button"
+    >
+      <span
+        class="body"
+      >
+        <span
+          class="eyebrow"
+        >
+          SCENE
+        </span>
+        <span
+          class="name"
+        >
+          Walkthrough
+        </span>
+      </span>
+      <svg
+        aria-hidden="true"
+        class="chevron"
+        focusable="false"
+        viewBox="0 0 12 8"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path
+          d="M1.5 2 L6 6 L10.5 2"
+          fill="none"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="1.6"
+        />
+      </svg>
+    </button>
+  </div>
+  <div
+    class="lowerThirdRow"
+  />
+  <div
+    class="markerPillWrap"
+  >
+    <button
+      aria-expanded="true"
+      aria-label="3 markers this session — tap for breakdown"
+      class="markerCountPill"
+      title="Tap to see this session's marker breakdown"
+      type="button"
+    >
+      <span
+        aria-hidden="true"
+        class="markerCountIcon"
+      >
+        ●
+      </span>
+      <span
+        class="markerCountValue"
+      >
+        3
+      </span>
+      <span
+        class="markerCountLabel"
+      >
+        marker
+        s
+      </span>
+    </button>
+    <div
+      aria-label="Marker breakdown by category"
+      aria-modal="true"
+      class="markerCountPopover"
+      role="dialog"
+      tabindex="-1"
+    >
+      <ul
+        class="markerCountList"
+      >
+        <li>
+          <span
+            aria-hidden="true"
+            class="markerCountDot"
+            data-category="sound"
+          >
+            ●
+          </span>
+          2
+           
+          sound
+        </li>
+        <li>
+          <span
+            aria-hidden="true"
+            class="markerCountDot"
+            data-category="movement"
+          >
+            ●
+          </span>
+          1
+           
+          movement
+        </li>
+      </ul>
+      <button
+        class="markerCountReviewLink"
+        type="button"
+      >
+        Open Review →
+      </button>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`<CameraHud /> grid structure snapshot > running — snooze chip rendered when watchdogSnoozeUntil is in the future 1`] = `
+<div
+  class="hud"
+>
+  <div
+    class="statusRail"
+  >
+    <div
+      aria-label="Broadcast status: READY, 00:42 elapsed"
+      aria-live="polite"
+      class="bug ready"
+      role="status"
+    >
+      <span
+        aria-hidden="true"
+        class="mark"
+      >
+        <svg
+          aria-hidden="true"
+          class="markGlyph"
+          focusable="false"
+          viewBox="0 0 14 14"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <circle
+            cx="3"
+            cy="7"
+            fill="currentColor"
+            r="1.3"
+          />
+          <path
+            d="M5.5 4.5 Q7.5 7 5.5 9.5"
+            fill="none"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-width="1.2"
+          />
+          <path
+            d="M8 3 Q11 7 8 11"
+            fill="none"
+            opacity="0.7"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-width="1.2"
+          />
+        </svg>
+        <span
+          class="markText"
+        >
+          SS
+        </span>
+      </span>
+      <span
+        class="body"
+      >
+        <span
+          aria-hidden="true"
+          class="dot"
+        />
+        <span
+          class="label"
+        >
+          READY
+        </span>
+        <span
+          class="elapsed"
+        >
+          00:42
+        </span>
+      </span>
+    </div>
+    <div
+      aria-label="Microphone level: -26 dBFS"
+      aria-valuemax="0"
+      aria-valuemin="-60"
+      aria-valuenow="-26"
+      class="meter"
+      role="meter"
+    >
+      <span
+        aria-hidden="true"
+        class="label"
+      >
+        MIC
+      </span>
+      <div
+        aria-hidden="true"
+        class="barRow"
+      >
+        <div
+          class="barTrack"
+        >
+          <span
+            class="barFill"
+            style="transform: scaleY(0.5663233347786729);"
+          />
+          <span
+            class="peakHold peakHoldHidden"
+            style="bottom: 0%;"
+          />
+        </div>
+        <div
+          class="ticks"
+        >
+          <span
+            class="tick tick0"
+            style="bottom: 100%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              0
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 95%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −3
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 90%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −6
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 80%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −12
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 70%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −18
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 50%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −30
+            </span>
+          </span>
+          <span
+            class="tick"
+            style="bottom: 0%;"
+          >
+            <span
+              class="tickMark"
+            />
+            <span>
+              −60
+            </span>
+          </span>
+        </div>
+      </div>
+      <span
+        aria-hidden="true"
+        class="value"
+      >
+        <span>
+          −26.0
+        </span>
+        <span
+          class="valueUnit"
+        >
+          dBFS
+        </span>
+      </span>
+    </div>
+    <button
+      aria-label="Watchdog snoozed — tap to resume"
+      class="snoozeChip"
+      title="Watchdog toasts are silenced. Tap to resume immediately."
+      type="button"
+    >
+      <span
+        aria-hidden="true"
+        class="snoozeChipIcon"
+      >
+        🔕
+      </span>
+      <span
+        class="snoozeChipLabel"
+      >
+        Snoozed 
+        9
+        m
+      </span>
+    </button>
+  </div>
+  <div
+    class="senseRail"
+  >
+    <button
+      aria-haspopup="dialog"
+      aria-label="Scene: Walkthrough. Tap to change."
+      class="chip"
+      title="Change scene"
+      type="button"
+    >
+      <span
+        class="body"
+      >
+        <span
+          class="eyebrow"
+        >
+          SCENE
+        </span>
+        <span
+          class="name"
+        >
+          Walkthrough
+        </span>
+      </span>
+      <svg
+        aria-hidden="true"
+        class="chevron"
+        focusable="false"
+        viewBox="0 0 12 8"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path
+          d="M1.5 2 L6 6 L10.5 2"
+          fill="none"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="1.6"
+        />
+      </svg>
+    </button>
+  </div>
+  <div
+    class="lowerThirdRow"
+  />
+</div>
+`;

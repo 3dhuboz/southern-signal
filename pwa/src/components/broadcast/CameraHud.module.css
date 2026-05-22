@@ -1,0 +1,303 @@
+/* ============================================================================
+   CameraHud — the grid wrapper that owns every HUD chrome zone over the
+   live camera frame.
+
+   Replaces the scatter of independently-positioned absolute chips that
+   used to live inside CameraScreen.module.css (.deviceChip, .snoozeChip,
+   .markerCountPillWrap, .evpDock). Those are now zone-assigned via this
+   grid so a future chip refactor edits one positioning system, not five.
+
+   Layout (mobile-first, talent-safe area in row 2):
+
+     ┌──────────────────────────────────────────────┐
+     │ row 1 (168 + safe-top px)                    │
+     │  ┌──────────────┬────────┬────────────────┐  │
+     │  │ status-rail  │  void  │  sense-rail    │  │
+     │  └──────────────┴────────┴────────────────┘  │
+     ├──────────────────────────────────────────────┤
+     │ row 2 (1fr — TALENT SAFE, no chrome)         │
+     ├──────────────────────────────────────────────┤
+     │ row 3 (64 px — lower-third reserved)         │
+     ├──────────────────────────────────────────────┤
+     │ row 4 (96 px — shutter band — owned upstream)│
+     ├──────────────────────────────────────────────┤
+     │ row 5 (56 + safe-bottom + tabbar)            │
+     └──────────────────────────────────────────────┘
+
+   The broadcast/* components (BroadcastBug, BroadcastAudioMeter, etc.) own
+   their own absolute positioning to their respective viewport corners. The
+   grid is mostly the framework for the inline chips: putting them in a
+   semantic rail keeps the layout consistent across themes + scenes without
+   leaking another stack of absolute offsets into CameraScreen.module.css.
+
+   Shutter is anchored absolute by the parent (CameraScreen.module.css)
+   because it crosses two grid rows; CameraDock owns row 5 with its own
+   bottom-anchored absolute positioning so it sits flush above the BottomNav.
+
+   ─────────────────────────────────────────────────────────────────────────
+   pointer-events: none on the grid lets the camera viewport receive
+   touch gestures (long-press, double-tap, swipe). Each interactive child
+   re-enables pointer-events: auto.
+   ============================================================================ */
+
+.hud {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 132px 1fr 132px;
+  grid-template-rows:
+    calc(168px + var(--safe-top, 0px))
+    1fr
+    64px
+    96px
+    calc(56px + var(--safe-bottom, 0px) + var(--bottom-nav-height, 64px));
+  pointer-events: none;
+  z-index: 5;
+}
+
+.hud > * { pointer-events: auto; }
+
+/* Status rail — top-left. Hosts BroadcastBug, BroadcastAudioMeter,
+   the always-on device chip, and the snooze chip. The broadcast components
+   keep their own absolute pinning so they remain on a 480p downscale of
+   the recorded frame regardless of grid; the rail still provides DOM order
+   + a consistent semantic group for screen-readers. */
+.statusRail {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: var(--safe-top, 0px) 8px 0 8px;
+  pointer-events: none;
+}
+.statusRail > * { pointer-events: auto; }
+
+/* Sense rail — top-right. Hosts BroadcastSceneSelector, BroadcastSensorHud,
+   and the scene-driven EVP recorder dock. Right-aligned so chips don't
+   bleed into the centre talent-safe zone (row 2). */
+.senseRail {
+  grid-column: 3;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  padding: var(--safe-top, 0px) 8px 0 8px;
+  pointer-events: none;
+}
+.senseRail > * { pointer-events: auto; }
+
+/* Lower-third row — reserved horizontal band, third 64-px slot from the
+   bottom. BroadcastLowerThird positions itself absolute against the
+   cameraWrap; this row keeps the grid contract clean (no chrome lives in
+   row 2 = talent space) and reserves a place a future inline lower-third
+   could occupy without re-flowing the grid. */
+.lowerThirdRow {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  pointer-events: none;
+}
+
+/* ── Inline chips (moved from CameraScreen.module.css) ──────────────────
+   The visual chrome (background, border, font, dimensions) is unchanged
+   from the original CameraScreen rules — only the positioning system
+   shifts from per-chip absolute offsets to grid-rail flow. */
+
+/* Always-on device-state chip — sits in the status rail, below
+   BroadcastAudioMeter. Tone shifts to warn when battery/storage cross
+   the watchdog thresholds. */
+.deviceChip {
+  /* Spacer so the chip sits below the BroadcastAudioMeter, which is
+     absolute-pinned to top:56 + variable height (~136 px). */
+  margin-top: 198px;
+  margin-left: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: var(--chip-bg);
+  border: 1px solid var(--chip-rim);
+  border-radius: 999px;
+  color: var(--chip-text);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.4px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+.deviceChipWarn {
+  background: var(--chip-warn-bg);
+  border-color: var(--chip-warn-rim);
+  color: var(--chip-warn-text);
+}
+.deviceChipReading {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+}
+.deviceChipReadingWarn { color: #ff9d3a; }
+.deviceChipIcon { font-size: 9px; opacity: 0.9; }
+.deviceChipValue { font-weight: 700; letter-spacing: 0.5px; }
+.deviceChipUnit  { opacity: 0.7; font-size: 9px; text-transform: uppercase; letter-spacing: 0.7px; }
+.deviceChipSep   { opacity: 0.5; }
+
+/* Snooze indicator — sits in the status rail after the device chip when
+   active. Tap to unsnooze. */
+.snoozeChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  margin-left: 4px;
+  background: var(--warn-pill-bg);
+  border: 1px solid var(--chip-rim);
+  border-radius: 999px;
+  color: var(--warn-pill-text);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.5px;
+  font-weight: 700;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  cursor: pointer;
+}
+.snoozeChip:hover  { background: rgba(212, 192, 38, 0.92); }
+.snoozeChip:active { background: rgba(212, 192, 38, 1); }
+.snoozeChipIcon { font-size: 12px; line-height: 1; }
+.snoozeChipLabel { text-transform: uppercase; letter-spacing: 1.1px; }
+
+/* ── Marker tally pill ─────────────────────────────────────────────────
+   UX spec: bottom-left of the shutter band (row 4), NOT under the shutter,
+   well clear of the BroadcastTimestamp slate above the BottomNav. The pill
+   sits inside the grid at row 4 / col 1, anchored to the bottom-left of
+   that row so the popover can open upward into row 3 without crowding. */
+.markerPillWrap {
+  grid-column: 1;
+  grid-row: 4;
+  align-self: end;
+  justify-self: start;
+  position: relative;
+  margin: 0 0 8px 12px;
+  pointer-events: auto;
+}
+.markerCountPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: var(--chip-bg);
+  border: 1px solid var(--chip-rim);
+  border-radius: 999px;
+  color: var(--chip-text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  cursor: pointer;
+}
+.markerCountPill:hover  { background: var(--hud-glass-bg-strong); }
+.markerCountPill:active { background: var(--hud-glass-bg-strong); }
+.markerCountIcon {
+  color: var(--signal, #5DF2C7);
+  font-size: 7px;
+  line-height: 1;
+}
+.markerCountValue {
+  font-weight: 800;
+  letter-spacing: 0.8px;
+}
+.markerCountLabel {
+  text-transform: uppercase;
+  letter-spacing: 1.1px;
+  opacity: 0.78;
+}
+
+/* Popover anchored to the pill — opens upward into the talent-safe row
+   when the operator taps. */
+.markerCountPopover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 180px;
+  padding: 10px 12px;
+  background: var(--hud-glass-bg-strong);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--chip-rim);
+  border-radius: 12px;
+  color: var(--chip-text);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  z-index: 6;
+  animation: cameraHudFadeIn 140ms ease-out;
+}
+.markerCountList {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.markerCountList li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.markerCountDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--marker-other);
+}
+.markerCountDot[data-category="sound"]    { background: var(--marker-sound); }
+.markerCountDot[data-category="movement"] { background: var(--marker-movement); }
+.markerCountDot[data-category="felt"]     { background: var(--marker-felt); }
+.markerCountDot[data-category="untagged"] { background: var(--marker-other); }
+.markerCountReviewLink {
+  appearance: none;
+  width: 100%;
+  background: transparent;
+  border: 1px solid var(--chip-rim);
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: var(--signal, #5DF2C7);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 100ms ease;
+}
+.markerCountReviewLink:hover { background: var(--signal-wash, rgba(34, 197, 94, 0.18)); }
+
+/* EVP dock slot — sits in the sense rail after BroadcastSensorHud so it
+   no longer collides with BroadcastSceneSelector. The compact recorder
+   variant already provides its own glass chrome; this slot just gives it
+   a positioning anchor + max-width gate. */
+.evpDockSlot {
+  /* Spacer so the dock sits below the BroadcastSensorHud's absolute
+     anchor (top:64 + ~rows). The rail's flex column would naturally
+     stack it but the sensor HUD isn't an inline flex child — it's an
+     absolute element rooted to the camera wrap — so we reserve space. */
+  margin-top: 144px;
+  max-width: 60vw;
+  background: var(--chip-bg);
+  border: 1px solid var(--chip-rim);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 4px 6px;
+}
+
+@keyframes cameraHudFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}

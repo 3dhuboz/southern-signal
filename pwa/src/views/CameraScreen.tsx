@@ -30,12 +30,8 @@ import { ScreenRecordButton } from "../components/ScreenRecordButton";
 import { SceneSheet } from "../components/SceneSheet";
 import { EvpRecorderControl } from "../components/EvpRecorderControl";
 import { DispositionPicker } from "../components/DispositionPicker";
-import { BroadcastBug } from "../components/broadcast/BroadcastBug";
-import { BroadcastAudioMeter } from "../components/broadcast/BroadcastAudioMeter";
 import { BroadcastTimestamp } from "../components/broadcast/BroadcastTimestamp";
-import { BroadcastSensorHud } from "../components/broadcast/BroadcastSensorHud";
-import { BroadcastSceneSelector } from "../components/broadcast/BroadcastSceneSelector";
-import { BroadcastLowerThird } from "../components/broadcast/BroadcastLowerThird";
+import { CameraHud } from "../components/broadcast/CameraHud";
 import { useLiveBroadcastState } from "../lib/system/liveBroadcast";
 import { usePushToTalk } from "../lib/audio/usePushToTalk";
 import { startVad, type VadHandle } from "../lib/audio/vad";
@@ -100,14 +96,9 @@ const PICKER_CATEGORIES: ReadonlyArray<{ id: MarkerCat; label: string }> = [
   { id: "movement", label: "Movement" },
   { id: "felt",     label: "Felt" },
 ];
-// Marker breakdown rows for the HUD popover. Order matches reading priority:
-// the loudest signal types first, untagged last.
-const MARKER_BREAKDOWN: ReadonlyArray<{ id: "sound" | "movement" | "felt" | "untagged"; label: string }> = [
-  { id: "sound",    label: "sound" },
-  { id: "movement", label: "movement" },
-  { id: "felt",     label: "felt" },
-  { id: "untagged", label: "untagged" },
-];
+// MARKER_BREAKDOWN moved to broadcast/CameraHud.tsx with the wrapper that
+// owns its render. The dock icon helpers below stay in CameraScreen for
+// now — the dock-redesign commit retires them when CameraDock lands.
 
 // ── Dock button icons ──────────────────────────────────────────────────────
 // Slim dock holds: Scenes (text), ScreenRec, Clip Rec, Flip, Torch.
@@ -1339,124 +1330,53 @@ export function CameraScreen() {
           fullscreen
         />
 
-        {/* ── Top-left status bug: STANDBY / READY / LIVE / REC ────────────
-             Replaces the bare cornerPillTopLeft chip the camera shipped with.
-             Glass shell, hairline cyan rim, SS broadcast mark, mono elapsed
-             timecode. Lives in src/components/broadcast/BroadcastBug.tsx. */}
-        <BroadcastBug state={topPillState} elapsedSec={sessionSecs} />
-
-        {/* ── Broadcast audio meter — vertical green→amber→red strip with
-             peak-hold cap + tick marks + mono dB readout. Mounts under the
-             status bug and only renders while the session is running so the
-             pre-Begin frame stays clean. The actual analyzer subscription
-             still lives in CameraScreen — this component is presentation
-             only and reads audioRmsCoarse off state. */}
-        {running && (
-          <BroadcastAudioMeter rms={audioRmsCoarse} vadActive={vadActive} />
-        )}
-
-        {/* ── Always-on device-state chip — sits under the mic meter and
-             shows the live battery + free-storage readings the watchdog
-             observed on the last tick. Tone shifts to amber/red when a
-             check is failing, so the operator picks up trouble without
-             waiting for the next toast. */}
-        {running && (hudBatteryPct != null || hudStorageMb != null) && (
-          <div
-            className={`${s.deviceChip} ${hudBatteryWarn || hudStorageWarn ? s.deviceChipWarn : ""}`.trim()}
-            aria-label="Device state"
-          >
-            {hudBatteryPct != null && (
-              <span className={`${s.deviceChipReading} ${hudBatteryWarn ? s.deviceChipReadingWarn : ""}`.trim()}>
-                {hudBatteryCharging && <span className={s.deviceChipIcon} aria-hidden="true">⚡</span>}
-                <span className={s.deviceChipValue}>{hudBatteryPct}%</span>
-              </span>
-            )}
-            {hudBatteryPct != null && hudStorageMb != null && (
-              <span className={s.deviceChipSep} aria-hidden="true">·</span>
-            )}
-            {hudStorageMb != null && (
-              <span className={`${s.deviceChipReading} ${hudStorageWarn ? s.deviceChipReadingWarn : ""}`.trim()}>
-                <span className={s.deviceChipValue}>
-                  {hudStorageMb >= 1024
-                    ? `${(hudStorageMb / 1024).toFixed(1)}GB`
-                    : `${hudStorageMb}MB`}
-                </span>
-                <span className={s.deviceChipUnit}>free</span>
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* ── Snooze indicator chip — only visible while a snooze window
-             is active. Tap to unsnooze immediately. Without this, an
-             operator who hit Snooze could forget toasts are muted and
-             wonder why nothing's firing. Sits in the bottom-left HUD just
-             above the marker pill. */}
-        {running && watchdogSnoozeUntil != null && (
-          <button
-            type="button"
-            className={s.snoozeChip}
-            onClick={() => setWatchdogSnoozeUntil(null)}
-            title="Watchdog toasts are silenced. Tap to resume immediately."
-            aria-label="Watchdog snoozed — tap to resume"
-          >
-            <span className={s.snoozeChipIcon} aria-hidden="true">🔕</span>
-            <span className={s.snoozeChipLabel}>
-              Snoozed {Math.max(0, Math.ceil((watchdogSnoozeUntil - Date.now()) / 60_000))}m
-            </span>
-          </button>
-        )}
-
-        {/* ── Marker tally pill — bottom-left, low-prominence. Surfaces the
-             session-scoped marker count so the operator knows their tag
-             rhythm without leaving the camera. Tapping navigates to Review;
-             dual-click safe (the navigate is the only interaction). Hidden
-             until the operator drops their first marker so an empty HUD
-             stays clean. */}
-        {running && sessionMarkerCount > 0 && (
-          <div className={s.markerCountPillWrap} ref={markerPillWrapRef}>
-            <button
-              type="button"
-              className={s.markerCountPill}
-              onClick={(e) => { e.stopPropagation(); setMarkerPillOpen((v) => !v); }}
-              onPointerDown={(e) => e.stopPropagation()}
-              title="Tap to see this session's marker breakdown"
-              aria-expanded={markerPillOpen}
-              aria-label={`${sessionMarkerCount} marker${sessionMarkerCount === 1 ? "" : "s"} this session — tap for breakdown`}
-            >
-              <span className={s.markerCountIcon} aria-hidden="true">●</span>
-              <span className={s.markerCountValue}>{sessionMarkerCount}</span>
-              <span className={s.markerCountLabel}>marker{sessionMarkerCount === 1 ? "" : "s"}</span>
-            </button>
-            {markerPillOpen && (
-              <div
-                className={s.markerCountPopover}
-                role="dialog"
-                aria-modal="true"
-                aria-label="Marker breakdown by category"
-                ref={markerPillTrapRef}
-                tabIndex={-1}
-              >
-                <ul className={s.markerCountList}>
-                  {MARKER_BREAKDOWN.filter((row) => sessionMarkerByCat[row.id] > 0).map((row) => (
-                    <li key={row.id}>
-                      <span className={s.markerCountDot} data-category={row.id} aria-hidden="true">●</span>
-                      {sessionMarkerByCat[row.id]} {row.label}
-                    </li>
-                  ))}
-                </ul>
-                <button
-                  type="button"
-                  className={s.markerCountReviewLink}
-                  onClick={(e) => { e.stopPropagation(); setMarkerPillOpen(false); navigate("/review"); }}
-                  onPointerDown={(e) => e.stopPropagation()}
-                >
-                  Open Review →
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+        {/* ── HUD chrome wrapper ─────────────────────────────────────────
+             CameraHud owns the grid that holds every visible HUD zone:
+             status rail (top-left), sense rail (top-right), lower-third
+             reserved row, marker pill in the shutter band. Visibility
+             predicates that used to scatter through this view —
+             `running &&`, `(hudBatteryPct != null || hudStorageMb != null)`,
+             `sessionMarkerCount > 0` etc — now live inside CameraHud's
+             render. The pre-extraction JSX block ran 1308→1524; the wrapper
+             collapses it to a single component invocation. */}
+        <CameraHud
+          running={running}
+          topPillState={topPillState}
+          sessionSecs={sessionSecs}
+          audioRmsCoarse={audioRmsCoarse}
+          vadActive={vadActive}
+          sensors={sensors}
+          hudBatteryPct={hudBatteryPct}
+          hudBatteryCharging={hudBatteryCharging}
+          hudStorageMb={hudStorageMb}
+          hudBatteryWarn={hudBatteryWarn}
+          hudStorageWarn={hudStorageWarn}
+          watchdogSnoozeUntil={watchdogSnoozeUntil}
+          onClearSnooze={() => setWatchdogSnoozeUntil(null)}
+          sceneName={sceneName}
+          onOpenScenePicker={() => setSceneSheetOpen(true)}
+          sessionMarkerCount={sessionMarkerCount}
+          markerPillOpen={markerPillOpen}
+          onToggleMarkerPill={() => setMarkerPillOpen((v) => !v)}
+          sessionMarkerByCat={sessionMarkerByCat}
+          markerPillWrapRef={markerPillWrapRef}
+          markerPillTrapRef={markerPillTrapRef}
+          onNavigateReview={() => { setMarkerPillOpen(false); navigate("/review"); }}
+          caseTitle={session.current?.title ?? null}
+          caseLocation={session.current?.location_name ?? null}
+          caseStartedAt={session.current?.started_at ?? null}
+          evpDock={
+            activeScene?.evp?.showRecorder && running && session.current ? (
+              <EvpRecorderControl
+                investigationId={session.current.id}
+                variant="compact"
+                autoStart={activeScene.evp.autoRecord === true}
+                active={running}
+              />
+            ) : null
+          }
+          proMode={proMode}
+        />
 
         {/* ── First-run welcome card. Surfaces the four gestures that aren't
              discoverable from the chrome alone (double-tap markers, swipe
@@ -1502,65 +1422,15 @@ export function CameraScreen() {
           </div>
         )}
 
-        {/* ── Top-right scene selector — glass chip, SCENE eyebrow + display-
-             cased name + SVG chevron. Opens the bottom-sheet picker. Sits
-             at the same Y as the BroadcastBug; the BroadcastSensorHud
-             tucks beneath it on the same edge. */}
-        <BroadcastSceneSelector sceneName={sceneName} onOpen={() => setSceneSheetOpen(true)} />
-
-        {/* ── Sensor HUD strip — compact mono key/value column under the
-             scene chip. EMF / LUX / ACC rows render only when the
-             underlying sensor reports samples (iOS without Magnetometer
-             support drops the EMF row). Rows flash --signal cyan for
-             400 ms on threshold crossings via the AnomalyTile alert flag. */}
-        {running && (
-          <BroadcastSensorHud
-            magnetometer={sensors.snapshot.magnetometer}
-            light={sensors.snapshot.light}
-            motion={sensors.snapshot.motion}
-            emfAlert={sensors.emf}
-            motionAlert={sensors.vibration}
-            lightAlert={sensors.lightAnomaly}
-            magnetometerAvailable={sensors.magnetometerAvailable}
-            lightAvailable={sensors.lightAvailable}
-          />
-        )}
-
         {/* ── Bottom-left timecode slate — local wall-clock, UTC, and
              session-elapsed counter. Burn-in safe for the recorded clip
              so a video editor can lift timestamps without overlaying their
              own slate. Always mounted (renders fine in idle too) so the
-             chrome feels complete from the moment the route loads. */}
+             chrome feels complete from the moment the route loads.
+             Stays at CameraScreen level (not CameraHud) because its
+             absolute pin needs to sit BELOW the BIG SHUTTER, which is
+             also CameraScreen-owned. */}
         <BroadcastTimestamp running={running} elapsedSec={sessionSecs} />
-
-        {/* ── Lower-third investigation slate — slides in from below when
-             an investigation is active. Title + location · date. Sticky-
-             content via the component so the slide-out frame still has
-             something to render against. */}
-        <BroadcastLowerThird
-          running={running}
-          title={session.current?.title}
-          location={session.current?.location_name}
-          startedAt={session.current?.started_at}
-        />
-
-        {/* ── Scene-driven EVP recorder — only mounts when the active scene
-             declares `evp.showRecorder`. Auto-starts on session begin when
-             scene.evp.autoRecord is true; auto-stops when the operator ends
-             the session via the BIG SHUTTER (active flips false). Lives in
-             a fixed corner so it doesn't compete with the camera frame; the
-             compact variant keeps the chrome tight. Hidden until running
-             so the operator sees the empty state on the EVP tab itself. */}
-        {activeScene?.evp?.showRecorder && running && session.current && (
-          <div className={s.evpDock}>
-            <EvpRecorderControl
-              investigationId={session.current.id}
-              variant="compact"
-              autoStart={activeScene.evp.autoRecord === true}
-              active={running}
-            />
-          </div>
-        )}
 
         {/* ── Marker drop toast — top-center, 1.5s fade. Confirms that the
              double-tap landed without interrupting the camera feed. The

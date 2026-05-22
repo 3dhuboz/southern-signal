@@ -496,25 +496,11 @@
   background: rgba(255, 255, 255, 0.1);
 }
 
-/* Scene-driven EVP recorder dock — anchored below the scene pill so the
-   operator sees their auto-running clip status without crowding the
-   shutter or the marker pill. Compact variant of EvpRecorderControl;
-   the panel's own chrome handles the start/stop button + timer. */
-.evpDock {
-  position: absolute;
-  top: calc(44px + var(--safe-top, 0px));
-  right: 12px;
-  z-index: 5;
-  /* Tinted to match the HUD's chrome — sits over the camera frame without
-     reading as a foreign UI element. */
-  background: var(--chip-bg);
-  border: 1px solid var(--chip-rim);
-  border-radius: 12px;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  padding: 4px 6px;
-  max-width: 60vw;
-}
+/* The scene-driven EVP recorder dock moved to CameraHud's sense rail
+   (components/broadcast/CameraHud.module.css → .evpDockSlot) as part of
+   the 2026-05-22 grid wrapper introduction. Top:44 absolute pin was
+   colliding with the BroadcastSceneSelector at top:12; the rail flow
+   now stacks it cleanly under the SensorHud. */
 
 /* ── First-run welcome card ───────────────────────────────────────────────
    Sits centered over the camera viewport when the operator hasn't yet
@@ -607,194 +593,16 @@
    BroadcastAudioMeter component, which paints a broadcast-grade meter
    with peak-hold, tick marks, and a mono dB readout. */
 
-/* Always-on device-state chip — sits just under the broadcast audio meter.
-   Glanceable battery % + free-storage readout that's always present during
-   a session, not just when a watchdog toast fires. Tone shifts when the
-   watchdog is flagging either check so the operator picks up trouble
-   before the next tick if they happen to look.
-
-   Top offset: status bug (~36 + 12 safe-area = 48) + meter (~150) + 12 gap
-   ≈ 210 px from the top edge. Keeps the chip flush below the meter even
-   on a phone with no notch. */
-.deviceChip {
-  position: absolute;
-  top: calc(210px + var(--safe-top, 0px));
-  left: calc(12px + var(--safe-left, 0px));
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  background: var(--chip-bg);
-  border: 1px solid var(--chip-rim);
-  border-radius: 999px;
-  color: var(--chip-text);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.4px;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  pointer-events: none;
-  z-index: 5;
-}
-.deviceChipWarn {
-  background: var(--chip-warn-bg);
-  border-color: var(--chip-warn-rim);
-  color: var(--chip-warn-text);
-}
-.deviceChipReading {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 3px;
-}
-.deviceChipReadingWarn { color: #ff9d3a; }
-.deviceChipIcon { font-size: 9px; opacity: 0.9; }
-.deviceChipValue { font-weight: 700; letter-spacing: 0.5px; }
-.deviceChipUnit  { opacity: 0.7; font-size: 9px; text-transform: uppercase; letter-spacing: 0.7px; }
-.deviceChipSep   { opacity: 0.5; }
-
-/* Snooze indicator — sits just above the marker pill, both stacked over
-   the bottom-left BroadcastTimestamp slate. Same chrome, tinted with the
-   warning palette so the operator notices it. Tap to unsnooze;
-   auto-vanishes when the 10-minute window elapses. */
-.snoozeChip {
-  position: absolute;
-  bottom: calc(240px + var(--safe-bottom, 0px));
-  left: calc(12px + var(--safe-left, 0px));
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  background: var(--warn-pill-bg);
-  border: 1px solid var(--chip-rim);
-  border-radius: 999px;
-  color: var(--warn-pill-text);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.5px;
-  font-weight: 700;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  cursor: pointer;
-  z-index: 5;
-}
-.snoozeChip:hover  { background: rgba(212, 192, 38, 0.92); }
-.snoozeChip:active { background: rgba(212, 192, 38, 1); }
-.snoozeChipIcon { font-size: 12px; line-height: 1; }
-.snoozeChipLabel { text-transform: uppercase; letter-spacing: 1.1px; }
-
-/* Marker-count tally pill — sits in the bottom-left HUD safe-area corner,
-   well clear of the BIG SHUTTER and dock buttons. Glanceable but quiet so
-   it doesn't compete with the REC pill for the operator's attention. Tap
-   to open Review where the editor lives. */
-/* Wrapper for the pill + its popover so absolute-positioned children share
-   the same anchor without each having to re-derive the offset. */
-/* Marker tally pill — sits above the bottom-left BroadcastTimestamp slate
-   so the two HUD chips stack cleanly instead of fighting for space. The
-   timestamp slate is ~85 px tall, anchored at bottom ≈ 88 px (safe-bottom +
-   bottom-nav + 24 gap), so the marker pill sits at bottom ≈ 200 px. */
-.markerCountPillWrap {
-  position: absolute;
-  bottom: calc(200px + var(--safe-bottom, 0px));
-  left: calc(12px + var(--safe-left, 0px));
-  z-index: 5;
-}
-.markerCountPill {
-  position: static;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  background: var(--chip-bg);
-  border: 1px solid var(--chip-rim);
-  border-radius: 999px;
-  color: var(--chip-text);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.5px;
-  font-weight: 600;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  cursor: pointer;
-  z-index: 5;
-}
-.markerCountPill:hover  { background: var(--hud-glass-bg-strong); }
-.markerCountPill:active { background: var(--hud-glass-bg-strong); }
-.markerCountIcon {
-  color: var(--signal, #5DF2C7);
-  font-size: 7px;
-  line-height: 1;
-}
-.markerCountValue {
-  font-weight: 800;
-  letter-spacing: 0.8px;
-}
-.markerCountLabel {
-  text-transform: uppercase;
-  letter-spacing: 1.1px;
-  opacity: 0.78;
-}
-
-/* Pill popover — opens above the pill on tap, shows per-category breakdown
-   + a Review CTA. Anchored to the wrapper so it stays glued to the pill
-   regardless of where the viewport is sized. */
-.markerCountPopover {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 0;
-  min-width: 180px;
-  padding: 10px 12px;
-  background: var(--hud-glass-bg-strong);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border: 1px solid var(--chip-rim);
-  border-radius: 12px;
-  color: var(--chip-text);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  z-index: 6;
-  animation: markerToastIn 140ms ease-out;
-}
-.markerCountList {
-  list-style: none;
-  margin: 0 0 8px;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.markerCountList li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.markerCountDot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--marker-other);
-}
-.markerCountDot[data-category="sound"]    { background: var(--marker-sound); }
-.markerCountDot[data-category="movement"] { background: var(--marker-movement); }
-.markerCountDot[data-category="felt"]     { background: var(--marker-felt); }
-.markerCountDot[data-category="untagged"] { background: var(--marker-other); }
-.markerCountReviewLink {
-  appearance: none;
-  width: 100%;
-  background: transparent;
-  border: 1px solid var(--chip-rim);
-  border-radius: 8px;
-  padding: 6px 10px;
-  color: var(--signal, #5DF2C7);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.9px;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: background 100ms ease;
-}
-.markerCountReviewLink:hover { background: var(--signal-wash, rgba(34, 197, 94, 0.18)); }
+/* 2026-05-22 camera overhaul: device chip, snooze chip, and marker tally
+   pill all moved to CameraHud's status / shutter-band rails
+   (components/broadcast/CameraHud.module.css). The styling (colours,
+   typography, glass treatment) is preserved verbatim there; only the
+   positioning shifted from these per-chip absolute offsets to the grid
+   wrapper. See:
+       .deviceChip / .deviceChipWarn / .deviceChipReading / etc
+       .snoozeChip / .snoozeChipIcon / .snoozeChipLabel
+       .markerPillWrap / .markerCountPill / .markerCountPopover / etc
+   in CameraHud.module.css for the relocated rules. */
 
 /* The horizontal mic-meter strip + REC/LIVE corner-pill state variants
    lived here. Both surfaces are now owned by the broadcast HUD chrome
