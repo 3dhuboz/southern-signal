@@ -299,6 +299,14 @@ interface FrameContext {
    * trigger fires while a pulse is still in-flight.
    */
   remPulse: { startedAtMs: number; lastZ: number } | null;
+  /**
+   * VU needle smoother — tracks the displayed needle position as a 0..1 float
+   * with a real-VU "300 ms ballistic" RC-style lag (the integration time the
+   * actual ANSI/IEC standard specifies). Without this the needle pops between
+   * every audio frame, which looks digital not analog. `lastMs` keeps the lerp
+   * frame-rate independent.
+   */
+  vuNeedleSmooth: { value: number; lastMs: number } | null;
 }
 
 /**
@@ -329,6 +337,30 @@ interface MeterTokens {
   remLedY: string;
   remLedOff: string;
   remPulse: string;
+  // Phase A.2 — vintage VU audio meter.
+  vuBody: string;
+  vuBodyEdge: string;
+  vuScaleBg: string;
+  vuScaleEdge: string;
+  vuScaleInk: string;
+  vuNeedle: string;
+  vuOverload: string;
+  vuSilkscreen: string;
+  vuGlow: string;
+  // Phase A.2 — Spirit Box amber 7-segment LCD.
+  spiritLcdBezel: string;
+  spiritLcdBg: string;
+  spiritLcdOff: string;
+  spiritLcdAmber: string;
+  spiritLcdGlow: string;
+  spiritLcdSilkscreen: string;
+  // Phase A.2 — Ovilus green dot-matrix LCD.
+  ovilusLcdBezel: string;
+  ovilusLcdBg: string;
+  ovilusLcdOff: string;
+  ovilusLcdGreen: string;
+  ovilusLcdGlow: string;
+  ovilusLcdSilkscreen: string;
 }
 
 /** Hardcoded fallback palette — matches the default `:root` block in tokens.css. */
@@ -353,6 +385,27 @@ const METER_TOKEN_FALLBACK: MeterTokens = {
   remLedY:       "#f5d028",
   remLedOff:     "#1a1a1a",
   remPulse:      "rgba(46, 182, 239, 0.6)",
+  vuBody:        "#2a2a2a",
+  vuBodyEdge:    "#444444",
+  vuScaleBg:     "#e8d9a8",
+  vuScaleEdge:   "#b89e60",
+  vuScaleInk:    "#1a1a0a",
+  vuNeedle:      "#1a1a1a",
+  vuOverload:    "#c41e1e",
+  vuSilkscreen:  "#f0e6c8",
+  vuGlow:        "rgba(255, 200, 80, 0.35)",
+  spiritLcdBezel:       "#050505",
+  spiritLcdBg:          "#1a0d00",
+  spiritLcdOff:         "#2a1700",
+  spiritLcdAmber:       "#ffb020",
+  spiritLcdGlow:        "rgba(255, 176, 32, 0.55)",
+  spiritLcdSilkscreen:  "#b8b8b8",
+  ovilusLcdBezel:       "#1a1a1a",
+  ovilusLcdBg:          "#0a1a08",
+  ovilusLcdOff:         "#143018",
+  ovilusLcdGreen:       "#5cff85",
+  ovilusLcdGlow:        "rgba(92, 255, 133, 0.40)",
+  ovilusLcdSilkscreen:  "#c8c8c8",
 };
 
 /**
@@ -394,6 +447,27 @@ function readMeterTokens(): MeterTokens {
     remLedY:       pick("--rem-led-y",      METER_TOKEN_FALLBACK.remLedY),
     remLedOff:     pick("--rem-led-off",    METER_TOKEN_FALLBACK.remLedOff),
     remPulse:      pick("--rem-pulse",      METER_TOKEN_FALLBACK.remPulse),
+    vuBody:        pick("--vu-body",        METER_TOKEN_FALLBACK.vuBody),
+    vuBodyEdge:    pick("--vu-body-edge",   METER_TOKEN_FALLBACK.vuBodyEdge),
+    vuScaleBg:     pick("--vu-scale-bg",    METER_TOKEN_FALLBACK.vuScaleBg),
+    vuScaleEdge:   pick("--vu-scale-edge", METER_TOKEN_FALLBACK.vuScaleEdge),
+    vuScaleInk:    pick("--vu-scale-ink",  METER_TOKEN_FALLBACK.vuScaleInk),
+    vuNeedle:      pick("--vu-needle",      METER_TOKEN_FALLBACK.vuNeedle),
+    vuOverload:    pick("--vu-overload",    METER_TOKEN_FALLBACK.vuOverload),
+    vuSilkscreen:  pick("--vu-silkscreen",  METER_TOKEN_FALLBACK.vuSilkscreen),
+    vuGlow:        pick("--vu-glow",        METER_TOKEN_FALLBACK.vuGlow),
+    spiritLcdBezel:      pick("--spirit-lcd-bezel",      METER_TOKEN_FALLBACK.spiritLcdBezel),
+    spiritLcdBg:         pick("--spirit-lcd-bg",         METER_TOKEN_FALLBACK.spiritLcdBg),
+    spiritLcdOff:        pick("--spirit-lcd-off",        METER_TOKEN_FALLBACK.spiritLcdOff),
+    spiritLcdAmber:      pick("--spirit-lcd-amber",      METER_TOKEN_FALLBACK.spiritLcdAmber),
+    spiritLcdGlow:       pick("--spirit-lcd-glow",       METER_TOKEN_FALLBACK.spiritLcdGlow),
+    spiritLcdSilkscreen: pick("--spirit-lcd-silkscreen", METER_TOKEN_FALLBACK.spiritLcdSilkscreen),
+    ovilusLcdBezel:      pick("--ovilus-lcd-bezel",      METER_TOKEN_FALLBACK.ovilusLcdBezel),
+    ovilusLcdBg:         pick("--ovilus-lcd-bg",         METER_TOKEN_FALLBACK.ovilusLcdBg),
+    ovilusLcdOff:        pick("--ovilus-lcd-off",        METER_TOKEN_FALLBACK.ovilusLcdOff),
+    ovilusLcdGreen:      pick("--ovilus-lcd-green",      METER_TOKEN_FALLBACK.ovilusLcdGreen),
+    ovilusLcdGlow:       pick("--ovilus-lcd-glow",       METER_TOKEN_FALLBACK.ovilusLcdGlow),
+    ovilusLcdSilkscreen: pick("--ovilus-lcd-silkscreen", METER_TOKEN_FALLBACK.ovilusLcdSilkscreen),
   };
 }
 
@@ -430,6 +504,7 @@ export function createCanvasCompositor(opts: CanvasCompositorOptions): CanvasCom
     W: 0, H: 0, s: 1,
     edgeGlow: null, audioBar: null,
     meterTokens: null, kiiSmooth: null, remPulse: null,
+    vuNeedleSmooth: null,
   };
 
   // Context handle is also stable — getContext returns a cached instance, but
@@ -568,9 +643,24 @@ function renderFrame(
     drawRemPod(ctx, W, overlay.activityBand, overlay.emfZScore, s, meterTopY, frame);
   }
 
-  // 5. Audio meter — left edge, vertical bar.
+  // 5. VU audio meter — left edge, vintage analog look.
   if (channels.audioMeter) {
-    drawAudioMeter(ctx, W, H, overlay.audioRms, s, frame);
+    drawVuMeter(ctx, W, H, overlay.audioRms, s, frame);
+  }
+
+  // 5b. Spirit Box amber LCD — left edge, stacked below the VU meter.
+  //     Drawn only when the ITC channel is on and there's a recent emission.
+  //     drawItcReadout (top-right) skips the Spirit Box row when this widget
+  //     is also drawing, so the same phoneme stream isn't burnt in twice.
+  if (channels.itc) {
+    drawSpiritBoxLcd(ctx, H, overlay.itc?.spiritBox, s, frame);
+  }
+
+  // 5c. Ovilus green dot-matrix LCD — left edge, stacked below the Spirit Box.
+  //     Shows the word-of-the-moment + a magnetometer-seeded entropy bar so
+  //     the operator can see the dictionary RNG state visually.
+  if (channels.itc) {
+    drawOvilusLcd(ctx, H, overlay.itc?.ovilus, overlay.sensors?.magnetometer, s, frame);
   }
 
   // 6. Direction arrow (only if sector + coherence are valid).
@@ -833,8 +923,11 @@ function drawItcReadout(
     if (view.ageMs > maxAge) return;
     rows.push({ label, text: truncateForOverlay(view.text), age: formatAge(view.ageMs), ageMs: view.ageMs });
   };
-  pushIfFresh("SB",  itc.spiritBox, ITC_MAX_AGE_MS);
-  pushIfFresh("OV",  itc.ovilus,    ITC_MAX_AGE_MS);
+  // Spirit Box + Ovilus now render as dedicated skeuomorphic LCD widgets
+  // (drawSpiritBoxLcd amber + drawOvilusLcd green) instead of inline in this
+  // top-right text readout, so skip those rows to avoid double-drawing. EVP
+  // stays here because its evidence-grade rarity warrants the prominent
+  // textual presentation more than a single-word LCD would offer.
   pushIfFresh("EVP", itc.evp,       ITC_EVP_MAX_AGE_MS);
   if (rows.length === 0) return;
 
@@ -1500,19 +1593,44 @@ function drawRemPod(
   ctx.restore();
 }
 
-// ─── Audio meter (left edge, vertical) ──────────────────────────────────────
+// ─── Vintage VU audio meter (left edge, analog) ─────────────────────────────
+
+/** VU meter body dimensions (logical px @ s=1). Landscape — wider than tall.
+ *  140×96 leaves room for a proper 90°-sweep arc with red-zone above 0 VU. */
+const VU_BODY_W = 140;
+const VU_BODY_H = 96;
+/** Needle sweep range in radians. The needle pivots at the bottom-center;
+ *  left rest (silence) is at -45° from vertical-up, right peak (overload)
+ *  is at +45°. So the full sweep is 90°. */
+const VU_NEEDLE_REST_RAD = -Math.PI / 4;
+const VU_NEEDLE_PEAK_RAD =  Math.PI / 4;
+/** Audio level (0..1) at which the meter reads 0 VU — the boundary of the
+ *  red overload zone. -3 dBFS ≈ pow(10, -3/20) ≈ 0.708. Anything above this
+ *  swings into the red zone on the scale face. */
+const VU_OVERLOAD_LEVEL = 0.708;
 
 /**
- * Audio level meter — slim vertical bar mounted on the LEFT EDGE.
+ * Skeuomorphic vintage VU audio meter — analog needle on a cardboard-textured
+ * scale, with a red overload zone past -3 dB. Replaces the flat gradient bar
+ * the old `drawAudioMeter` used. Driven by the same `audioRms` input (we don't
+ * touch audio capture — only the draw layer).
  *
- * Layout (spec):
- *   width  ~12px (bar) + frame
- *   height ~140px
- *   Vertical gradient: green at bottom, yellow at 70%, red at peak
- *   Background rgba(0,0,0,0.4) rounded box
- *   Numeric dB indicator below the bar (small, optional read)
+ * Anatomy (logical px @ s=1, 140 × 96):
+ *   ┌────────────────────────────────────────┐  ← black bezel surround
+ *   │ ╔════════════════════════════════════╗ │
+ *   │ ║   .  .  .  .  ┃┃┃┃                ║ │   cardboard scale face,
+ *   │ ║       ╲      ╱                    ║ │   inked tick marks, red zone
+ *   │ ║         ╲   ╱       ━━━━━━━━━     ║ │   right of the 0 VU line.
+ *   │ ║          ╲┘╱        VU            ║ │   black needle pivots at the
+ *   │ ║           ╳         METER         ║ │   bottom-center, swings -45°
+ *   │ ╚════════════════════════════════════╝ │   to +45°.
+ *   └────────────────────────────────────────┘
+ *
+ * The needle obeys a 300 ms RC ballistic — the standard VU integration time
+ * — via `frame.vuNeedleSmooth`. Without that the needle pops between every
+ * audio frame, which reads digital not analog. dB readout sits below the scale.
  */
-function drawAudioMeter(
+function drawVuMeter(
   ctx: CanvasRenderingContext2D,
   _W: number,
   H: number,
@@ -1520,89 +1638,771 @@ function drawAudioMeter(
   s: number,
   frame: FrameContext,
 ): void {
-  // Size constants
-  const barW = Math.round(12 * s);
-  const barH = Math.round(140 * s);
-  const frameW = barW + Math.round(14 * s);
-  const dbFontPx = Math.round(9 * s);
-  const labelGap = Math.round(4 * s);
-  const frameH = barH + Math.round(12 * s) + dbFontPx + labelGap;
-  const margin = Math.round(12 * s);
-  // Align with the right-edge instrument stack so both bracket the camera frame.
-  const x = margin;
-  const y = Math.round(H * 0.30);
+  const tokens = getMeterTokens(frame);
 
-  drawSoftBox(ctx, x, y, frameW, frameH, "rgba(0,0,0,0.4)", "rgba(255,255,255,0.18)", 0.5);
-
-  // Clamp + power-curve compression (log-ish feel without the cost of log).
+  // Clamp + power-curve compression (log-ish feel, same as the old bar) so the
+  // needle leaves rest position on quiet rooms but isn't pinned to peak at
+  // moderate input. The ballistic below smooths the visual.
   const level = Math.min(1, Math.max(0, audioRms));
   const visualLevel = Math.pow(level, 0.55);
 
-  // Bar geometry — centred horizontally in the frame box.
-  const barX = x + Math.round((frameW - barW) / 2);
-  const barY = y + Math.round(6 * s);
-
-  // Bar background slot.
-  ctx.save();
-  ctx.fillStyle = "rgba(20,20,20,0.85)";
-  ctx.beginPath();
-  const r = barW / 2;
-  ctx.moveTo(barX + r, barY);
-  ctx.arcTo(barX + barW, barY, barX + barW, barY + r, r);
-  ctx.lineTo(barX + barW, barY + barH - r);
-  ctx.arcTo(barX + barW, barY + barH, barX + barW - r, barY + barH, r);
-  ctx.lineTo(barX + r, barY + barH);
-  ctx.arcTo(barX, barY + barH, barX, barY + barH - r, r);
-  ctx.lineTo(barX, barY + r);
-  ctx.arcTo(barX, barY, barX + r, barY, r);
-  ctx.closePath();
-  ctx.fill();
-
-  // Fill (clipped to slot shape). Gradient depends only on bar geometry, so
-  // we cache it on the compositor's FrameContext and reuse across frames.
-  ctx.clip();
-  if (visualLevel > 0) {
-    const fillH = barH * visualLevel;
-    const fillTop = barY + barH - fillH;
-    const key = `${barY}|${barH}`;
-    let entry = frame.audioBar;
-    if (!entry || entry.key !== key) {
-      const grad = ctx.createLinearGradient(0, barY + barH, 0, barY);
-      grad.addColorStop(0,    "#33EE55");
-      grad.addColorStop(0.6,  "#9FE83A");
-      grad.addColorStop(0.75, "#FFDD00");
-      grad.addColorStop(0.88, "#FF8800");
-      grad.addColorStop(1,    "#FF2222");
-      entry = { key, grad };
-      frame.audioBar = entry;
-    }
-    ctx.fillStyle = entry.grad;
-    ctx.fillRect(barX, fillTop, barW, fillH);
+  // VU ballistic — ~300 ms RC integration. lerp the smoother towards the
+  // current visualLevel; the time-constant defines how fast the needle
+  // settles. Cold start pins to current so the first frame isn't a snap.
+  const nowMs = (typeof performance !== "undefined" && typeof performance.now === "function")
+    ? performance.now()
+    : Date.now();
+  if (!frame.vuNeedleSmooth) {
+    frame.vuNeedleSmooth = { value: visualLevel, lastMs: nowMs };
+  } else {
+    const dtMs = Math.max(0, nowMs - frame.vuNeedleSmooth.lastMs);
+    const tau = 300; // ms — ANSI/IEC VU integration time
+    const alpha = 1 - Math.exp(-dtMs / tau);
+    frame.vuNeedleSmooth.value += (visualLevel - frame.vuNeedleSmooth.value) * alpha;
+    frame.vuNeedleSmooth.lastMs = nowMs;
   }
+  const needleLevel = Math.max(0, Math.min(1, frame.vuNeedleSmooth.value));
+  const needleAngle = VU_NEEDLE_REST_RAD + (VU_NEEDLE_PEAK_RAD - VU_NEEDLE_REST_RAD) * needleLevel;
+
+  // Geometry — body anchored to the left edge with a 12 px margin.
+  const bodyW = Math.round(VU_BODY_W * s);
+  const bodyH = Math.round(VU_BODY_H * s);
+  const margin = Math.round(12 * s);
+  const x = margin;
+  const y = Math.round(H * 0.30);
+  const radius = Math.round(6 * s);
+
+  ctx.save();
+
+  // 1. Drop shadow — soft, offset down so the bezel looks lifted off the frame.
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
+  ctx.shadowBlur = 6 * s;
+  ctx.shadowOffsetY = 3 * s;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.01)";
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.fill();
   ctx.restore();
 
-  // Threshold ticks at 70% / 85%.
+  // 2. Bezel — dark vertical gradient (edge → body → edge) so the surround
+  //    reads as moulded plastic / brushed metal.
+  const bezelGrad = ctx.createLinearGradient(0, y, 0, y + bodyH);
+  bezelGrad.addColorStop(0,    tokens.vuBodyEdge);
+  bezelGrad.addColorStop(0.5,  tokens.vuBody);
+  bezelGrad.addColorStop(1,    tokens.vuBodyEdge);
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.fillStyle = bezelGrad;
+  ctx.fill();
+
+  // 3. Bezel outline.
+  ctx.strokeStyle = tokens.vuBodyEdge;
+  ctx.lineWidth = 1.5;
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.stroke();
+
+  // 4. Recessed scale window — cardboard face inset into the bezel.
+  const insetX = Math.round(6 * s);
+  const insetTop = Math.round(6 * s);
+  const insetBottom = Math.round(18 * s); // leave space for dB readout
+  const scaleX = x + insetX;
+  const scaleY = y + insetTop;
+  const scaleW = bodyW - insetX * 2;
+  const scaleH = bodyH - insetTop - insetBottom;
+  const scaleR = Math.round(3 * s);
+
+  // Cardboard fill — slightly off-cream with a subtle vertical shading.
+  const scaleGrad = ctx.createLinearGradient(0, scaleY, 0, scaleY + scaleH);
+  scaleGrad.addColorStop(0,    tokens.vuScaleBg);
+  scaleGrad.addColorStop(0.7,  tokens.vuScaleBg);
+  scaleGrad.addColorStop(1,    tokens.vuScaleEdge);
+  roundedRectPath(ctx, scaleX, scaleY, scaleW, scaleH, scaleR);
+  ctx.fillStyle = scaleGrad;
+  ctx.fill();
+
+  // 4b. Warm internal lamp glow — radial gradient near the scale top centre
+  //     fakes the look of a single incandescent illuminating the back of the
+  //     scale (classic vintage VU meter touch).
   ctx.save();
-  ctx.strokeStyle = "rgba(255,255,255,0.28)";
-  ctx.lineWidth = 1;
-  for (const frac of [0.7, 0.85]) {
-    const ty = barY + barH - barH * frac;
+  roundedRectPath(ctx, scaleX, scaleY, scaleW, scaleH, scaleR);
+  ctx.clip();
+  const glowCx = scaleX + scaleW / 2;
+  const glowCy = scaleY + scaleH * 0.30;
+  const glowR = Math.max(scaleW, scaleH) * 0.6;
+  const glowGrad = ctx.createRadialGradient(glowCx, glowCy, 0, glowCx, glowCy, glowR);
+  glowGrad.addColorStop(0, tokens.vuGlow);
+  glowGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
+  ctx.fillStyle = glowGrad;
+  ctx.fillRect(scaleX, scaleY, scaleW, scaleH);
+  ctx.restore();
+
+  // 5. Scale arc geometry — needle pivots at the bottom-center of the scale
+  //    window; the arc sits a bit above the pivot so the tick marks face the
+  //    audience like a real VU meter.
+  const pivotX = scaleX + scaleW / 2;
+  const pivotY = scaleY + scaleH + Math.round(2 * s); // just below the scale
+  const arcR = Math.min(scaleW * 0.46, scaleH * 0.95);
+
+  // 5a. Red overload zone — fill the wedge from VU_OVERLOAD_LEVEL to peak.
+  //     This is the visual cue that "anything in here is clipping risk."
+  const overloadStartAngle = VU_NEEDLE_REST_RAD
+    + (VU_NEEDLE_PEAK_RAD - VU_NEEDLE_REST_RAD) * VU_OVERLOAD_LEVEL;
+  const overloadEndAngle = VU_NEEDLE_PEAK_RAD;
+  const arcInnerR = arcR * 0.82;
+  const arcOuterR = arcR * 1.02;
+  ctx.save();
+  ctx.beginPath();
+  // Outer arc (sweep clockwise from overloadStart to overloadEnd; canvas
+  // arc() angles are measured clockwise from +X, so we offset by -π/2 to align
+  // with "vertical-up = 0" semantics used by needleAngle).
+  ctx.arc(pivotX, pivotY, arcOuterR,
+    overloadStartAngle - Math.PI / 2,
+    overloadEndAngle   - Math.PI / 2, false);
+  // Inner arc, reversed direction to close the wedge.
+  ctx.arc(pivotX, pivotY, arcInnerR,
+    overloadEndAngle   - Math.PI / 2,
+    overloadStartAngle - Math.PI / 2, true);
+  ctx.closePath();
+  ctx.fillStyle = tokens.vuOverload;
+  ctx.globalAlpha = 0.78;
+  ctx.fill();
+  ctx.restore();
+
+  // 5b. Tick marks — short ink-stamped marks at canonical -20, -10, -5, -3, 0,
+  //     +3 VU positions. Real VU meters log-scale these; for our skeuomorph we
+  //     evenly distribute six ticks across the sweep with the 0 VU tick
+  //     emphasised. Ticks below 0 are full-length; ticks in the red zone are
+  //     drawn in red ink so the operator can see them through the red wedge.
+  ctx.save();
+  ctx.strokeStyle = tokens.vuScaleInk;
+  ctx.lineWidth = Math.max(1, 1.2 * s);
+  ctx.lineCap = "round";
+  type Tick = { level: number; label?: string; long: boolean };
+  const ticks: Tick[] = [
+    { level: 0,    label: "-20", long: true },
+    { level: 0.2,  label: "-10", long: true },
+    { level: 0.5,  label: "-5",  long: true },
+    { level: VU_OVERLOAD_LEVEL, label: "-3", long: true },
+    { level: 0.86, label: "0",   long: true },
+    { level: 1.0,  label: "+3",  long: true },
+  ];
+  for (const tick of ticks) {
+    const ang = VU_NEEDLE_REST_RAD + (VU_NEEDLE_PEAK_RAD - VU_NEEDLE_REST_RAD) * tick.level;
+    const cosA = Math.sin(ang); // sin because needleAngle=0 is straight up
+    const sinA = -Math.cos(ang);
+    const tickInner = arcR * (tick.long ? 0.78 : 0.86);
+    const tickOuter = arcR * 1.00;
     ctx.beginPath();
-    ctx.moveTo(barX - 1, ty);
-    ctx.lineTo(barX + barW + 1, ty);
+    ctx.moveTo(pivotX + cosA * tickInner, pivotY + sinA * tickInner);
+    ctx.lineTo(pivotX + cosA * tickOuter, pivotY + sinA * tickOuter);
     ctx.stroke();
   }
   ctx.restore();
 
-  // Numeric dB readout — convert RMS to dBFS-ish (20·log10), clamp to -60.
+  // 5c. "VU" silkscreen under the arc — small inked text branded onto the
+  //     cardboard scale, classic vintage look.
+  const vuLabelPx = Math.max(8, Math.round(10 * s));
+  ctx.save();
+  ctx.font = `700 ${vuLabelPx}px "Inter", system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = tokens.vuScaleInk;
+  ctx.fillText("VU", pivotX, pivotY - arcR * 0.42);
+  ctx.restore();
+
+  // 6. Needle — pivots at (pivotX, pivotY), length arcInnerR + small overrun.
+  //    Drawn AFTER the scale ink so it sits on top.
+  const needleLen = arcR * 0.92;
+  const tipX = pivotX + Math.sin(needleAngle) * needleLen;
+  const tipY = pivotY - Math.cos(needleAngle) * needleLen;
+  ctx.save();
+  // Subtle drop shadow under the needle for depth.
+  ctx.shadowColor = "rgba(0, 0, 0, 0.45)";
+  ctx.shadowBlur = 2 * s;
+  ctx.shadowOffsetX = 1 * s;
+  ctx.shadowOffsetY = 1 * s;
+  ctx.strokeStyle = tokens.vuNeedle;
+  ctx.lineWidth = Math.max(1.5, 1.8 * s);
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(pivotX, pivotY);
+  ctx.lineTo(tipX, tipY);
+  ctx.stroke();
+  ctx.restore();
+
+  // 6b. Pivot cap — small filled circle at the needle base, sells the analog look.
+  const pivotR = Math.max(2, Math.round(3 * s));
+  ctx.beginPath();
+  ctx.arc(pivotX, pivotY, pivotR, 0, Math.PI * 2);
+  ctx.fillStyle = tokens.vuNeedle;
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(pivotX - pivotR * 0.35, pivotY - pivotR * 0.35, pivotR * 0.35, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
+  ctx.fill();
+
+  // 7. "VU METER" silkscreen on the bezel below the scale (gear label, not
+  //    an anomaly claim). Sits in the inset-bottom margin reserved earlier.
+  const silkPx = Math.max(7, Math.round(8 * s));
+  ctx.font = `700 ${silkPx}px "Inter", system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = tokens.vuSilkscreen;
+  ctx.fillText("VU METER", x + bodyW / 2, y + bodyH - Math.round(11 * s));
+
+  // 8. Numeric dB readout — small mono digit row to the right of the silkscreen.
+  //    Keeps the operator value the legacy meter provided ("how loud is it
+  //    really") without giving up the analog aesthetic. Clamp to -60 dBFS.
   const dbValue = level > 0.001 ? 20 * Math.log10(level) : -60;
   const dbLabel = `${dbValue >= 0 ? "+" : ""}${dbValue.toFixed(0)} dB`;
+  const dbPx = Math.max(7, Math.round(8 * s));
   ctx.save();
-  ctx.font = `600 ${dbFontPx}px "JetBrains Mono", monospace`;
+  ctx.font = `600 ${dbPx}px "JetBrains Mono", monospace`;
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = tokens.vuSilkscreen;
+  ctx.fillText(dbLabel, x + bodyW - Math.round(8 * s), y + bodyH - Math.round(11 * s));
+  ctx.restore();
+
+  ctx.restore();
+}
+
+// ─── Spirit Box amber 7-segment LCD (left edge, below VU) ───────────────────
+
+/**
+ * 7-segment digit layout used by the Spirit Box LCD.
+ *
+ *       a
+ *     ┌───┐
+ *   f │   │ b
+ *     ├─g─┤
+ *   e │   │ c
+ *     └───┘
+ *       d           . dp (decimal point)
+ *
+ * Each glyph maps to the segments lit by digit (and dot-separator). Capital
+ * letters used by the units suffix ("MHz", "PH") are added on top of digits.
+ */
+const SEVEN_SEG_DIGITS: Record<string, ReadonlyArray<"a" | "b" | "c" | "d" | "e" | "f" | "g">> = {
+  "0": ["a", "b", "c", "d", "e", "f"],
+  "1": ["b", "c"],
+  "2": ["a", "b", "g", "e", "d"],
+  "3": ["a", "b", "g", "c", "d"],
+  "4": ["f", "g", "b", "c"],
+  "5": ["a", "f", "g", "c", "d"],
+  "6": ["a", "f", "g", "e", "c", "d"],
+  "7": ["a", "b", "c"],
+  "8": ["a", "b", "c", "d", "e", "f", "g"],
+  "9": ["a", "b", "c", "d", "f", "g"],
+  // Letters used by the "MHz" suffix glyphs.
+  "H": ["b", "c", "e", "f", "g"],
+  "M": ["a", "b", "c", "e", "f"],   // approximate — real M is impossible on 7-seg
+  "Z": ["a", "b", "g", "e", "d"],   // same as 2 — accept the visual ambiguity
+  // Space / blank.
+  " ": [],
+  "-": ["g"],
+};
+
+/** Spirit Box LCD body dimensions (logical px @ s=1). Landscape, fits two
+ *  rows: top = 7-segment freq, bottom = scrolling phoneme text. */
+const SPIRIT_LCD_BODY_W = 152;
+const SPIRIT_LCD_BODY_H = 70;
+/** Cadence of the simulated scanning frequency cycle — wrapping range of
+ *  100 MHz worth of phoneme-sweep visualisation in 6 seconds, matching the
+ *  spirit-box "you can almost catch a word" feel. The number is presentational
+ *  only — no real radio is being tuned. */
+const SPIRIT_LCD_SWEEP_MS = 6000;
+
+/**
+ * Draw one 7-segment glyph at (x, y) with cell dimensions (cellW, cellH).
+ * `segPx` controls segment thickness. Both lit and unlit segments are drawn
+ * (unlit very dim) so the audience can see the full character outline — a
+ * real LCD ghost-segments the inactive ones at low contrast.
+ */
+function drawSevenSegmentGlyph(
+  ctx: CanvasRenderingContext2D,
+  glyph: string,
+  x: number,
+  y: number,
+  cellW: number,
+  cellH: number,
+  segPx: number,
+  litColor: string,
+  offColor: string,
+): void {
+  const lit = new Set<string>(SEVEN_SEG_DIGITS[glyph] ?? []);
+  const mid = y + cellH / 2;
+  const inset = segPx; // shorten segment ends so corners don't overlap
+  type SegPath = { name: "a" | "b" | "c" | "d" | "e" | "f" | "g"; horiz: boolean; x1: number; y1: number; x2: number; y2: number };
+  const segs: SegPath[] = [
+    { name: "a", horiz: true,  x1: x + inset,        y1: y,                 x2: x + cellW - inset, y2: y },
+    { name: "b", horiz: false, x1: x + cellW,         y1: y + inset,         x2: x + cellW,         y2: mid - inset / 2 },
+    { name: "c", horiz: false, x1: x + cellW,         y1: mid + inset / 2,   x2: x + cellW,         y2: y + cellH - inset },
+    { name: "d", horiz: true,  x1: x + inset,        y1: y + cellH,          x2: x + cellW - inset, y2: y + cellH },
+    { name: "e", horiz: false, x1: x,                 y1: mid + inset / 2,   x2: x,                 y2: y + cellH - inset },
+    { name: "f", horiz: false, x1: x,                 y1: y + inset,         x2: x,                 y2: mid - inset / 2 },
+    { name: "g", horiz: true,  x1: x + inset,        y1: mid,                x2: x + cellW - inset, y2: mid },
+  ];
+  for (const seg of segs) {
+    ctx.strokeStyle = lit.has(seg.name) ? litColor : offColor;
+    ctx.lineWidth = segPx;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(seg.x1, seg.y1);
+    ctx.lineTo(seg.x2, seg.y2);
+    ctx.stroke();
+  }
+}
+
+/**
+ * Skeuomorphic Spirit Box amber LCD — Radio Shack PRO-2055-era 7-segment
+ * frequency display + scrolling phoneme text below, all on a black bezel.
+ *
+ * Anatomy (logical px @ s=1, 152 × 70):
+ *   ┌─────────────────────────────────────────────┐  ← black bezel surround
+ *   │  ╔═════════════════════════════════════╗   │
+ *   │  ║  ┃ ┃ ┃ ┃ . ┃ ┃   MHz                ║   │   amber 7-seg row 1:
+ *   │  ║                                      ║   │   "108.0 MHz"
+ *   │  ║  PHONEME: aaa eee mmm                ║   │   amber pixel text row 2:
+ *   │  ╚═════════════════════════════════════╝   │   scrolling phoneme
+ *   │              SPIRIT BOX                     │  ← silkscreen
+ *   └─────────────────────────────────────────────┘
+ *
+ * The frequency is a deterministic LFSR-style cycle through 88.0–108.0 MHz
+ * driven by Date.now() — honest UI ("phoneme sweep") because no real radio
+ * is being tuned. The phoneme text below is the literal phoneme from the
+ * existing useSpiritBox hook (already curated; no real speech).
+ *
+ * Token-driven palette so scotopic re-skin works without touching draw code.
+ */
+function drawSpiritBoxLcd(
+  ctx: CanvasRenderingContext2D,
+  H: number,
+  spiritBox: ItcChannelView | undefined,
+  s: number,
+  frame: FrameContext,
+): void {
+  const tokens = getMeterTokens(frame);
+
+  // Geometry — anchored to the left edge, stacked below the VU meter.
+  const bodyW = Math.round(SPIRIT_LCD_BODY_W * s);
+  const bodyH = Math.round(SPIRIT_LCD_BODY_H * s);
+  const margin = Math.round(12 * s);
+  const x = margin;
+  // VU meter sits at H * 0.30, height VU_BODY_H. Stack this 8 px below.
+  const vuBottom = Math.round(H * 0.30) + Math.round(VU_BODY_H * s);
+  const y = vuBottom + Math.round(8 * s);
+  const radius = Math.round(5 * s);
+
+  ctx.save();
+
+  // 1. Drop shadow under the bezel.
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
+  ctx.shadowBlur = 6 * s;
+  ctx.shadowOffsetY = 3 * s;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.01)";
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.fill();
+  ctx.restore();
+
+  // 2. Bezel — deep black with a subtle top highlight so it reads as moulded
+  //    plastic, not flat fill. Lit segments on near-black bg gives the LCD
+  //    real estate the depth a Radio Shack tuner casing has.
+  const bezelGrad = ctx.createLinearGradient(0, y, 0, y + bodyH);
+  bezelGrad.addColorStop(0, "#1a1a1a");
+  bezelGrad.addColorStop(0.5, tokens.spiritLcdBezel);
+  bezelGrad.addColorStop(1, "#1a1a1a");
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.fillStyle = bezelGrad;
+  ctx.fill();
+  ctx.strokeStyle = "#000";
+  ctx.lineWidth = 1;
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.stroke();
+
+  // 3. Recessed LCD pane — black inset rounded rect. The amber segments
+  //    light up against this near-black backplane.
+  const insetX = Math.round(6 * s);
+  const insetTopY = Math.round(6 * s);
+  const insetBottomMargin = Math.round(13 * s); // leave space for silkscreen
+  const lcdX = x + insetX;
+  const lcdY = y + insetTopY;
+  const lcdW = bodyW - insetX * 2;
+  const lcdH = bodyH - insetTopY - insetBottomMargin;
+  const lcdR = Math.round(3 * s);
+  roundedRectPath(ctx, lcdX, lcdY, lcdW, lcdH, lcdR);
+  ctx.fillStyle = tokens.spiritLcdBg;
+  ctx.fill();
+
+  // 4. Subtle inner-shadow rim so the LCD reads as inset into the bezel.
+  ctx.save();
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.7)";
+  ctx.lineWidth = 1;
+  roundedRectPath(ctx, lcdX + 0.5, lcdY + 0.5, lcdW - 1, lcdH - 1, lcdR);
+  ctx.stroke();
+  ctx.restore();
+
+  // 5. 7-segment frequency row — top half of the LCD pane.
+  //    Cycle through 88.0–108.0 MHz over SPIRIT_LCD_SWEEP_MS, deterministic by
+  //    wall-clock so the visual ALWAYS animates even if the operator hasn't
+  //    actually started the spirit box hook. Real-radio honesty: bezel says
+  //    "PHONEME SWEEP" not "RADIO SCAN" — the number is decorative.
+  const nowMs = Date.now();
+  const sweepT = (nowMs % SPIRIT_LCD_SWEEP_MS) / SPIRIT_LCD_SWEEP_MS;
+  const freq = 88.0 + sweepT * 20.0; // MHz
+  const freqStr = freq.toFixed(1); // e.g. "97.3" — produces "9","7",".","3"
+  // Build padded display "108.0 MHz" — 5 digits + dot + " MHz" suffix label.
+  // Mostly 4 char digits split across decimal.
+  const intPart = freqStr.split(".")[0].padStart(3, " "); // " 88" or "108"
+  const decPart = freqStr.split(".")[1] ?? "0";
+  const digitChars: { char: string; dot: boolean }[] = [];
+  for (let i = 0; i < intPart.length; i++) {
+    const isLast = i === intPart.length - 1;
+    digitChars.push({ char: intPart[i], dot: isLast });
+  }
+  digitChars.push({ char: decPart, dot: false });
+
+  // Digit cell dimensions — fit 4 cells across the LCD with comfortable padding.
+  const segRowH = Math.round(lcdH * 0.55);
+  const segRowY = lcdY + Math.round(3 * s);
+  const segPaddingX = Math.round(6 * s);
+  const cellGap = Math.round(2 * s);
+  const cellCount = digitChars.length;
+  const totalGap = cellGap * (cellCount - 1);
+  const cellW = Math.max(4, Math.floor((lcdW - segPaddingX * 2 - totalGap) * 0.62 / cellCount));
+  const cellH = segRowH;
+  const segPx = Math.max(1.5, Math.round(2 * s));
+
+  // Lay out from left.
+  let cx = lcdX + segPaddingX;
+  ctx.save();
+  // Add a soft amber halo behind the segment row so lit segments bloom — fakes
+  // the LCD backlight without a real bloom pass.
+  ctx.shadowColor = tokens.spiritLcdGlow;
+  ctx.shadowBlur = Math.round(3 * s);
+  for (const { char, dot } of digitChars) {
+    drawSevenSegmentGlyph(
+      ctx, char.trim() === "" ? " " : char,
+      cx, segRowY, cellW, cellH, segPx,
+      tokens.spiritLcdAmber, tokens.spiritLcdOff,
+    );
+    if (dot) {
+      // Decimal point — small filled square just below the digit's c-segment.
+      const dotR = Math.max(1.5, segPx * 0.9);
+      ctx.beginPath();
+      ctx.arc(cx + cellW + cellGap * 0.5 + dotR * 0.5, segRowY + cellH - dotR, dotR, 0, Math.PI * 2);
+      ctx.fillStyle = tokens.spiritLcdAmber;
+      ctx.fill();
+    }
+    cx += cellW + cellGap + (dot ? Math.round(4 * s) : 0);
+  }
+  ctx.restore();
+
+  // 5b. "MHz" suffix label — small monospace text to the right of the digits,
+  //     still amber so it reads as part of the LCD.
+  const suffixPx = Math.max(7, Math.round(9 * s));
+  ctx.save();
+  ctx.shadowColor = tokens.spiritLcdGlow;
+  ctx.shadowBlur = Math.round(2 * s);
+  ctx.font = `700 ${suffixPx}px "JetBrains Mono", monospace`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = tokens.spiritLcdAmber;
+  ctx.fillText("MHz", cx + Math.round(2 * s), segRowY + cellH * 0.55);
+  ctx.restore();
+
+  // 6. Phoneme text row — bottom half of the LCD pane.
+  //    Shows the curated phoneme from the existing useSpiritBox hook (already
+  //    a hand-curated phoneme bank, no real ASR / no audio leakage). The text
+  //    scrolls horizontally if it's longer than the LCD width, so longer
+  //    phonemes don't truncate the trailing characters.
+  const phonemeY = lcdY + Math.round(lcdH * 0.66);
+  const phonemeH = lcdH - (phonemeY - lcdY) - Math.round(2 * s);
+  const phonemePx = Math.max(8, Math.round(11 * s));
+  // Build the readout string — show "PH: <text>" so the operator immediately
+  // reads it as "phoneme" not as a word from a ghost. Empty / stale data
+  // collapses to the resting "-- --" placeholder so the LCD isn't ever blank.
+  const phonemeText = spiritBox && spiritBox.ageMs <= ITC_MAX_AGE_MS && spiritBox.text
+    ? spiritBox.text.trim().toUpperCase().slice(0, 22)
+    : "-- --";
+  ctx.save();
+  // Clip to the phoneme strip so any scroll can't bleed past the LCD pane.
+  ctx.beginPath();
+  ctx.rect(lcdX + Math.round(3 * s), phonemeY, lcdW - Math.round(6 * s), phonemeH);
+  ctx.clip();
+  ctx.font = `700 ${phonemePx}px "JetBrains Mono", monospace`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.shadowColor = tokens.spiritLcdGlow;
+  ctx.shadowBlur = Math.round(3 * s);
+  ctx.fillStyle = tokens.spiritLcdAmber;
+  const textW = ctx.measureText(phonemeText).width;
+  const stripW = lcdW - Math.round(6 * s);
+  let textX = lcdX + Math.round(6 * s);
+  if (textW > stripW) {
+    // Scroll: drift horizontally with a slow loop, 2 px/sec at s=1.
+    const cycleMs = 4000;
+    const drift = ((Date.now() % cycleMs) / cycleMs) * (textW + Math.round(20 * s));
+    textX -= drift;
+  }
+  ctx.fillText(phonemeText, textX, phonemeY + phonemeH / 2);
+  ctx.restore();
+
+  // 7. "SPIRIT BOX" silkscreen on the bezel below the LCD.
+  const silkPx = Math.max(7, Math.round(8 * s));
+  ctx.save();
+  ctx.font = `700 ${silkPx}px "Inter", system-ui, sans-serif`;
   ctx.textAlign = "center";
-  ctx.textBaseline = "top";
-  ctx.fillStyle = "rgba(255,255,255,0.78)";
-  ctx.fillText(dbLabel, x + frameW / 2, barY + barH + labelGap);
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = tokens.spiritLcdSilkscreen;
+  ctx.fillText("SPIRIT BOX", x + bodyW / 2, y + bodyH - Math.round(7 * s));
+  ctx.restore();
+
+  ctx.restore();
+}
+
+// ─── Ovilus green dot-matrix LCD (left edge, below Spirit Box) ──────────────
+
+/** Ovilus LCD body dimensions (logical px @ s=1). Matches the Spirit Box
+ *  proportions so the two stack with consistent rhythm down the left edge. */
+const OVILUS_LCD_BODY_W = 152;
+const OVILUS_LCD_BODY_H = 70;
+/** Number of cells in the entropy bar. 8 reads as a Game Boy-era byte. */
+const OVILUS_ENTROPY_CELL_COUNT = 8;
+
+/**
+ * 5×7 pixel-font glyph table for the Ovilus dot-matrix LCD. Each row is a
+ * bitmask (low bit = leftmost column) so a glyph is 5×7 = 35 dots laid out
+ * top-to-bottom. Renderer interprets bit i of row r as "pixel at column i,
+ * row r is on". Only A–Z + space are included — Ovilus words from the
+ * dictionary are uppercase, and the curated word list never contains
+ * punctuation. Unknown chars fall through to a blank glyph.
+ */
+const DOT_MATRIX_FONT: Record<string, ReadonlyArray<number>> = {
+  // Each row: bits 0..4 (leftmost..rightmost), 7 rows top→bottom.
+  "A": [0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
+  "B": [0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110],
+  "C": [0b01110, 0b10001, 0b10000, 0b10000, 0b10000, 0b10001, 0b01110],
+  "D": [0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110],
+  "E": [0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111],
+  "F": [0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000],
+  "G": [0b01110, 0b10001, 0b10000, 0b10111, 0b10001, 0b10001, 0b01110],
+  "H": [0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
+  "I": [0b01110, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110],
+  "J": [0b00111, 0b00010, 0b00010, 0b00010, 0b00010, 0b10010, 0b01100],
+  "K": [0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001],
+  "L": [0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111],
+  "M": [0b10001, 0b11011, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001],
+  "N": [0b10001, 0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001],
+  "O": [0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
+  "P": [0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000],
+  "Q": [0b01110, 0b10001, 0b10001, 0b10001, 0b10101, 0b10010, 0b01101],
+  "R": [0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001],
+  "S": [0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110],
+  "T": [0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100],
+  "U": [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
+  "V": [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100],
+  "W": [0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b11011, 0b10001],
+  "X": [0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001],
+  "Y": [0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100],
+  "Z": [0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b11111],
+  " ": [0, 0, 0, 0, 0, 0, 0],
+  "-": [0, 0, 0, 0b11111, 0, 0, 0],
+  "?": [0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0, 0b00100],
+};
+
+/**
+ * Draw a 5×7 dot-matrix glyph at (x, y) with each "pixel" rendered as a
+ * `dotSize × dotSize` square. Both lit and unlit dots are drawn so the
+ * dot-matrix grid is fully visible (the Game Boy LCD look — the off pixels
+ * are still faintly visible as the dark green grid).
+ */
+function drawDotMatrixGlyph(
+  ctx: CanvasRenderingContext2D,
+  glyph: string,
+  x: number,
+  y: number,
+  dotSize: number,
+  litColor: string,
+  offColor: string,
+): void {
+  const rows = DOT_MATRIX_FONT[glyph] ?? DOT_MATRIX_FONT[" "];
+  for (let r = 0; r < 7; r++) {
+    const rowBits = rows[r];
+    for (let c = 0; c < 5; c++) {
+      // Bit (4 - c) so the high bit (0b10000) is the leftmost column.
+      const lit = (rowBits >> (4 - c)) & 1;
+      ctx.fillStyle = lit ? litColor : offColor;
+      ctx.fillRect(x + c * dotSize, y + r * dotSize, dotSize - 0.5, dotSize - 0.5);
+    }
+  }
+}
+
+/**
+ * Skeuomorphic Ovilus green dot-matrix LCD — Game Boy-era pixel display
+ * with a dark green-black backplane + bright green pixel text. Shows the
+ * word-of-the-moment from the existing useOvilus hook + an 8-bit entropy
+ * bar driven by the live magnetometer reading (so the operator can see
+ * the dictionary RNG seed pool's state visually).
+ *
+ * Anatomy (logical px @ s=1, 152 × 70):
+ *   ┌─────────────────────────────────────────────┐  ← dark bezel
+ *   │  ╔═════════════════════════════════════╗   │
+ *   │  ║                                      ║   │
+ *   │  ║   ▓▓▓▓ ▓▓▓ ▓▓▓▓ ▓▓ ▓▓                ║   │   5x7 dot-matrix word
+ *   │  ║                                      ║   │
+ *   │  ║   █▒▒█▒█▒█▒▒                         ║   │   8-bit entropy bar
+ *   │  ╚═════════════════════════════════════╝   │
+ *   │               OVILUS                        │  ← silkscreen
+ *   └─────────────────────────────────────────────┘
+ *
+ * Honest copy — silkscreen reads "OVILUS" (gear label). The entropy bar is
+ * a visualisation of the magnetometer-seeded RNG pool state, not a "ghost
+ * speaks" indicator. When the bar is full of lit cells the entropy pool is
+ * high (lots of magnetometer variance recently); empty cells = quiet pool.
+ */
+function drawOvilusLcd(
+  ctx: CanvasRenderingContext2D,
+  H: number,
+  ovilus: ItcChannelView | undefined,
+  magnetometer: number | undefined,
+  s: number,
+  frame: FrameContext,
+): void {
+  const tokens = getMeterTokens(frame);
+
+  // Geometry — anchored to the left edge, 8 px below the Spirit Box LCD.
+  // Spirit Box is at vuBottom + 8 px with height SPIRIT_LCD_BODY_H.
+  const bodyW = Math.round(OVILUS_LCD_BODY_W * s);
+  const bodyH = Math.round(OVILUS_LCD_BODY_H * s);
+  const margin = Math.round(12 * s);
+  const x = margin;
+  const vuBottom = Math.round(H * 0.30) + Math.round(VU_BODY_H * s);
+  const spiritBottom = vuBottom + Math.round(8 * s) + Math.round(SPIRIT_LCD_BODY_H * s);
+  const y = spiritBottom + Math.round(8 * s);
+  const radius = Math.round(5 * s);
+
+  ctx.save();
+
+  // 1. Drop shadow under the bezel.
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
+  ctx.shadowBlur = 6 * s;
+  ctx.shadowOffsetY = 3 * s;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.01)";
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.fill();
+  ctx.restore();
+
+  // 2. Bezel — dark grey/black gradient.
+  const bezelGrad = ctx.createLinearGradient(0, y, 0, y + bodyH);
+  bezelGrad.addColorStop(0, "#2a2a2a");
+  bezelGrad.addColorStop(0.5, tokens.ovilusLcdBezel);
+  bezelGrad.addColorStop(1, "#2a2a2a");
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.fillStyle = bezelGrad;
+  ctx.fill();
+  ctx.strokeStyle = "#000";
+  ctx.lineWidth = 1;
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.stroke();
+
+  // 3. Recessed LCD pane — dark green-black backplane.
+  const insetX = Math.round(6 * s);
+  const insetTopY = Math.round(6 * s);
+  const insetBottomMargin = Math.round(13 * s);
+  const lcdX = x + insetX;
+  const lcdY = y + insetTopY;
+  const lcdW = bodyW - insetX * 2;
+  const lcdH = bodyH - insetTopY - insetBottomMargin;
+  const lcdR = Math.round(3 * s);
+  roundedRectPath(ctx, lcdX, lcdY, lcdW, lcdH, lcdR);
+  ctx.fillStyle = tokens.ovilusLcdBg;
+  ctx.fill();
+  ctx.save();
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.7)";
+  ctx.lineWidth = 1;
+  roundedRectPath(ctx, lcdX + 0.5, lcdY + 0.5, lcdW - 1, lcdH - 1, lcdR);
+  ctx.stroke();
+  ctx.restore();
+
+  // 4. Word display — uppercased text from the Ovilus hook, rendered in the
+  //    5×7 dot-matrix font. Centre-aligned in the upper 60% of the LCD pane.
+  //    Placeholder "????" when there's no fresh emission so the LCD never
+  //    reads blank — looks broken otherwise.
+  const word = ovilus && ovilus.ageMs <= ITC_MAX_AGE_MS && ovilus.text
+    ? ovilus.text.trim().toUpperCase().slice(0, 10)
+    : "????";
+
+  // Pick a dot size that fits the longest plausible word across the width.
+  // Each glyph is 5 dots wide + 1 dot gap = 6 dots per char. Max 10 chars
+  // → 60 dots wide. Available width = lcdW - 2*padding.
+  const wordRowPadX = Math.round(6 * s);
+  const wordRowAvailW = lcdW - wordRowPadX * 2;
+  const dotSizeFromW = Math.floor(wordRowAvailW / (word.length * 6));
+  // Word row uses ~60% of LCD height; 7 dot rows + breathing room.
+  const wordRowAvailH = Math.round(lcdH * 0.58);
+  const dotSizeFromH = Math.floor(wordRowAvailH / 9); // 7 rows + 2 dot pad
+  const dotSize = Math.max(1.5, Math.min(dotSizeFromW, dotSizeFromH));
+  const glyphW = 5 * dotSize;
+  const glyphGap = 1 * dotSize;
+  const wordW = word.length * (glyphW + glyphGap) - glyphGap;
+  const wordX = lcdX + (lcdW - wordW) / 2;
+  const wordY = lcdY + Math.round(4 * s);
+
+  ctx.save();
+  // Add a soft glow behind lit dots — fakes LCD backlight diffusion.
+  ctx.shadowColor = tokens.ovilusLcdGlow;
+  ctx.shadowBlur = Math.round(2.5 * s);
+  let gx = wordX;
+  for (const ch of word) {
+    drawDotMatrixGlyph(ctx, ch, gx, wordY, dotSize, tokens.ovilusLcdGreen, tokens.ovilusLcdOff);
+    gx += glyphW + glyphGap;
+  }
+  ctx.restore();
+
+  // 5. Entropy bar — 8-cell horizontal bar driven by the magnetometer
+  //    reading. Maps the magnitude into a 0..8 lit-cell count. Sits in the
+  //    lower 30% of the LCD pane. Honest copy — bezel says this is the
+  //    RNG pool state, not "spirit speaks".
+  //
+  //    Mapping: magnetometer in µT, plausible range 25–80 µT (Earth field +
+  //    indoor noise). Anything >55 µT lights all 8 cells; <25 µT shows just 1.
+  //    Outside that window the cell count clamps to 0..8.
+  const mag = typeof magnetometer === "number" && Number.isFinite(magnetometer)
+    ? magnetometer
+    : 35;  // default to a typical indoor reading so the bar isn't dead
+  const magNorm = Math.min(1, Math.max(0, (mag - 25) / 30));
+  const litCells = Math.round(magNorm * OVILUS_ENTROPY_CELL_COUNT);
+
+  const barPadX = Math.round(6 * s);
+  const barY = lcdY + lcdH - Math.round(11 * s);
+  const barH = Math.round(7 * s);
+  const barAvailW = lcdW - barPadX * 2;
+  const cellGap = Math.round(2 * s);
+  const cellW = Math.max(3, Math.floor((barAvailW - cellGap * (OVILUS_ENTROPY_CELL_COUNT - 1)) / OVILUS_ENTROPY_CELL_COUNT));
+
+  ctx.save();
+  ctx.shadowColor = tokens.ovilusLcdGlow;
+  ctx.shadowBlur = Math.round(2 * s);
+  for (let i = 0; i < OVILUS_ENTROPY_CELL_COUNT; i++) {
+    const cx = lcdX + barPadX + i * (cellW + cellGap);
+    const lit = i < litCells;
+    ctx.fillStyle = lit ? tokens.ovilusLcdGreen : tokens.ovilusLcdOff;
+    ctx.fillRect(cx, barY, cellW, barH);
+  }
+  ctx.restore();
+
+  // 6. "OVILUS" silkscreen on the bezel below the LCD.
+  const silkPx = Math.max(7, Math.round(8 * s));
+  ctx.save();
+  ctx.font = `700 ${silkPx}px "Inter", system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = tokens.ovilusLcdSilkscreen;
+  ctx.fillText("OVILUS", x + bodyW / 2, y + bodyH - Math.round(7 * s));
+  ctx.restore();
+
   ctx.restore();
 }
 
