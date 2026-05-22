@@ -9,18 +9,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
+import type { PreflightReport } from "../../lib/system/preflight";
 import { CameraWatchdogToast } from "./CameraWatchdogToast";
 
 afterEach(() => {
   cleanup();
 });
 
-const baseReport = {
-  overall: "warn" as const,
+const baseReport: PreflightReport = {
+  overall: "warn",
   checks: [
     {
       id: "battery",
-      level: "warn" as const,
+      level: "warn",
       message: "Battery is low",
       data: { batteryLevel: 0.18, batteryCharging: false },
     },
@@ -107,9 +108,9 @@ describe("<CameraWatchdogToast />", () => {
   });
 
   it("Install CTA renders only when storage warns AND installAvailable", () => {
-    const storageReport = {
-      overall: "warn" as const,
-      checks: [{ id: "storage", level: "warn" as const, message: "Low" }],
+    const storageReport: PreflightReport = {
+      overall: "warn",
+      checks: [{ id: "storage", level: "warn", message: "Low" }],
     };
     const { rerender } = render(
       <CameraWatchdogToast
@@ -179,9 +180,9 @@ describe("<CameraWatchdogToast />", () => {
 
   it("clicking Install fires onInstall", () => {
     const onInstall = vi.fn();
-    const storageReport = {
-      overall: "warn" as const,
-      checks: [{ id: "storage", level: "warn" as const, message: "Low" }],
+    const storageReport: PreflightReport = {
+      overall: "warn",
+      checks: [{ id: "storage", level: "warn", message: "Low" }],
     };
     render(
       <CameraWatchdogToast
