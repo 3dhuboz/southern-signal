@@ -91,16 +91,18 @@
    route below. The opacity dim is purely a chrome-readability cue. */
 .cameraWrap > div:first-child {
   opacity: 1 !important;
+  /* LiveStreamView's wrapFullscreen sizes itself; height: 100% picks it up.
+     Scoped to first-child (LiveStreamView) so it doesn't stretch the shutter,
+     dock, or absolutely-positioned chrome that follow as siblings — that
+     unscoped `.cameraWrap > *` rule previously caused the shutter button to
+     render as a full-height red blob and the broadcast HUD glass backgrounds
+     to spill into vertical bands. */
+  height: 100%;
 }
 /* The no-video overlay itself sits inside cameraWrap. The overlay carries
    `data-novideo-pinned` so the chrome-dim selector (`.cameraWrap > *:not(
    [data-novideo-pinned])` further up) leaves it at opacity 1 — no extra
    rule needed here. */
-
-/* LiveStreamView's wrapFullscreen sizes itself; height: 100% picks it up. */
-.cameraWrap > * {
-  height: 100%;
-}
 
 /* The no-video overlay's styles live in
    components/CameraNoVideoOverlay.module.css now (extracted alongside the
