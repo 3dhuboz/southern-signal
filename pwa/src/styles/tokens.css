@@ -177,6 +177,48 @@
   --rem-led-y:       #f5d028;
   --rem-led-off:     #1a1a1a;
   --rem-pulse:       rgba(46, 182, 239, 0.6);  /* triggered pulse ring */
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     Skeuomorphic gear meters — VU + Spirit Box + Ovilus (Phase A.2)
+     ─────────────────────────────────────────────────────────────────────────
+     Phase A.2 swaps the remaining three instrument widgets for skeuomorphic
+     equivalents: a vintage analog VU audio meter (replaces the flat gradient
+     peak bar), an amber 7-segment LCD readout for the Spirit Box (replaces
+     the inline phoneme row in the ITC block), and a green dot-matrix LCD for
+     the Ovilus (replaces the inline word row). Palette below is what
+     `canvasCompositor.drawVuMeter` / `drawSpiritBoxLcd` / `drawOvilusLcd`
+     resolve through `getComputedStyle` so the scotopic / daylight overrides
+     re-skin them without touching draw code. Honest copy only — silkscreens
+     read "VU METER" / "SPIRIT BOX" / "OVILUS" as gear labels, never as
+     anomaly claims.
+     ───────────────────────────────────────────────────────────────────────── */
+
+  /* Vintage VU audio meter — analog needle on a cardboard-textured scale */
+  --vu-body:         #2a2a2a;      /* black bezel surround */
+  --vu-body-edge:    #444444;      /* edge highlight */
+  --vu-scale-bg:     #e8d9a8;      /* cardboard / cream scale face */
+  --vu-scale-edge:   #b89e60;      /* darker scale rim shadow */
+  --vu-scale-ink:    #1a1a0a;      /* ink-stamped tick marks + numbers */
+  --vu-needle:       #1a1a1a;      /* black pivot needle */
+  --vu-overload:     #c41e1e;      /* red zone past -3 dB */
+  --vu-silkscreen:   #f0e6c8;      /* "VU" label over the scale */
+  --vu-glow:         rgba(255, 200, 80, 0.35);  /* warm internal lamp glow */
+
+  /* Spirit Box amber 7-segment LCD — Radio Shack PRO-2055 era */
+  --spirit-lcd-bezel:    #050505;     /* deep black bezel */
+  --spirit-lcd-bg:       #1a0d00;     /* near-black amber backplane */
+  --spirit-lcd-off:      #2a1700;     /* unlit segment shadow */
+  --spirit-lcd-amber:    #ffb020;     /* lit segment colour */
+  --spirit-lcd-glow:     rgba(255, 176, 32, 0.55);  /* segment halo */
+  --spirit-lcd-silkscreen: #b8b8b8;   /* "SPIRIT BOX" label on bezel */
+
+  /* Ovilus green dot-matrix LCD — Game Boy era */
+  --ovilus-lcd-bezel:    #1a1a1a;     /* dark bezel */
+  --ovilus-lcd-bg:       #0a1a08;     /* dark green-black backplane */
+  --ovilus-lcd-off:      #143018;     /* dim "off" pixel */
+  --ovilus-lcd-green:    #5cff85;     /* bright lit pixel */
+  --ovilus-lcd-glow:     rgba(92, 255, 133, 0.40);
+  --ovilus-lcd-silkscreen: #c8c8c8;   /* "OVILUS" label on bezel */
 }
 
 /* ==========================================================================
@@ -297,6 +339,36 @@
   --rem-led-y:       #6a1414;
   --rem-led-off:     #0a0202;
   --rem-pulse:       rgba(196, 30, 58, 0.4);
+
+  /* Skeuomorphic gear meters — VU + Spirit Box + Ovilus, scotopic-safe re-skin.
+     Amber Spirit Box LCD (~590 nm) and green Ovilus LCD (~525 nm) would both
+     burn dark-adapted vision. Collapse the entire palette into the ≥650 nm red
+     band so even the "amber" / "green" LCDs stay scotopic-friendly. Luminance
+     step between lit / unlit still encodes the readout without leaking short-
+     wavelength light into rod-cell adaptation. */
+  --vu-body:         #0a0202;
+  --vu-body-edge:    #1a0606;
+  --vu-scale-bg:     #2a0808;
+  --vu-scale-edge:   #5a1010;
+  --vu-scale-ink:    #7c0f1f;
+  --vu-needle:       #c41e3a;
+  --vu-overload:     #c41e3a;
+  --vu-silkscreen:   #7a1a1a;
+  --vu-glow:         rgba(196, 30, 58, 0.30);
+
+  --spirit-lcd-bezel:    #0a0202;
+  --spirit-lcd-bg:       #1a0404;
+  --spirit-lcd-off:      #2a0808;
+  --spirit-lcd-amber:    #c41e3a;
+  --spirit-lcd-glow:     rgba(196, 30, 58, 0.45);
+  --spirit-lcd-silkscreen: #7a1a1a;
+
+  --ovilus-lcd-bezel:    #0a0202;
+  --ovilus-lcd-bg:       #1a0606;
+  --ovilus-lcd-off:      #2a0808;
+  --ovilus-lcd-green:    #c41e3a;   /* "green" stays red under scotopic */
+  --ovilus-lcd-glow:     rgba(196, 30, 58, 0.40);
+  --ovilus-lcd-silkscreen: #7a1a1a;
 }
 
 /* No additive cyan glow in scotopic mode — replace with deep-red glow. */
