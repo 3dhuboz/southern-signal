@@ -1161,6 +1161,37 @@ export function CameraScreen() {
           needs an h1 so screen-reader navigation by heading works and
           Lighthouse / axe stop flagging the page. */}
       <h1 className="visually-hidden">Camera</h1>
+      {/* Visually-hidden keyboard equivalents for the three pointer gestures
+          (drop marker, prev/next scene). A keyboard-only or AT user can't
+          double-tap or swipe on a touch viewport, so these buttons surface
+          the same callbacks to a tabbable surface. They sit at the top of
+          the route's tab order so the first Tab into the camera lands on
+          the most-used action (drop marker). The push-to-talk long-press
+          has an existing alternative via the marker quick-tag with a voice
+          note — no separate button needed. */}
+      <div className="visually-hidden" aria-label="Camera gesture equivalents">
+        <button
+          type="button"
+          onClick={() => dropMarker()}
+          aria-label="Drop marker (same as double-tap on viewport)"
+        >
+          Drop marker
+        </button>
+        <button
+          type="button"
+          onClick={() => cycleScene("left")}
+          aria-label="Previous scene (same as swipe right on viewport)"
+        >
+          Previous scene
+        </button>
+        <button
+          type="button"
+          onClick={() => cycleScene("right")}
+          aria-label="Next scene (same as swipe left on viewport)"
+        >
+          Next scene
+        </button>
+      </div>
       {/* Hard constraint #3 — Entertainment-only label ALWAYS rendered on
           the session screen. The component pulls its copy from a frozen
           module-load constant in src/lib/legal/disclaimers.ts so it cannot
