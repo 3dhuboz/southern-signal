@@ -354,6 +354,13 @@ interface MeterTokens {
   spiritLcdAmber: string;
   spiritLcdGlow: string;
   spiritLcdSilkscreen: string;
+  // Phase A.2 — Ovilus green dot-matrix LCD.
+  ovilusLcdBezel: string;
+  ovilusLcdBg: string;
+  ovilusLcdOff: string;
+  ovilusLcdGreen: string;
+  ovilusLcdGlow: string;
+  ovilusLcdSilkscreen: string;
 }
 
 /** Hardcoded fallback palette — matches the default `:root` block in tokens.css. */
@@ -393,6 +400,12 @@ const METER_TOKEN_FALLBACK: MeterTokens = {
   spiritLcdAmber:       "#ffb020",
   spiritLcdGlow:        "rgba(255, 176, 32, 0.55)",
   spiritLcdSilkscreen:  "#b8b8b8",
+  ovilusLcdBezel:       "#1a1a1a",
+  ovilusLcdBg:          "#0a1a08",
+  ovilusLcdOff:         "#143018",
+  ovilusLcdGreen:       "#5cff85",
+  ovilusLcdGlow:        "rgba(92, 255, 133, 0.40)",
+  ovilusLcdSilkscreen:  "#c8c8c8",
 };
 
 /**
@@ -449,6 +462,12 @@ function readMeterTokens(): MeterTokens {
     spiritLcdAmber:      pick("--spirit-lcd-amber",      METER_TOKEN_FALLBACK.spiritLcdAmber),
     spiritLcdGlow:       pick("--spirit-lcd-glow",       METER_TOKEN_FALLBACK.spiritLcdGlow),
     spiritLcdSilkscreen: pick("--spirit-lcd-silkscreen", METER_TOKEN_FALLBACK.spiritLcdSilkscreen),
+    ovilusLcdBezel:      pick("--ovilus-lcd-bezel",      METER_TOKEN_FALLBACK.ovilusLcdBezel),
+    ovilusLcdBg:         pick("--ovilus-lcd-bg",         METER_TOKEN_FALLBACK.ovilusLcdBg),
+    ovilusLcdOff:        pick("--ovilus-lcd-off",        METER_TOKEN_FALLBACK.ovilusLcdOff),
+    ovilusLcdGreen:      pick("--ovilus-lcd-green",      METER_TOKEN_FALLBACK.ovilusLcdGreen),
+    ovilusLcdGlow:       pick("--ovilus-lcd-glow",       METER_TOKEN_FALLBACK.ovilusLcdGlow),
+    ovilusLcdSilkscreen: pick("--ovilus-lcd-silkscreen", METER_TOKEN_FALLBACK.ovilusLcdSilkscreen),
   };
 }
 
@@ -635,6 +654,13 @@ function renderFrame(
   //     is also drawing, so the same phoneme stream isn't burnt in twice.
   if (channels.itc) {
     drawSpiritBoxLcd(ctx, H, overlay.itc?.spiritBox, s, frame);
+  }
+
+  // 5c. Ovilus green dot-matrix LCD — left edge, stacked below the Spirit Box.
+  //     Shows the word-of-the-moment + a magnetometer-seeded entropy bar so
+  //     the operator can see the dictionary RNG state visually.
+  if (channels.itc) {
+    drawOvilusLcd(ctx, H, overlay.itc?.ovilus, overlay.sensors?.magnetometer, s, frame);
   }
 
   // 6. Direction arrow (only if sector + coherence are valid).
@@ -897,10 +923,11 @@ function drawItcReadout(
     if (view.ageMs > maxAge) return;
     rows.push({ label, text: truncateForOverlay(view.text), age: formatAge(view.ageMs), ageMs: view.ageMs });
   };
-  // Spirit Box now renders as a dedicated amber 7-segment LCD widget
-  // (drawSpiritBoxLcd) instead of inline in this top-right text readout, so
-  // skip its row here to avoid double-drawing the same phoneme stream.
-  pushIfFresh("OV",  itc.ovilus,    ITC_MAX_AGE_MS);
+  // Spirit Box + Ovilus now render as dedicated skeuomorphic LCD widgets
+  // (drawSpiritBoxLcd amber + drawOvilusLcd green) instead of inline in this
+  // top-right text readout, so skip those rows to avoid double-drawing. EVP
+  // stays here because its evidence-grade rarity warrants the prominent
+  // textual presentation more than a single-word LCD would offer.
   pushIfFresh("EVP", itc.evp,       ITC_EVP_MAX_AGE_MS);
   if (rows.length === 0) return;
 
@@ -2129,6 +2156,251 @@ function drawSpiritBoxLcd(
   ctx.textBaseline = "middle";
   ctx.fillStyle = tokens.spiritLcdSilkscreen;
   ctx.fillText("SPIRIT BOX", x + bodyW / 2, y + bodyH - Math.round(7 * s));
+  ctx.restore();
+
+  ctx.restore();
+}
+
+// ─── Ovilus green dot-matrix LCD (left edge, below Spirit Box) ──────────────
+
+/** Ovilus LCD body dimensions (logical px @ s=1). Matches the Spirit Box
+ *  proportions so the two stack with consistent rhythm down the left edge. */
+const OVILUS_LCD_BODY_W = 152;
+const OVILUS_LCD_BODY_H = 70;
+/** Number of cells in the entropy bar. 8 reads as a Game Boy-era byte. */
+const OVILUS_ENTROPY_CELL_COUNT = 8;
+
+/**
+ * 5×7 pixel-font glyph table for the Ovilus dot-matrix LCD. Each row is a
+ * bitmask (low bit = leftmost column) so a glyph is 5×7 = 35 dots laid out
+ * top-to-bottom. Renderer interprets bit i of row r as "pixel at column i,
+ * row r is on". Only A–Z + space are included — Ovilus words from the
+ * dictionary are uppercase, and the curated word list never contains
+ * punctuation. Unknown chars fall through to a blank glyph.
+ */
+const DOT_MATRIX_FONT: Record<string, ReadonlyArray<number>> = {
+  // Each row: bits 0..4 (leftmost..rightmost), 7 rows top→bottom.
+  "A": [0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
+  "B": [0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110],
+  "C": [0b01110, 0b10001, 0b10000, 0b10000, 0b10000, 0b10001, 0b01110],
+  "D": [0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110],
+  "E": [0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111],
+  "F": [0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000],
+  "G": [0b01110, 0b10001, 0b10000, 0b10111, 0b10001, 0b10001, 0b01110],
+  "H": [0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
+  "I": [0b01110, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110],
+  "J": [0b00111, 0b00010, 0b00010, 0b00010, 0b00010, 0b10010, 0b01100],
+  "K": [0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001],
+  "L": [0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111],
+  "M": [0b10001, 0b11011, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001],
+  "N": [0b10001, 0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001],
+  "O": [0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
+  "P": [0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000],
+  "Q": [0b01110, 0b10001, 0b10001, 0b10001, 0b10101, 0b10010, 0b01101],
+  "R": [0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001],
+  "S": [0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110],
+  "T": [0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100],
+  "U": [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
+  "V": [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100],
+  "W": [0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b11011, 0b10001],
+  "X": [0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001],
+  "Y": [0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100],
+  "Z": [0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b11111],
+  " ": [0, 0, 0, 0, 0, 0, 0],
+  "-": [0, 0, 0, 0b11111, 0, 0, 0],
+  "?": [0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0, 0b00100],
+};
+
+/**
+ * Draw a 5×7 dot-matrix glyph at (x, y) with each "pixel" rendered as a
+ * `dotSize × dotSize` square. Both lit and unlit dots are drawn so the
+ * dot-matrix grid is fully visible (the Game Boy LCD look — the off pixels
+ * are still faintly visible as the dark green grid).
+ */
+function drawDotMatrixGlyph(
+  ctx: CanvasRenderingContext2D,
+  glyph: string,
+  x: number,
+  y: number,
+  dotSize: number,
+  litColor: string,
+  offColor: string,
+): void {
+  const rows = DOT_MATRIX_FONT[glyph] ?? DOT_MATRIX_FONT[" "];
+  for (let r = 0; r < 7; r++) {
+    const rowBits = rows[r];
+    for (let c = 0; c < 5; c++) {
+      // Bit (4 - c) so the high bit (0b10000) is the leftmost column.
+      const lit = (rowBits >> (4 - c)) & 1;
+      ctx.fillStyle = lit ? litColor : offColor;
+      ctx.fillRect(x + c * dotSize, y + r * dotSize, dotSize - 0.5, dotSize - 0.5);
+    }
+  }
+}
+
+/**
+ * Skeuomorphic Ovilus green dot-matrix LCD — Game Boy-era pixel display
+ * with a dark green-black backplane + bright green pixel text. Shows the
+ * word-of-the-moment from the existing useOvilus hook + an 8-bit entropy
+ * bar driven by the live magnetometer reading (so the operator can see
+ * the dictionary RNG seed pool's state visually).
+ *
+ * Anatomy (logical px @ s=1, 152 × 70):
+ *   ┌─────────────────────────────────────────────┐  ← dark bezel
+ *   │  ╔═════════════════════════════════════╗   │
+ *   │  ║                                      ║   │
+ *   │  ║   ▓▓▓▓ ▓▓▓ ▓▓▓▓ ▓▓ ▓▓                ║   │   5x7 dot-matrix word
+ *   │  ║                                      ║   │
+ *   │  ║   █▒▒█▒█▒█▒▒                         ║   │   8-bit entropy bar
+ *   │  ╚═════════════════════════════════════╝   │
+ *   │               OVILUS                        │  ← silkscreen
+ *   └─────────────────────────────────────────────┘
+ *
+ * Honest copy — silkscreen reads "OVILUS" (gear label). The entropy bar is
+ * a visualisation of the magnetometer-seeded RNG pool state, not a "ghost
+ * speaks" indicator. When the bar is full of lit cells the entropy pool is
+ * high (lots of magnetometer variance recently); empty cells = quiet pool.
+ */
+function drawOvilusLcd(
+  ctx: CanvasRenderingContext2D,
+  H: number,
+  ovilus: ItcChannelView | undefined,
+  magnetometer: number | undefined,
+  s: number,
+  frame: FrameContext,
+): void {
+  const tokens = getMeterTokens(frame);
+
+  // Geometry — anchored to the left edge, 8 px below the Spirit Box LCD.
+  // Spirit Box is at vuBottom + 8 px with height SPIRIT_LCD_BODY_H.
+  const bodyW = Math.round(OVILUS_LCD_BODY_W * s);
+  const bodyH = Math.round(OVILUS_LCD_BODY_H * s);
+  const margin = Math.round(12 * s);
+  const x = margin;
+  const vuBottom = Math.round(H * 0.30) + Math.round(VU_BODY_H * s);
+  const spiritBottom = vuBottom + Math.round(8 * s) + Math.round(SPIRIT_LCD_BODY_H * s);
+  const y = spiritBottom + Math.round(8 * s);
+  const radius = Math.round(5 * s);
+
+  ctx.save();
+
+  // 1. Drop shadow under the bezel.
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
+  ctx.shadowBlur = 6 * s;
+  ctx.shadowOffsetY = 3 * s;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.01)";
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.fill();
+  ctx.restore();
+
+  // 2. Bezel — dark grey/black gradient.
+  const bezelGrad = ctx.createLinearGradient(0, y, 0, y + bodyH);
+  bezelGrad.addColorStop(0, "#2a2a2a");
+  bezelGrad.addColorStop(0.5, tokens.ovilusLcdBezel);
+  bezelGrad.addColorStop(1, "#2a2a2a");
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.fillStyle = bezelGrad;
+  ctx.fill();
+  ctx.strokeStyle = "#000";
+  ctx.lineWidth = 1;
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.stroke();
+
+  // 3. Recessed LCD pane — dark green-black backplane.
+  const insetX = Math.round(6 * s);
+  const insetTopY = Math.round(6 * s);
+  const insetBottomMargin = Math.round(13 * s);
+  const lcdX = x + insetX;
+  const lcdY = y + insetTopY;
+  const lcdW = bodyW - insetX * 2;
+  const lcdH = bodyH - insetTopY - insetBottomMargin;
+  const lcdR = Math.round(3 * s);
+  roundedRectPath(ctx, lcdX, lcdY, lcdW, lcdH, lcdR);
+  ctx.fillStyle = tokens.ovilusLcdBg;
+  ctx.fill();
+  ctx.save();
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.7)";
+  ctx.lineWidth = 1;
+  roundedRectPath(ctx, lcdX + 0.5, lcdY + 0.5, lcdW - 1, lcdH - 1, lcdR);
+  ctx.stroke();
+  ctx.restore();
+
+  // 4. Word display — uppercased text from the Ovilus hook, rendered in the
+  //    5×7 dot-matrix font. Centre-aligned in the upper 60% of the LCD pane.
+  //    Placeholder "????" when there's no fresh emission so the LCD never
+  //    reads blank — looks broken otherwise.
+  const word = ovilus && ovilus.ageMs <= ITC_MAX_AGE_MS && ovilus.text
+    ? ovilus.text.trim().toUpperCase().slice(0, 10)
+    : "????";
+
+  // Pick a dot size that fits the longest plausible word across the width.
+  // Each glyph is 5 dots wide + 1 dot gap = 6 dots per char. Max 10 chars
+  // → 60 dots wide. Available width = lcdW - 2*padding.
+  const wordRowPadX = Math.round(6 * s);
+  const wordRowAvailW = lcdW - wordRowPadX * 2;
+  const dotSizeFromW = Math.floor(wordRowAvailW / (word.length * 6));
+  // Word row uses ~60% of LCD height; 7 dot rows + breathing room.
+  const wordRowAvailH = Math.round(lcdH * 0.58);
+  const dotSizeFromH = Math.floor(wordRowAvailH / 9); // 7 rows + 2 dot pad
+  const dotSize = Math.max(1.5, Math.min(dotSizeFromW, dotSizeFromH));
+  const glyphW = 5 * dotSize;
+  const glyphGap = 1 * dotSize;
+  const wordW = word.length * (glyphW + glyphGap) - glyphGap;
+  const wordX = lcdX + (lcdW - wordW) / 2;
+  const wordY = lcdY + Math.round(4 * s);
+
+  ctx.save();
+  // Add a soft glow behind lit dots — fakes LCD backlight diffusion.
+  ctx.shadowColor = tokens.ovilusLcdGlow;
+  ctx.shadowBlur = Math.round(2.5 * s);
+  let gx = wordX;
+  for (const ch of word) {
+    drawDotMatrixGlyph(ctx, ch, gx, wordY, dotSize, tokens.ovilusLcdGreen, tokens.ovilusLcdOff);
+    gx += glyphW + glyphGap;
+  }
+  ctx.restore();
+
+  // 5. Entropy bar — 8-cell horizontal bar driven by the magnetometer
+  //    reading. Maps the magnitude into a 0..8 lit-cell count. Sits in the
+  //    lower 30% of the LCD pane. Honest copy — bezel says this is the
+  //    RNG pool state, not "spirit speaks".
+  //
+  //    Mapping: magnetometer in µT, plausible range 25–80 µT (Earth field +
+  //    indoor noise). Anything >55 µT lights all 8 cells; <25 µT shows just 1.
+  //    Outside that window the cell count clamps to 0..8.
+  const mag = typeof magnetometer === "number" && Number.isFinite(magnetometer)
+    ? magnetometer
+    : 35;  // default to a typical indoor reading so the bar isn't dead
+  const magNorm = Math.min(1, Math.max(0, (mag - 25) / 30));
+  const litCells = Math.round(magNorm * OVILUS_ENTROPY_CELL_COUNT);
+
+  const barPadX = Math.round(6 * s);
+  const barY = lcdY + lcdH - Math.round(11 * s);
+  const barH = Math.round(7 * s);
+  const barAvailW = lcdW - barPadX * 2;
+  const cellGap = Math.round(2 * s);
+  const cellW = Math.max(3, Math.floor((barAvailW - cellGap * (OVILUS_ENTROPY_CELL_COUNT - 1)) / OVILUS_ENTROPY_CELL_COUNT));
+
+  ctx.save();
+  ctx.shadowColor = tokens.ovilusLcdGlow;
+  ctx.shadowBlur = Math.round(2 * s);
+  for (let i = 0; i < OVILUS_ENTROPY_CELL_COUNT; i++) {
+    const cx = lcdX + barPadX + i * (cellW + cellGap);
+    const lit = i < litCells;
+    ctx.fillStyle = lit ? tokens.ovilusLcdGreen : tokens.ovilusLcdOff;
+    ctx.fillRect(cx, barY, cellW, barH);
+  }
+  ctx.restore();
+
+  // 6. "OVILUS" silkscreen on the bezel below the LCD.
+  const silkPx = Math.max(7, Math.round(8 * s));
+  ctx.save();
+  ctx.font = `700 ${silkPx}px "Inter", system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = tokens.ovilusLcdSilkscreen;
+  ctx.fillText("OVILUS", x + bodyW / 2, y + bodyH - Math.round(7 * s));
   ctx.restore();
 
   ctx.restore();
