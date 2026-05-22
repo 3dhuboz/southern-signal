@@ -744,7 +744,23 @@ function renderFrame(
 
   // 1. Camera frame (cover-fit). ALWAYS drawn — disabling this would just
   // give the operator a black square and is never what they want.
-  ctx.drawImage(video, 0, 0, W, H);
+  //
+  // Phase B: when fullSpectrumCam is on we route the drawImage through a
+  // canvas filter chain (hue-rotate + saturate + contrast) so the camera
+  // frame picks up the false-colour "IR-modified DSLR" look. ctx.filter is
+  // applied AT drawImage time, then reset — that way the meter draws
+  // downstream aren't affected. Browsers that don't support ctx.filter (very
+  // old WebViews) will just see a plain frame, no crash.
+  if (channels.fullSpectrumCam) {
+    ctx.save();
+    ctx.filter = "hue-rotate(-25deg) saturate(1.35) contrast(1.15)";
+    ctx.drawImage(video, 0, 0, W, H);
+    ctx.restore();
+    // Magenta/violet wash on top — completes the look and stays in burn-in.
+    applyFullSpectrumTint(ctx, W, H);
+  } else {
+    ctx.drawImage(video, 0, 0, W, H);
+  }
 
   // 1b. Night-vision filter — applied immediately after the camera frame and
   //     before any overlay is drawn, so the NV colour-grade sits under all
@@ -752,6 +768,14 @@ function renderFrame(
   //     run within budget at 30fps on modern mobile GPUs.
   if (channels.nightVision) {
     applyNightVision(ctx, W, H);
+  }
+
+  // 1c. "FAUX-IR PROCESSING" badge — small label burned into the corner so
+  //     the recording itself proves the false-colour effect is a video filter,
+  //     not a real IR sensor. Sits below the night-vision pass so its text
+  //     stays at correct hue regardless of whether NV is also enabled.
+  if (channels.fullSpectrumCam) {
+    drawFullSpectrumBadge(ctx, W, H, s, frame);
   }
 
   const band = BAND_COLOR[overlay.activityBand] ?? BAND_COLOR.calm;
@@ -3155,6 +3179,70 @@ function applyNightVision(
     d[i + 2] = Math.round(boosted * 0.06); // B — near zero
   }
   ctx.putImageData(imageData, 0, 0);
+}
+
+// ─── Faux-IR "full-spectrum" wash + badge ───────────────────────────────────
+
+/**
+ * Translucent magenta/violet rectangle painted over the (already filtered)
+ * camera frame. Completes the IR-modified-DSLR look — a real full-spectrum
+ * conversion shifts neutral whites toward pink/magenta in the highlights.
+ * Uses `globalCompositeOperation = "overlay"` so the wash multiplies into
+ * mid-tones without crushing pure black or pure white. Drawn before any
+ * overlay text/widgets so the chrome sits on top of the tinted feed.
+ *
+ * Honest framing: this is a video tint, not real IR sensitivity. Phone
+ * cameras have a hardware IR-cut filter we cannot remove in software. The
+ * `drawFullSpectrumBadge` call downstream burns "FAUX-IR PROCESSING" into
+ * the frame so the recording itself proves the effect is a filter.
+ */
+function applyFullSpectrumTint(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  H: number,
+): void {
+  ctx.save();
+  ctx.globalCompositeOperation = "overlay";
+  ctx.fillStyle = "rgba(186, 120, 220, 0.18)";
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+}
+
+/**
+ * Burns a small "FAUX-IR PROCESSING" pill into the top-right of the frame
+ * (just below the EVP block) so the recorded / streamed output proves the
+ * false-colour effect is a filter, not a real IR sensor. Honest copy is a
+ * hard constraint per Phase B brief — operators must not be able to pass
+ * off this filter as "real infrared" footage.
+ */
+function drawFullSpectrumBadge(
+  ctx: CanvasRenderingContext2D,
+  _W: number,
+  _H: number,
+  s: number,
+  frame: FrameContext,
+): void {
+  const tokens = getMeterTokens(frame);
+  const labelText = "FAUX-IR PROCESSING";
+  const pillH = Math.round(20 * s);
+  const fontSize = Math.max(9, Math.round(10 * s));
+  const padX = Math.round(10 * s);
+  const margin = Math.round(12 * s);
+
+  ctx.save();
+  ctx.font = `700 ${fontSize}px "Inter", system-ui, sans-serif`;
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "center";
+  const w = Math.round(ctx.measureText(labelText).width + padX * 2);
+  // Top-left — tucked under the REC/LIVE pills which centre on top; the
+  // badge sits at the same y-band so it reads as a status row, not as
+  // chrome that overlaps the camera subject.
+  const x = margin;
+  const y = margin + Math.round(36 * s); // 36 px below top so STATUS PILLS stay clear
+  drawPill(ctx, x, y, w, pillH, tokens.fullspecBadgeBg, tokens.fullspecBadgeRim);
+  ctx.fillStyle = tokens.fullspecBadgeText;
+  ctx.fillText(labelText, x + w / 2, y + pillH / 2);
+  ctx.restore();
 }
 
 // ─── Corner brackets ────────────────────────────────────────────────────────
