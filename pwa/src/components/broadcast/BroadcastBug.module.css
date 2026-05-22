@@ -20,10 +20,10 @@
   padding: 0 14px 0 12px;
 
   /* Dark glass — forensic, calm, no horror. */
-  background: rgba(8, 12, 18, 0.62);
+  background: var(--hud-glass-bg);
   backdrop-filter: blur(14px) saturate(140%);
   -webkit-backdrop-filter: blur(14px) saturate(140%);
-  border: 1px solid rgba(93, 242, 199, 0.18);
+  border: 1px solid var(--hud-rim);
   border-radius: 10px;
 
   color: var(--text-primary, #E7ECF3);
@@ -54,7 +54,7 @@
   align-items: center;
   gap: 4px;
   padding-right: 9px;
-  border-right: 1px solid rgba(93, 242, 199, 0.22);
+  border-right: 1px solid var(--hud-rim);
   height: 18px;
   color: var(--signal, #5DF2C7);
 }
@@ -114,7 +114,7 @@
 .idle .label { color: var(--text-secondary, #9BA6B8); }
 
 .ready {
-  border-color: rgba(93, 242, 199, 0.28);
+  border-color: var(--hud-rim-strong);
 }
 .ready .dot {
   background: var(--signal-dim, #2BA386);
@@ -122,18 +122,18 @@
 .ready .label { color: var(--text-primary, #E7ECF3); }
 
 .live {
-  border-color: rgba(93, 242, 199, 0.45);
-  background: rgba(8, 14, 18, 0.7);
+  border-color: var(--hud-rim-strong);
+  background: var(--hud-glass-bg-strong);
 }
 .live .dot {
   background: var(--signal, #5DF2C7);
-  box-shadow: 0 0 10px rgba(93, 242, 199, 0.55);
+  box-shadow: 0 0 10px var(--hud-rim-glow);
 }
 .live .label { color: var(--signal, #5DF2C7); }
 
 .rec {
   border-color: rgba(239, 110, 110, 0.55);
-  background: rgba(18, 8, 10, 0.7);
+  background: var(--hud-glass-bg-strong);
 }
 .rec .dot {
   background: var(--danger, #EF6E6E);

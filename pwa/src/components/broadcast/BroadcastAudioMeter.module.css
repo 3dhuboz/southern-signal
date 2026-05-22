@@ -23,10 +23,10 @@
   padding: 10px 12px 8px;
   width: 64px;
 
-  background: rgba(8, 12, 18, 0.62);
+  background: var(--hud-glass-bg);
   backdrop-filter: blur(14px) saturate(140%);
   -webkit-backdrop-filter: blur(14px) saturate(140%);
-  border: 1px solid rgba(93, 242, 199, 0.18);
+  border: 1px solid var(--hud-rim);
   border-radius: 10px;
   box-shadow:
     0 6px 16px rgba(0, 0, 0, 0.55),
@@ -71,7 +71,7 @@
   flex: 1 1 auto;
   width: 18px;
   background: rgba(7, 11, 16, 0.7);
-  border: 1px solid rgba(93, 242, 199, 0.16);
+  border: 1px solid var(--hud-rim);
   border-radius: 3px;
   overflow: hidden;
 }
@@ -83,11 +83,11 @@
   inset: 0;
   background: linear-gradient(
     to top,
-    #48c882 0%,
-    #48c882 42%,
-    #d4c026 70%,
-    #ef6e6e 92%,
-    #ef6e6e 100%
+    var(--meter-low) 0%,
+    var(--meter-low) 42%,
+    var(--meter-mid) 70%,
+    var(--meter-high) 92%,
+    var(--meter-high) 100%
   );
   transform-origin: bottom center;
   transform: scaleY(0);
@@ -166,11 +166,11 @@
 /* VAD-active accent — rim glows cyan when voice activity detected; matches
    the original meter's affordance but in the new visual language. */
 .active {
-  border-color: rgba(93, 242, 199, 0.55);
+  border-color: var(--hud-rim-active);
   box-shadow:
     0 6px 16px rgba(0, 0, 0, 0.55),
-    0 0 14px rgba(93, 242, 199, 0.18),
+    0 0 14px var(--hud-rim),
     0 1px 0 rgba(255, 255, 255, 0.04) inset;
 }
 .active .label { color: var(--signal, #5DF2C7); }
-.active .barTrack { border-color: rgba(93, 242, 199, 0.45); }
+.active .barTrack { border-color: var(--hud-rim-strong); }

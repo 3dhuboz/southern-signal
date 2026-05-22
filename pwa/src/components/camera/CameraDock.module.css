@@ -1,0 +1,124 @@
+/* ============================================================================
+   CameraDock — redesigned bottom dock for the camera surface.
+
+   Replaces the previous dockSlim row that lived inline in CameraScreen.tsx,
+   addressing the UX feedback that the 3-letter chips (SCR, Clip, Rear,
+   Front) and the cog-icon Settings button were "horrible labels" —
+   ambiguous without prior context, cramped on 360-px widths, and broke
+   the "scenes-only" affordance promise.
+
+   Implementation pragmatism (vs the maximal 2-tier UX spec):
+
+   - Full-word labels everywhere — no 3-letter codes. "Markers", "Lens",
+     "Record clip", "Screen record", "Scenes", "Torch", "More". Each
+     button carries an SVG icon inline so the operator's eye can lock
+     onto the affordance without reading.
+   - One row, not two. The 2-tier proposal (one row above the shutter,
+     one row below) would require absolute-positioning Row 4 between the
+     shutter band and the BottomNav, which adds layout fragility for no
+     immediate UX win — labels solve the legibility complaint without
+     needing two rows. Document the choice in the worker report.
+   - Buttons grouped left/right of the (parent-owned) BIG SHUTTER. Left
+     group: Scenes + Markers. Right group: Clip + Screen record + Lens +
+     Torch (Torch hidden when the active camera doesn't expose it).
+
+   ─────────────────────────────────────────────────────────────────────────
+   Sits absolute against the cameraWrap, BELOW the BottomNav offset so
+   the dock floats just above the tab bar. Same gradient floor as the
+   old dockSlim so the camera feed bleeds through. Touch targets are
+   ≥44 css px tall (Wave 3 will audit; built to spec already). */
+
+.dock {
+  position: absolute;
+  bottom: calc(var(--safe-bottom, 0px) + var(--bottom-nav-height, 64px));
+  left: 0;
+  right: 0;
+  height: 56px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 16px;
+  gap: 8px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.5), transparent);
+  pointer-events: none; /* per-button override below */
+  z-index: 4;
+}
+
+/* Simplified-scene mode (Vigil) collapses the dock to scenes + screen
+   record only. Centred so the remaining two buttons don't end up at
+   opposite edges of the 56-px-tall bar. */
+.dockSimplified {
+  justify-content: center;
+  gap: 24px;
+}
+
+.group {
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.groupLeft  { justify-content: flex-start; }
+.groupRight { justify-content: flex-end; }
+
+/* Shared button chrome — pill, glass, monospaced label, SVG icon. Min
+   target ≥44 css px tall (WCAG 2.5.5) even though the visible chip is
+   38 px — the padding lifts the hit region. */
+.btn {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  height: 38px;
+  min-width: 44px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--dock-rim);
+  background: var(--dock-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--dock-text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, transform 80ms ease;
+}
+.btn:hover  { background: var(--hud-glass-bg-strong); }
+.btn:active { transform: scale(0.94); }
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Active recording / torch on — the "this is doing the thing" state.
+   Same red palette the dock has always used so muscle memory survives
+   the redesign. */
+.btnActive {
+  border-color: var(--dock-rec-rim);
+  background: var(--dock-rec-bg);
+  color: var(--dock-rec-text);
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.label {
+  white-space: nowrap;
+  line-height: 1;
+}

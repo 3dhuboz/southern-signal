@@ -37,6 +37,10 @@
  */
 
 import { OVERLAY_REGISTRY, type OverlayId } from "../overlays/registry";
+import {
+  getBroadcastClockSnapshot,
+  type BroadcastClockSnapshot,
+} from "../../hooks/useBroadcastClock";
 
 /**
  * Per-channel visibility toggles. Operator picks which channels show on
@@ -431,16 +435,45 @@ function renderFrame(
     drawCaption(ctx, W, H, overlay.caption, s);
   }
 
-  // 8. Case ID — bottom-left.
+  // 8 + 9. Case ID (bottom-left) + Timestamp (bottom-right). Both consume the
+  //        same `BroadcastClockSnapshot` so they can't disagree across editing-
+  //        room scrutiny — and the same snapshot is what the on-screen
+  //        BroadcastTimestamp slate uses, so the operator's chrome and the
+  //        burned-in frame always read the same wall-clock moment.
   if (channels.timestamp) {
-    drawCaseId(ctx, W, H, overlay, s);
+    // Anchor the snapshot to the overlay's `nowMs` (preferred — set per frame
+    // by the caller) or the parsed ISO fallback. Wrapping in a stable `now`
+    // function instead of letting the snapshot pull `Date.now()` directly means
+    // a single frame's case-ID date never disagrees with its timestamp pill,
+    // even if the JS event loop drifts a few ms between the two draw calls.
+    const frameNowMs = pickFrameNowMs(overlay);
+    const clock = getBroadcastClockSnapshot({
+      running: false,        // burn-in doesn't track elapsed — that's the
+      startedAtMs: null,     // status pill's job
+      now: () => frameNowMs,
+    });
+    // Case ID drawn first so the bottom-right timestamp can still occlude on
+    // overlap if anyone ever cranks the case-id font up — chain-of-custody
+    // (the timestamp) is forensic-mandatory and must always read last.
+    drawCaseId(ctx, W, H, overlay, clock, s);
+    drawTimestamp(ctx, W, H, overlay, clock, s);
   }
+}
 
-  // 9. Timestamp — bottom-right (forensic mandatory). Drawn last so nothing
-  //    can occlude the chain-of-custody data.
-  if (channels.timestamp) {
-    drawTimestamp(ctx, W, H, overlay, s);
+/**
+ * Pick the numeric Unix-ms timestamp for this frame. Prefer the explicit
+ * `nowMs` the caller set (skips the ISO round-trip per frame) and fall back to
+ * parsing `isoTimestamp` for legacy callers that only supply the string form.
+ * Final fallback is 0 (epoch) when neither is present or parseable — drawing
+ * "1970-01-01" in the burn-in is a louder signal of a misconfigured overlay
+ * than silently skipping the row.
+ */
+function pickFrameNowMs(overlay: OverlayState): number {
+  if (overlay.nowMs !== undefined && Number.isFinite(overlay.nowMs)) {
+    return overlay.nowMs;
   }
+  const parsed = Date.parse(overlay.isoTimestamp);
+  return Number.isNaN(parsed) ? 0 : parsed;
 }
 
 // ─── Top-center pills (Activity + Posterior) ────────────────────────────────
@@ -1267,7 +1300,13 @@ function drawStatusPills(
 // ─── Case ID (bottom-left) ──────────────────────────────────────────────────
 
 /**
- * Case ID readout — bottom-left corner.
+ * Case ID + date readout — bottom-left corner.
+ *
+ * Format (spec): `CASE 0A7B1C · 2026-05-22` — the case slug paired with the
+ * UTC calendar date in one block so a video editor can match a recorded clip
+ * to an investigation record without cross-referencing the bottom-right
+ * timestamp. The date comes from the shared `BroadcastClockSnapshot` so it
+ * can't drift relative to the timestamp pill drawn alongside.
  *
  * Layout (spec):
  *   font 12px
@@ -1282,14 +1321,19 @@ function drawCaseId(
   _W: number,
   H: number,
   overlay: OverlayState,
+  clock: BroadcastClockSnapshot,
   s: number,
 ): void {
   const caseId = overlay.caseId;
   // No case → render "NO CASE" so the operator immediately sees the chain
   // hasn't been initialised. Still small, still corner-mounted.
-  const text = caseId
+  const caseText = caseId
     ? `CASE ${(caseId.length > 8 ? caseId.slice(-8) : caseId).toUpperCase()}`
     : "NO CASE";
+  // Append the UTC calendar date — production editors at YEP-style outfits
+  // need to match clips to investigation records by date, not just by ID.
+  // U+00B7 (middle dot) is the canonical separator on broadcast slates.
+  const text = `${caseText} · ${clock.utcDateText}`;
 
   // Size constants
   const fontSize = Math.round(12 * s);
@@ -1329,7 +1373,8 @@ function drawTimestamp(
   ctx: CanvasRenderingContext2D,
   W: number,
   H: number,
-  overlay: OverlayState,
+  _overlay: OverlayState,
+  clock: BroadcastClockSnapshot,
   s: number,
 ): void {
   // Size constants
@@ -1339,24 +1384,15 @@ function drawTimestamp(
   const boxH = fontSize + padY * 2;
   const margin = Math.round(12 * s);
 
-  // Prefer the numeric stamp when supplied — avoids the per-frame Date round-
-  // trip (parse ISO → reserialise → substring) the previous revision did. Falls
-  // back to parsing isoTimestamp for back-compat with callers that only supply
-  // the string form.
-  let now = overlay.nowMs;
-  if (now === undefined || !Number.isFinite(now)) {
-    const parsed = Date.parse(overlay.isoTimestamp);
-    now = Number.isNaN(parsed) ? 0 : parsed;
-  }
-  // ISO 8601 HH:MM:SS plus a 30fps frame counter (FF) — SMPTE non-drop time-
-  // code convention that editors expect on burn-in. UTC-anchored to match the
-  // forensic chain.
-  const totalSec = Math.floor(now / 1000);
-  const hh = String(Math.floor(totalSec / 3600) % 24).padStart(2, "0");
-  const mm = String(Math.floor(totalSec / 60) % 60).padStart(2, "0");
-  const ss = String(totalSec % 60).padStart(2, "0");
+  // Build the SMPTE-style HH:MM:SS:FF stamp off the SHARED clock snapshot.
+  // The HH:MM:SS comes straight from `clock.utcText` (UTC-anchored to match
+  // the forensic chain), and we append a 30fps frame counter computed from
+  // the same sub-second remainder — that frame counter never escapes the
+  // snapshot's numeric `utc` field so the timestamp pill can't drift from
+  // the case-ID's date for the same frame.
+  const now = clock.utc;
   const ff = String(Math.min(29, Math.floor((now % 1000) / (1000 / 30)))).padStart(2, "0");
-  const text = `${hh}:${mm}:${ss}:${ff}`;
+  const text = `${clock.utcText}:${ff}`;
 
   ctx.save();
   ctx.font = `600 ${fontSize}px "JetBrains Mono", monospace`;

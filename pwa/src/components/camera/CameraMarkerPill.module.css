@@ -1,0 +1,144 @@
+/* ============================================================================
+   CameraMarkerPill — session-scoped marker tally + breakdown popover.
+
+   Extracted from CameraHud.module.css. The wrap is positioned inside the
+   parent CameraHud grid (row 4 / col 1) — relative position so the
+   popover's `bottom: calc(100% + 6px)` anchors to the pill. Wave 3
+   landmine fix: max-height + overflow-y on the popover so tall category
+   lists scroll inside the popover instead of clipping outside the viewport.
+
+   Wave 3 a11y additions:
+   - min-height 44px on the pill button + Review CTA (WCAG 2.5.5)
+   - focus-visible rings on both
+   ============================================================================ */
+
+.markerPillWrap {
+  grid-column: 1;
+  grid-row: 4;
+  align-self: end;
+  justify-self: start;
+  position: relative;
+  margin: 0 0 8px 12px;
+  pointer-events: auto;
+}
+
+.markerCountPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  min-height: 44px;
+  background: var(--chip-bg);
+  border: 1px solid var(--chip-rim);
+  border-radius: 999px;
+  color: var(--chip-text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  cursor: pointer;
+}
+.markerCountPill:hover  { background: var(--hud-glass-bg-strong); }
+.markerCountPill:active { background: var(--hud-glass-bg-strong); }
+.markerCountPill:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.markerCountIcon {
+  color: var(--signal, #5DF2C7);
+  font-size: 7px;
+  line-height: 1;
+}
+
+.markerCountValue {
+  font-weight: 800;
+  letter-spacing: 0.8px;
+}
+
+.markerCountLabel {
+  text-transform: uppercase;
+  letter-spacing: 1.1px;
+  opacity: 0.78;
+}
+
+/* Popover anchored to the pill — opens upward into the talent-safe row
+   when the operator taps. Wave 3 fix: max-height + overflow-y so a
+   runaway category list scrolls inside the popover instead of clipping
+   the BroadcastLowerThird above. */
+.markerCountPopover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 180px;
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: 10px 12px;
+  background: var(--hud-glass-bg-strong);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--chip-rim);
+  border-radius: 12px;
+  color: var(--chip-text);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  z-index: 6;
+  animation: cameraMarkerPillFadeIn 140ms ease-out;
+}
+
+.markerCountList {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.markerCountList li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.markerCountDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--marker-other);
+}
+.markerCountDot[data-category="sound"]    { background: var(--marker-sound); }
+.markerCountDot[data-category="movement"] { background: var(--marker-movement); }
+.markerCountDot[data-category="felt"]     { background: var(--marker-felt); }
+.markerCountDot[data-category="untagged"] { background: var(--marker-other); }
+
+.markerCountReviewLink {
+  appearance: none;
+  width: 100%;
+  min-height: 44px;
+  background: transparent;
+  border: 1px solid var(--chip-rim);
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: var(--signal, #5DF2C7);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 100ms ease;
+}
+.markerCountReviewLink:hover { background: var(--signal-wash, rgba(34, 197, 94, 0.18)); }
+.markerCountReviewLink:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@keyframes cameraMarkerPillFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}

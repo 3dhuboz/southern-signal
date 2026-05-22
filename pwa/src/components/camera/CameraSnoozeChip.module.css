@@ -1,0 +1,37 @@
+/* ============================================================================
+   CameraSnoozeChip — visible indicator that the watchdog is silenced.
+
+   Extracted from CameraHud.module.css. Visual contract preserved (deep-amber
+   pill, monospace label, 12px glyph). Focus-visible ring added for Wave 3
+   a11y so a keyboard user can see they've tabbed onto the chip.
+   ============================================================================ */
+
+.snoozeChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  margin-left: 4px;
+  min-height: 44px;
+  background: var(--warn-pill-bg);
+  border: 1px solid var(--chip-rim);
+  border-radius: 999px;
+  color: var(--warn-pill-text);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.5px;
+  font-weight: 700;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  cursor: pointer;
+}
+
+.snoozeChip:hover  { background: rgba(212, 192, 38, 0.92); }
+.snoozeChip:active { background: rgba(212, 192, 38, 1); }
+.snoozeChip:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.snoozeChipIcon { font-size: 12px; line-height: 1; }
+.snoozeChipLabel { text-transform: uppercase; letter-spacing: 1.1px; }

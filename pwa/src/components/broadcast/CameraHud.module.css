@@ -1,0 +1,144 @@
+/* ============================================================================
+   CameraHud — the grid wrapper that owns every HUD chrome zone over the
+   live camera frame.
+
+   Replaces the scatter of independently-positioned absolute chips that
+   used to live inside CameraScreen.module.css (.deviceChip, .snoozeChip,
+   .markerCountPillWrap, .evpDock). Those are now zone-assigned via this
+   grid so a future chip refactor edits one positioning system, not five.
+
+   Layout (mobile-first, talent-safe area in row 2):
+
+     ┌──────────────────────────────────────────────┐
+     │ row 1 (168 + safe-top px)                    │
+     │  ┌──────────────┬────────┬────────────────┐  │
+     │  │ status-rail  │  void  │  sense-rail    │  │
+     │  └──────────────┴────────┴────────────────┘  │
+     ├──────────────────────────────────────────────┤
+     │ row 2 (1fr — TALENT SAFE, no chrome)         │
+     ├──────────────────────────────────────────────┤
+     │ row 3 (64 px — lower-third reserved)         │
+     ├──────────────────────────────────────────────┤
+     │ row 4 (96 px — shutter band — owned upstream)│
+     ├──────────────────────────────────────────────┤
+     │ row 5 (56 + safe-bottom + tabbar)            │
+     └──────────────────────────────────────────────┘
+
+   The broadcast/* components (BroadcastBug, BroadcastAudioMeter, etc.) own
+   their own absolute positioning to their respective viewport corners. The
+   grid is mostly the framework for the inline chips: putting them in a
+   semantic rail keeps the layout consistent across themes + scenes without
+   leaking another stack of absolute offsets into CameraScreen.module.css.
+
+   Shutter is anchored absolute by the parent (CameraScreen.module.css)
+   because it crosses two grid rows; CameraDock owns row 5 with its own
+   bottom-anchored absolute positioning so it sits flush above the BottomNav.
+
+   ─────────────────────────────────────────────────────────────────────────
+   pointer-events: none on the grid lets the camera viewport receive
+   touch gestures (long-press, double-tap, swipe). Each interactive child
+   re-enables pointer-events: auto.
+   ============================================================================ */
+
+.hud {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 132px 1fr 132px;
+  grid-template-rows:
+    calc(168px + var(--safe-top, 0px))
+    1fr
+    64px
+    96px
+    calc(56px + var(--safe-bottom, 0px) + var(--bottom-nav-height, 64px));
+  pointer-events: none;
+  z-index: 5;
+}
+
+.hud > * { pointer-events: auto; }
+
+/* Status rail — top-left. Hosts BroadcastBug, BroadcastAudioMeter,
+   the always-on device chip, and the snooze chip. The broadcast components
+   keep their own absolute pinning so they remain on a 480p downscale of
+   the recorded frame regardless of grid; the rail still provides DOM order
+   + a consistent semantic group for screen-readers. */
+.statusRail {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: var(--safe-top, 0px) 8px 0 8px;
+  pointer-events: none;
+}
+.statusRail > * { pointer-events: auto; }
+
+/* Sense rail — top-right. Hosts BroadcastSceneSelector, BroadcastSensorHud,
+   and the scene-driven EVP recorder dock. Right-aligned so chips don't
+   bleed into the centre talent-safe zone (row 2). */
+.senseRail {
+  grid-column: 3;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  padding: var(--safe-top, 0px) 8px 0 8px;
+  pointer-events: none;
+}
+.senseRail > * { pointer-events: auto; }
+
+/* Lower-third row — reserved horizontal band, third 64-px slot from the
+   bottom. BroadcastLowerThird positions itself absolute against the
+   cameraWrap; this row keeps the grid contract clean (no chrome lives in
+   row 2 = talent space) and reserves a place a future inline lower-third
+   could occupy without re-flowing the grid. */
+.lowerThirdRow {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  pointer-events: none;
+}
+
+/* 2026-05-22 camera overhaul — wave 3: device + snooze chips moved to
+   their own component modules (components/camera/CameraDeviceChip,
+   components/camera/CameraSnoozeChip). Only a slot wrapper survives
+   here to absorb the spacer-margin that used to live inline on the
+   device chip — the BroadcastAudioMeter above this slot is absolute-
+   positioned (top:56 + ~136px tall), so the rail's flex flow alone
+   can't reserve space for it. */
+.deviceChipSlot {
+  /* Reserve clearance for the absolute-positioned BroadcastAudioMeter
+     so the device chip below it doesn't collide. The meter is pinned
+     to top:56 + variable height (~136 px). */
+  margin-top: 198px;
+}
+
+/* 2026-05-22 camera overhaul — wave 3: marker tally pill + its popover
+   moved to components/camera/CameraMarkerPill.{tsx,module.css}. The
+   component module also fixes the wave 2 landmine where a tall category
+   list could clip the BroadcastLowerThird — now max-height: 40vh +
+   overflow-y: auto keeps overflow inside the popover. */
+
+/* EVP dock slot — sits in the sense rail after BroadcastSensorHud so it
+   no longer collides with BroadcastSceneSelector. The compact recorder
+   variant already provides its own glass chrome; this slot just gives it
+   a positioning anchor + max-width gate.
+
+   Wave 3 landmine fix: the 144px margin-top assumed BroadcastSensorHud
+   renders 3 rows. Replaced with a flex-grow flow on .senseRail so the
+   slot now flows naturally beneath whatever the sensor HUD renders.
+   .senseRail is already flex-column with gap:6px (see above); .evpDockSlot
+   becomes another flex item with margin-top: auto so it pins to the
+   bottom of the rail's available space, OR sits immediately after the
+   sensor HUD if there isn't enough space for both. */
+.evpDockSlot {
+  margin-top: auto;
+  max-width: 60vw;
+  background: var(--chip-bg);
+  border: 1px solid var(--chip-rim);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 4px 6px;
+}

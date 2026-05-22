@@ -1,0 +1,37 @@
+/* ============================================================================
+   CameraMarkerToast — "MARKED" confirmation toast.
+
+   Extracted from CameraScreen.module.css. Position + animation preserved
+   verbatim: top-centre, 180ms fade-in, 220ms fade-out at 1.28s. The toast
+   is mounted/unmounted by the parent on the marker-throttle interval; the
+   animation handles entry/exit without a state flicker.
+   ============================================================================ */
+
+.markerToast {
+  position: absolute;
+  top: calc(48px + var(--safe-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 16px;
+  background: var(--chip-bg);
+  border: 1px solid var(--accent-strong);
+  border-radius: 999px;
+  color: var(--accent-strong);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  pointer-events: none;
+  z-index: 6;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  animation: markerToastIn 180ms ease-out, markerToastOut 220ms ease-in 1.28s forwards;
+}
+
+@keyframes markerToastIn {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+@keyframes markerToastOut {
+  from { opacity: 1; transform: translate(-50%, 0); }
+  to   { opacity: 0; transform: translate(-50%, -8px); }
+}

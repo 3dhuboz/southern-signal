@@ -1,0 +1,148 @@
+/* ============================================================================
+   CameraWatchdogToast — non-blocking degradation warning.
+
+   Extracted from CameraScreen.module.css. Anchored top-center BELOW the
+   marker toast zone so it doesn't clash when both fire close together.
+   Animation duplicated locally so removing the old keyframe from
+   CameraScreen.module.css doesn't break the entrance.
+   ============================================================================ */
+
+.watchdogToast {
+  position: absolute;
+  top: calc(82px + var(--safe-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0;
+  max-width: 92%;
+  border-radius: 12px;
+  font-family: var(--font-mono);
+  color: var(--dock-text);
+  pointer-events: auto;
+  z-index: 6;
+  border: 1px solid var(--chip-rim);
+  overflow: hidden;
+  animation: watchdogToastIn 200ms ease-out;
+}
+
+@keyframes watchdogToastIn {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.watchdogToastBody {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 8px 16px;
+  background: transparent;
+  border: none;
+  font: inherit;
+  color: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+.watchdogToastBody:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.watchdogToastCta {
+  flex: 0 0 auto;
+  padding: 0 14px;
+  min-height: 44px;
+  background: rgba(0, 0, 0, 0.18);
+  border: none;
+  border-left: 1px solid var(--chip-rim);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: inherit;
+  cursor: pointer;
+}
+.watchdogToastCta:hover  { background: rgba(0, 0, 0, 0.32); }
+.watchdogToastCta:active { background: rgba(0, 0, 0, 0.42); }
+.watchdogToastCta:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.watchdogToastSnooze {
+  flex: 0 0 auto;
+  padding: 0 12px;
+  min-height: 44px;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--chip-rim);
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: inherit;
+  opacity: 0.78;
+  cursor: pointer;
+}
+.watchdogToastSnooze:hover  { background: rgba(0, 0, 0, 0.16); opacity: 1; }
+.watchdogToastSnooze:active { background: rgba(0, 0, 0, 0.28); }
+.watchdogToastSnooze:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.watchdogToastWarn {
+  background: var(--warn-pill-bg);
+  box-shadow: 0 4px 16px rgba(212, 192, 38, 0.35);
+  color: var(--warn-pill-text);
+}
+
+.watchdogToastBlock {
+  background: rgba(216, 57, 44, 0.94);
+  box-shadow: 0 4px 16px rgba(216, 57, 44, 0.45);
+}
+
+.watchdogToastLabel {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  line-height: 1.1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+}
+
+/* Small inline chip showing "2nd warning" / "3rd warning" etc. once the
+   session has surfaced more than one toast. Sits next to the headline so
+   the operator immediately sees this isn't an isolated event. */
+.watchdogToastCount {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  padding: 1px 6px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  opacity: 0.85;
+}
+
+.watchdogToastDetail {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  line-height: 1.35;
+  opacity: 0.95;
+}
+
+/* Battery time-to-empty hint appended to the watchdog detail line. Slightly
+   dimmed so it reads as supplementary projection rather than a hard fact. */
+.watchdogToastEta {
+  opacity: 0.78;
+  font-style: italic;
+}

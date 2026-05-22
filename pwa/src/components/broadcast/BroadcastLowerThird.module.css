@@ -23,10 +23,10 @@
   min-width: 220px;
   max-width: min(80vw, 520px);
 
-  background: rgba(8, 12, 18, 0.62);
+  background: var(--hud-glass-bg);
   backdrop-filter: blur(14px) saturate(140%);
   -webkit-backdrop-filter: blur(14px) saturate(140%);
-  border: 1px solid rgba(93, 242, 199, 0.22);
+  border: 1px solid var(--hud-rim-strong);
   border-radius: 12px;
   box-shadow:
     0 8px 22px rgba(0, 0, 0, 0.6),
