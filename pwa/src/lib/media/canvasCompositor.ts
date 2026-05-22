@@ -347,6 +347,13 @@ interface MeterTokens {
   vuOverload: string;
   vuSilkscreen: string;
   vuGlow: string;
+  // Phase A.2 — Spirit Box amber 7-segment LCD.
+  spiritLcdBezel: string;
+  spiritLcdBg: string;
+  spiritLcdOff: string;
+  spiritLcdAmber: string;
+  spiritLcdGlow: string;
+  spiritLcdSilkscreen: string;
 }
 
 /** Hardcoded fallback palette — matches the default `:root` block in tokens.css. */
@@ -380,6 +387,12 @@ const METER_TOKEN_FALLBACK: MeterTokens = {
   vuOverload:    "#c41e1e",
   vuSilkscreen:  "#f0e6c8",
   vuGlow:        "rgba(255, 200, 80, 0.35)",
+  spiritLcdBezel:       "#050505",
+  spiritLcdBg:          "#1a0d00",
+  spiritLcdOff:         "#2a1700",
+  spiritLcdAmber:       "#ffb020",
+  spiritLcdGlow:        "rgba(255, 176, 32, 0.55)",
+  spiritLcdSilkscreen:  "#b8b8b8",
 };
 
 /**
@@ -430,6 +443,12 @@ function readMeterTokens(): MeterTokens {
     vuOverload:    pick("--vu-overload",    METER_TOKEN_FALLBACK.vuOverload),
     vuSilkscreen:  pick("--vu-silkscreen",  METER_TOKEN_FALLBACK.vuSilkscreen),
     vuGlow:        pick("--vu-glow",        METER_TOKEN_FALLBACK.vuGlow),
+    spiritLcdBezel:      pick("--spirit-lcd-bezel",      METER_TOKEN_FALLBACK.spiritLcdBezel),
+    spiritLcdBg:         pick("--spirit-lcd-bg",         METER_TOKEN_FALLBACK.spiritLcdBg),
+    spiritLcdOff:        pick("--spirit-lcd-off",        METER_TOKEN_FALLBACK.spiritLcdOff),
+    spiritLcdAmber:      pick("--spirit-lcd-amber",      METER_TOKEN_FALLBACK.spiritLcdAmber),
+    spiritLcdGlow:       pick("--spirit-lcd-glow",       METER_TOKEN_FALLBACK.spiritLcdGlow),
+    spiritLcdSilkscreen: pick("--spirit-lcd-silkscreen", METER_TOKEN_FALLBACK.spiritLcdSilkscreen),
   };
 }
 
@@ -608,6 +627,14 @@ function renderFrame(
   // 5. VU audio meter — left edge, vintage analog look.
   if (channels.audioMeter) {
     drawVuMeter(ctx, W, H, overlay.audioRms, s, frame);
+  }
+
+  // 5b. Spirit Box amber LCD — left edge, stacked below the VU meter.
+  //     Drawn only when the ITC channel is on and there's a recent emission.
+  //     drawItcReadout (top-right) skips the Spirit Box row when this widget
+  //     is also drawing, so the same phoneme stream isn't burnt in twice.
+  if (channels.itc) {
+    drawSpiritBoxLcd(ctx, H, overlay.itc?.spiritBox, s, frame);
   }
 
   // 6. Direction arrow (only if sector + coherence are valid).
@@ -870,7 +897,9 @@ function drawItcReadout(
     if (view.ageMs > maxAge) return;
     rows.push({ label, text: truncateForOverlay(view.text), age: formatAge(view.ageMs), ageMs: view.ageMs });
   };
-  pushIfFresh("SB",  itc.spiritBox, ITC_MAX_AGE_MS);
+  // Spirit Box now renders as a dedicated amber 7-segment LCD widget
+  // (drawSpiritBoxLcd) instead of inline in this top-right text readout, so
+  // skip its row here to avoid double-drawing the same phoneme stream.
   pushIfFresh("OV",  itc.ovilus,    ITC_MAX_AGE_MS);
   pushIfFresh("EVP", itc.evp,       ITC_EVP_MAX_AGE_MS);
   if (rows.length === 0) return;
@@ -1805,6 +1834,301 @@ function drawVuMeter(
   ctx.textBaseline = "middle";
   ctx.fillStyle = tokens.vuSilkscreen;
   ctx.fillText(dbLabel, x + bodyW - Math.round(8 * s), y + bodyH - Math.round(11 * s));
+  ctx.restore();
+
+  ctx.restore();
+}
+
+// ─── Spirit Box amber 7-segment LCD (left edge, below VU) ───────────────────
+
+/**
+ * 7-segment digit layout used by the Spirit Box LCD.
+ *
+ *       a
+ *     ┌───┐
+ *   f │   │ b
+ *     ├─g─┤
+ *   e │   │ c
+ *     └───┘
+ *       d           . dp (decimal point)
+ *
+ * Each glyph maps to the segments lit by digit (and dot-separator). Capital
+ * letters used by the units suffix ("MHz", "PH") are added on top of digits.
+ */
+const SEVEN_SEG_DIGITS: Record<string, ReadonlyArray<"a" | "b" | "c" | "d" | "e" | "f" | "g">> = {
+  "0": ["a", "b", "c", "d", "e", "f"],
+  "1": ["b", "c"],
+  "2": ["a", "b", "g", "e", "d"],
+  "3": ["a", "b", "g", "c", "d"],
+  "4": ["f", "g", "b", "c"],
+  "5": ["a", "f", "g", "c", "d"],
+  "6": ["a", "f", "g", "e", "c", "d"],
+  "7": ["a", "b", "c"],
+  "8": ["a", "b", "c", "d", "e", "f", "g"],
+  "9": ["a", "b", "c", "d", "f", "g"],
+  // Letters used by the "MHz" suffix glyphs.
+  "H": ["b", "c", "e", "f", "g"],
+  "M": ["a", "b", "c", "e", "f"],   // approximate — real M is impossible on 7-seg
+  "Z": ["a", "b", "g", "e", "d"],   // same as 2 — accept the visual ambiguity
+  // Space / blank.
+  " ": [],
+  "-": ["g"],
+};
+
+/** Spirit Box LCD body dimensions (logical px @ s=1). Landscape, fits two
+ *  rows: top = 7-segment freq, bottom = scrolling phoneme text. */
+const SPIRIT_LCD_BODY_W = 152;
+const SPIRIT_LCD_BODY_H = 70;
+/** Cadence of the simulated scanning frequency cycle — wrapping range of
+ *  100 MHz worth of phoneme-sweep visualisation in 6 seconds, matching the
+ *  spirit-box "you can almost catch a word" feel. The number is presentational
+ *  only — no real radio is being tuned. */
+const SPIRIT_LCD_SWEEP_MS = 6000;
+
+/**
+ * Draw one 7-segment glyph at (x, y) with cell dimensions (cellW, cellH).
+ * `segPx` controls segment thickness. Both lit and unlit segments are drawn
+ * (unlit very dim) so the audience can see the full character outline — a
+ * real LCD ghost-segments the inactive ones at low contrast.
+ */
+function drawSevenSegmentGlyph(
+  ctx: CanvasRenderingContext2D,
+  glyph: string,
+  x: number,
+  y: number,
+  cellW: number,
+  cellH: number,
+  segPx: number,
+  litColor: string,
+  offColor: string,
+): void {
+  const lit = new Set<string>(SEVEN_SEG_DIGITS[glyph] ?? []);
+  const mid = y + cellH / 2;
+  const inset = segPx; // shorten segment ends so corners don't overlap
+  type SegPath = { name: "a" | "b" | "c" | "d" | "e" | "f" | "g"; horiz: boolean; x1: number; y1: number; x2: number; y2: number };
+  const segs: SegPath[] = [
+    { name: "a", horiz: true,  x1: x + inset,        y1: y,                 x2: x + cellW - inset, y2: y },
+    { name: "b", horiz: false, x1: x + cellW,         y1: y + inset,         x2: x + cellW,         y2: mid - inset / 2 },
+    { name: "c", horiz: false, x1: x + cellW,         y1: mid + inset / 2,   x2: x + cellW,         y2: y + cellH - inset },
+    { name: "d", horiz: true,  x1: x + inset,        y1: y + cellH,          x2: x + cellW - inset, y2: y + cellH },
+    { name: "e", horiz: false, x1: x,                 y1: mid + inset / 2,   x2: x,                 y2: y + cellH - inset },
+    { name: "f", horiz: false, x1: x,                 y1: y + inset,         x2: x,                 y2: mid - inset / 2 },
+    { name: "g", horiz: true,  x1: x + inset,        y1: mid,                x2: x + cellW - inset, y2: mid },
+  ];
+  for (const seg of segs) {
+    ctx.strokeStyle = lit.has(seg.name) ? litColor : offColor;
+    ctx.lineWidth = segPx;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(seg.x1, seg.y1);
+    ctx.lineTo(seg.x2, seg.y2);
+    ctx.stroke();
+  }
+}
+
+/**
+ * Skeuomorphic Spirit Box amber LCD — Radio Shack PRO-2055-era 7-segment
+ * frequency display + scrolling phoneme text below, all on a black bezel.
+ *
+ * Anatomy (logical px @ s=1, 152 × 70):
+ *   ┌─────────────────────────────────────────────┐  ← black bezel surround
+ *   │  ╔═════════════════════════════════════╗   │
+ *   │  ║  ┃ ┃ ┃ ┃ . ┃ ┃   MHz                ║   │   amber 7-seg row 1:
+ *   │  ║                                      ║   │   "108.0 MHz"
+ *   │  ║  PHONEME: aaa eee mmm                ║   │   amber pixel text row 2:
+ *   │  ╚═════════════════════════════════════╝   │   scrolling phoneme
+ *   │              SPIRIT BOX                     │  ← silkscreen
+ *   └─────────────────────────────────────────────┘
+ *
+ * The frequency is a deterministic LFSR-style cycle through 88.0–108.0 MHz
+ * driven by Date.now() — honest UI ("phoneme sweep") because no real radio
+ * is being tuned. The phoneme text below is the literal phoneme from the
+ * existing useSpiritBox hook (already curated; no real speech).
+ *
+ * Token-driven palette so scotopic re-skin works without touching draw code.
+ */
+function drawSpiritBoxLcd(
+  ctx: CanvasRenderingContext2D,
+  H: number,
+  spiritBox: ItcChannelView | undefined,
+  s: number,
+  frame: FrameContext,
+): void {
+  const tokens = getMeterTokens(frame);
+
+  // Geometry — anchored to the left edge, stacked below the VU meter.
+  const bodyW = Math.round(SPIRIT_LCD_BODY_W * s);
+  const bodyH = Math.round(SPIRIT_LCD_BODY_H * s);
+  const margin = Math.round(12 * s);
+  const x = margin;
+  // VU meter sits at H * 0.30, height VU_BODY_H. Stack this 8 px below.
+  const vuBottom = Math.round(H * 0.30) + Math.round(VU_BODY_H * s);
+  const y = vuBottom + Math.round(8 * s);
+  const radius = Math.round(5 * s);
+
+  ctx.save();
+
+  // 1. Drop shadow under the bezel.
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
+  ctx.shadowBlur = 6 * s;
+  ctx.shadowOffsetY = 3 * s;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.01)";
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.fill();
+  ctx.restore();
+
+  // 2. Bezel — deep black with a subtle top highlight so it reads as moulded
+  //    plastic, not flat fill. Lit segments on near-black bg gives the LCD
+  //    real estate the depth a Radio Shack tuner casing has.
+  const bezelGrad = ctx.createLinearGradient(0, y, 0, y + bodyH);
+  bezelGrad.addColorStop(0, "#1a1a1a");
+  bezelGrad.addColorStop(0.5, tokens.spiritLcdBezel);
+  bezelGrad.addColorStop(1, "#1a1a1a");
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.fillStyle = bezelGrad;
+  ctx.fill();
+  ctx.strokeStyle = "#000";
+  ctx.lineWidth = 1;
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.stroke();
+
+  // 3. Recessed LCD pane — black inset rounded rect. The amber segments
+  //    light up against this near-black backplane.
+  const insetX = Math.round(6 * s);
+  const insetTopY = Math.round(6 * s);
+  const insetBottomMargin = Math.round(13 * s); // leave space for silkscreen
+  const lcdX = x + insetX;
+  const lcdY = y + insetTopY;
+  const lcdW = bodyW - insetX * 2;
+  const lcdH = bodyH - insetTopY - insetBottomMargin;
+  const lcdR = Math.round(3 * s);
+  roundedRectPath(ctx, lcdX, lcdY, lcdW, lcdH, lcdR);
+  ctx.fillStyle = tokens.spiritLcdBg;
+  ctx.fill();
+
+  // 4. Subtle inner-shadow rim so the LCD reads as inset into the bezel.
+  ctx.save();
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.7)";
+  ctx.lineWidth = 1;
+  roundedRectPath(ctx, lcdX + 0.5, lcdY + 0.5, lcdW - 1, lcdH - 1, lcdR);
+  ctx.stroke();
+  ctx.restore();
+
+  // 5. 7-segment frequency row — top half of the LCD pane.
+  //    Cycle through 88.0–108.0 MHz over SPIRIT_LCD_SWEEP_MS, deterministic by
+  //    wall-clock so the visual ALWAYS animates even if the operator hasn't
+  //    actually started the spirit box hook. Real-radio honesty: bezel says
+  //    "PHONEME SWEEP" not "RADIO SCAN" — the number is decorative.
+  const nowMs = Date.now();
+  const sweepT = (nowMs % SPIRIT_LCD_SWEEP_MS) / SPIRIT_LCD_SWEEP_MS;
+  const freq = 88.0 + sweepT * 20.0; // MHz
+  const freqStr = freq.toFixed(1); // e.g. "97.3" — produces "9","7",".","3"
+  // Build padded display "108.0 MHz" — 5 digits + dot + " MHz" suffix label.
+  // Mostly 4 char digits split across decimal.
+  const intPart = freqStr.split(".")[0].padStart(3, " "); // " 88" or "108"
+  const decPart = freqStr.split(".")[1] ?? "0";
+  const digitChars: { char: string; dot: boolean }[] = [];
+  for (let i = 0; i < intPart.length; i++) {
+    const isLast = i === intPart.length - 1;
+    digitChars.push({ char: intPart[i], dot: isLast });
+  }
+  digitChars.push({ char: decPart, dot: false });
+
+  // Digit cell dimensions — fit 4 cells across the LCD with comfortable padding.
+  const segRowH = Math.round(lcdH * 0.55);
+  const segRowY = lcdY + Math.round(3 * s);
+  const segPaddingX = Math.round(6 * s);
+  const cellGap = Math.round(2 * s);
+  const cellCount = digitChars.length;
+  const totalGap = cellGap * (cellCount - 1);
+  const cellW = Math.max(4, Math.floor((lcdW - segPaddingX * 2 - totalGap) * 0.62 / cellCount));
+  const cellH = segRowH;
+  const segPx = Math.max(1.5, Math.round(2 * s));
+
+  // Lay out from left.
+  let cx = lcdX + segPaddingX;
+  ctx.save();
+  // Add a soft amber halo behind the segment row so lit segments bloom — fakes
+  // the LCD backlight without a real bloom pass.
+  ctx.shadowColor = tokens.spiritLcdGlow;
+  ctx.shadowBlur = Math.round(3 * s);
+  for (const { char, dot } of digitChars) {
+    drawSevenSegmentGlyph(
+      ctx, char.trim() === "" ? " " : char,
+      cx, segRowY, cellW, cellH, segPx,
+      tokens.spiritLcdAmber, tokens.spiritLcdOff,
+    );
+    if (dot) {
+      // Decimal point — small filled square just below the digit's c-segment.
+      const dotR = Math.max(1.5, segPx * 0.9);
+      ctx.beginPath();
+      ctx.arc(cx + cellW + cellGap * 0.5 + dotR * 0.5, segRowY + cellH - dotR, dotR, 0, Math.PI * 2);
+      ctx.fillStyle = tokens.spiritLcdAmber;
+      ctx.fill();
+    }
+    cx += cellW + cellGap + (dot ? Math.round(4 * s) : 0);
+  }
+  ctx.restore();
+
+  // 5b. "MHz" suffix label — small monospace text to the right of the digits,
+  //     still amber so it reads as part of the LCD.
+  const suffixPx = Math.max(7, Math.round(9 * s));
+  ctx.save();
+  ctx.shadowColor = tokens.spiritLcdGlow;
+  ctx.shadowBlur = Math.round(2 * s);
+  ctx.font = `700 ${suffixPx}px "JetBrains Mono", monospace`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = tokens.spiritLcdAmber;
+  ctx.fillText("MHz", cx + Math.round(2 * s), segRowY + cellH * 0.55);
+  ctx.restore();
+
+  // 6. Phoneme text row — bottom half of the LCD pane.
+  //    Shows the curated phoneme from the existing useSpiritBox hook (already
+  //    a hand-curated phoneme bank, no real ASR / no audio leakage). The text
+  //    scrolls horizontally if it's longer than the LCD width, so longer
+  //    phonemes don't truncate the trailing characters.
+  const phonemeY = lcdY + Math.round(lcdH * 0.66);
+  const phonemeH = lcdH - (phonemeY - lcdY) - Math.round(2 * s);
+  const phonemePx = Math.max(8, Math.round(11 * s));
+  // Build the readout string — show "PH: <text>" so the operator immediately
+  // reads it as "phoneme" not as a word from a ghost. Empty / stale data
+  // collapses to the resting "-- --" placeholder so the LCD isn't ever blank.
+  const phonemeText = spiritBox && spiritBox.ageMs <= ITC_MAX_AGE_MS && spiritBox.text
+    ? spiritBox.text.trim().toUpperCase().slice(0, 22)
+    : "-- --";
+  ctx.save();
+  // Clip to the phoneme strip so any scroll can't bleed past the LCD pane.
+  ctx.beginPath();
+  ctx.rect(lcdX + Math.round(3 * s), phonemeY, lcdW - Math.round(6 * s), phonemeH);
+  ctx.clip();
+  ctx.font = `700 ${phonemePx}px "JetBrains Mono", monospace`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.shadowColor = tokens.spiritLcdGlow;
+  ctx.shadowBlur = Math.round(3 * s);
+  ctx.fillStyle = tokens.spiritLcdAmber;
+  const textW = ctx.measureText(phonemeText).width;
+  const stripW = lcdW - Math.round(6 * s);
+  let textX = lcdX + Math.round(6 * s);
+  if (textW > stripW) {
+    // Scroll: drift horizontally with a slow loop, 2 px/sec at s=1.
+    const cycleMs = 4000;
+    const drift = ((Date.now() % cycleMs) / cycleMs) * (textW + Math.round(20 * s));
+    textX -= drift;
+  }
+  ctx.fillText(phonemeText, textX, phonemeY + phonemeH / 2);
+  ctx.restore();
+
+  // 7. "SPIRIT BOX" silkscreen on the bezel below the LCD.
+  const silkPx = Math.max(7, Math.round(8 * s));
+  ctx.save();
+  ctx.font = `700 ${silkPx}px "Inter", system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = tokens.spiritLcdSilkscreen;
+  ctx.fillText("SPIRIT BOX", x + bodyW / 2, y + bodyH - Math.round(7 * s));
   ctx.restore();
 
   ctx.restore();
