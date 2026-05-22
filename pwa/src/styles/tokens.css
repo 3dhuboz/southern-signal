@@ -141,6 +141,42 @@
   --marker-movement:     #a855f7;
   --marker-felt:         #d4a017;
   --marker-other:        rgba(255, 255, 255, 0.45);
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     Skeuomorphic gear meters — K-II EMF + REM Pod (Phase A.1)
+     ─────────────────────────────────────────────────────────────────────────
+     Phase A.1 swaps the flat instrument widgets for ones that look like real
+     handheld paranormal kit (yellow plastic K-II, black-tower REM Pod). The
+     palette below is what `canvasCompositor.drawKiiMeter` /
+     `canvasCompositor.drawRemPod` resolve through `getComputedStyle` so the
+     scotopic / daylight overrides re-skin both meters without touching the
+     draw code. Honest copy only — silkscreen reads literally "K-II EMF METER"
+     and "REM POD"; no "ghost detector" claims.
+     ───────────────────────────────────────────────────────────────────────── */
+
+  /* K-II EMF meter — yellow handheld */
+  --kii-body:        #d4b829;      /* yellow plastic */
+  --kii-body-edge:   #a08a17;      /* darker rim */
+  --kii-silkscreen:  #1a1a1a;      /* black label text */
+  --kii-bezel:       #0a0a0a;      /* recessed LED bezel */
+  --kii-led-off:     #2a2a2a;      /* unlit LED */
+  --kii-led-green:   #2eee5e;
+  --kii-led-yellow:  #f5d028;
+  --kii-led-orange:  #f78a1c;
+  --kii-led-red:     #ef2e2e;
+  --kii-led-glow:    rgba(255, 255, 255, 0.55);
+
+  /* REM Pod — black tower */
+  --rem-body:        #1a1a1a;      /* black case */
+  --rem-body-edge:   #2e2e2e;      /* edge highlight */
+  --rem-silkscreen:  #d8d8d8;      /* white label */
+  --rem-antenna:     #d4d4d4;      /* chrome antenna */
+  --rem-led-r:       #ef2e2e;
+  --rem-led-g:       #2eee5e;
+  --rem-led-b:       #2eb6ef;
+  --rem-led-y:       #f5d028;
+  --rem-led-off:     #1a1a1a;
+  --rem-pulse:       rgba(46, 182, 239, 0.6);  /* triggered pulse ring */
 }
 
 /* ==========================================================================
@@ -233,6 +269,34 @@
   --marker-movement:     #5C0808;
   --marker-felt:         #8B1010;
   --marker-other:        rgba(196, 30, 58, 0.45);
+
+  /* Skeuomorphic gear meters — scotopic-safe re-skin.
+     Bright yellow plastic + green/blue LEDs would burn dark-adapted vision
+     in ~6 sec. Collapse the entire palette into the ≥650 nm red band so
+     even the "green" K-II LED stays scotopic-friendly. The luminance step
+     between lit/unlit still encodes the activity reading without leaking
+     short-wavelength light into rod-cell adaptation. */
+  --kii-body:        #4a2010;
+  --kii-body-edge:   #2a0f08;
+  --kii-silkscreen:  #5c1a1a;
+  --kii-bezel:       #0a0202;
+  --kii-led-off:     #1a0606;
+  --kii-led-green:   #3a0808;   /* even "green" stays red under scotopic */
+  --kii-led-yellow:  #5c1010;
+  --kii-led-orange:  #7a1414;
+  --kii-led-red:     #c41e3a;
+  --kii-led-glow:    rgba(196, 30, 58, 0.4);
+
+  --rem-body:        #0a0202;
+  --rem-body-edge:   #1a0606;
+  --rem-silkscreen:  #7a1a1a;
+  --rem-antenna:     #5a1010;
+  --rem-led-r:       #c41e3a;
+  --rem-led-g:       #4a0a0a;
+  --rem-led-b:       #5a0a14;
+  --rem-led-y:       #6a1414;
+  --rem-led-off:     #0a0202;
+  --rem-pulse:       rgba(196, 30, 58, 0.4);
 }
 
 /* No additive cyan glow in scotopic mode — replace with deep-red glow. */
