@@ -361,6 +361,28 @@ interface MeterTokens {
   ovilusLcdGreen: string;
   ovilusLcdGlow: string;
   ovilusLcdSilkscreen: string;
+  // Phase A.3 — sensors lab panel (rack-mount anodized steel with corner screws).
+  labPanelBody: string;
+  labPanelBodyEdge: string;
+  labPanelFaceplate: string;
+  labPanelScrew: string;
+  labPanelScrewSlot: string;
+  labPanelSilkscreen: string;
+  labPanelRail: string;
+  labLcdLabelBg: string;
+  labLcdLabelOff: string;
+  labLcdLabelOn: string;
+  labLcdLabelGlow: string;
+  labLcdValueBg: string;
+  labLcdValueOff: string;
+  labLcdValueOn: string;
+  labLcdValueGlow: string;
+  // Phase A.3 — EVP paper teletype frame.
+  evpPaperBg: string;
+  evpPaperEdge: string;
+  evpPaperInk: string;
+  evpPaperStamp: string;
+  evpPaperShadow: string;
 }
 
 /** Hardcoded fallback palette — matches the default `:root` block in tokens.css. */
@@ -406,6 +428,26 @@ const METER_TOKEN_FALLBACK: MeterTokens = {
   ovilusLcdGreen:       "#5cff85",
   ovilusLcdGlow:        "rgba(92, 255, 133, 0.40)",
   ovilusLcdSilkscreen:  "#c8c8c8",
+  labPanelBody:        "#1f2326",
+  labPanelBodyEdge:    "#0e1012",
+  labPanelFaceplate:   "#2a2e32",
+  labPanelScrew:       "#6a6f74",
+  labPanelScrewSlot:   "#1a1c1e",
+  labPanelSilkscreen:  "#c8c8c8",
+  labPanelRail:        "#0a0b0c",
+  labLcdLabelBg:       "#050a06",
+  labLcdLabelOff:      "#0d1f10",
+  labLcdLabelOn:       "#4ed876",
+  labLcdLabelGlow:     "rgba(78, 216, 118, 0.32)",
+  labLcdValueBg:       "#100800",
+  labLcdValueOff:      "#1f1300",
+  labLcdValueOn:       "#e8a020",
+  labLcdValueGlow:     "rgba(232, 160, 32, 0.40)",
+  evpPaperBg:          "#d8c89c",
+  evpPaperEdge:        "#b09a64",
+  evpPaperInk:         "#3a2a16",
+  evpPaperStamp:       "#9a3018",
+  evpPaperShadow:      "rgba(0, 0, 0, 0.32)",
 };
 
 /**
@@ -468,6 +510,26 @@ function readMeterTokens(): MeterTokens {
     ovilusLcdGreen:      pick("--ovilus-lcd-green",      METER_TOKEN_FALLBACK.ovilusLcdGreen),
     ovilusLcdGlow:       pick("--ovilus-lcd-glow",       METER_TOKEN_FALLBACK.ovilusLcdGlow),
     ovilusLcdSilkscreen: pick("--ovilus-lcd-silkscreen", METER_TOKEN_FALLBACK.ovilusLcdSilkscreen),
+    labPanelBody:        pick("--lab-panel-body",        METER_TOKEN_FALLBACK.labPanelBody),
+    labPanelBodyEdge:    pick("--lab-panel-body-edge",   METER_TOKEN_FALLBACK.labPanelBodyEdge),
+    labPanelFaceplate:   pick("--lab-panel-faceplate",   METER_TOKEN_FALLBACK.labPanelFaceplate),
+    labPanelScrew:       pick("--lab-panel-screw",       METER_TOKEN_FALLBACK.labPanelScrew),
+    labPanelScrewSlot:   pick("--lab-panel-screw-slot",  METER_TOKEN_FALLBACK.labPanelScrewSlot),
+    labPanelSilkscreen:  pick("--lab-panel-silkscreen",  METER_TOKEN_FALLBACK.labPanelSilkscreen),
+    labPanelRail:        pick("--lab-panel-rail",        METER_TOKEN_FALLBACK.labPanelRail),
+    labLcdLabelBg:       pick("--lab-lcd-label-bg",      METER_TOKEN_FALLBACK.labLcdLabelBg),
+    labLcdLabelOff:      pick("--lab-lcd-label-off",     METER_TOKEN_FALLBACK.labLcdLabelOff),
+    labLcdLabelOn:       pick("--lab-lcd-label-on",      METER_TOKEN_FALLBACK.labLcdLabelOn),
+    labLcdLabelGlow:     pick("--lab-lcd-label-glow",    METER_TOKEN_FALLBACK.labLcdLabelGlow),
+    labLcdValueBg:       pick("--lab-lcd-value-bg",      METER_TOKEN_FALLBACK.labLcdValueBg),
+    labLcdValueOff:      pick("--lab-lcd-value-off",     METER_TOKEN_FALLBACK.labLcdValueOff),
+    labLcdValueOn:       pick("--lab-lcd-value-on",      METER_TOKEN_FALLBACK.labLcdValueOn),
+    labLcdValueGlow:     pick("--lab-lcd-value-glow",    METER_TOKEN_FALLBACK.labLcdValueGlow),
+    evpPaperBg:          pick("--evp-paper-bg",          METER_TOKEN_FALLBACK.evpPaperBg),
+    evpPaperEdge:        pick("--evp-paper-edge",        METER_TOKEN_FALLBACK.evpPaperEdge),
+    evpPaperInk:         pick("--evp-paper-ink",         METER_TOKEN_FALLBACK.evpPaperInk),
+    evpPaperStamp:       pick("--evp-paper-stamp",       METER_TOKEN_FALLBACK.evpPaperStamp),
+    evpPaperShadow:      pick("--evp-paper-shadow",      METER_TOKEN_FALLBACK.evpPaperShadow),
   };
 }
 
@@ -625,10 +687,11 @@ function renderFrame(
     drawItcReadout(ctx, W, H, overlay, band, s);
   }
 
-  // 3d. Sensor mini-readout — tucked under the ITC block in the top-right
-  //     column so the data column stays unified on one edge.
+  // 3d. Sensors lab panel — rack-mount anodized steel faceplate with four
+  //     mini-LCD rows, tucked under the EVP block in the top-right column so
+  //     the data column stays unified on one edge.
   if (channels.sensors) {
-    drawSensorReadout(ctx, W, H, overlay, band, s);
+    drawSensorsLabPanel(ctx, W, H, overlay, band, s, frame);
   }
 
   // 4. Right-edge vertical instrument stack — skeuomorphic gear meters.
@@ -784,22 +847,56 @@ function drawTopCenterPills(
   ctx.restore();
 }
 
-// ─── Sensor readout ─────────────────────────────────────────────────────────
+// ─── Sensors lab panel (rack-mount anodized steel + mini LCDs) ──────────────
 
 /**
- * Sensor readout — small column of LIGHT / MAG / MOTION / TEMP values
- * stacked under the ITC readout on the right edge. Bumps down to clear the
- * ITC block when present.
- *
- * Sizes (spec): row height ~18px, value font 12px, label font 9px, width ~150px.
+ * Sensors lab panel body dimensions (logical px @ s=1). Sized to fit four
+ * sensor rows (LIGHT / MAG / MOTION / TEMP) below a small silkscreen
+ * "FIELD SENSORS" header with a margin of breathing room for the four
+ * corner mount screws — the rack-mount aesthetic is what sells the gear feel.
  */
-function drawSensorReadout(
+const LAB_PANEL_BODY_W = 184;
+const LAB_PANEL_BODY_H = 122;
+/** Per-row height inside the LCD strip rail. Four rows × 20 px = 80 px,
+ *  which sits comfortably inside the 122 px body once the silkscreen header
+ *  + corner-screw margins are subtracted. */
+const LAB_PANEL_ROW_H = 20;
+
+/**
+ * Skeuomorphic sensors lab panel — rack-mount anodized steel faceplate with
+ * four chrome corner screws + per-sensor mini-LCD readouts. Replaces the
+ * flat `drawSensorReadout` text block. Sits on the right edge, below the
+ * EVP readout, so the right column stays unified.
+ *
+ * Anatomy (logical px @ s=1, 184 × 122):
+ *   ┌─┰──────────────────────────────────────────────┰─┐
+ *   │ ⊕                FIELD SENSORS                  ⊕ │  ← screws + silkscreen
+ *   │  ╔═══════════════════════════════════════════╗  │
+ *   │  ║ [LIGHT  ]  ┃ ┃ ┃ ┃ . ┃   lux              ║  │  row 1
+ *   │  ║ [MAG    ]  ┃ ┃ ┃ . ┃    µT                ║  │  row 2
+ *   │  ║ [MOTION ]  ┃ . ┃ ┃ ┃   m/s²               ║  │  row 3
+ *   │  ║ [TEMP   ]  ┃ ┃ . ┃ ┃    °C                ║  │  row 4
+ *   │  ╚═══════════════════════════════════════════╝  │
+ *   │ ⊕                                                ⊕ │
+ *   └─┸──────────────────────────────────────────────┸─┘
+ *
+ * Each row pairs a small green dot-matrix label LCD (reusing
+ * `drawDotMatrixGlyph` from the Ovilus block) with a small amber 7-segment
+ * value LCD (reusing `drawSevenSegmentGlyph` from the Spirit Box block),
+ * followed by a unit silkscreen. The mini-LCDs use dimmer hues than the
+ * dedicated ITC widgets so the panel doesn't outshine them.
+ *
+ * Honest copy — silkscreen reads "FIELD SENSORS" + literal sensor labels
+ * (LIGHT / MAG / MOTION / TEMP). No anomaly claims.
+ */
+function drawSensorsLabPanel(
   ctx: CanvasRenderingContext2D,
   W: number,
   _H: number,
   overlay: OverlayState,
-  band: { stroke: string },
+  _band: { stroke: string },
   s: number,
+  frame: FrameContext,
 ): void {
   const sensors = overlay.sensors;
   if (!sensors) return;
@@ -807,80 +904,240 @@ function drawSensorReadout(
   type Row = { label: string; value: string; unit: string };
   const rows: Row[] = [];
   if (typeof sensors.light === "number" && Number.isFinite(sensors.light)) {
-    rows.push({ label: "LIGHT", value: Math.round(sensors.light).toString(), unit: "lux" });
+    // LIGHT can range 0..100000+; clamp to 4 digits so it fits the LCD strip.
+    const v = Math.min(9999, Math.max(0, Math.round(sensors.light)));
+    rows.push({ label: "LIGHT", value: v.toString(), unit: "lux" });
   }
   if (typeof sensors.magnetometer === "number" && Number.isFinite(sensors.magnetometer)) {
-    rows.push({ label: "MAG", value: sensors.magnetometer.toFixed(1), unit: "µT" });
+    rows.push({ label: "MAG", value: sensors.magnetometer.toFixed(1), unit: "uT" });
   }
   if (typeof sensors.motion === "number" && Number.isFinite(sensors.motion)) {
-    rows.push({ label: "MOTION", value: sensors.motion.toFixed(2), unit: "m/s²" });
+    rows.push({ label: "MOTION", value: sensors.motion.toFixed(2), unit: "m/s2" });
   }
   if (typeof sensors.temperature === "number" && Number.isFinite(sensors.temperature)) {
-    rows.push({ label: "TEMP", value: sensors.temperature.toFixed(1), unit: "°C" });
+    rows.push({ label: "TEMP", value: sensors.temperature.toFixed(1), unit: "C" });
   }
   if (rows.length === 0) return;
 
-  // Size constants
-  const labelFontPx = Math.round(9 * s);
-  const valueFontPx = Math.round(12 * s);
-  const rowH = Math.round(16 * s);
-  const padX = Math.round(8 * s);
-  const padY = Math.round(6 * s);
-  const colGap = Math.round(6 * s);
+  const tokens = getMeterTokens(frame);
+
+  // Geometry — anchored to the right edge, below the EVP block. Match the
+  // existing layout offset so existing screens don't shift.
+  const bodyW = Math.round(LAB_PANEL_BODY_W * s);
+  const bodyH = Math.round(LAB_PANEL_BODY_H * s);
   const margin = Math.round(12 * s);
+  const itcReserved = Math.round(itcReservedHeight(s));
+  const x = W - margin - bodyW;
+  const y = margin + itcReserved;
+  const radius = Math.round(4 * s);
 
   ctx.save();
 
-  const measureLabel = (str: string) => {
-    ctx.font = `700 ${labelFontPx}px "Space Grotesk", Inter, sans-serif`;
-    return ctx.measureText(str).width;
-  };
-  const measureValue = (str: string) => {
-    ctx.font = `700 ${valueFontPx}px "JetBrains Mono", monospace`;
-    return ctx.measureText(str).width;
-  };
-  const measureUnit = (str: string) => {
-    ctx.font = `500 ${labelFontPx}px "Space Grotesk", Inter, sans-serif`;
-    return ctx.measureText(str).width;
-  };
-
-  let maxLabelW = 0, maxValueW = 0, maxUnitW = 0;
-  for (const r of rows) {
-    maxLabelW = Math.max(maxLabelW, measureLabel(r.label));
-    maxValueW = Math.max(maxValueW, measureValue(r.value));
-    maxUnitW = Math.max(maxUnitW, measureUnit(r.unit));
-  }
-
-  const blockW = padX * 2 + maxLabelW + colGap + maxValueW + colGap + maxUnitW;
-  const blockH = padY * 2 + rows.length * rowH;
-  // Right-side column, anchored below the ITC area.
-  const itcReserved = Math.round(itcReservedHeight(s));
-  const blockX = W - margin - blockW;
-  const blockY = margin + itcReserved;
-
-  drawSoftBox(ctx, blockX, blockY, blockW, blockH, "rgba(0,0,0,0.4)", band.stroke, 0.5);
-
-  ctx.textBaseline = "middle";
-  ctx.textAlign = "left";
-  let y = blockY + padY + rowH / 2;
-  for (const r of rows) {
-    ctx.font = `700 ${labelFontPx}px "Space Grotesk", Inter, sans-serif`;
-    ctx.fillStyle = "rgba(255,255,255,0.62)";
-    ctx.fillText(r.label, blockX + padX, y);
-
-    const valX = blockX + padX + maxLabelW + colGap;
-    ctx.font = `700 ${valueFontPx}px "JetBrains Mono", monospace`;
-    ctx.fillStyle = "#fff";
-    ctx.fillText(r.value, valX, y);
-
-    const unitX = valX + maxValueW + colGap;
-    ctx.font = `500 ${labelFontPx}px "Space Grotesk", Inter, sans-serif`;
-    ctx.fillStyle = "rgba(255,255,255,0.55)";
-    ctx.fillText(r.unit, unitX, y);
-
-    y += rowH;
-  }
+  // 1. Drop shadow under the panel body — soft, offset down so the rack-mount
+  //    rectangle lifts off the camera frame.
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.45)";
+  ctx.shadowBlur = 6 * s;
+  ctx.shadowOffsetY = 3 * s;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.01)";
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.fill();
   ctx.restore();
+
+  // 2. Body — anodized dark-steel vertical gradient (edge → body → edge).
+  //    Reads as a moulded faceplate, not flat fill. The horizontal flat
+  //    "rack" lines come from the recessed LCD rail in step 5.
+  const bodyGrad = ctx.createLinearGradient(0, y, 0, y + bodyH);
+  bodyGrad.addColorStop(0,    tokens.labPanelBodyEdge);
+  bodyGrad.addColorStop(0.15, tokens.labPanelFaceplate);
+  bodyGrad.addColorStop(0.85, tokens.labPanelBody);
+  bodyGrad.addColorStop(1,    tokens.labPanelBodyEdge);
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.fillStyle = bodyGrad;
+  ctx.fill();
+
+  // 2b. Body outline.
+  ctx.strokeStyle = tokens.labPanelBodyEdge;
+  ctx.lineWidth = 1.5;
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.stroke();
+
+  // 3. Four corner screws — small chrome circles with a darker phillips slot.
+  //    Sized at ~5 px logical so they read as gear hardware without dominating
+  //    the panel. Inset by 8 px from each corner.
+  const screwInset = Math.round(7 * s);
+  const screwR = Math.max(2, Math.round(3 * s));
+  const screwPositions: Array<[number, number]> = [
+    [x + screwInset,            y + screwInset],
+    [x + bodyW - screwInset,    y + screwInset],
+    [x + screwInset,            y + bodyH - screwInset],
+    [x + bodyW - screwInset,    y + bodyH - screwInset],
+  ];
+  for (const [cx, cy] of screwPositions) {
+    // Drop-in chrome head with a soft highlight at the top-left to fake the
+    // metal sheen — same trick the VU meter pivot cap uses.
+    ctx.beginPath();
+    ctx.arc(cx, cy, screwR, 0, Math.PI * 2);
+    ctx.fillStyle = tokens.labPanelScrew;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx - screwR * 0.3, cy - screwR * 0.3, screwR * 0.35, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
+    ctx.fill();
+    // Phillips slot — single thin line through the centre. (Real phillips
+    // screws have a cross; one stroke reads the same at this size.)
+    ctx.strokeStyle = tokens.labPanelScrewSlot;
+    ctx.lineWidth = Math.max(0.75, screwR * 0.28);
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(cx - screwR * 0.65, cy);
+    ctx.lineTo(cx + screwR * 0.65, cy);
+    ctx.stroke();
+  }
+
+  // 4. "FIELD SENSORS" silkscreen header — small bold uppercase, centred
+  //    between the top corner screws.
+  const headerPx = Math.max(8, Math.round(9 * s));
+  ctx.font = `700 ${headerPx}px "Inter", system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = tokens.labPanelSilkscreen;
+  ctx.fillText("FIELD SENSORS", x + bodyW / 2, y + Math.round(11 * s));
+
+  // 5. Recessed LCD rail — dark inset rectangle that holds the four mini-LCDs.
+  //    Inset so the rack-mount frame around it reads as proper faceplate
+  //    real estate rather than the rail being flush with the body edge.
+  const railInsetX = Math.round(14 * s);
+  const railTopY   = Math.round(18 * s);
+  const railBottomMargin = Math.round(12 * s);
+  const railX = x + railInsetX;
+  const railY = y + railTopY;
+  const railW = bodyW - railInsetX * 2;
+  const railH = bodyH - railTopY - railBottomMargin;
+  const railR = Math.round(3 * s);
+  roundedRectPath(ctx, railX, railY, railW, railH, railR);
+  ctx.fillStyle = tokens.labPanelRail;
+  ctx.fill();
+  // Subtle inner-shadow rim so the rail reads as inset into the faceplate.
+  ctx.save();
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.75)";
+  ctx.lineWidth = 1;
+  roundedRectPath(ctx, railX + 0.5, railY + 0.5, railW - 1, railH - 1, railR);
+  ctx.stroke();
+  ctx.restore();
+
+  // 6. Per-sensor rows — each row gets a dot-matrix label + 7-seg value +
+  //    unit silkscreen. We pack into the rail height so the rows are
+  //    proportional whether 1 or 4 sensors are reporting (most sessions
+  //    show all 4 but stale-sensor sessions show fewer).
+  const rowH = Math.min(Math.round(LAB_PANEL_ROW_H * s), Math.floor((railH - Math.round(6 * s)) / rows.length));
+  const rowGap = Math.max(1, Math.round(2 * s));
+  const labelChars = 6;          // "MOTION" is the widest label (6 chars)
+  const valueChars = 5;          // "9999" + 1 dot + 1 digit = 5 cells max
+  const dotPad = Math.round(4 * s);
+  // Dot-matrix label dimensions — same 5×7 grid the Ovilus uses but smaller.
+  const labelDotSize = Math.max(1, Math.floor((rowH - dotPad * 2) / 9));
+  const labelGlyphW = 5 * labelDotSize;
+  const labelGlyphGap = 1 * labelDotSize;
+  const labelW = labelChars * (labelGlyphW + labelGlyphGap) - labelGlyphGap;
+  // 7-segment value cell dimensions — sized to match the dot-matrix height.
+  const segH = labelDotSize * 7;
+  const segW = Math.max(3, Math.floor(segH * 0.55));
+  const segGap = Math.max(1, Math.round(1 * s));
+  const segPx = Math.max(1, Math.floor(labelDotSize * 0.9));
+  const valueBlockW = valueChars * (segW + segGap) - segGap;
+  // Unit silkscreen — small fixed-width text right of the value.
+  const unitPx = Math.max(7, Math.round(8 * s));
+  const labelColX = railX + Math.round(6 * s);
+  const valueColX = labelColX + labelW + Math.round(8 * s);
+  const unitColX = valueColX + valueBlockW + Math.round(6 * s);
+
+  let cursorY = railY + Math.round(4 * s);
+  for (const r of rows) {
+    const labelTop = cursorY + Math.round((rowH - segH) / 2);
+
+    // 6a. Label LCD — render each char of the (padded) label as a dot-matrix
+    //     glyph using the existing 5×7 font + dim green palette.
+    const labelText = r.label.padEnd(labelChars, " ").slice(0, labelChars);
+    ctx.save();
+    ctx.shadowColor = tokens.labLcdLabelGlow;
+    ctx.shadowBlur = Math.max(1, Math.round(1.5 * s));
+    let lgx = labelColX;
+    for (const ch of labelText) {
+      drawDotMatrixGlyph(ctx, ch, lgx, labelTop, labelDotSize, tokens.labLcdLabelOn, tokens.labLcdLabelOff);
+      lgx += labelGlyphW + labelGlyphGap;
+    }
+    ctx.restore();
+
+    // 6b. Value LCD — split the value string into glyphs (digits + optional
+    //     dot). Render right-aligned inside the valueBlockW so different
+    //     value widths still line up vertically across rows.
+    const cells = expandSevenSegValue(r.value, valueChars);
+    // Right-align: shift starting x by the number of leading spaces' widths.
+    ctx.save();
+    ctx.shadowColor = tokens.labLcdValueGlow;
+    ctx.shadowBlur = Math.max(1, Math.round(2 * s));
+    let vgx = valueColX;
+    for (const cell of cells) {
+      drawSevenSegmentGlyph(
+        ctx, cell.glyph,
+        vgx, labelTop, segW, segH, segPx,
+        tokens.labLcdValueOn, tokens.labLcdValueOff,
+      );
+      if (cell.dot) {
+        // Decimal point — small filled square just below the right edge of
+        // the cell, same trick the Spirit Box LCD uses.
+        const dotR = Math.max(1, segPx * 0.85);
+        ctx.beginPath();
+        ctx.arc(vgx + segW + segGap * 0.5, labelTop + segH - dotR, dotR, 0, Math.PI * 2);
+        ctx.fillStyle = tokens.labLcdValueOn;
+        ctx.fill();
+      }
+      vgx += segW + segGap + (cell.dot ? Math.round(2 * s) : 0);
+    }
+    ctx.restore();
+
+    // 6c. Unit silkscreen — small monospace text right of the value cells.
+    ctx.font = `600 ${unitPx}px "JetBrains Mono", monospace`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = tokens.labPanelSilkscreen;
+    ctx.fillText(r.unit, unitColX, labelTop + segH / 2);
+
+    cursorY += rowH + rowGap;
+  }
+
+  ctx.restore();
+}
+
+/**
+ * Expand a sensor value string ("27.3", "-2.31", "9999") into right-aligned
+ * 7-segment cells, padding the left with blank cells so all rows visually
+ * line up. Returns at most `maxCells` entries; each entry carries the glyph
+ * for `drawSevenSegmentGlyph` plus a `dot` flag for the decimal point that
+ * follows it (rendered as a small filled circle, not a 7-seg segment).
+ *
+ * Examples (maxCells=5):
+ *   "27.3"  → [' ', '2', '7'·dot, '3', ' ']  (we trim trailing blanks)
+ *   "-2.31" → ['-', '2'·dot, '3', '1', ' ']
+ *   "9999"  → [' ', '9', '9', '9', '9']
+ */
+function expandSevenSegValue(value: string, maxCells: number): Array<{ glyph: string; dot: boolean }> {
+  // Split into digit chars (+ optional dot suffix). The dash is its own cell.
+  const cells: Array<{ glyph: string; dot: boolean }> = [];
+  for (let i = 0; i < value.length; i++) {
+    const ch = value[i];
+    if (ch === ".") {
+      // Dot attaches to the previous cell; if there's no previous cell, drop it.
+      if (cells.length > 0) cells[cells.length - 1].dot = true;
+      continue;
+    }
+    cells.push({ glyph: ch, dot: false });
+  }
+  // Left-pad with blank cells so values right-align (cap to maxCells).
+  while (cells.length < maxCells) cells.unshift({ glyph: " ", dot: false });
+  if (cells.length > maxCells) cells.splice(0, cells.length - maxCells);
+  return cells;
 }
 
 /**
