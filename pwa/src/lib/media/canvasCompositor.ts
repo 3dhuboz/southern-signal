@@ -682,9 +682,11 @@ function renderFrame(
   //     the proOnly gating happens upstream in resolveOverlaysFromScene.
   drawTopCenterPills(ctx, W, H, overlay, band, channels, s);
 
-  // 3c. ITC readout — top-right corner, max 2 lines.
+  // 3c. EVP transcript readout — top-right corner, sepia paper teletype frame.
+  //     Spirit Box + Ovilus moved to dedicated LCDs in A.2, so this widget
+  //     is EVP-only now. Toggling the `itc` channel still gates it.
   if (channels.itc) {
-    drawItcReadout(ctx, W, H, overlay, band, s);
+    drawEvpReadout(ctx, W, H, overlay, band, s, frame);
   }
 
   // 3d. Sensors lab panel — rack-mount anodized steel faceplate with four
@@ -713,8 +715,9 @@ function renderFrame(
 
   // 5b. Spirit Box amber LCD — left edge, stacked below the VU meter.
   //     Drawn only when the ITC channel is on and there's a recent emission.
-  //     drawItcReadout (top-right) skips the Spirit Box row when this widget
-  //     is also drawing, so the same phoneme stream isn't burnt in twice.
+  //     The dedicated Spirit Box LCD (this function) and the EVP readout
+  //     (drawEvpReadout, top-right) do not share data sources — Spirit Box
+  //     phonemes never appear in the EVP transcript box.
   if (channels.itc) {
     drawSpiritBoxLcd(ctx, H, overlay.itc?.spiritBox, s, frame);
   }
@@ -926,7 +929,7 @@ function drawSensorsLabPanel(
   const bodyW = Math.round(LAB_PANEL_BODY_W * s);
   const bodyH = Math.round(LAB_PANEL_BODY_H * s);
   const margin = Math.round(12 * s);
-  const itcReserved = Math.round(itcReservedHeight(s));
+  const itcReserved = Math.round(evpReservedHeight(s));
   const x = W - margin - bodyW;
   const y = margin + itcReserved;
   const radius = Math.round(4 * s);
@@ -1141,124 +1144,197 @@ function expandSevenSegValue(value: string, maxCells: number): Array<{ glyph: st
 }
 
 /**
- * Approximate vertical space reserved for the ITC block at the top-right so
- * the sensor stack can sit immediately below it. Returns 0 when ITC is hidden;
- * the actual ITC draw call decides whether to render and uses identical numbers.
+ * Approximate vertical space reserved for the EVP block at the top-right so
+ * the sensor stack can sit immediately below it. Returns 0 when EVP is hidden;
+ * the actual EVP draw call decides whether to render and uses identical numbers.
  */
-function itcReservedHeight(s: number): number {
+function evpReservedHeight(s: number): number {
   // Max block height = padY*2 + rowH * 2 (2 lines max) + outer margin gap.
   const padY = Math.round(7 * s);
   const rowH = Math.round(20 * s);
   return padY * 2 + rowH * 2 + Math.round(8 * s);
 }
 
-// ─── ITC readout (top-right) ────────────────────────────────────────────────
+// ─── EVP readout (top-right, paper teletype frame) ──────────────────────────
 
 /**
- * ITC channels readout. Max 2 lines tall and ~180px wide, mounted in the
- * top-right corner. Each visible channel collapses to "LABEL · text · age"
- * on its own line; if more than 2 channels are fresh we keep the two newest.
+ * EVP transcript readout, top-right corner. Renders the most recent 1–2 EVP
+ * captures from `overlay.itc.evp` inside a sepia paper-teletype frame so the
+ * transcript reads as a printed evidence slip rather than a generic dark box.
+ * Spirit Box + Ovilus moved to their own dedicated LCD widgets in Phase A.2,
+ * so this function is now EVP-only — previously named `drawItcReadout`.
  *
- * Sizes (spec): font 14-15px bold, age font 10px dim, width <=180px,
- * padding 6×10px, background rgba(0,0,0,0.55).
+ * Anatomy (logical px @ s=1, ~180 × variable):
+ *   ┌─────────────────────────────────────────┐
+ *   │ ┌─[ EVP CAPTURE ]──────────────┐        │  ← red rubber stamp
+ *   │ │  "....transcript text...."   │ <- now │  ← sepia ink on cream paper
+ *   │ │  "....more transcript...."   │ <- 12s │
+ *   │ └────────────[ ON-DEVICE ]─────┘        │  ← bottom-right stamp
+ *   └─────────────────────────────────────────┘
+ *
+ * The paper-teletype frame uses the `--evp-paper-*` token palette so the
+ * scotopic theme can collapse the cream + sepia into the red band without
+ * touching draw code. Stamps are gear labels ("EVP CAPTURE" / "ON-DEVICE"),
+ * NOT anomaly claims — the transcript itself is the operator's curated
+ * EVP entry, never an inferred ghost voice.
+ *
+ * Sizes (spec): label font 10px, text font 13px (slightly tighter than the
+ * old all-channel readout because EVP-only ships fewer rows), padding 9×12px.
  */
-function drawItcReadout(
+function drawEvpReadout(
   ctx: CanvasRenderingContext2D,
   W: number,
   _H: number,
   overlay: OverlayState,
-  band: { stroke: string; fill: string; glow: string },
+  _band: { stroke: string; fill: string; glow: string },
   s: number,
+  frame: FrameContext,
 ): void {
   const itc = overlay.itc;
   if (!itc) return;
 
-  type Row = { label: string; text: string; age: string; ageMs: number };
+  type Row = { text: string; age: string; ageMs: number };
   const rows: Row[] = [];
-  const pushIfFresh = (label: string, view: ItcChannelView | undefined, maxAge: number) => {
-    if (!view) return;
-    if (view.ageMs > maxAge) return;
-    rows.push({ label, text: truncateForOverlay(view.text), age: formatAge(view.ageMs), ageMs: view.ageMs });
-  };
-  // Spirit Box + Ovilus now render as dedicated skeuomorphic LCD widgets
-  // (drawSpiritBoxLcd amber + drawOvilusLcd green) instead of inline in this
-  // top-right text readout, so skip those rows to avoid double-drawing. EVP
-  // stays here because its evidence-grade rarity warrants the prominent
-  // textual presentation more than a single-word LCD would offer.
-  pushIfFresh("EVP", itc.evp,       ITC_EVP_MAX_AGE_MS);
+  if (itc.evp && itc.evp.ageMs <= ITC_EVP_MAX_AGE_MS) {
+    rows.push({
+      text: truncateForOverlay(itc.evp.text),
+      age: formatAge(itc.evp.ageMs),
+      ageMs: itc.evp.ageMs,
+    });
+  }
   if (rows.length === 0) return;
 
-  // Keep the freshest two so the block stays max 2 lines.
+  const tokens = getMeterTokens(frame);
+
+  // Keep the freshest two so the block stays max 2 lines (currently the
+  // OverlayState only carries one EVP view at a time; this future-proofs the
+  // layout against a queued-EVP carousel landing later).
   rows.sort((a, b) => a.ageMs - b.ageMs);
   const visible = rows.slice(0, 2);
 
   // Size constants
-  const labelFontPx = Math.round(10 * s);
-  const textFontPx = Math.round(14 * s);
-  const ageFontPx = Math.round(10 * s);
-  const padX = Math.round(10 * s);
-  const padY = Math.round(7 * s);
+  const textFontPx = Math.round(13 * s);
+  const ageFontPx = Math.round(9 * s);
+  const stampPx = Math.round(8 * s);
+  const padX = Math.round(12 * s);
+  const padTop = Math.round(15 * s);     // extra room for the top stamp
+  const padBottom = Math.round(13 * s);  // extra room for the bottom stamp
   const rowH = Math.round(20 * s);
-  const labelGap = Math.round(6 * s);
-  const ageGap = Math.round(6 * s);
+  const ageGap = Math.round(8 * s);
   const margin = Math.round(12 * s);
-  const maxBlockW = Math.round(180 * s);
+  const maxBlockW = Math.round(190 * s);
 
   ctx.save();
 
-  // Measure each row to determine the actual width (capped at maxBlockW).
   const measureText = (str: string) => {
-    ctx.font = `700 ${textFontPx}px "JetBrains Mono", monospace`;
+    ctx.font = `500 ${textFontPx}px "Georgia", "Times New Roman", serif`;
     return ctx.measureText(str).width;
   };
 
+  // 1. Measure each row to determine the actual width (capped at maxBlockW).
   let widest = 0;
   for (const r of visible) {
-    ctx.font = `700 ${labelFontPx}px "Space Grotesk", Inter, sans-serif`;
-    const lw = ctx.measureText(r.label).width;
     const tw = measureText(r.text);
-    ctx.font = `500 ${ageFontPx}px "Space Grotesk", Inter, sans-serif`;
+    ctx.font = `500 ${ageFontPx}px "JetBrains Mono", monospace`;
     const aw = ctx.measureText(r.age).width;
-    const w = padX * 2 + lw + labelGap + tw + ageGap + aw;
+    const w = padX * 2 + tw + ageGap + aw;
     if (w > widest) widest = w;
   }
+  // Also account for the top stamp width so the slip never crops the stamp.
+  ctx.font = `700 ${stampPx}px "Inter", system-ui, sans-serif`;
+  const stampW = ctx.measureText("EVP CAPTURE").width + Math.round(12 * s);
+  widest = Math.max(widest, padX * 2 + stampW);
+
   const blockW = Math.min(maxBlockW, widest);
-  const blockH = padY * 2 + visible.length * rowH;
+  const blockH = padTop + visible.length * rowH + padBottom;
   const blockX = W - margin - blockW;
   const blockY = margin;
+  const radius = Math.round(2 * s);
 
-  drawSoftBox(ctx, blockX, blockY, blockW, blockH, "rgba(0,0,0,0.55)", band.stroke, 0.6);
+  // 2. Drop shadow under the slip so it lifts off the camera frame.
+  ctx.save();
+  ctx.shadowColor = tokens.evpPaperShadow;
+  ctx.shadowBlur = 5 * s;
+  ctx.shadowOffsetY = 2 * s;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.01)";
+  roundedRectPath(ctx, blockX, blockY, blockW, blockH, radius);
+  ctx.fill();
+  ctx.restore();
 
+  // 3. Paper body — warm cream fill with a darker rim shadow at the bottom
+  //    so the slip reads as a slightly worn evidence print.
+  const paperGrad = ctx.createLinearGradient(0, blockY, 0, blockY + blockH);
+  paperGrad.addColorStop(0,    tokens.evpPaperBg);
+  paperGrad.addColorStop(0.85, tokens.evpPaperBg);
+  paperGrad.addColorStop(1,    tokens.evpPaperEdge);
+  roundedRectPath(ctx, blockX, blockY, blockW, blockH, radius);
+  ctx.fillStyle = paperGrad;
+  ctx.fill();
+  // Thin paper edge outline.
+  ctx.strokeStyle = tokens.evpPaperEdge;
+  ctx.lineWidth = 1;
+  roundedRectPath(ctx, blockX, blockY, blockW, blockH, radius);
+  ctx.stroke();
+
+  // 4. Top-left rubber stamp — "EVP CAPTURE" in red on a thin red rectangle
+  //    border. Slightly rotated to fake the imperfect angle of a real stamp.
+  ctx.save();
+  const stampInset = Math.round(8 * s);
+  const stampTopY = blockY + Math.round(4 * s);
+  const stampH = Math.round(12 * s);
+  // Compute stamp box dimensions for centring the text.
+  ctx.font = `700 ${stampPx}px "Inter", system-ui, sans-serif`;
+  const captureW = ctx.measureText("EVP CAPTURE").width + Math.round(8 * s);
+  const stampX = blockX + stampInset;
+  // Rotate a hair so it reads as imperfect rubber.
+  ctx.translate(stampX + captureW / 2, stampTopY + stampH / 2);
+  ctx.rotate(-0.04);
+  ctx.translate(-(stampX + captureW / 2), -(stampTopY + stampH / 2));
+  ctx.strokeStyle = tokens.evpPaperStamp;
+  ctx.lineWidth = Math.max(1, 1.2 * s);
+  ctx.strokeRect(stampX, stampTopY, captureW, stampH);
+  ctx.fillStyle = tokens.evpPaperStamp;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("EVP CAPTURE", stampX + captureW / 2, stampTopY + stampH / 2);
+  ctx.restore();
+
+  // 5. Transcript rows — sepia serif text, age stamp on the right.
   ctx.textBaseline = "middle";
   ctx.textAlign = "left";
-  let y = blockY + padY + rowH / 2;
+  let y = blockY + padTop + rowH / 2;
   for (const r of visible) {
-    // Label tag.
-    ctx.font = `700 ${labelFontPx}px "Space Grotesk", Inter, sans-serif`;
-    ctx.fillStyle = "rgba(255,255,255,0.62)";
-    ctx.fillText(r.label, blockX + padX, y);
-    const labelW = ctx.measureText(r.label).width;
-
-    // Right-anchor age so the text in the middle can flex.
-    ctx.font = `500 ${ageFontPx}px "Space Grotesk", Inter, sans-serif`;
+    // Right-anchor age first so the transcript text can flex to the remaining width.
+    ctx.font = `500 ${ageFontPx}px "JetBrains Mono", monospace`;
     const ageW = ctx.measureText(r.age).width;
     const ageX = blockX + blockW - padX - ageW;
-    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.fillStyle = tokens.evpPaperInk;
+    ctx.globalAlpha = 0.6;
     ctx.fillText(r.age, ageX, y);
+    ctx.globalAlpha = 1;
 
-    // Emission text — clipped to the remaining width.
-    const textX = blockX + padX + labelW + labelGap;
+    // Transcript — sepia serif ink, clipped to the remaining width.
+    const textX = blockX + padX;
     const textMaxW = ageX - ageGap - textX;
-    const clippedText = truncateToWidth(ctx, r.text, textMaxW, `700 ${textFontPx}px "JetBrains Mono", monospace`);
-    ctx.font = `700 ${textFontPx}px "JetBrains Mono", monospace`;
-    ctx.shadowColor = band.glow;
-    ctx.shadowBlur = Math.round(textFontPx * 0.45);
-    ctx.fillStyle = band.fill;
+    const clippedText = truncateToWidth(ctx, r.text, textMaxW, `500 ${textFontPx}px "Georgia", "Times New Roman", serif`);
+    ctx.font = `500 ${textFontPx}px "Georgia", "Times New Roman", serif`;
+    ctx.fillStyle = tokens.evpPaperInk;
     ctx.fillText(clippedText, textX, y);
-    ctx.shadowBlur = 0;
 
     y += rowH;
   }
+
+  // 6. Bottom-right stamp — "ON-DEVICE" in red, smaller / no border so it
+  //    reads as a secondary classification mark beside the primary capture
+  //    stamp at the top.
+  ctx.save();
+  ctx.font = `700 ${stampPx}px "Inter", system-ui, sans-serif`;
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = tokens.evpPaperStamp;
+  ctx.fillText("ON-DEVICE", blockX + blockW - Math.round(8 * s), blockY + blockH - Math.round(7 * s));
+  ctx.restore();
+
   ctx.restore();
 }
 
