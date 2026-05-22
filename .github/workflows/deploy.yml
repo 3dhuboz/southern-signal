@@ -1,15 +1,29 @@
 name: Deploy to Cloudflare Pages
 
-# Runs on every push to master (→ production) and dev (→ preview) plus
-# manual dispatch. The Cloudflare Pages project (`southern-signal`) is NOT
-# linked to this repo via the dashboard's Git provider integration — this
-# workflow IS the deploy pipeline. If you disable it, deploys won't happen
-# automatically.
+# Runs on every push to master (→ production), push to dev (→ dev preview
+# alias), every same-repo PR targeting master/dev (→ per-PR preview alias),
+# plus manual dispatch. The Cloudflare Pages project (`southern-signal`) is
+# NOT linked to this repo via the dashboard's Git provider integration —
+# this workflow IS the deploy pipeline. If you disable it, deploys won't
+# happen automatically.
 #
 # The wrangler `--branch` flag determines which Cloudflare Pages alias the
-# build lands on. master → production (the project's primary URL).
-# Any other branch → preview deployment at `https://<branch>.<project>.pages.dev`,
-# so pushing to `dev` produces `https://dev.southern-signal.pages.dev`.
+# build lands on:
+#   master            → production (project's primary URL)
+#   dev               → https://dev.southern-signal.pages.dev (preview alias)
+#   PR (same-repo)    → https://<head-ref>.southern-signal.pages.dev
+#                       e.g. claude/phase-a2-vu-... →
+#                       https://claude-phase-a2-vu-spiritbox-ovilus.southern-signal.pages.dev
+#
+# Per-PR aliases let reviewers eyeball a PR's visual changes without
+# merging first. They also avoid the race where two PRs targeting dev
+# would clobber each other if both deployed to the dev alias.
+#
+# Fork PRs deliberately don't deploy: GitHub doesn't expose secrets to
+# fork PRs, so wrangler-action would fail without CLOUDFLARE_API_TOKEN
+# anyway. The explicit head.repo == repository guard makes that intent
+# unambiguous and keeps fork-CI logs free of confusing "missing token"
+# errors.
 #
 # Package manager: pnpm. The repo has `pnpm-lock.yaml` as the source of
 # truth (see pwa/package.json `packageManager`). Using `npm ci` against a
@@ -125,12 +139,25 @@ jobs:
           command: d1 execute ${{ vars.PREVIEW_D1_NAME || 'southern-signal-community-preview' }} --remote --file=scripts/reset-preview-d1.sql
           workingDirectory: pwa
 
-      # Deploy gated on `push` events only — PR triggers run the build/test
-      # gauntlet against the PR head SHA but don't ship a deploy (deploys on
-      # PR open would race the dev-branch preview alias and leak fork PR
-      # write tokens into wrangler-action).
+      # Deploy runs on:
+      #   - push to master / dev → production / dev alias (as before)
+      #   - same-repo PR         → per-PR preview alias derived from head_ref
+      # Fork PRs are explicitly excluded by the head.repo == repository
+      # guard. GitHub doesn't expose CLOUDFLARE_API_TOKEN to fork PRs
+      # anyway, so wrangler-action would fail without this guard — the
+      # explicit check just makes the intent visible and keeps fork CI
+      # logs clean.
+      #
+      # The previous "race the dev-branch preview alias" concern from the
+      # old gate is now solved by the --branch flag: PRs use head_ref
+      # (per-PR alias), pushes use ref_name (master/dev alias). Two PRs
+      # targeting dev land on different aliases and can't clobber each
+      # other. Concurrency group is also per-ref (push→refs/heads/dev,
+      # PR→refs/pull/N/merge) so they don't cancel each other either.
       - name: Deploy to Cloudflare Pages
-        if: github.event_name == 'push'
+        if: |
+          github.event_name == 'push' ||
+          (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -140,12 +167,15 @@ jobs:
           # pwa/dist — running from repo root with `pwa/dist` would also
           # work, but pinning workingDirectory lets wrangler auto-discover
           # pwa/wrangler.jsonc for the project's resource bindings.
-          # `--branch=<github.ref_name>` picks the Cloudflare Pages alias from
-          # the pushed branch. master → production (project's primary URL),
-          # dev → https://dev.southern-signal.pages.dev. Add more branches
-          # to the `on.push.branches` list above to extend this.
+          #
+          # `--branch=` picks the Cloudflare Pages alias:
+          #   push event:  github.ref_name (master/dev) → production/dev alias
+          #   PR event:    github.head_ref (PR source branch) → per-PR alias
+          # github.head_ref is empty on push events, so `|| github.ref_name`
+          # falls back correctly.
+          #
           # `--commit-dirty=true` silences the warning about untracked dist/
           # files (dist is gitignored, so the runner always sees them as new).
           packageManager: pnpm
-          command: pages deploy dist --project-name=southern-signal --branch=${{ github.ref_name }} --commit-dirty=true
+          command: pages deploy dist --project-name=southern-signal --branch=${{ github.head_ref || github.ref_name }} --commit-dirty=true
           workingDirectory: pwa
