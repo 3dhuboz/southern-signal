@@ -1295,18 +1295,38 @@ const REM_LIT_BY_BAND: Record<OverlayState["activityBand"], number> = {
   calm: 0, light: 1, possible: 2, notable: 4, strong: 6,
 };
 
+/** REM Pod body dimensions (logical px @ s=1). Tower form: tall and narrow. */
+const REM_BODY_W = 64;
+const REM_BODY_H = 88;
+/** Z-score threshold above which the REM Pod fires an outward pulse animation. */
+const REM_PULSE_TRIGGER_Z = 2.5;
+/** Pulse animation length in ms — ring fades from REM_PULSE_R0 to REM_PULSE_R1. */
+const REM_PULSE_MS = 600;
+
 /**
- * Virtual REM Pod — six-LED stack mounted on the RIGHT EDGE, BELOW K-II.
- * Same form factor as the K-II so the right edge reads as a unified
- * instrument strip. Distinct cyan/orange theme (vs K-II's green/red) so
- * the operator can pick them apart at a glance.
+ * Skeuomorphic REM Pod — black tower with chrome antenna and a 4-LED ring
+ * around the base. Sits directly below the K-II on the right edge.
  *
- * Layout (spec):
- *   width  ~40px
- *   height ~120px
- *   "REM" label (10px) above the LEDs
- *   background rgba(0,0,0,0.35) rounded box
- *   LED colour ramp: cyan(low) → orange(high)
+ * Anatomy (logical px, s scales everything):
+ *                   ●  ← chrome ball cap
+ *                   │
+ *                   │  ← chrome antenna (~32 px tall)
+ *                   │
+ *   ┌────────────────────┐  ← black tower body, 64 × 88
+ *   │                    │     vertical gradient (edge → body → edge)
+ *   │                    │
+ *   │       REM POD      │  ← white silkscreen, lower-third
+ *   │      ●    ●        │  ← 4-LED ring around the base
+ *   │     (R, G, B, Y at top/right/bottom/left)
+ *   └────────────────────┘
+ *
+ * Lit LED count is driven by emfZScore (preferred) or activityBand (fallback);
+ * LEDs light sequentially clockwise as the z-score climbs. When the z-score
+ * crosses REM_PULSE_TRIGGER_Z (2.5σ) an outward ring pulse emits from the
+ * base and expands over ~600 ms — `frame.remPulse` carries the pulse start
+ * time across frames so the ring animates without re-triggering each frame.
+ * All colours resolve through `getMeterTokens(frame)` so scotopic re-skins
+ * the tower without touching draw code.
  */
 function drawRemPod(
   ctx: CanvasRenderingContext2D,
@@ -1315,63 +1335,168 @@ function drawRemPod(
   emfZScore: number | undefined,
   s: number,
   topY: number,
-  _frame: FrameContext,
+  frame: FrameContext,
 ): void {
+  const tokens = getMeterTokens(frame);
+
   const hasZ = typeof emfZScore === "number" && Number.isFinite(emfZScore);
   const zAbs = hasZ ? Math.abs(emfZScore as number) : 0;
-  const litLeds = hasZ ? zScoreToLeds(zAbs, REM_Z_TABLE) : (REM_LIT_BY_BAND[activityBand] ?? 0);
+  // Use the same z-table as the K-II for consistency, but the REM ring only
+  // has 4 LEDs so clamp the lit count to 0-4. Above ~1.5σ at least one LED
+  // is lit; the ring fills clockwise as the magnetometer climbs.
+  const bandLeds = REM_LIT_BY_BAND[activityBand] ?? 0;
+  const zLeds = hasZ ? zScoreToLeds(zAbs, REM_Z_TABLE) : bandLeds;
+  const litLeds = Math.min(4, Math.max(0, hasZ ? zLeds : bandLeds));
 
-  // Size constants — match K-II so the two stacks visually pair.
-  // NOTE: this is the legacy flat REM Pod; commit 3 swaps it for the
-  // skeuomorphic black-tower variant with antenna + 4-LED ring + pulse.
-  const widgetW = Math.round(40 * s);
-  const widgetH = Math.round(120 * s);
-  const labelFontPx = Math.round(10 * s);
+  // Detect pulse trigger — rising edge above the 2.5σ threshold. Compare
+  // against the last z-score the pulse state saw, not just "is z high right
+  // now", so a sustained high z doesn't keep re-starting the ring every
+  // frame (would look like a strobe). A new pulse is allowed once the
+  // previous one has finished its 600 ms window.
+  const nowMs = (typeof performance !== "undefined" && typeof performance.now === "function")
+    ? performance.now()
+    : Date.now();
+  if (hasZ && zAbs >= REM_PULSE_TRIGGER_Z) {
+    const prev = frame.remPulse;
+    const finished = !prev || (nowMs - prev.startedAtMs) >= REM_PULSE_MS;
+    const risingEdge = !prev || prev.lastZ < REM_PULSE_TRIGGER_Z;
+    if (finished || risingEdge) {
+      frame.remPulse = { startedAtMs: nowMs, lastZ: zAbs };
+    } else if (prev) {
+      prev.lastZ = zAbs;
+    }
+  } else if (frame.remPulse) {
+    // Keep the in-flight pulse animating; just update lastZ so the next
+    // rising edge is detected correctly when it crosses 2.5σ again.
+    frame.remPulse.lastZ = zAbs;
+  }
+
+  // Geometry — body anchored to the right edge, 12 px margin. Stacks under
+  // the K-II (whose height is KII_BODY_H scaled) with an 8 px gap.
+  const bodyW = Math.round(REM_BODY_W * s);
+  const bodyH = Math.round(REM_BODY_H * s);
   const margin = Math.round(12 * s);
-  const padY = Math.round(6 * s);
-  // Sit directly below the K-II meter (now ~40 px tall, not 120). Use the
-  // shared topY anchor + the new K-II body height + an 8 px gap.
+  const x = W - margin - bodyW;
   const kiiBottom = topY + Math.round(KII_BODY_H * s);
-  const x = W - margin - widgetW;
   const y = kiiBottom + Math.round(8 * s);
-
-  drawSoftBox(ctx, x, y, widgetW, widgetH, "rgba(0,0,0,0.35)", "rgba(255,165,80,0.22)", 0.5);
+  const radius = Math.round(4 * s);
 
   ctx.save();
-  ctx.font = `700 ${labelFontPx}px "JetBrains Mono", monospace`;
+
+  // 1. Drop shadow under the tower.
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
+  ctx.shadowBlur = 6 * s;
+  ctx.shadowOffsetY = 3 * s;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.01)";
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.fill();
+  ctx.restore();
+
+  // 2. Antenna — chrome line rising from the top centre of the body. Drawn
+  //    BEFORE the body so the body edge cleanly overlaps the antenna base.
+  const antennaH = Math.round(32 * s);
+  const antennaW = Math.max(2, Math.round(3 * s));
+  const antennaX = x + (bodyW - antennaW) / 2;
+  const antennaTopY = y - antennaH;
+  const antennaGrad = ctx.createLinearGradient(antennaX, 0, antennaX + antennaW, 0);
+  antennaGrad.addColorStop(0,    "#888888");
+  antennaGrad.addColorStop(0.5,  tokens.remAntenna);
+  antennaGrad.addColorStop(1,    "#888888");
+  ctx.fillStyle = antennaGrad;
+  ctx.fillRect(antennaX, antennaTopY, antennaW, antennaH);
+
+  // 2b. Antenna ball cap — small chrome circle at the top, with a tiny
+  //     highlight for the "metal" sheen.
+  const ballR = Math.max(2, Math.round(2.5 * s));
+  ctx.beginPath();
+  ctx.arc(antennaX + antennaW / 2, antennaTopY, ballR, 0, Math.PI * 2);
+  ctx.fillStyle = tokens.remAntenna;
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(antennaX + antennaW / 2 - ballR * 0.3, antennaTopY - ballR * 0.3, ballR * 0.35, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+  ctx.fill();
+
+  // 3. Body fill — vertical edge→body→edge gradient for cylindrical look.
+  const bodyGrad = ctx.createLinearGradient(x, 0, x + bodyW, 0);
+  bodyGrad.addColorStop(0,    tokens.remBodyEdge);
+  bodyGrad.addColorStop(0.5,  tokens.remBody);
+  bodyGrad.addColorStop(1,    tokens.remBodyEdge);
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.fillStyle = bodyGrad;
+  ctx.fill();
+
+  // 4. Body outline.
+  ctx.strokeStyle = tokens.remBodyEdge;
+  ctx.lineWidth = 1.5;
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.stroke();
+
+  // 5. "REM POD" silkscreen — white text in the lower third, above the LED ring.
+  const silkPx = Math.max(7, Math.round(8 * s));
+  ctx.font = `700 ${silkPx}px "Inter", system-ui, sans-serif`;
   ctx.textAlign = "center";
-  ctx.textBaseline = "top";
-  ctx.fillStyle = "rgba(255,200,140,0.85)";
-  ctx.fillText("REM", x + widgetW / 2, y + padY);
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = tokens.remSilkscreen;
+  const silkY = y + bodyH * 0.62;
+  ctx.fillText("REM POD", x + bodyW / 2, silkY);
 
-  const labelArea = padY + labelFontPx + Math.round(4 * s);
-  const ledArea = widgetH - labelArea - padY;
-  const ledStride = ledArea / 6;
-  const ledR = Math.min(ledStride * 0.35, widgetW * 0.30);
-  // Cyan-to-orange ramp — distinct from K-II's green-to-red.
-  const REM_COLORS = ["#5DF2C7", "#5DF2C7", "#7FCFE8", "#FFC850", "#FFA040", "#FF7028"] as const;
-
-  for (let i = 0; i < 6; i++) {
+  // 6. 4-LED ring around the base — positions are top / right / bottom / left
+  //    relative to a ring centred near the lower-mid of the body. Sequential
+  //    lighting goes clockwise from the TOP LED so the operator sees the
+  //    ring "fill in" as activity climbs.
+  const ringCx = x + bodyW / 2;
+  const ringCy = y + bodyH * 0.82;
+  const ringR = Math.min(bodyW * 0.30, bodyH * 0.18);
+  const ledR = Math.max(3, Math.round(4 * s));
+  // Order: top, right, bottom, left → angles 270°, 0°, 90°, 180°.
+  const ringSlots: ReadonlyArray<{ angle: number; color: string }> = [
+    { angle: -Math.PI / 2, color: tokens.remLedR },  // top — red
+    { angle: 0,            color: tokens.remLedG },  // right — green
+    { angle:  Math.PI / 2, color: tokens.remLedB },  // bottom — blue
+    { angle:  Math.PI,     color: tokens.remLedY },  // left — yellow
+  ];
+  for (let i = 0; i < ringSlots.length; i++) {
     const lit = i < litLeds;
-    const col = REM_COLORS[i];
-    const cy = y + labelArea + ledArea - ledStride * (i + 0.5);
-    const cx = x + widgetW / 2;
+    const slot = ringSlots[i];
+    const cx = ringCx + Math.cos(slot.angle) * ringR;
+    const cy = ringCy + Math.sin(slot.angle) * ringR;
     ctx.beginPath();
     ctx.arc(cx, cy, ledR, 0, Math.PI * 2);
-    if (lit) {
-      ctx.shadowColor = col;
-      ctx.shadowBlur = ledR * 2.2;
-      ctx.fillStyle = col;
-    } else {
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = "rgba(25,25,25,0.85)";
-    }
+    ctx.fillStyle = lit ? slot.color : tokens.remLedOff;
     ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.strokeStyle = lit ? col : "rgba(70,70,70,0.6)";
-    ctx.lineWidth = 1;
-    ctx.stroke();
+    // Subtle highlight on lit LEDs.
+    if (lit) {
+      ctx.beginPath();
+      ctx.arc(cx - ledR * 0.35, cy - ledR * 0.35, ledR * 0.30, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
+      ctx.fill();
+    }
   }
+
+  // 7. Pulse ring — expands outward from the LED-ring centre over 600 ms.
+  //    Drawn LAST so it sits on top of the body when active. Skipped once
+  //    the pulse age exceeds the animation window.
+  if (frame.remPulse) {
+    const age = nowMs - frame.remPulse.startedAtMs;
+    if (age >= 0 && age <= REM_PULSE_MS) {
+      const t = age / REM_PULSE_MS;
+      const r0 = Math.max(bodyW, bodyH) * 0.45;
+      const r1 = Math.max(bodyW, bodyH) * 1.0;
+      const pulseR = r0 + (r1 - r0) * t;
+      const alpha = 1 - t;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = tokens.remPulse;
+      ctx.lineWidth = Math.max(1.5, 2 * s);
+      ctx.beginPath();
+      ctx.arc(ringCx, ringCy, pulseR, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
   ctx.restore();
 }
 
