@@ -299,6 +299,14 @@ interface FrameContext {
    * trigger fires while a pulse is still in-flight.
    */
   remPulse: { startedAtMs: number; lastZ: number } | null;
+  /**
+   * VU needle smoother — tracks the displayed needle position as a 0..1 float
+   * with a real-VU "300 ms ballistic" RC-style lag (the integration time the
+   * actual ANSI/IEC standard specifies). Without this the needle pops between
+   * every audio frame, which looks digital not analog. `lastMs` keeps the lerp
+   * frame-rate independent.
+   */
+  vuNeedleSmooth: { value: number; lastMs: number } | null;
 }
 
 /**
@@ -329,6 +337,16 @@ interface MeterTokens {
   remLedY: string;
   remLedOff: string;
   remPulse: string;
+  // Phase A.2 — vintage VU audio meter.
+  vuBody: string;
+  vuBodyEdge: string;
+  vuScaleBg: string;
+  vuScaleEdge: string;
+  vuScaleInk: string;
+  vuNeedle: string;
+  vuOverload: string;
+  vuSilkscreen: string;
+  vuGlow: string;
 }
 
 /** Hardcoded fallback palette — matches the default `:root` block in tokens.css. */
@@ -353,6 +371,15 @@ const METER_TOKEN_FALLBACK: MeterTokens = {
   remLedY:       "#f5d028",
   remLedOff:     "#1a1a1a",
   remPulse:      "rgba(46, 182, 239, 0.6)",
+  vuBody:        "#2a2a2a",
+  vuBodyEdge:    "#444444",
+  vuScaleBg:     "#e8d9a8",
+  vuScaleEdge:   "#b89e60",
+  vuScaleInk:    "#1a1a0a",
+  vuNeedle:      "#1a1a1a",
+  vuOverload:    "#c41e1e",
+  vuSilkscreen:  "#f0e6c8",
+  vuGlow:        "rgba(255, 200, 80, 0.35)",
 };
 
 /**
@@ -394,6 +421,15 @@ function readMeterTokens(): MeterTokens {
     remLedY:       pick("--rem-led-y",      METER_TOKEN_FALLBACK.remLedY),
     remLedOff:     pick("--rem-led-off",    METER_TOKEN_FALLBACK.remLedOff),
     remPulse:      pick("--rem-pulse",      METER_TOKEN_FALLBACK.remPulse),
+    vuBody:        pick("--vu-body",        METER_TOKEN_FALLBACK.vuBody),
+    vuBodyEdge:    pick("--vu-body-edge",   METER_TOKEN_FALLBACK.vuBodyEdge),
+    vuScaleBg:     pick("--vu-scale-bg",    METER_TOKEN_FALLBACK.vuScaleBg),
+    vuScaleEdge:   pick("--vu-scale-edge", METER_TOKEN_FALLBACK.vuScaleEdge),
+    vuScaleInk:    pick("--vu-scale-ink",  METER_TOKEN_FALLBACK.vuScaleInk),
+    vuNeedle:      pick("--vu-needle",      METER_TOKEN_FALLBACK.vuNeedle),
+    vuOverload:    pick("--vu-overload",    METER_TOKEN_FALLBACK.vuOverload),
+    vuSilkscreen:  pick("--vu-silkscreen",  METER_TOKEN_FALLBACK.vuSilkscreen),
+    vuGlow:        pick("--vu-glow",        METER_TOKEN_FALLBACK.vuGlow),
   };
 }
 
@@ -430,6 +466,7 @@ export function createCanvasCompositor(opts: CanvasCompositorOptions): CanvasCom
     W: 0, H: 0, s: 1,
     edgeGlow: null, audioBar: null,
     meterTokens: null, kiiSmooth: null, remPulse: null,
+    vuNeedleSmooth: null,
   };
 
   // Context handle is also stable — getContext returns a cached instance, but
@@ -568,9 +605,9 @@ function renderFrame(
     drawRemPod(ctx, W, overlay.activityBand, overlay.emfZScore, s, meterTopY, frame);
   }
 
-  // 5. Audio meter — left edge, vertical bar.
+  // 5. VU audio meter — left edge, vintage analog look.
   if (channels.audioMeter) {
-    drawAudioMeter(ctx, W, H, overlay.audioRms, s, frame);
+    drawVuMeter(ctx, W, H, overlay.audioRms, s, frame);
   }
 
   // 6. Direction arrow (only if sector + coherence are valid).
@@ -1500,19 +1537,44 @@ function drawRemPod(
   ctx.restore();
 }
 
-// ─── Audio meter (left edge, vertical) ──────────────────────────────────────
+// ─── Vintage VU audio meter (left edge, analog) ─────────────────────────────
+
+/** VU meter body dimensions (logical px @ s=1). Landscape — wider than tall.
+ *  140×96 leaves room for a proper 90°-sweep arc with red-zone above 0 VU. */
+const VU_BODY_W = 140;
+const VU_BODY_H = 96;
+/** Needle sweep range in radians. The needle pivots at the bottom-center;
+ *  left rest (silence) is at -45° from vertical-up, right peak (overload)
+ *  is at +45°. So the full sweep is 90°. */
+const VU_NEEDLE_REST_RAD = -Math.PI / 4;
+const VU_NEEDLE_PEAK_RAD =  Math.PI / 4;
+/** Audio level (0..1) at which the meter reads 0 VU — the boundary of the
+ *  red overload zone. -3 dBFS ≈ pow(10, -3/20) ≈ 0.708. Anything above this
+ *  swings into the red zone on the scale face. */
+const VU_OVERLOAD_LEVEL = 0.708;
 
 /**
- * Audio level meter — slim vertical bar mounted on the LEFT EDGE.
+ * Skeuomorphic vintage VU audio meter — analog needle on a cardboard-textured
+ * scale, with a red overload zone past -3 dB. Replaces the flat gradient bar
+ * the old `drawAudioMeter` used. Driven by the same `audioRms` input (we don't
+ * touch audio capture — only the draw layer).
  *
- * Layout (spec):
- *   width  ~12px (bar) + frame
- *   height ~140px
- *   Vertical gradient: green at bottom, yellow at 70%, red at peak
- *   Background rgba(0,0,0,0.4) rounded box
- *   Numeric dB indicator below the bar (small, optional read)
+ * Anatomy (logical px @ s=1, 140 × 96):
+ *   ┌────────────────────────────────────────┐  ← black bezel surround
+ *   │ ╔════════════════════════════════════╗ │
+ *   │ ║   .  .  .  .  ┃┃┃┃                ║ │   cardboard scale face,
+ *   │ ║       ╲      ╱                    ║ │   inked tick marks, red zone
+ *   │ ║         ╲   ╱       ━━━━━━━━━     ║ │   right of the 0 VU line.
+ *   │ ║          ╲┘╱        VU            ║ │   black needle pivots at the
+ *   │ ║           ╳         METER         ║ │   bottom-center, swings -45°
+ *   │ ╚════════════════════════════════════╝ │   to +45°.
+ *   └────────────────────────────────────────┘
+ *
+ * The needle obeys a 300 ms RC ballistic — the standard VU integration time
+ * — via `frame.vuNeedleSmooth`. Without that the needle pops between every
+ * audio frame, which reads digital not analog. dB readout sits below the scale.
  */
-function drawAudioMeter(
+function drawVuMeter(
   ctx: CanvasRenderingContext2D,
   _W: number,
   H: number,
@@ -1520,89 +1582,231 @@ function drawAudioMeter(
   s: number,
   frame: FrameContext,
 ): void {
-  // Size constants
-  const barW = Math.round(12 * s);
-  const barH = Math.round(140 * s);
-  const frameW = barW + Math.round(14 * s);
-  const dbFontPx = Math.round(9 * s);
-  const labelGap = Math.round(4 * s);
-  const frameH = barH + Math.round(12 * s) + dbFontPx + labelGap;
-  const margin = Math.round(12 * s);
-  // Align with the right-edge instrument stack so both bracket the camera frame.
-  const x = margin;
-  const y = Math.round(H * 0.30);
+  const tokens = getMeterTokens(frame);
 
-  drawSoftBox(ctx, x, y, frameW, frameH, "rgba(0,0,0,0.4)", "rgba(255,255,255,0.18)", 0.5);
-
-  // Clamp + power-curve compression (log-ish feel without the cost of log).
+  // Clamp + power-curve compression (log-ish feel, same as the old bar) so the
+  // needle leaves rest position on quiet rooms but isn't pinned to peak at
+  // moderate input. The ballistic below smooths the visual.
   const level = Math.min(1, Math.max(0, audioRms));
   const visualLevel = Math.pow(level, 0.55);
 
-  // Bar geometry — centred horizontally in the frame box.
-  const barX = x + Math.round((frameW - barW) / 2);
-  const barY = y + Math.round(6 * s);
-
-  // Bar background slot.
-  ctx.save();
-  ctx.fillStyle = "rgba(20,20,20,0.85)";
-  ctx.beginPath();
-  const r = barW / 2;
-  ctx.moveTo(barX + r, barY);
-  ctx.arcTo(barX + barW, barY, barX + barW, barY + r, r);
-  ctx.lineTo(barX + barW, barY + barH - r);
-  ctx.arcTo(barX + barW, barY + barH, barX + barW - r, barY + barH, r);
-  ctx.lineTo(barX + r, barY + barH);
-  ctx.arcTo(barX, barY + barH, barX, barY + barH - r, r);
-  ctx.lineTo(barX, barY + r);
-  ctx.arcTo(barX, barY, barX + r, barY, r);
-  ctx.closePath();
-  ctx.fill();
-
-  // Fill (clipped to slot shape). Gradient depends only on bar geometry, so
-  // we cache it on the compositor's FrameContext and reuse across frames.
-  ctx.clip();
-  if (visualLevel > 0) {
-    const fillH = barH * visualLevel;
-    const fillTop = barY + barH - fillH;
-    const key = `${barY}|${barH}`;
-    let entry = frame.audioBar;
-    if (!entry || entry.key !== key) {
-      const grad = ctx.createLinearGradient(0, barY + barH, 0, barY);
-      grad.addColorStop(0,    "#33EE55");
-      grad.addColorStop(0.6,  "#9FE83A");
-      grad.addColorStop(0.75, "#FFDD00");
-      grad.addColorStop(0.88, "#FF8800");
-      grad.addColorStop(1,    "#FF2222");
-      entry = { key, grad };
-      frame.audioBar = entry;
-    }
-    ctx.fillStyle = entry.grad;
-    ctx.fillRect(barX, fillTop, barW, fillH);
+  // VU ballistic — ~300 ms RC integration. lerp the smoother towards the
+  // current visualLevel; the time-constant defines how fast the needle
+  // settles. Cold start pins to current so the first frame isn't a snap.
+  const nowMs = (typeof performance !== "undefined" && typeof performance.now === "function")
+    ? performance.now()
+    : Date.now();
+  if (!frame.vuNeedleSmooth) {
+    frame.vuNeedleSmooth = { value: visualLevel, lastMs: nowMs };
+  } else {
+    const dtMs = Math.max(0, nowMs - frame.vuNeedleSmooth.lastMs);
+    const tau = 300; // ms — ANSI/IEC VU integration time
+    const alpha = 1 - Math.exp(-dtMs / tau);
+    frame.vuNeedleSmooth.value += (visualLevel - frame.vuNeedleSmooth.value) * alpha;
+    frame.vuNeedleSmooth.lastMs = nowMs;
   }
+  const needleLevel = Math.max(0, Math.min(1, frame.vuNeedleSmooth.value));
+  const needleAngle = VU_NEEDLE_REST_RAD + (VU_NEEDLE_PEAK_RAD - VU_NEEDLE_REST_RAD) * needleLevel;
+
+  // Geometry — body anchored to the left edge with a 12 px margin.
+  const bodyW = Math.round(VU_BODY_W * s);
+  const bodyH = Math.round(VU_BODY_H * s);
+  const margin = Math.round(12 * s);
+  const x = margin;
+  const y = Math.round(H * 0.30);
+  const radius = Math.round(6 * s);
+
+  ctx.save();
+
+  // 1. Drop shadow — soft, offset down so the bezel looks lifted off the frame.
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
+  ctx.shadowBlur = 6 * s;
+  ctx.shadowOffsetY = 3 * s;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.01)";
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.fill();
   ctx.restore();
 
-  // Threshold ticks at 70% / 85%.
+  // 2. Bezel — dark vertical gradient (edge → body → edge) so the surround
+  //    reads as moulded plastic / brushed metal.
+  const bezelGrad = ctx.createLinearGradient(0, y, 0, y + bodyH);
+  bezelGrad.addColorStop(0,    tokens.vuBodyEdge);
+  bezelGrad.addColorStop(0.5,  tokens.vuBody);
+  bezelGrad.addColorStop(1,    tokens.vuBodyEdge);
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.fillStyle = bezelGrad;
+  ctx.fill();
+
+  // 3. Bezel outline.
+  ctx.strokeStyle = tokens.vuBodyEdge;
+  ctx.lineWidth = 1.5;
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.stroke();
+
+  // 4. Recessed scale window — cardboard face inset into the bezel.
+  const insetX = Math.round(6 * s);
+  const insetTop = Math.round(6 * s);
+  const insetBottom = Math.round(18 * s); // leave space for dB readout
+  const scaleX = x + insetX;
+  const scaleY = y + insetTop;
+  const scaleW = bodyW - insetX * 2;
+  const scaleH = bodyH - insetTop - insetBottom;
+  const scaleR = Math.round(3 * s);
+
+  // Cardboard fill — slightly off-cream with a subtle vertical shading.
+  const scaleGrad = ctx.createLinearGradient(0, scaleY, 0, scaleY + scaleH);
+  scaleGrad.addColorStop(0,    tokens.vuScaleBg);
+  scaleGrad.addColorStop(0.7,  tokens.vuScaleBg);
+  scaleGrad.addColorStop(1,    tokens.vuScaleEdge);
+  roundedRectPath(ctx, scaleX, scaleY, scaleW, scaleH, scaleR);
+  ctx.fillStyle = scaleGrad;
+  ctx.fill();
+
+  // 4b. Warm internal lamp glow — radial gradient near the scale top centre
+  //     fakes the look of a single incandescent illuminating the back of the
+  //     scale (classic vintage VU meter touch).
   ctx.save();
-  ctx.strokeStyle = "rgba(255,255,255,0.28)";
-  ctx.lineWidth = 1;
-  for (const frac of [0.7, 0.85]) {
-    const ty = barY + barH - barH * frac;
+  roundedRectPath(ctx, scaleX, scaleY, scaleW, scaleH, scaleR);
+  ctx.clip();
+  const glowCx = scaleX + scaleW / 2;
+  const glowCy = scaleY + scaleH * 0.30;
+  const glowR = Math.max(scaleW, scaleH) * 0.6;
+  const glowGrad = ctx.createRadialGradient(glowCx, glowCy, 0, glowCx, glowCy, glowR);
+  glowGrad.addColorStop(0, tokens.vuGlow);
+  glowGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
+  ctx.fillStyle = glowGrad;
+  ctx.fillRect(scaleX, scaleY, scaleW, scaleH);
+  ctx.restore();
+
+  // 5. Scale arc geometry — needle pivots at the bottom-center of the scale
+  //    window; the arc sits a bit above the pivot so the tick marks face the
+  //    audience like a real VU meter.
+  const pivotX = scaleX + scaleW / 2;
+  const pivotY = scaleY + scaleH + Math.round(2 * s); // just below the scale
+  const arcR = Math.min(scaleW * 0.46, scaleH * 0.95);
+
+  // 5a. Red overload zone — fill the wedge from VU_OVERLOAD_LEVEL to peak.
+  //     This is the visual cue that "anything in here is clipping risk."
+  const overloadStartAngle = VU_NEEDLE_REST_RAD
+    + (VU_NEEDLE_PEAK_RAD - VU_NEEDLE_REST_RAD) * VU_OVERLOAD_LEVEL;
+  const overloadEndAngle = VU_NEEDLE_PEAK_RAD;
+  const arcInnerR = arcR * 0.82;
+  const arcOuterR = arcR * 1.02;
+  ctx.save();
+  ctx.beginPath();
+  // Outer arc (sweep clockwise from overloadStart to overloadEnd; canvas
+  // arc() angles are measured clockwise from +X, so we offset by -π/2 to align
+  // with "vertical-up = 0" semantics used by needleAngle).
+  ctx.arc(pivotX, pivotY, arcOuterR,
+    overloadStartAngle - Math.PI / 2,
+    overloadEndAngle   - Math.PI / 2, false);
+  // Inner arc, reversed direction to close the wedge.
+  ctx.arc(pivotX, pivotY, arcInnerR,
+    overloadEndAngle   - Math.PI / 2,
+    overloadStartAngle - Math.PI / 2, true);
+  ctx.closePath();
+  ctx.fillStyle = tokens.vuOverload;
+  ctx.globalAlpha = 0.78;
+  ctx.fill();
+  ctx.restore();
+
+  // 5b. Tick marks — short ink-stamped marks at canonical -20, -10, -5, -3, 0,
+  //     +3 VU positions. Real VU meters log-scale these; for our skeuomorph we
+  //     evenly distribute six ticks across the sweep with the 0 VU tick
+  //     emphasised. Ticks below 0 are full-length; ticks in the red zone are
+  //     drawn in red ink so the operator can see them through the red wedge.
+  ctx.save();
+  ctx.strokeStyle = tokens.vuScaleInk;
+  ctx.lineWidth = Math.max(1, 1.2 * s);
+  ctx.lineCap = "round";
+  type Tick = { level: number; label?: string; long: boolean };
+  const ticks: Tick[] = [
+    { level: 0,    label: "-20", long: true },
+    { level: 0.2,  label: "-10", long: true },
+    { level: 0.5,  label: "-5",  long: true },
+    { level: VU_OVERLOAD_LEVEL, label: "-3", long: true },
+    { level: 0.86, label: "0",   long: true },
+    { level: 1.0,  label: "+3",  long: true },
+  ];
+  for (const tick of ticks) {
+    const ang = VU_NEEDLE_REST_RAD + (VU_NEEDLE_PEAK_RAD - VU_NEEDLE_REST_RAD) * tick.level;
+    const cosA = Math.sin(ang); // sin because needleAngle=0 is straight up
+    const sinA = -Math.cos(ang);
+    const tickInner = arcR * (tick.long ? 0.78 : 0.86);
+    const tickOuter = arcR * 1.00;
     ctx.beginPath();
-    ctx.moveTo(barX - 1, ty);
-    ctx.lineTo(barX + barW + 1, ty);
+    ctx.moveTo(pivotX + cosA * tickInner, pivotY + sinA * tickInner);
+    ctx.lineTo(pivotX + cosA * tickOuter, pivotY + sinA * tickOuter);
     ctx.stroke();
   }
   ctx.restore();
 
-  // Numeric dB readout — convert RMS to dBFS-ish (20·log10), clamp to -60.
+  // 5c. "VU" silkscreen under the arc — small inked text branded onto the
+  //     cardboard scale, classic vintage look.
+  const vuLabelPx = Math.max(8, Math.round(10 * s));
+  ctx.save();
+  ctx.font = `700 ${vuLabelPx}px "Inter", system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = tokens.vuScaleInk;
+  ctx.fillText("VU", pivotX, pivotY - arcR * 0.42);
+  ctx.restore();
+
+  // 6. Needle — pivots at (pivotX, pivotY), length arcInnerR + small overrun.
+  //    Drawn AFTER the scale ink so it sits on top.
+  const needleLen = arcR * 0.92;
+  const tipX = pivotX + Math.sin(needleAngle) * needleLen;
+  const tipY = pivotY - Math.cos(needleAngle) * needleLen;
+  ctx.save();
+  // Subtle drop shadow under the needle for depth.
+  ctx.shadowColor = "rgba(0, 0, 0, 0.45)";
+  ctx.shadowBlur = 2 * s;
+  ctx.shadowOffsetX = 1 * s;
+  ctx.shadowOffsetY = 1 * s;
+  ctx.strokeStyle = tokens.vuNeedle;
+  ctx.lineWidth = Math.max(1.5, 1.8 * s);
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(pivotX, pivotY);
+  ctx.lineTo(tipX, tipY);
+  ctx.stroke();
+  ctx.restore();
+
+  // 6b. Pivot cap — small filled circle at the needle base, sells the analog look.
+  const pivotR = Math.max(2, Math.round(3 * s));
+  ctx.beginPath();
+  ctx.arc(pivotX, pivotY, pivotR, 0, Math.PI * 2);
+  ctx.fillStyle = tokens.vuNeedle;
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(pivotX - pivotR * 0.35, pivotY - pivotR * 0.35, pivotR * 0.35, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
+  ctx.fill();
+
+  // 7. "VU METER" silkscreen on the bezel below the scale (gear label, not
+  //    an anomaly claim). Sits in the inset-bottom margin reserved earlier.
+  const silkPx = Math.max(7, Math.round(8 * s));
+  ctx.font = `700 ${silkPx}px "Inter", system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = tokens.vuSilkscreen;
+  ctx.fillText("VU METER", x + bodyW / 2, y + bodyH - Math.round(11 * s));
+
+  // 8. Numeric dB readout — small mono digit row to the right of the silkscreen.
+  //    Keeps the operator value the legacy meter provided ("how loud is it
+  //    really") without giving up the analog aesthetic. Clamp to -60 dBFS.
   const dbValue = level > 0.001 ? 20 * Math.log10(level) : -60;
   const dbLabel = `${dbValue >= 0 ? "+" : ""}${dbValue.toFixed(0)} dB`;
+  const dbPx = Math.max(7, Math.round(8 * s));
   ctx.save();
-  ctx.font = `600 ${dbFontPx}px "JetBrains Mono", monospace`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "top";
-  ctx.fillStyle = "rgba(255,255,255,0.78)";
-  ctx.fillText(dbLabel, x + frameW / 2, barY + barH + labelGap);
+  ctx.font = `600 ${dbPx}px "JetBrains Mono", monospace`;
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = tokens.vuSilkscreen;
+  ctx.fillText(dbLabel, x + bodyW - Math.round(8 * s), y + bodyH - Math.round(11 * s));
+  ctx.restore();
+
   ctx.restore();
 }
 
