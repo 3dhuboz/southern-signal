@@ -211,6 +211,57 @@ const AUDIO_METER: OverlayPlugin = {
   sensors: ["audio"],
 };
 
+// ── Phase B plugins ────────────────────────────────────────────────────────
+
+/**
+ * False-color "full spectrum" video filter. Honest framing locked in here:
+ *   - Phone cameras have a hardware IR-cut filter we can't remove in software.
+ *   - This is a hue + saturation + contrast filter applied to the video frame,
+ *     mimicking the look of an IR-modified DSLR.
+ *   - Description copy uses "false-color" / "faux-IR" — NEVER "infrared
+ *     sensor" / "Full Spectrum sensor". The on-frame badge label also says
+ *     "FAUX-IR PROCESSING" so the recorded frame doesn't lie about what's
+ *     happening.
+ */
+const FULL_SPECTRUM_CAM: OverlayPlugin = {
+  id: "fullSpectrumCam",
+  name: "Full-spectrum (faux-IR)",
+  description: "False-color filter mimicking an IR-modified DSLR. NOT a real IR sensor — phone cameras have a hardware IR-cut filter we can't remove in software.",
+  group: "effect",
+  defaultEnabled: false,
+  sensors: [],
+};
+
+/**
+ * Analog EMF galvanometer — 1960s field-meter aesthetic. Reads the SAME
+ * magnetometer z-score the K-II uses; this is gear-archetype diversity, not
+ * a separate data stream. Both meters can run simultaneously without
+ * conflict. Honest copy — silkscreen reads "EMF FIELD METER" / "MAG FLUX".
+ */
+const EMF_GALVANOMETER: OverlayPlugin = {
+  id: "emfGalvanometer",
+  name: "EMF galvanometer",
+  description: "Analog needle meter (white face + brushed-aluminum bezel) driven by the same magnetometer z-score as the K-II.",
+  group: "instrument",
+  defaultEnabled: false,
+  sensors: ["magnetometer"],
+};
+
+/**
+ * PIR-style motion detector mockup. Driven by the device accelerometer
+ * magnitude delta — NOT a real passive-infrared sensor. The silkscreen
+ * label "PIR MOTION SENSE / ACCEL TRIGGER" + this description text both
+ * say so explicitly so the operator can't be misled about what's firing.
+ */
+const MOTION_DETECTOR: OverlayPlugin = {
+  id: "motionDetector",
+  name: "PIR motion detector",
+  description: "Fresnel-lens dome + trigger LED, fired by accelerometer-magnitude deltas. NOT a real PIR sensor — phones don't have one; we use the IMU.",
+  group: "instrument",
+  defaultEnabled: false,
+  sensors: ["accelerometer"],
+};
+
 /**
  * The canonical registry. Order here is the order Scenes / HuntSetup show
  * overlays in their pickers — group similar entries together for scannability.
@@ -230,8 +281,11 @@ export const OVERLAY_REGISTRY: readonly OverlayPlugin[] = [
   AUDIO_METER,
   KII_METER,
   REM_POD,
+  EMF_GALVANOMETER,
+  MOTION_DETECTOR,
   // Visual effects.
   NIGHT_VISION,
+  FULL_SPECTRUM_CAM,
   // Pro / Lab — Bayesian probability surfaces.
   ACTIVITY_PILL,
   POSTERIOR_PILL,

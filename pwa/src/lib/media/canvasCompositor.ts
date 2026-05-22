@@ -83,6 +83,26 @@ export interface OverlayChannels {
    * confirming mic levels during a broadcast. Off by default.
    */
   audioMeter?: boolean;
+  /**
+   * Phase B — false-color "full-spectrum" filter applied to the camera frame.
+   * Phone cameras have an IR-cut filter that we CANNOT remove in software,
+   * so this is a video-filter effect (hue rotation + saturation + contrast)
+   * mimicking the look of a modified DSLR. NEVER "infrared sensor" — the
+   * on-frame label is "FAUX-IR PROCESSING". Off by default; opt-in per session.
+   */
+  fullSpectrumCam?: boolean;
+  /**
+   * Phase B — analog EMF galvanometer (1960s field-meter aesthetic). Reads
+   * the SAME magnetometer z-score the K-II does; different gear paradigm,
+   * same signal. Both meters can run simultaneously. Off by default.
+   */
+  emfGalvanometer?: boolean;
+  /**
+   * Phase B — PIR-style motion-detector mockup. Driven by the accelerometer
+   * magnitude delta (NOT a real PIR sensor); silkscreen says so explicitly.
+   * Off by default.
+   */
+  motionDetector?: boolean;
 }
 
 /**
@@ -306,6 +326,22 @@ interface FrameContext {
    * frame-rate independent.
    */
   vuNeedleSmooth: { value: number; lastMs: number } | null;
+  /**
+   * Phase B — analog EMF galvanometer needle smoother. Same RC-ballistic
+   * pattern as `vuNeedleSmooth` (200 ms time-constant gives a gentle sweep
+   * over a magnetometer spike without the digital pop you'd get from a
+   * direct value plot). Independent state per compositor instance so the
+   * needle doesn't cross-talk between concurrent recorder + WHIP streams.
+   */
+  galvoNeedleSmooth: { value: number; lastMs: number } | null;
+  /**
+   * Phase B — motion-detector accelerometer-magnitude tracker. Stores the
+   * last accel magnitude seen and the wall-clock time at which the last
+   * trigger fired (above-threshold delta). `lastMotionAtMs` drives the
+   * trigger LED pulse over a 1 s decay window so the LED stays lit briefly
+   * after motion stops — the same way a real PIR sensor latches its output.
+   */
+  motionDetector: { lastMag: number; lastMs: number; lastTriggerMs: number } | null;
 }
 
 /**
@@ -382,6 +418,32 @@ interface MeterTokens {
   evpPaperInk: string;
   evpPaperStamp: string;
   evpPaperShadow: string;
+  // Phase B — Faux-IR full-spectrum badge (filter math itself doesn't depend
+  // on theme tokens; this palette only colours the on-frame label pill).
+  fullspecBadgeBg: string;
+  fullspecBadgeRim: string;
+  fullspecBadgeText: string;
+  // Phase B — Analog EMF galvanometer (brushed-aluminum bezel + cream face).
+  galvoBody: string;
+  galvoBodyEdge: string;
+  galvoFace: string;
+  galvoFaceEdge: string;
+  galvoTick: string;
+  galvoNeedle: string;
+  galvoRedzone: string;
+  galvoSilkscreen: string;
+  galvoPivot: string;
+  // Phase B — PIR motion detector (Fresnel dome + trigger LED).
+  motionDomeBody: string;
+  motionDomeEdge: string;
+  motionDomeLens: string;
+  motionDomeLine: string;
+  motionBody: string;
+  motionBodyEdge: string;
+  motionSilkscreen: string;
+  motionLedIdle: string;
+  motionLedTrigger: string;
+  motionLedGlow: string;
 }
 
 /** Hardcoded fallback palette — matches the default `:root` block in tokens.css. */
@@ -447,6 +509,29 @@ const METER_TOKEN_FALLBACK: MeterTokens = {
   evpPaperInk:         "#3a2a16",
   evpPaperStamp:       "#9a3018",
   evpPaperShadow:      "rgba(0, 0, 0, 0.32)",
+  // Phase B fallbacks — kept in sync with the :root defaults in tokens.css.
+  fullspecBadgeBg:     "rgba(70, 18, 84, 0.78)",
+  fullspecBadgeRim:    "#c47ad8",
+  fullspecBadgeText:   "#f0e0ff",
+  galvoBody:           "#b8bcc0",
+  galvoBodyEdge:       "#6a6e72",
+  galvoFace:           "#f4f1e8",
+  galvoFaceEdge:       "#c8c0a4",
+  galvoTick:           "#1a1a1a",
+  galvoNeedle:         "#2a2a2a",
+  galvoRedzone:        "#c41e1e",
+  galvoSilkscreen:     "#2a2a2a",
+  galvoPivot:          "#4a4a4a",
+  motionDomeBody:      "#e8e4d8",
+  motionDomeEdge:      "#b8b4a8",
+  motionDomeLens:      "#cac6b8",
+  motionDomeLine:      "rgba(46, 46, 50, 0.45)",
+  motionBody:          "#2a2a2c",
+  motionBodyEdge:      "#0e0e10",
+  motionSilkscreen:    "#d8d8d8",
+  motionLedIdle:       "#3a0e0e",
+  motionLedTrigger:    "#ff3a3a",
+  motionLedGlow:       "rgba(255, 58, 58, 0.55)",
 };
 
 /**
@@ -529,6 +614,29 @@ function readMeterTokens(): MeterTokens {
     evpPaperInk:         pick("--evp-paper-ink",         METER_TOKEN_FALLBACK.evpPaperInk),
     evpPaperStamp:       pick("--evp-paper-stamp",       METER_TOKEN_FALLBACK.evpPaperStamp),
     evpPaperShadow:      pick("--evp-paper-shadow",      METER_TOKEN_FALLBACK.evpPaperShadow),
+    // Phase B — Faux-IR full-spectrum + EMF galvanometer + PIR motion detector.
+    fullspecBadgeBg:     pick("--fullspec-badge-bg",     METER_TOKEN_FALLBACK.fullspecBadgeBg),
+    fullspecBadgeRim:    pick("--fullspec-badge-rim",    METER_TOKEN_FALLBACK.fullspecBadgeRim),
+    fullspecBadgeText:   pick("--fullspec-badge-text",   METER_TOKEN_FALLBACK.fullspecBadgeText),
+    galvoBody:           pick("--galvo-body",            METER_TOKEN_FALLBACK.galvoBody),
+    galvoBodyEdge:       pick("--galvo-body-edge",       METER_TOKEN_FALLBACK.galvoBodyEdge),
+    galvoFace:           pick("--galvo-face",            METER_TOKEN_FALLBACK.galvoFace),
+    galvoFaceEdge:       pick("--galvo-face-edge",       METER_TOKEN_FALLBACK.galvoFaceEdge),
+    galvoTick:           pick("--galvo-tick",            METER_TOKEN_FALLBACK.galvoTick),
+    galvoNeedle:         pick("--galvo-needle",          METER_TOKEN_FALLBACK.galvoNeedle),
+    galvoRedzone:        pick("--galvo-redzone",         METER_TOKEN_FALLBACK.galvoRedzone),
+    galvoSilkscreen:     pick("--galvo-silkscreen",      METER_TOKEN_FALLBACK.galvoSilkscreen),
+    galvoPivot:          pick("--galvo-pivot",           METER_TOKEN_FALLBACK.galvoPivot),
+    motionDomeBody:      pick("--motion-dome-body",      METER_TOKEN_FALLBACK.motionDomeBody),
+    motionDomeEdge:      pick("--motion-dome-edge",      METER_TOKEN_FALLBACK.motionDomeEdge),
+    motionDomeLens:      pick("--motion-dome-lens",      METER_TOKEN_FALLBACK.motionDomeLens),
+    motionDomeLine:      pick("--motion-dome-line",      METER_TOKEN_FALLBACK.motionDomeLine),
+    motionBody:          pick("--motion-body",           METER_TOKEN_FALLBACK.motionBody),
+    motionBodyEdge:      pick("--motion-body-edge",      METER_TOKEN_FALLBACK.motionBodyEdge),
+    motionSilkscreen:    pick("--motion-silkscreen",     METER_TOKEN_FALLBACK.motionSilkscreen),
+    motionLedIdle:       pick("--motion-led-idle",       METER_TOKEN_FALLBACK.motionLedIdle),
+    motionLedTrigger:    pick("--motion-led-trigger",    METER_TOKEN_FALLBACK.motionLedTrigger),
+    motionLedGlow:       pick("--motion-led-glow",       METER_TOKEN_FALLBACK.motionLedGlow),
   };
 }
 
@@ -566,6 +674,8 @@ export function createCanvasCompositor(opts: CanvasCompositorOptions): CanvasCom
     edgeGlow: null,
     meterTokens: null, kiiSmooth: null, remPulse: null,
     vuNeedleSmooth: null,
+    galvoNeedleSmooth: null,
+    motionDetector: null,
   };
 
   // Context handle is also stable — getContext returns a cached instance, but
@@ -634,7 +744,23 @@ function renderFrame(
 
   // 1. Camera frame (cover-fit). ALWAYS drawn — disabling this would just
   // give the operator a black square and is never what they want.
-  ctx.drawImage(video, 0, 0, W, H);
+  //
+  // Phase B: when fullSpectrumCam is on we route the drawImage through a
+  // canvas filter chain (hue-rotate + saturate + contrast) so the camera
+  // frame picks up the false-colour "IR-modified DSLR" look. ctx.filter is
+  // applied AT drawImage time, then reset — that way the meter draws
+  // downstream aren't affected. Browsers that don't support ctx.filter (very
+  // old WebViews) will just see a plain frame, no crash.
+  if (channels.fullSpectrumCam) {
+    ctx.save();
+    ctx.filter = "hue-rotate(-25deg) saturate(1.35) contrast(1.15)";
+    ctx.drawImage(video, 0, 0, W, H);
+    ctx.restore();
+    // Magenta/violet wash on top — completes the look and stays in burn-in.
+    applyFullSpectrumTint(ctx, W, H);
+  } else {
+    ctx.drawImage(video, 0, 0, W, H);
+  }
 
   // 1b. Night-vision filter — applied immediately after the camera frame and
   //     before any overlay is drawn, so the NV colour-grade sits under all
@@ -642,6 +768,14 @@ function renderFrame(
   //     run within budget at 30fps on modern mobile GPUs.
   if (channels.nightVision) {
     applyNightVision(ctx, W, H);
+  }
+
+  // 1c. "FAUX-IR PROCESSING" badge — small label burned into the corner so
+  //     the recording itself proves the false-colour effect is a video filter,
+  //     not a real IR sensor. Sits below the night-vision pass so its text
+  //     stays at correct hue regardless of whether NV is also enabled.
+  if (channels.fullSpectrumCam) {
+    drawFullSpectrumBadge(ctx, W, H, s, frame);
   }
 
   const band = BAND_COLOR[overlay.activityBand] ?? BAND_COLOR.calm;
@@ -695,15 +829,20 @@ function renderFrame(
   }
 
   // 4. Right-edge vertical instrument stack — skeuomorphic gear meters.
-  //    K-II EMF (yellow handheld) on top, REM Pod (black tower) below.
-  //    Top anchor is shared so the two meters always line up; each meter
-  //    function owns its own height + 8 px gap to the next.
+  //    K-II EMF (yellow handheld) on top, REM Pod (black tower) below, EMF
+  //    galvanometer (analog needle, 1960s field-meter aesthetic) at the
+  //    bottom. All three share the same magnetometer signal; the stack
+  //    co-locates them so operators get the "wall of EMF kit" reading at a
+  //    glance. Top anchor is shared; each meter owns its own height.
   const meterTopY = Math.round(H * 0.30);
   if (channels.kiiMeter) {
     drawKiiMeter(ctx, W, overlay.activityBand, overlay.emfZScore, s, meterTopY, frame);
   }
   if (channels.remPod) {
     drawRemPod(ctx, W, overlay.activityBand, overlay.emfZScore, s, meterTopY, frame);
+  }
+  if (channels.emfGalvanometer) {
+    drawEmfGalvanometer(ctx, W, overlay.emfZScore, s, meterTopY, frame);
   }
 
   // 5. VU audio meter — left edge, vintage analog look.
@@ -725,6 +864,16 @@ function renderFrame(
   //     the operator can see the dictionary RNG state visually.
   if (channels.itc) {
     drawOvilusLcd(ctx, H, overlay.itc?.ovilus, overlay.sensors?.magnetometer, s, frame);
+  }
+
+  // 5d. PIR motion detector — Fresnel-lens dome + trigger LED, anchored to
+  //     the right edge below the EMF galvanometer. Driven by the accel-
+  //     magnitude delta over frames, NOT a real PIR sensor (the silkscreen
+  //     and registry description both say so). Trigger fires on a
+  //     0.5 m/s^2 delta and latches the LED for 1 s before decaying back
+  //     to idle — same way a real PIR pulses its output on motion.
+  if (channels.motionDetector) {
+    drawMotionDetector(ctx, W, H, overlay.sensors?.motion, s, frame);
   }
 
   // 6. Direction arrow (only if sector + coherence are valid).
@@ -1924,6 +2073,399 @@ function drawRemPod(
   ctx.restore();
 }
 
+// ─── Analog EMF galvanometer (right edge, 1960s field-meter aesthetic) ──────
+
+/** Galvo body dimensions (logical px @ s=1). Same width as K-II so the right-
+ *  edge stack stays visually aligned; taller because the needle scale needs
+ *  the vertical real estate to read at a glance. */
+const GALVO_BODY_W = 96;
+const GALVO_BODY_H = 78;
+/** Needle sweep range — rest at -60°, peak at +60° (120° total sweep). Wider
+ *  than the VU meter's 90° because galvanometers historically used the full
+ *  semicircle. Centred on vertical-up = 0. */
+const GALVO_REST_RAD = -(Math.PI / 3);
+const GALVO_PEAK_RAD =  (Math.PI / 3);
+/** Z-score that pegs the needle at 80% (top of the red zone). Beyond this
+ *  the needle enters overload territory. ~3σ feels right — the K-II's third
+ *  LED also lights at 2.5σ, so this aligns the visual cues. */
+const GALVO_FULL_SCALE_Z = 5;
+const GALVO_REDZONE_FRACTION = 0.8;
+
+/**
+ * Skeuomorphic analog EMF galvanometer — brushed-aluminum bezel + cream face
+ * + black needle + red-zone past 80%. Reads the SAME magnetometer z-score the
+ * K-II uses; this is gear-archetype diversity, not a second data stream.
+ *
+ * Anatomy (logical px @ s=1, 96 × 78):
+ *   ┌──────────────────────────┐  ← brushed-aluminum bezel
+ *   │ ╔══════════════════════╗ │
+ *   │ ║   .  .  .  .  ┃┃┃    ║ │   cream scale, ink ticks, red zone
+ *   │ ║     ╲      ╱         ║ │   right of 80%.
+ *   │ ║       ╲  ╱           ║ │   black needle pivots at the bottom-centre.
+ *   │ ╚══════════════════════╝ │
+ *   │      EMF FIELD METER     │  silkscreen label on the bezel below
+ *   └──────────────────────────┘
+ *
+ * Needle obeys a 200 ms RC ballistic via `frame.galvoNeedleSmooth` so the
+ * sweep glides instead of popping on every magnetometer frame. Without this
+ * the needle would look digital not analog.
+ *
+ * Honest copy — silkscreen says "EMF FIELD METER" / "MAG FLUX". No anomaly
+ * claims; this is the same magnetometer signal the K-II processes.
+ */
+function drawEmfGalvanometer(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  emfZScore: number | undefined,
+  s: number,
+  topY: number,
+  frame: FrameContext,
+): void {
+  const tokens = getMeterTokens(frame);
+
+  // Convert z-score → 0..1 needle level. Sign-stripped because the magnitude
+  // is what matters for an "is there a field nearby" reading.
+  const hasZ = typeof emfZScore === "number" && Number.isFinite(emfZScore);
+  const targetLevel = hasZ
+    ? Math.min(1, Math.abs(emfZScore as number) / GALVO_FULL_SCALE_Z)
+    : 0;
+
+  // RC ballistic — 200 ms time-constant matches the K-II smoother.
+  const nowMs = (typeof performance !== "undefined" && typeof performance.now === "function")
+    ? performance.now()
+    : Date.now();
+  if (!frame.galvoNeedleSmooth) {
+    frame.galvoNeedleSmooth = { value: targetLevel, lastMs: nowMs };
+  } else {
+    const dtMs = Math.max(0, nowMs - frame.galvoNeedleSmooth.lastMs);
+    const alpha = 1 - Math.exp(-dtMs / 200);
+    frame.galvoNeedleSmooth.value += (targetLevel - frame.galvoNeedleSmooth.value) * alpha;
+    frame.galvoNeedleSmooth.lastMs = nowMs;
+  }
+  const needleLevel = Math.max(0, Math.min(1, frame.galvoNeedleSmooth.value));
+  const needleAngle = GALVO_REST_RAD + (GALVO_PEAK_RAD - GALVO_REST_RAD) * needleLevel;
+
+  // Geometry — body anchored to the right edge with a 12 px margin. Stacks
+  // under the REM Pod (88 px below K-II + 8 px gap below REM Pod = 144 px
+  // below the K-II top).
+  const bodyW = Math.round(GALVO_BODY_W * s);
+  const bodyH = Math.round(GALVO_BODY_H * s);
+  const margin = Math.round(12 * s);
+  const x = W - margin - bodyW;
+  const remBottom = topY + Math.round((KII_BODY_H + 8 + REM_BODY_H) * s);
+  const y = remBottom + Math.round(8 * s);
+  const radius = Math.round(5 * s);
+
+  ctx.save();
+
+  // 1. Drop shadow under the bezel.
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.42)";
+  ctx.shadowBlur = 6 * s;
+  ctx.shadowOffsetY = 3 * s;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.01)";
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.fill();
+  ctx.restore();
+
+  // 2. Bezel — brushed aluminum vertical gradient (edge → body → edge).
+  const bezelGrad = ctx.createLinearGradient(0, y, 0, y + bodyH);
+  bezelGrad.addColorStop(0,    tokens.galvoBodyEdge);
+  bezelGrad.addColorStop(0.4,  tokens.galvoBody);
+  bezelGrad.addColorStop(0.6,  tokens.galvoBody);
+  bezelGrad.addColorStop(1,    tokens.galvoBodyEdge);
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.fillStyle = bezelGrad;
+  ctx.fill();
+  ctx.strokeStyle = tokens.galvoBodyEdge;
+  ctx.lineWidth = 1.5;
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.stroke();
+
+  // 3. Cream scale face — recessed window inset into the bezel.
+  const insetX = Math.round(5 * s);
+  const insetTop = Math.round(5 * s);
+  const insetBottom = Math.round(16 * s); // reserve space for silkscreen
+  const faceX = x + insetX;
+  const faceY = y + insetTop;
+  const faceW = bodyW - insetX * 2;
+  const faceH = bodyH - insetTop - insetBottom;
+  const faceR = Math.round(3 * s);
+  const faceGrad = ctx.createLinearGradient(0, faceY, 0, faceY + faceH);
+  faceGrad.addColorStop(0,    tokens.galvoFace);
+  faceGrad.addColorStop(0.7,  tokens.galvoFace);
+  faceGrad.addColorStop(1,    tokens.galvoFaceEdge);
+  roundedRectPath(ctx, faceX, faceY, faceW, faceH, faceR);
+  ctx.fillStyle = faceGrad;
+  ctx.fill();
+
+  // 4. Scale arc geometry — needle pivots at the bottom-centre of the face.
+  const pivotX = faceX + faceW / 2;
+  const pivotY = faceY + faceH + Math.round(1 * s);
+  const arcR = Math.min(faceW * 0.50, faceH * 0.95);
+
+  // 4a. Red overload zone — wedge from 80% to 100%.
+  const overloadStartAngle = GALVO_REST_RAD
+    + (GALVO_PEAK_RAD - GALVO_REST_RAD) * GALVO_REDZONE_FRACTION;
+  const overloadEndAngle = GALVO_PEAK_RAD;
+  const arcInnerR = arcR * 0.78;
+  const arcOuterR = arcR * 1.00;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(pivotX, pivotY, arcOuterR,
+    overloadStartAngle - Math.PI / 2,
+    overloadEndAngle   - Math.PI / 2, false);
+  ctx.arc(pivotX, pivotY, arcInnerR,
+    overloadEndAngle   - Math.PI / 2,
+    overloadStartAngle - Math.PI / 2, true);
+  ctx.closePath();
+  ctx.fillStyle = tokens.galvoRedzone;
+  ctx.globalAlpha = 0.78;
+  ctx.fill();
+  ctx.restore();
+
+  // 4b. Tick marks — five at 0, 25, 50, 75, 100% of the sweep. Short, inked.
+  ctx.save();
+  ctx.strokeStyle = tokens.galvoTick;
+  ctx.lineWidth = Math.max(1, 1.1 * s);
+  ctx.lineCap = "round";
+  for (let i = 0; i <= 4; i++) {
+    const tickLevel = i / 4;
+    const ang = GALVO_REST_RAD + (GALVO_PEAK_RAD - GALVO_REST_RAD) * tickLevel;
+    const cosA = Math.sin(ang);
+    const sinA = -Math.cos(ang);
+    const tickInner = arcR * 0.80;
+    const tickOuter = arcR * 1.00;
+    ctx.beginPath();
+    ctx.moveTo(pivotX + cosA * tickInner, pivotY + sinA * tickInner);
+    ctx.lineTo(pivotX + cosA * tickOuter, pivotY + sinA * tickOuter);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // 5. Needle — black, pivots at (pivotX, pivotY).
+  const needleLen = arcR * 0.92;
+  const tipX = pivotX + Math.sin(needleAngle) * needleLen;
+  const tipY = pivotY - Math.cos(needleAngle) * needleLen;
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
+  ctx.shadowBlur = 2 * s;
+  ctx.shadowOffsetX = 1 * s;
+  ctx.shadowOffsetY = 1 * s;
+  ctx.strokeStyle = tokens.galvoNeedle;
+  ctx.lineWidth = Math.max(1.2, 1.6 * s);
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(pivotX, pivotY);
+  ctx.lineTo(tipX, tipY);
+  ctx.stroke();
+  ctx.restore();
+
+  // 5b. Pivot cap — small dark grey circle so the analog look reads from
+  //     across the room.
+  const pivotR = Math.max(1.8, Math.round(2.5 * s));
+  ctx.beginPath();
+  ctx.arc(pivotX, pivotY, pivotR, 0, Math.PI * 2);
+  ctx.fillStyle = tokens.galvoPivot;
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(pivotX - pivotR * 0.35, pivotY - pivotR * 0.35, pivotR * 0.35, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+  ctx.fill();
+
+  // 6. Silkscreen label below the scale — "EMF FIELD METER" in dark grey.
+  //    Honest gear label, no anomaly claim.
+  const silkPx = Math.max(7, Math.round(8 * s));
+  ctx.font = `700 ${silkPx}px "Inter", system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = tokens.galvoSilkscreen;
+  ctx.fillText("EMF FIELD METER", x + bodyW / 2, y + bodyH - Math.round(10 * s));
+
+  ctx.restore();
+}
+
+// ─── PIR motion detector (right edge, Fresnel dome + trigger LED) ───────────
+
+/** Motion-detector body (logical px @ s=1). Same width as K-II/galvo so the
+ *  right-edge stack stays visually aligned. */
+const MOTION_BODY_W = 60;
+const MOTION_BODY_H = 78;
+/** Magnitude delta (m/s^2) above which we count a frame as "motion detected". */
+const MOTION_TRIGGER_DELTA = 0.5;
+/** Trigger latch — once fired, the LED stays bright for this long after motion
+ *  stops. Real PIR sensors latch their output high for ~1 s on a single
+ *  pulse; we mirror that so the LED isn't strobing in flickery feeds. */
+const MOTION_TRIGGER_LATCH_MS = 1000;
+
+/**
+ * Skeuomorphic PIR motion detector — white plastic Fresnel-lens dome at top,
+ * trigger LED below it that pulses on accelerometer-magnitude deltas. Sits
+ * on the right edge below the EMF galvanometer.
+ *
+ * Anatomy (logical px @ s=1, 60 × 78):
+ *      ╱──╲             ← white plastic dome with Fresnel-lens lines
+ *     ╱    ╲              (concentric arcs faking the lens segments)
+ *    │  ◯   │
+ *    │      │
+ *   ┌────────┐           ← dark grey case below the dome
+ *   │   ●    │             red trigger LED (idle dim / pulse bright)
+ *   │PIR MOTN│             white silkscreen
+ *   │ ACCEL  │
+ *   └────────┘
+ *
+ * Motion detection: compare current accel magnitude to last-seen magnitude.
+ * If |delta| > 0.5 m/s^2, latch the trigger for 1 s. The LED brightness
+ * lerps from idle → trigger over a fast attack and decays back exponentially
+ * over the latch window so it pulses naturally on a single shake.
+ *
+ * Honest copy — silkscreen says "PIR MOTN ACCEL" (the body is too narrow
+ * for the full "PIR MOTION SENSE / ACCEL TRIGGER" string). The registry
+ * description in commit 3 spells it out completely: this is accelerometer-
+ * driven, NOT a real passive-infrared sensor.
+ */
+function drawMotionDetector(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  H: number,
+  motionMag: number | undefined,
+  s: number,
+  frame: FrameContext,
+): void {
+  const tokens = getMeterTokens(frame);
+
+  // Motion-state update. We track the last magnitude on the FrameContext so
+  // the delta is computed across frames, not per-frame from a stale value.
+  const nowMs = (typeof performance !== "undefined" && typeof performance.now === "function")
+    ? performance.now()
+    : Date.now();
+  const hasMag = typeof motionMag === "number" && Number.isFinite(motionMag);
+  const mag = hasMag ? (motionMag as number) : 0;
+  if (!frame.motionDetector) {
+    frame.motionDetector = { lastMag: mag, lastMs: nowMs, lastTriggerMs: 0 };
+  } else {
+    const delta = Math.abs(mag - frame.motionDetector.lastMag);
+    if (delta > MOTION_TRIGGER_DELTA) {
+      frame.motionDetector.lastTriggerMs = nowMs;
+    }
+    frame.motionDetector.lastMag = mag;
+    frame.motionDetector.lastMs = nowMs;
+  }
+  const sinceTrigger = nowMs - frame.motionDetector.lastTriggerMs;
+  const triggerAlpha = sinceTrigger < MOTION_TRIGGER_LATCH_MS
+    ? 1 - (sinceTrigger / MOTION_TRIGGER_LATCH_MS)
+    : 0;
+
+  // Geometry — right edge, below the galvanometer (which is below REM Pod).
+  // Mirror renderFrame's H * 0.30 meter-top anchor + the stack heights so the
+  // motion box sits flush under the galvo without threading a shared anchor.
+  const bodyW = Math.round(MOTION_BODY_W * s);
+  const bodyH = Math.round(MOTION_BODY_H * s);
+  const margin = Math.round(12 * s);
+  const x = W - margin - bodyW;
+  const meterTopY = Math.round(H * 0.30);
+  const galvoEnd = meterTopY
+    + Math.round((KII_BODY_H + 8 + REM_BODY_H + 8 + GALVO_BODY_H) * s);
+  const y = galvoEnd + Math.round(8 * s);
+
+  ctx.save();
+
+  // 1. Drop shadow under the case.
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
+  ctx.shadowBlur = 6 * s;
+  ctx.shadowOffsetY = 3 * s;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.01)";
+  roundedRectPath(ctx, x, y, bodyW, bodyH, Math.round(4 * s));
+  ctx.fill();
+  ctx.restore();
+
+  // 2. Case body — dark grey, holds the dome + LED + silkscreen.
+  const caseRadius = Math.round(4 * s);
+  const caseGrad = ctx.createLinearGradient(0, y, 0, y + bodyH);
+  caseGrad.addColorStop(0,    tokens.motionBodyEdge);
+  caseGrad.addColorStop(0.4,  tokens.motionBody);
+  caseGrad.addColorStop(1,    tokens.motionBodyEdge);
+  roundedRectPath(ctx, x, y, bodyW, bodyH, caseRadius);
+  ctx.fillStyle = caseGrad;
+  ctx.fill();
+  ctx.strokeStyle = tokens.motionBodyEdge;
+  ctx.lineWidth = 1.5;
+  roundedRectPath(ctx, x, y, bodyW, bodyH, caseRadius);
+  ctx.stroke();
+
+  // 3. Fresnel-lens dome — a half-circle (lower half flat) at the top of the
+  //    case. Concentric arcs fake the segmented Fresnel lens look.
+  const domeCx = x + bodyW / 2;
+  const domeCy = y + Math.round(20 * s);
+  const domeR = Math.round(18 * s);
+  // Dome fill — radial gradient (centre highlight → rim shadow) gives the
+  // plastic sphere read.
+  const domeGrad = ctx.createRadialGradient(
+    domeCx - domeR * 0.25, domeCy - domeR * 0.30, domeR * 0.1,
+    domeCx, domeCy, domeR,
+  );
+  domeGrad.addColorStop(0, tokens.motionDomeBody);
+  domeGrad.addColorStop(1, tokens.motionDomeEdge);
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(domeCx, domeCy, domeR, Math.PI, 0, false); // upper half-circle
+  ctx.closePath();
+  ctx.fillStyle = domeGrad;
+  ctx.fill();
+  // Fresnel-lens segment lines — two concentric arcs + a centre spine.
+  ctx.strokeStyle = tokens.motionDomeLine;
+  ctx.lineWidth = Math.max(0.6, 0.7 * s);
+  ctx.beginPath();
+  ctx.arc(domeCx, domeCy, domeR * 0.66, Math.PI, 0, false);
+  ctx.moveTo(domeCx + domeR * 0.33, domeCy);
+  ctx.arc(domeCx, domeCy, domeR * 0.33, 0, Math.PI, true);
+  ctx.moveTo(domeCx, domeCy - domeR);
+  ctx.lineTo(domeCx, domeCy);
+  ctx.stroke();
+  ctx.restore();
+
+  // 4. Trigger LED — red dot below the dome. Idle base + alpha-blended
+  //    trigger colour on top, so a single fillStyle hex doesn't need an
+  //    inline rgb-lerp helper.
+  const ledCx = domeCx;
+  const ledCy = y + Math.round(46 * s);
+  const ledR = Math.max(2.5, Math.round(3.5 * s));
+  ctx.beginPath();
+  ctx.arc(ledCx, ledCy, ledR, 0, Math.PI * 2);
+  ctx.fillStyle = tokens.motionLedIdle;
+  ctx.fill();
+  if (triggerAlpha > 0.02) {
+    ctx.save();
+    // Halo behind the LED on trigger.
+    const haloGrad = ctx.createRadialGradient(ledCx, ledCy, 0, ledCx, ledCy, ledR * 3);
+    haloGrad.addColorStop(0, tokens.motionLedGlow);
+    haloGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
+    ctx.fillStyle = haloGrad;
+    ctx.globalAlpha = triggerAlpha;
+    ctx.beginPath();
+    ctx.arc(ledCx, ledCy, ledR * 3, 0, Math.PI * 2);
+    ctx.fill();
+    // Bright trigger colour fades in over the idle base.
+    ctx.fillStyle = tokens.motionLedTrigger;
+    ctx.beginPath();
+    ctx.arc(ledCx, ledCy, ledR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // 5. Silkscreen — single honest label. "ACCEL" makes it clear the trigger
+  //    is accelerometer-driven, not a real PIR sensor.
+  const silkPx = Math.max(6, Math.round(7 * s));
+  ctx.font = `700 ${silkPx}px "Inter", system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = tokens.motionSilkscreen;
+  ctx.fillText("ACCEL MOTN", x + bodyW / 2, y + bodyH - Math.round(8 * s));
+
+  ctx.restore();
+}
+
 // ─── Vintage VU audio meter (left edge, analog) ─────────────────────────────
 
 /** VU meter body dimensions (logical px @ s=1). Landscape — wider than tall.
@@ -3045,6 +3587,70 @@ function applyNightVision(
     d[i + 2] = Math.round(boosted * 0.06); // B — near zero
   }
   ctx.putImageData(imageData, 0, 0);
+}
+
+// ─── Faux-IR "full-spectrum" wash + badge ───────────────────────────────────
+
+/**
+ * Translucent magenta/violet rectangle painted over the (already filtered)
+ * camera frame. Completes the IR-modified-DSLR look — a real full-spectrum
+ * conversion shifts neutral whites toward pink/magenta in the highlights.
+ * Uses `globalCompositeOperation = "overlay"` so the wash multiplies into
+ * mid-tones without crushing pure black or pure white. Drawn before any
+ * overlay text/widgets so the chrome sits on top of the tinted feed.
+ *
+ * Honest framing: this is a video tint, not real IR sensitivity. Phone
+ * cameras have a hardware IR-cut filter we cannot remove in software. The
+ * `drawFullSpectrumBadge` call downstream burns "FAUX-IR PROCESSING" into
+ * the frame so the recording itself proves the effect is a filter.
+ */
+function applyFullSpectrumTint(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  H: number,
+): void {
+  ctx.save();
+  ctx.globalCompositeOperation = "overlay";
+  ctx.fillStyle = "rgba(186, 120, 220, 0.18)";
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+}
+
+/**
+ * Burns a small "FAUX-IR PROCESSING" pill into the top-right of the frame
+ * (just below the EVP block) so the recorded / streamed output proves the
+ * false-colour effect is a filter, not a real IR sensor. Honest copy is a
+ * hard constraint per Phase B brief — operators must not be able to pass
+ * off this filter as "real infrared" footage.
+ */
+function drawFullSpectrumBadge(
+  ctx: CanvasRenderingContext2D,
+  _W: number,
+  _H: number,
+  s: number,
+  frame: FrameContext,
+): void {
+  const tokens = getMeterTokens(frame);
+  const labelText = "FAUX-IR PROCESSING";
+  const pillH = Math.round(20 * s);
+  const fontSize = Math.max(9, Math.round(10 * s));
+  const padX = Math.round(10 * s);
+  const margin = Math.round(12 * s);
+
+  ctx.save();
+  ctx.font = `700 ${fontSize}px "Inter", system-ui, sans-serif`;
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "center";
+  const w = Math.round(ctx.measureText(labelText).width + padX * 2);
+  // Top-left — tucked under the REC/LIVE pills which centre on top; the
+  // badge sits at the same y-band so it reads as a status row, not as
+  // chrome that overlaps the camera subject.
+  const x = margin;
+  const y = margin + Math.round(36 * s); // 36 px below top so STATUS PILLS stay clear
+  drawPill(ctx, x, y, w, pillH, tokens.fullspecBadgeBg, tokens.fullspecBadgeRim);
+  ctx.fillStyle = tokens.fullspecBadgeText;
+  ctx.fillText(labelText, x + w / 2, y + pillH / 2);
+  ctx.restore();
 }
 
 // ─── Corner brackets ────────────────────────────────────────────────────────
