@@ -279,7 +279,6 @@ interface FrameContext {
   H: number;
   s: number;
   edgeGlow: { key: string; grad: CanvasGradient } | null;
-  audioBar: { key: string; grad: CanvasGradient } | null;
   /**
    * Resolved meter palette (CSS custom properties → hex / rgba strings).
    * `themeKey` is `data-theme` + `data-scotopic-level` concatenated; re-resolves
@@ -564,7 +563,7 @@ export function createCanvasCompositor(opts: CanvasCompositorOptions): CanvasCom
   // derived scale factor + gradient objects are stable per resolution.
   const frame: FrameContext = {
     W: 0, H: 0, s: 1,
-    edgeGlow: null, audioBar: null,
+    edgeGlow: null,
     meterTokens: null, kiiSmooth: null, remPulse: null,
     vuNeedleSmooth: null,
   };
@@ -587,7 +586,6 @@ export function createCanvasCompositor(opts: CanvasCompositorOptions): CanvasCom
       // is geometry-independent (just a float count) so we keep it across
       // size changes; the pulse animation likewise keeps running.
       frame.edgeGlow = null;
-      frame.audioBar = null;
     }
   };
 
