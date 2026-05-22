@@ -46,7 +46,15 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const distAssets = resolve(__dirname, "..", "dist", "assets");
 
 // Budgets (bytes after gzip).
-const INDEX_BUDGET_BYTES = 75 * 1024; // 76,800 bytes
+// 2026-05-22 Phase A.2 — VU meter + Spirit Box LCD + Ovilus LCD landed on the
+// main entry (skeuomorphic gear-meter overhaul; see canvasCompositor.ts). The
+// three meters are load-bearing on the camera surface — they can't be route-
+// lazy because the compositor runs on every frame from start of recording.
+// Combined cost (token reader extensions + drawVuMeter + drawSpiritBoxLcd +
+// drawOvilusLcd + 7-segment / 5×7 pixel-font tables) is ~3 KB gzip, which
+// pushed the index chunk from ~76 KB → ~77 KB. Budget bumped from 75 → 80 KB
+// to absorb A.2 while still giving ~3 KB headroom for incidental growth.
+const INDEX_BUDGET_BYTES = 80 * 1024; // 81,920 bytes
 
 function fail(msg) {
   process.stderr.write(`[31m[check-bundle-size] FAIL[0m ${msg}\n`);
