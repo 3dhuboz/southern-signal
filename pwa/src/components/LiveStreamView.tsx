@@ -58,6 +58,9 @@ const CHANNEL_LABELS: Record<keyof OverlayChannels, { name: string; hint: string
   remPod:          { name: "Virtual REM pod",    hint: "Animated EM proximity widget (bottom-right) with pulsing rings" },
   nightVision:     { name: "Night vision",       hint: "Green-channel IR filter — simulated NV look over the camera feed" },
   audioMeter:      { name: "Audio meter",        hint: "Gradient level bar under the REC/LIVE row — confirms mic input" },
+  fullSpectrumCam: { name: "Full-spectrum (faux-IR)", hint: "False-color filter mimicking IR-modified DSLR look — NOT a real IR sensor" },
+  emfGalvanometer: { name: "EMF galvanometer",   hint: "Analog needle meter — same magnetometer signal as K-II, different gear" },
+  motionDetector:  { name: "PIR motion sense",   hint: "Fresnel dome + trigger LED — driven by accelerometer (not real PIR)" },
 };
 
 const CHANNEL_KEYS = Object.keys(CHANNEL_LABELS) as Array<keyof OverlayChannels>;

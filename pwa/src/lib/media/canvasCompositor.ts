@@ -83,6 +83,26 @@ export interface OverlayChannels {
    * confirming mic levels during a broadcast. Off by default.
    */
   audioMeter?: boolean;
+  /**
+   * Phase B — false-color "full-spectrum" filter applied to the camera frame.
+   * Phone cameras have an IR-cut filter that we CANNOT remove in software,
+   * so this is a video-filter effect (hue rotation + saturation + contrast)
+   * mimicking the look of a modified DSLR. NEVER "infrared sensor" — the
+   * on-frame label is "FAUX-IR PROCESSING". Off by default; opt-in per session.
+   */
+  fullSpectrumCam?: boolean;
+  /**
+   * Phase B — analog EMF galvanometer (1960s field-meter aesthetic). Reads
+   * the SAME magnetometer z-score the K-II does; different gear paradigm,
+   * same signal. Both meters can run simultaneously. Off by default.
+   */
+  emfGalvanometer?: boolean;
+  /**
+   * Phase B — PIR-style motion-detector mockup. Driven by the accelerometer
+   * magnitude delta (NOT a real PIR sensor); silkscreen says so explicitly.
+   * Off by default.
+   */
+  motionDetector?: boolean;
 }
 
 /**
@@ -306,6 +326,22 @@ interface FrameContext {
    * frame-rate independent.
    */
   vuNeedleSmooth: { value: number; lastMs: number } | null;
+  /**
+   * Phase B — analog EMF galvanometer needle smoother. Same RC-ballistic
+   * pattern as `vuNeedleSmooth` (200 ms time-constant gives a gentle sweep
+   * over a magnetometer spike without the digital pop you'd get from a
+   * direct value plot). Independent state per compositor instance so the
+   * needle doesn't cross-talk between concurrent recorder + WHIP streams.
+   */
+  galvoNeedleSmooth: { value: number; lastMs: number } | null;
+  /**
+   * Phase B — motion-detector accelerometer-magnitude tracker. Stores the
+   * last accel magnitude seen and the wall-clock time at which the last
+   * trigger fired (above-threshold delta). `lastMotionAtMs` drives the
+   * trigger LED pulse over a 1 s decay window so the LED stays lit briefly
+   * after motion stops — the same way a real PIR sensor latches its output.
+   */
+  motionDetector: { lastMag: number; lastMs: number; lastTriggerMs: number } | null;
 }
 
 /**
@@ -638,6 +674,8 @@ export function createCanvasCompositor(opts: CanvasCompositorOptions): CanvasCom
     edgeGlow: null,
     meterTokens: null, kiiSmooth: null, remPulse: null,
     vuNeedleSmooth: null,
+    galvoNeedleSmooth: null,
+    motionDetector: null,
   };
 
   // Context handle is also stable — getContext returns a cached instance, but
