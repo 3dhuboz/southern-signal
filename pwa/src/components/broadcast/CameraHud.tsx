@@ -33,17 +33,11 @@ import { BroadcastAudioMeter } from "./BroadcastAudioMeter";
 import { BroadcastSceneSelector } from "./BroadcastSceneSelector";
 import { BroadcastSensorHud } from "./BroadcastSensorHud";
 import { BroadcastLowerThird } from "./BroadcastLowerThird";
+import { CameraDeviceChip } from "../camera/CameraDeviceChip";
+import { CameraSnoozeChip } from "../camera/CameraSnoozeChip";
+import { CameraMarkerPill } from "../camera/CameraMarkerPill";
 import type { AnomalyTile, SensorSnapshot } from "../../lib/sensors/useSensors";
 import s from "./CameraHud.module.css";
-
-// Marker breakdown rows for the HUD popover. Mirrors the priority used in
-// CameraScreen so reviewers see the same order on both surfaces.
-const MARKER_BREAKDOWN: ReadonlyArray<{ id: "sound" | "movement" | "felt" | "untagged"; label: string }> = [
-  { id: "sound",    label: "sound" },
-  { id: "movement", label: "movement" },
-  { id: "felt",     label: "felt" },
-  { id: "untagged", label: "untagged" },
-];
 
 interface SensorsLike {
   snapshot: SensorSnapshot;
@@ -152,45 +146,22 @@ export function CameraHud(props: CameraHudProps) {
         {running && (
           <BroadcastAudioMeter rms={audioRmsCoarse} vadActive={vadActive} />
         )}
-        {running && (hudBatteryPct !== null || hudStorageMb !== null) && (
-          <div
-            className={`${s.deviceChip} ${hudBatteryWarn || hudStorageWarn ? s.deviceChipWarn : ""}`.trim()}
-            aria-label="Device state"
-          >
-            {hudBatteryPct !== null && (
-              <span className={`${s.deviceChipReading} ${hudBatteryWarn ? s.deviceChipReadingWarn : ""}`.trim()}>
-                {hudBatteryCharging && <span className={s.deviceChipIcon} aria-hidden="true">⚡</span>}
-                <span className={s.deviceChipValue}>{hudBatteryPct}%</span>
-              </span>
-            )}
-            {hudBatteryPct !== null && hudStorageMb !== null && (
-              <span className={s.deviceChipSep} aria-hidden="true">·</span>
-            )}
-            {hudStorageMb !== null && (
-              <span className={`${s.deviceChipReading} ${hudStorageWarn ? s.deviceChipReadingWarn : ""}`.trim()}>
-                <span className={s.deviceChipValue}>
-                  {hudStorageMb >= 1024
-                    ? `${(hudStorageMb / 1024).toFixed(1)}GB`
-                    : `${hudStorageMb}MB`}
-                </span>
-                <span className={s.deviceChipUnit}>free</span>
-              </span>
-            )}
+        {running && (
+          <div className={s.deviceChipSlot}>
+            <CameraDeviceChip
+              batteryPct={hudBatteryPct}
+              batteryCharging={hudBatteryCharging}
+              storageMb={hudStorageMb}
+              batteryWarn={hudBatteryWarn}
+              storageWarn={hudStorageWarn}
+            />
           </div>
         )}
         {running && watchdogSnoozeUntil !== null && (
-          <button
-            type="button"
-            className={s.snoozeChip}
-            onClick={onClearSnooze}
-            title="Watchdog toasts are silenced. Tap to resume immediately."
-            aria-label="Watchdog snoozed — tap to resume"
-          >
-            <span className={s.snoozeChipIcon} aria-hidden="true">🔕</span>
-            <span className={s.snoozeChipLabel}>
-              Snoozed {Math.max(0, Math.ceil((watchdogSnoozeUntil - Date.now()) / 60_000))}m
-            </span>
-          </button>
+          <CameraSnoozeChip
+            snoozeUntil={watchdogSnoozeUntil}
+            onClearSnooze={onClearSnooze}
+          />
         )}
       </div>
 
@@ -233,50 +204,18 @@ export function CameraHud(props: CameraHudProps) {
             shutter. Sits in grid row 4, anchored bottom-left so the
             popover can open upward into row 3 without crowding the
             BroadcastTimestamp slate. Hidden until the first marker lands
-            so an empty HUD stays clean. */}
+            so an empty HUD stays clean. Component owns the popover focus
+            trap + the per-category breakdown rendering. */}
       {running && sessionMarkerCount > 0 && (
-        <div className={s.markerPillWrap} ref={markerPillWrapRef}>
-          <button
-            type="button"
-            className={s.markerCountPill}
-            onClick={(e) => { e.stopPropagation(); onToggleMarkerPill(); }}
-            onPointerDown={(e) => e.stopPropagation()}
-            title="Tap to see this session's marker breakdown"
-            aria-expanded={markerPillOpen}
-            aria-label={`${sessionMarkerCount} marker${sessionMarkerCount === 1 ? "" : "s"} this session — tap for breakdown`}
-          >
-            <span className={s.markerCountIcon} aria-hidden="true">●</span>
-            <span className={s.markerCountValue}>{sessionMarkerCount}</span>
-            <span className={s.markerCountLabel}>marker{sessionMarkerCount === 1 ? "" : "s"}</span>
-          </button>
-          {markerPillOpen && (
-            <div
-              className={s.markerCountPopover}
-              role="dialog"
-              aria-modal="true"
-              aria-label="Marker breakdown by category"
-              ref={markerPillTrapRef}
-              tabIndex={-1}
-            >
-              <ul className={s.markerCountList}>
-                {MARKER_BREAKDOWN.filter((row) => sessionMarkerByCat[row.id] > 0).map((row) => (
-                  <li key={row.id}>
-                    <span className={s.markerCountDot} data-category={row.id} aria-hidden="true">●</span>
-                    {sessionMarkerByCat[row.id]} {row.label}
-                  </li>
-                ))}
-              </ul>
-              <button
-                type="button"
-                className={s.markerCountReviewLink}
-                onClick={(e) => { e.stopPropagation(); onNavigateReview(); }}
-                onPointerDown={(e) => e.stopPropagation()}
-              >
-                Open Review →
-              </button>
-            </div>
-          )}
-        </div>
+        <CameraMarkerPill
+          count={sessionMarkerCount}
+          open={markerPillOpen}
+          byCategory={sessionMarkerByCat}
+          onToggle={onToggleMarkerPill}
+          onNavigateReview={onNavigateReview}
+          wrapRef={markerPillWrapRef}
+          trapRef={markerPillTrapRef}
+        />
       )}
     </div>
   );

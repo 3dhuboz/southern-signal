@@ -1,0 +1,112 @@
+/* ============================================================================
+   CameraWelcomeCard — first-run helper.
+
+   Extracted from CameraScreen.module.css. Centered modal-style card over
+   the camera viewport. pointerEvents:auto on the card so it captures taps;
+   the surrounding viewport still gets gestures around it. Wave 3 a11y pass
+   added the ≥44px touch targets and the focus-visible rings on both
+   interactive controls.
+   ============================================================================ */
+
+.welcomeCard {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 8;
+  pointer-events: auto;
+  width: min(86vw, 380px);
+  padding: 14px 16px;
+  background: var(--hud-glass-bg-strong);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--chip-rim);
+  border-radius: 14px;
+  color: var(--text-primary);
+  animation: welcomeIn 220ms ease-out;
+}
+
+@keyframes welcomeIn {
+  from { opacity: 0; transform: translate(-50%, -48%); }
+  to   { opacity: 1; transform: translate(-50%, -50%); }
+}
+
+.welcomeHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.welcomeEyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+/* Dismiss ✕ — Wave 3 a11y: ≥44x44 touch target + focus-visible ring. The
+   visible glyph is 16px; min-width/min-height lifts the hit zone. */
+.welcomeDismiss {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 16px;
+  cursor: pointer;
+  opacity: 0.7;
+  padding: 4px 6px;
+  line-height: 1;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+}
+.welcomeDismiss:hover { opacity: 1; }
+.welcomeDismiss:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.welcomeList {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.welcomeList li::before {
+  content: "·";
+  margin-right: 6px;
+  opacity: 0.55;
+}
+.welcomeList strong { font-weight: 700; color: var(--text-primary); }
+
+.welcomeGotIt {
+  appearance: none;
+  width: 100%;
+  background: var(--accent-strong);
+  border: 1px solid var(--accent-strong);
+  border-radius: 8px;
+  padding: 10px 14px;
+  min-height: 44px;
+  color: var(--text-on-accent);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 100ms ease;
+}
+.welcomeGotIt:hover { background: var(--signal-glow, var(--accent-strong)); }
+.welcomeGotIt:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}

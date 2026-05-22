@@ -1,0 +1,72 @@
+/* ============================================================================
+   CameraShutter — the BIG SHUTTER button.
+
+   Primary action on the camera surface. 88x88 circular target, red when
+   idle, white-with-red-square when recording. Anchored above the slim dock
+   (which is above the BottomNav); all offsets are safe-area-aware so the
+   bottom-thumb-zone landing matches across phone bezels.
+
+   Tokens: --shutter-bg / --shutter-ring / --shutter-rec-bg /
+   --shutter-rec-core (Wave 1A tokenisation pass) + --focus-ring for the
+   keyboard-focus ring (Wave 3 a11y pass).
+   ============================================================================ */
+
+.shutter {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(76px + var(--safe-bottom, 0px) + var(--bottom-nav-height, 64px));
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  background: var(--shutter-bg);
+  border: 4px solid var(--shutter-ring);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+  z-index: 6;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 140ms ease, transform 80ms ease, box-shadow 140ms ease;
+}
+
+/* Keyboard-focus ring — Wave 3 a11y pass. The global :focus-visible from
+   styles/global.css would already catch this (it covers every button), but
+   we override outline-offset here so the ring doesn't visually merge with
+   the 4-px ring stroke that's already part of the shutter chrome. */
+.shutter:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 4px;
+}
+
+.shutter:active {
+  transform: translateX(-50%) scale(0.94);
+}
+
+.shutter:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Inner indicator — a small white dot when idle (subtle), morphs into a
+   red square when recording. */
+.shutterCore {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.0);
+  transition: background 140ms ease, border-radius 140ms ease, width 140ms ease, height 140ms ease;
+}
+
+.shutterRecording {
+  background: var(--shutter-rec-bg);
+  box-shadow: 0 4px 24px rgba(216, 57, 44, 0.5);
+}
+
+.shutterRecording .shutterCore {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--shutter-rec-core);
+}

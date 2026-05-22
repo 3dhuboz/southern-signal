@@ -1,0 +1,112 @@
+/* ============================================================================
+   CameraMarkerPicker — quick-tag chips + category chips after a double-tap.
+
+   Extracted from CameraScreen.module.css. The picker fires after the
+   MARKED toast and gives the operator ~2.2s to pick a category before
+   auto-committing as untagged. Each chip stops pointer propagation
+   upstream so they don't re-fire the swipe / long-press pipeline.
+
+   Wave 3 a11y additions:
+   - chips lifted to min-width / min-height 44px (WCAG 2.5.5)
+   - focus-visible ring on each chip
+   ============================================================================ */
+
+.markerPickerWrap {
+  position: absolute;
+  top: calc(86px + var(--safe-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+  z-index: 6;
+  animation: markerPickerIn 180ms ease-out;
+}
+.markerPickerWrap:focus { outline: none; }
+
+@keyframes markerPickerIn {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.markerQuickTags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  max-width: min(92vw, 480px);
+}
+
+.markerQuickTagBtn {
+  pointer-events: auto;
+  appearance: none;
+  background: var(--chip-bg);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--chip-rim);
+  border-radius: 999px;
+  padding: 5px 11px;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--chip-text);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  cursor: pointer;
+  transition: background 100ms ease, transform 80ms ease, border-color 100ms ease;
+}
+.markerQuickTagBtn:hover  { background: var(--hud-glass-bg-strong); border-color: var(--hud-rim-strong); }
+.markerQuickTagBtn:active { transform: scale(0.93); }
+.markerQuickTagBtn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Per-category accent dot so the operator's eye can register which bucket
+   the chip will land in without parsing the label. Tokenised so scotopic
+   collapses the palette to the deep-red ramp automatically. */
+.markerQuickTagBtn[data-category="sound"]    { border-left: 3px solid var(--marker-sound); }
+.markerQuickTagBtn[data-category="movement"] { border-left: 3px solid var(--marker-movement); }
+.markerQuickTagBtn[data-category="felt"]     { border-left: 3px solid var(--marker-felt); }
+
+.markerPicker {
+  display: flex;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.markerPickerBtn {
+  pointer-events: auto;
+  appearance: none;
+  background: var(--chip-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--chip-rim);
+  border-radius: 999px;
+  padding: 7px 14px;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--chip-text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 100ms ease, transform 80ms ease;
+}
+.markerPickerBtn:hover  { background: var(--hud-glass-bg-strong); border-color: var(--hud-rim-strong); }
+.markerPickerBtn:active { transform: scale(0.94); }
+.markerPickerBtn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}

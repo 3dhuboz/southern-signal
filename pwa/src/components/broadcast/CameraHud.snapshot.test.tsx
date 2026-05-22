@@ -41,6 +41,18 @@ vi.mock("./BroadcastSensorHud.module.css", () => ({
 vi.mock("./BroadcastLowerThird.module.css", () => ({
   default: new Proxy({}, { get: (_t, k) => String(k) }),
 }));
+// Wave 3 extractions — device + snooze chips + marker pill moved out of
+// CameraHud's module.css. Stub their CSS too so snapshot classnames stay
+// readable (vite-hashed otherwise).
+vi.mock("../camera/CameraDeviceChip.module.css", () => ({
+  default: new Proxy({}, { get: (_t, k) => String(k) }),
+}));
+vi.mock("../camera/CameraSnoozeChip.module.css", () => ({
+  default: new Proxy({}, { get: (_t, k) => String(k) }),
+}));
+vi.mock("../camera/CameraMarkerPill.module.css", () => ({
+  default: new Proxy({}, { get: (_t, k) => String(k) }),
+}));
 
 import { CameraHud, type CameraHudProps } from "./CameraHud";
 

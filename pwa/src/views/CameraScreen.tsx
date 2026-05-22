@@ -32,6 +32,13 @@ import { DispositionPicker } from "../components/DispositionPicker";
 import { BroadcastTimestamp } from "../components/broadcast/BroadcastTimestamp";
 import { CameraHud } from "../components/broadcast/CameraHud";
 import { CameraDock } from "../components/camera/CameraDock";
+import { CameraShutter } from "../components/camera/CameraShutter";
+import { CameraMarkerToast } from "../components/camera/CameraMarkerToast";
+import { CameraMarkerPicker } from "../components/camera/CameraMarkerPicker";
+import { CameraWatchdogToast } from "../components/camera/CameraWatchdogToast";
+import { CameraFocusPulse } from "../components/camera/CameraFocusPulse";
+import { CameraWelcomeCard } from "../components/camera/CameraWelcomeCard";
+import { CameraPreflightBlocker } from "../components/camera/CameraPreflightBlocker";
 import { useLiveBroadcastState } from "../lib/system/liveBroadcast";
 import { usePushToTalk } from "../lib/audio/usePushToTalk";
 import { startVad, type VadHandle } from "../lib/audio/vad";
@@ -39,7 +46,7 @@ import { useLongPress, useDoubleTap, useHorizontalSwipe, composeHandlers } from 
 import { CAMERA_WELCOME_KEY } from "../lib/version";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { resolvePreflightOverrides, runPreflight, type PreflightCheck, type PreflightReport } from "../lib/system/preflight";
-import { formatTimeToEmpty, projectTimeToEmpty, projectTimeToZero, type BatterySample } from "../lib/system/batteryProjection";
+import { projectTimeToEmpty, projectTimeToZero, type BatterySample } from "../lib/system/batteryProjection";
 import { verifyAuditChain, appendAuditEntry } from "../lib/db/auditLog";
 import { usePwaInstall } from "../lib/system/usePwaInstall";
 import { useLiveNarrator } from "../lib/posterior/liveNarrator";
@@ -74,8 +81,6 @@ import { useOvilus } from "../lib/itc/useOvilus";
 import { Navigate, useNavigate } from "react-router-dom";
 import s from "./CameraScreen.module.css";
 import {
-  PICKER_CATEGORIES,
-  QUICK_TAGS,
   SNOOZE_STORAGE_KEY,
   MARKER_THROTTLE_MS,
   MARKER_PICKER_MS,
@@ -86,12 +91,7 @@ import {
   STORAGE_SAMPLE_BUFFER,
   type MarkerCategory,
 } from "./cameraScreen/constants";
-import {
-  applyWatchdogSuppression,
-  formatWatchdogChecks,
-  ordinal,
-  watchdogStorageWarn,
-} from "./cameraScreen/watchdogFormat";
+import { applyWatchdogSuppression } from "./cameraScreen/watchdogFormat";
 
 // Viewport gestures:
 //   • long-press anywhere   → push-to-talk (ducks ITC mixer -18dB)
@@ -1280,41 +1280,7 @@ export function CameraScreen() {
              while a session is running so the operator's eye lands on the
              feed. */}
         {welcomeVisible && !running && (
-          <div
-            className={s.welcomeCard}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="ss-welcome-title"
-            ref={welcomeTrapRef}
-            tabIndex={-1}
-          >
-            <header className={s.welcomeHead}>
-              <span id="ss-welcome-title" className={s.welcomeEyebrow}>Welcome</span>
-              <button
-                type="button"
-                className={s.welcomeDismiss}
-                onClick={(e) => { e.stopPropagation(); dismissWelcome(); }}
-                onPointerDown={(e) => e.stopPropagation()}
-                aria-label="Dismiss welcome card"
-              >
-                ✕
-              </button>
-            </header>
-            <ul className={s.welcomeList}>
-              <li><strong>Double-tap</strong> the viewport to drop a moment marker.</li>
-              <li><strong>Swipe left/right</strong> to cycle scenes (or tap the pill ↗).</li>
-              <li><strong>BIG SHUTTER</strong> below begins / ends a session.</li>
-              <li>The watchdog warns if battery or storage drops mid-session.</li>
-            </ul>
-            <button
-              type="button"
-              className={s.welcomeGotIt}
-              onClick={(e) => { e.stopPropagation(); dismissWelcome(); }}
-              onPointerDown={(e) => e.stopPropagation()}
-            >
-              Got it
-            </button>
-          </div>
+          <CameraWelcomeCard onDismiss={dismissWelcome} trapRef={welcomeTrapRef} />
         )}
 
         {/* ── Bottom-left timecode slate — local wall-clock, UTC, and
@@ -1330,47 +1296,21 @@ export function CameraScreen() {
         {/* ── Marker drop toast — top-center, 1.5s fade. Confirms that the
              double-tap landed without interrupting the camera feed. The
              actual marker is already in the audit chain via recordEvent. */}
-        {markerToastVisible && (
-          <div className={s.markerToast} role="status" aria-live="polite">
-            ✓ MARKED
-          </div>
-        )}
+        {markerToastVisible && <CameraMarkerToast />}
 
         {/* ── Marker category picker — fires after a double-tap. Three chips
              (Sound / Movement / Felt) for reviewers to filter by later. Auto-
              commits as untagged after MARKER_PICKER_MS so fire-and-forget
              taps still land. Each chip stops pointer propagation so tapping
-             a chip doesn't also re-trigger the swipe / long-press handlers. */}
+             a chip doesn't also re-trigger the swipe / long-press handlers.
+             A11y promoted from role="group" to role="dialog" — see
+             components/camera/CameraMarkerPicker.tsx for the dialog
+             semantics + auto-focus on mount. */}
         {markerPicker && (
-          <div className={s.markerPickerWrap} role="group" aria-label="Tag this marker">
-            <div className={s.markerQuickTags} aria-label="Quick tags — commit a marker with a pre-filled note">
-              {QUICK_TAGS.map((q) => (
-                <button
-                  key={q.label}
-                  type="button"
-                  className={s.markerQuickTagBtn}
-                  data-category={q.category}
-                  onClick={(e) => { e.stopPropagation(); pickMarkerQuickTag(q.label, q.category); }}
-                  onPointerDown={(e) => e.stopPropagation()}
-                >
-                  {q.label}
-                </button>
-              ))}
-            </div>
-            <div className={s.markerPicker}>
-              {PICKER_CATEGORIES.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  className={s.markerPickerBtn}
-                  onClick={(e) => { e.stopPropagation(); pickMarkerCategory(c.id); }}
-                  onPointerDown={(e) => e.stopPropagation()}
-                >
-                  {c.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          <CameraMarkerPicker
+            onPickQuickTag={pickMarkerQuickTag}
+            onPickCategory={pickMarkerCategory}
+          />
         )}
 
         {/* ── Watchdog toast — non-blocking warning when the device state
@@ -1383,66 +1323,28 @@ export function CameraScreen() {
              is the durable fix for "running out of room". Hard-dismisses
              after WATCHDOG_TOAST_MS even if untouched. */}
         {watchdog && (
-          // role="status" (implicit aria-live="polite") instead of "alert" so
-          // a screen-reader user isn't interrupted mid-sentence by a toast
-          // that auto-dismisses after WATCHDOG_TOAST_MS. The separate
-          // pre-flight blocker below uses role="alertdialog" for hard stops;
-          // a degraded device state is "should know" not "stop everything".
-          <div
-            className={`${s.watchdogToast} ${watchdog.overall === "block" ? s.watchdogToastBlock : s.watchdogToastWarn}`.trim()}
-            role="status"
-          >
-            <button
-              type="button"
-              className={s.watchdogToastBody}
-              onClick={() => setWatchdog(null)}
-              title="Tap to dismiss"
-            >
-              <span className={s.watchdogToastLabel}>
-                {watchdog.overall === "block" ? "Device state critical" : "Device state degraded"}
-                {watchdogCount > 1 && (
-                  <span className={s.watchdogToastCount}>{ordinal(watchdogCount)} warning</span>
-                )}
-              </span>
-              <span className={s.watchdogToastDetail}>
-                {formatWatchdogChecks(watchdog.checks) || "Tap to dismiss"}
-                {batteryProjectionMinutes != null && watchdog.checks.some((c) => c.id === "battery" && c.level !== "ok") && (
-                  <span className={s.watchdogToastEta}> · ~{formatTimeToEmpty(batteryProjectionMinutes)} until empty</span>
-                )}
-                {storageProjectionMinutes != null && watchdog.checks.some((c) => c.id === "storage" && c.level !== "ok") && (
-                  <span className={s.watchdogToastEta}> · ~{formatTimeToEmpty(storageProjectionMinutes)} until full</span>
-                )}
-              </span>
-            </button>
-            {watchdogStorageWarn(watchdog) && installStatus.kind === "ready" && (
-              <button
-                type="button"
-                className={s.watchdogToastCta}
-                onClick={async () => {
-                  setWatchdog(null);
-                  installPromptOpenRef.current = true;
-                  try {
-                    await installStatus.prompt();
-                  } finally {
-                    installPromptOpenRef.current = false;
-                  }
-                }}
-              >
-                Install
-              </button>
-            )}
-            <button
-              type="button"
-              className={s.watchdogToastSnooze}
-              onClick={() => {
-                setWatchdogSnoozeUntil(Date.now() + WATCHDOG_SNOOZE_MS);
-                setWatchdog(null);
-              }}
-              title="Suppress watchdog toasts for the next 10 minutes. A worsening degradation will still fire."
-            >
-              Snooze 10m
-            </button>
-          </div>
+          <CameraWatchdogToast
+            report={watchdog}
+            count={watchdogCount}
+            batteryProjectionMinutes={batteryProjectionMinutes}
+            storageProjectionMinutes={storageProjectionMinutes}
+            installAvailable={installStatus.kind === "ready"}
+            onDismiss={() => setWatchdog(null)}
+            onSnooze={() => {
+              setWatchdogSnoozeUntil(Date.now() + WATCHDOG_SNOOZE_MS);
+              setWatchdog(null);
+            }}
+            onInstall={async () => {
+              setWatchdog(null);
+              if (installStatus.kind !== "ready") return;
+              installPromptOpenRef.current = true;
+              try {
+                await installStatus.prompt();
+              } finally {
+                installPromptOpenRef.current = false;
+              }
+            }}
+          />
         )}
 
         {/* ── No-video fallback overlay ──────────────────────────────────
@@ -1474,32 +1376,10 @@ export function CameraScreen() {
              operator must resolve the underlying issue + dismiss; we don't
              auto-retry because most blockers require leaving the page. */}
         {preflight && preflight.overall === "block" && !preflightDismissed && (
-          <div className={s.preflightBlocker} role="alertdialog" aria-label="Pre-flight check failed">
-            <div className={s.preflightCard}>
-              <h2 className={s.preflightTitle}>Can't start session</h2>
-              <ul className={s.preflightList}>
-                {preflight.checks.filter((c) => c.level === "block").map((c) => (
-                  <li key={c.id} className={s.preflightRowBlock}>
-                    <span className={s.preflightRowLabel}>{c.id}</span>
-                    <span>{c.message}</span>
-                  </li>
-                ))}
-                {preflight.checks.filter((c) => c.level === "warn").map((c) => (
-                  <li key={c.id} className={s.preflightRowWarn}>
-                    <span className={s.preflightRowLabel}>{c.id}</span>
-                    <span>{c.message}</span>
-                  </li>
-                ))}
-              </ul>
-              <button
-                type="button"
-                className={s.preflightDismiss}
-                onClick={() => setPreflightDismissed(true)}
-              >
-                Got it
-              </button>
-            </div>
-          </div>
+          <CameraPreflightBlocker
+            report={preflight}
+            onDismiss={() => setPreflightDismissed(true)}
+          />
         )}
 
         {/* ── Tap-to-focus ring — 700ms pulse at the tap point. Visual
@@ -1507,12 +1387,7 @@ export function CameraScreen() {
              The actual autofocus might or might not honour the constraint
              (hardware-dependent); the ring just confirms the gesture. */}
         {focusPulse && (
-          <div
-            key={focusPulse.key}
-            className={s.focusPulse}
-            style={{ left: focusPulse.x, top: focusPulse.y }}
-            aria-hidden="true"
-          />
+          <CameraFocusPulse key={focusPulse.key} x={focusPulse.x} y={focusPulse.y} />
         )}
 
         {/* ── BIG SHUTTER — primary action, Snapchat-grade. ─────────────
@@ -1520,17 +1395,13 @@ export function CameraScreen() {
              idle (= "Begin"); white with red square when recording (= "End").
              This is the ONE button that should dominate the bottom of the
              viewport. Disabled while busy so the operator gets a "no-op
-             during transition" pulse rather than a double-fire. */}
-        <button
-          type="button"
-          className={`${s.shutter} ${running ? s.shutterRecording : ""}`.trim()}
+             during transition" pulse rather than a double-fire.
+             Visual + a11y contract lives in components/camera/CameraShutter. */}
+        <CameraShutter
+          running={running}
+          busy={busy}
           onClick={running ? handleStop : handleBegin}
-          disabled={busy}
-          aria-label={running ? "End session" : "Begin session"}
-          title={running ? "End session" : "Begin session"}
-        >
-          <span className={s.shutterCore} aria-hidden="true" />
-        </button>
+        />
 
         {/* ── Bottom dock — redesigned, full-word labels + icons ───────
              CameraDock replaces the inline dockSlim. Visibility / wiring

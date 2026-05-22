@@ -100,194 +100,40 @@
   pointer-events: none;
 }
 
-/* ── Inline chips (moved from CameraScreen.module.css) ──────────────────
-   The visual chrome (background, border, font, dimensions) is unchanged
-   from the original CameraScreen rules — only the positioning system
-   shifts from per-chip absolute offsets to grid-rail flow. */
-
-/* Always-on device-state chip — sits in the status rail, below
-   BroadcastAudioMeter. Tone shifts to warn when battery/storage cross
-   the watchdog thresholds. */
-.deviceChip {
-  /* Spacer so the chip sits below the BroadcastAudioMeter, which is
-     absolute-pinned to top:56 + variable height (~136 px). */
+/* 2026-05-22 camera overhaul — wave 3: device + snooze chips moved to
+   their own component modules (components/camera/CameraDeviceChip,
+   components/camera/CameraSnoozeChip). Only a slot wrapper survives
+   here to absorb the spacer-margin that used to live inline on the
+   device chip — the BroadcastAudioMeter above this slot is absolute-
+   positioned (top:56 + ~136px tall), so the rail's flex flow alone
+   can't reserve space for it. */
+.deviceChipSlot {
+  /* Reserve clearance for the absolute-positioned BroadcastAudioMeter
+     so the device chip below it doesn't collide. The meter is pinned
+     to top:56 + variable height (~136 px). */
   margin-top: 198px;
-  margin-left: 4px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  background: var(--chip-bg);
-  border: 1px solid var(--chip-rim);
-  border-radius: 999px;
-  color: var(--chip-text);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.4px;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  pointer-events: none;
-}
-.deviceChipWarn {
-  background: var(--chip-warn-bg);
-  border-color: var(--chip-warn-rim);
-  color: var(--chip-warn-text);
-}
-.deviceChipReading {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 3px;
-}
-.deviceChipReadingWarn { color: #ff9d3a; }
-.deviceChipIcon { font-size: 9px; opacity: 0.9; }
-.deviceChipValue { font-weight: 700; letter-spacing: 0.5px; }
-.deviceChipUnit  { opacity: 0.7; font-size: 9px; text-transform: uppercase; letter-spacing: 0.7px; }
-.deviceChipSep   { opacity: 0.5; }
-
-/* Snooze indicator — sits in the status rail after the device chip when
-   active. Tap to unsnooze. */
-.snoozeChip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  margin-left: 4px;
-  background: var(--warn-pill-bg);
-  border: 1px solid var(--chip-rim);
-  border-radius: 999px;
-  color: var(--warn-pill-text);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.5px;
-  font-weight: 700;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  cursor: pointer;
-}
-.snoozeChip:hover  { background: rgba(212, 192, 38, 0.92); }
-.snoozeChip:active { background: rgba(212, 192, 38, 1); }
-.snoozeChipIcon { font-size: 12px; line-height: 1; }
-.snoozeChipLabel { text-transform: uppercase; letter-spacing: 1.1px; }
-
-/* ── Marker tally pill ─────────────────────────────────────────────────
-   UX spec: bottom-left of the shutter band (row 4), NOT under the shutter,
-   well clear of the BroadcastTimestamp slate above the BottomNav. The pill
-   sits inside the grid at row 4 / col 1, anchored to the bottom-left of
-   that row so the popover can open upward into row 3 without crowding. */
-.markerPillWrap {
-  grid-column: 1;
-  grid-row: 4;
-  align-self: end;
-  justify-self: start;
-  position: relative;
-  margin: 0 0 8px 12px;
-  pointer-events: auto;
-}
-.markerCountPill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  background: var(--chip-bg);
-  border: 1px solid var(--chip-rim);
-  border-radius: 999px;
-  color: var(--chip-text);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.5px;
-  font-weight: 600;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  cursor: pointer;
-}
-.markerCountPill:hover  { background: var(--hud-glass-bg-strong); }
-.markerCountPill:active { background: var(--hud-glass-bg-strong); }
-.markerCountIcon {
-  color: var(--signal, #5DF2C7);
-  font-size: 7px;
-  line-height: 1;
-}
-.markerCountValue {
-  font-weight: 800;
-  letter-spacing: 0.8px;
-}
-.markerCountLabel {
-  text-transform: uppercase;
-  letter-spacing: 1.1px;
-  opacity: 0.78;
 }
 
-/* Popover anchored to the pill — opens upward into the talent-safe row
-   when the operator taps. */
-.markerCountPopover {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 0;
-  min-width: 180px;
-  padding: 10px 12px;
-  background: var(--hud-glass-bg-strong);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border: 1px solid var(--chip-rim);
-  border-radius: 12px;
-  color: var(--chip-text);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  z-index: 6;
-  animation: cameraHudFadeIn 140ms ease-out;
-}
-.markerCountList {
-  list-style: none;
-  margin: 0 0 8px;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.markerCountList li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.markerCountDot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--marker-other);
-}
-.markerCountDot[data-category="sound"]    { background: var(--marker-sound); }
-.markerCountDot[data-category="movement"] { background: var(--marker-movement); }
-.markerCountDot[data-category="felt"]     { background: var(--marker-felt); }
-.markerCountDot[data-category="untagged"] { background: var(--marker-other); }
-.markerCountReviewLink {
-  appearance: none;
-  width: 100%;
-  background: transparent;
-  border: 1px solid var(--chip-rim);
-  border-radius: 8px;
-  padding: 6px 10px;
-  color: var(--signal, #5DF2C7);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.9px;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: background 100ms ease;
-}
-.markerCountReviewLink:hover { background: var(--signal-wash, rgba(34, 197, 94, 0.18)); }
+/* 2026-05-22 camera overhaul — wave 3: marker tally pill + its popover
+   moved to components/camera/CameraMarkerPill.{tsx,module.css}. The
+   component module also fixes the wave 2 landmine where a tall category
+   list could clip the BroadcastLowerThird — now max-height: 40vh +
+   overflow-y: auto keeps overflow inside the popover. */
 
 /* EVP dock slot — sits in the sense rail after BroadcastSensorHud so it
    no longer collides with BroadcastSceneSelector. The compact recorder
    variant already provides its own glass chrome; this slot just gives it
-   a positioning anchor + max-width gate. */
+   a positioning anchor + max-width gate.
+
+   Wave 3 landmine fix: the 144px margin-top assumed BroadcastSensorHud
+   renders 3 rows. Replaced with a flex-grow flow on .senseRail so the
+   slot now flows naturally beneath whatever the sensor HUD renders.
+   .senseRail is already flex-column with gap:6px (see above); .evpDockSlot
+   becomes another flex item with margin-top: auto so it pins to the
+   bottom of the rail's available space, OR sits immediately after the
+   sensor HUD if there isn't enough space for both. */
 .evpDockSlot {
-  /* Spacer so the dock sits below the BroadcastSensorHud's absolute
-     anchor (top:64 + ~rows). The rail's flex column would naturally
-     stack it but the sensor HUD isn't an inline flex child — it's an
-     absolute element rooted to the camera wrap — so we reserve space. */
-  margin-top: 144px;
+  margin-top: auto;
   max-width: 60vw;
   background: var(--chip-bg);
   border: 1px solid var(--chip-rim);
@@ -295,9 +141,4 @@
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   padding: 4px 6px;
-}
-
-@keyframes cameraHudFadeIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
 }

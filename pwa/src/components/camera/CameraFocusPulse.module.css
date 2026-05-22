@@ -1,0 +1,31 @@
+/* ============================================================================
+   CameraFocusPulse — 700ms visual ring at the tap-to-focus point.
+
+   Extracted from CameraScreen.module.css. Anchored absolute at the tap
+   point; scales from 1.6 → 1 over ~250ms then fades over 420ms. The actual
+   autofocus may or may not honour the constraint (hardware-dependent) —
+   the ring just confirms the gesture registered.
+   ============================================================================ */
+
+.focusPulse {
+  position: absolute;
+  width: 64px;
+  height: 64px;
+  margin-left: -32px;
+  margin-top: -32px;
+  border: 2px solid var(--focus-ring);
+  border-radius: 50%;
+  box-shadow: 0 0 12px var(--focus-ring);
+  pointer-events: none;
+  z-index: 4;
+  animation: focusPulseIn 250ms ease-out, focusPulseFade 420ms ease-in 280ms forwards;
+}
+
+@keyframes focusPulseIn {
+  from { transform: scale(1.6); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
+}
+@keyframes focusPulseFade {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}

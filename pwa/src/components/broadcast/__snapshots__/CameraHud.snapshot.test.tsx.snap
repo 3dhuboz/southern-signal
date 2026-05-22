@@ -313,39 +313,43 @@ exports[`<CameraHud /> grid structure snapshot > running — Pro mode shows Broa
       </span>
     </div>
     <div
-      aria-label="Device state"
-      class="deviceChip"
+      class="deviceChipSlot"
     >
-      <span
-        class="deviceChipReading"
+      <div
+        aria-label="Device state"
+        class="deviceChip"
       >
         <span
-          class="deviceChipValue"
+          class="deviceChipReading"
         >
-          73
-          %
-        </span>
-      </span>
-      <span
-        aria-hidden="true"
-        class="deviceChipSep"
-      >
-        ·
-      </span>
-      <span
-        class="deviceChipReading"
-      >
-        <span
-          class="deviceChipValue"
-        >
-          1.8GB
+          <span
+            class="deviceChipValue"
+          >
+            73
+            %
+          </span>
         </span>
         <span
-          class="deviceChipUnit"
+          aria-hidden="true"
+          class="deviceChipSep"
         >
-          free
+          ·
         </span>
-      </span>
+        <span
+          class="deviceChipReading"
+        >
+          <span
+            class="deviceChipValue"
+          >
+            1.8GB
+          </span>
+          <span
+            class="deviceChipUnit"
+          >
+            free
+          </span>
+        </span>
+      </div>
     </div>
   </div>
   <div
@@ -710,39 +714,43 @@ exports[`<CameraHud /> grid structure snapshot > running — Simple mode suppres
       </span>
     </div>
     <div
-      aria-label="Device state"
-      class="deviceChip"
+      class="deviceChipSlot"
     >
-      <span
-        class="deviceChipReading"
+      <div
+        aria-label="Device state"
+        class="deviceChip"
       >
         <span
-          class="deviceChipValue"
+          class="deviceChipReading"
         >
-          73
-          %
-        </span>
-      </span>
-      <span
-        aria-hidden="true"
-        class="deviceChipSep"
-      >
-        ·
-      </span>
-      <span
-        class="deviceChipReading"
-      >
-        <span
-          class="deviceChipValue"
-        >
-          1.8GB
+          <span
+            class="deviceChipValue"
+          >
+            73
+            %
+          </span>
         </span>
         <span
-          class="deviceChipUnit"
+          aria-hidden="true"
+          class="deviceChipSep"
         >
-          free
+          ·
         </span>
-      </span>
+        <span
+          class="deviceChipReading"
+        >
+          <span
+            class="deviceChipValue"
+          >
+            1.8GB
+          </span>
+          <span
+            class="deviceChipUnit"
+          >
+            free
+          </span>
+        </span>
+      </div>
     </div>
   </div>
   <div
@@ -990,6 +998,9 @@ exports[`<CameraHud /> grid structure snapshot > running — marker pill closed 
         </span>
       </span>
     </div>
+    <div
+      class="deviceChipSlot"
+    />
   </div>
   <div
     class="senseRail"
@@ -1265,6 +1276,9 @@ exports[`<CameraHud /> grid structure snapshot > running — marker pill open: p
         </span>
       </span>
     </div>
+    <div
+      class="deviceChipSlot"
+    />
   </div>
   <div
     class="senseRail"
@@ -1582,6 +1596,9 @@ exports[`<CameraHud /> grid structure snapshot > running — snooze chip rendere
         </span>
       </span>
     </div>
+    <div
+      class="deviceChipSlot"
+    />
     <button
       aria-label="Watchdog snoozed — tap to resume"
       class="snoozeChip"

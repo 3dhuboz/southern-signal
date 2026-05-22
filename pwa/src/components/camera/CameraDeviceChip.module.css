@@ -1,0 +1,45 @@
+/* ============================================================================
+   CameraDeviceChip — always-on device-state chip (battery % + storage free).
+
+   Extracted from CameraHud.module.css. The 198px margin-top there assumed
+   the chip lived inside the .statusRail flex column with a spacer to clear
+   the absolute-positioned BroadcastAudioMeter. Now that the chip is a
+   standalone component, the parent rail's flex flow places it correctly
+   without per-chip magic offsets — `margin-top: 198px` removed.
+   ============================================================================ */
+
+.deviceChip {
+  margin-left: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: var(--chip-bg);
+  border: 1px solid var(--chip-rim);
+  border-radius: 999px;
+  color: var(--chip-text);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.4px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+
+.deviceChipWarn {
+  background: var(--chip-warn-bg);
+  border-color: var(--chip-warn-rim);
+  color: var(--chip-warn-text);
+}
+
+.deviceChipReading {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+}
+
+.deviceChipReadingWarn { color: #ff9d3a; }
+.deviceChipIcon { font-size: 9px; opacity: 0.9; }
+.deviceChipValue { font-weight: 700; letter-spacing: 0.5px; }
+.deviceChipUnit  { opacity: 0.7; font-size: 9px; text-transform: uppercase; letter-spacing: 0.7px; }
+.deviceChipSep   { opacity: 0.5; }
