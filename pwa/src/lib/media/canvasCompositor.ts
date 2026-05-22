@@ -829,15 +829,20 @@ function renderFrame(
   }
 
   // 4. Right-edge vertical instrument stack — skeuomorphic gear meters.
-  //    K-II EMF (yellow handheld) on top, REM Pod (black tower) below.
-  //    Top anchor is shared so the two meters always line up; each meter
-  //    function owns its own height + 8 px gap to the next.
+  //    K-II EMF (yellow handheld) on top, REM Pod (black tower) below, EMF
+  //    galvanometer (analog needle, 1960s field-meter aesthetic) at the
+  //    bottom. All three share the same magnetometer signal; the stack
+  //    co-locates them so operators get the "wall of EMF kit" reading at a
+  //    glance. Top anchor is shared; each meter owns its own height.
   const meterTopY = Math.round(H * 0.30);
   if (channels.kiiMeter) {
     drawKiiMeter(ctx, W, overlay.activityBand, overlay.emfZScore, s, meterTopY, frame);
   }
   if (channels.remPod) {
     drawRemPod(ctx, W, overlay.activityBand, overlay.emfZScore, s, meterTopY, frame);
+  }
+  if (channels.emfGalvanometer) {
+    drawEmfGalvanometer(ctx, W, overlay.emfZScore, s, meterTopY, frame);
   }
 
   // 5. VU audio meter — left edge, vintage analog look.
@@ -2054,6 +2059,218 @@ function drawRemPod(
       ctx.restore();
     }
   }
+
+  ctx.restore();
+}
+
+// ─── Analog EMF galvanometer (right edge, 1960s field-meter aesthetic) ──────
+
+/** Galvo body dimensions (logical px @ s=1). Same width as K-II so the right-
+ *  edge stack stays visually aligned; taller because the needle scale needs
+ *  the vertical real estate to read at a glance. */
+const GALVO_BODY_W = 96;
+const GALVO_BODY_H = 78;
+/** Needle sweep range — rest at -60°, peak at +60° (120° total sweep). Wider
+ *  than the VU meter's 90° because galvanometers historically used the full
+ *  semicircle. Centred on vertical-up = 0. */
+const GALVO_REST_RAD = -(Math.PI / 3);
+const GALVO_PEAK_RAD =  (Math.PI / 3);
+/** Z-score that pegs the needle at 80% (top of the red zone). Beyond this
+ *  the needle enters overload territory. ~3σ feels right — the K-II's third
+ *  LED also lights at 2.5σ, so this aligns the visual cues. */
+const GALVO_FULL_SCALE_Z = 5;
+const GALVO_REDZONE_FRACTION = 0.8;
+
+/**
+ * Skeuomorphic analog EMF galvanometer — brushed-aluminum bezel + cream face
+ * + black needle + red-zone past 80%. Reads the SAME magnetometer z-score the
+ * K-II uses; this is gear-archetype diversity, not a second data stream.
+ *
+ * Anatomy (logical px @ s=1, 96 × 78):
+ *   ┌──────────────────────────┐  ← brushed-aluminum bezel
+ *   │ ╔══════════════════════╗ │
+ *   │ ║   .  .  .  .  ┃┃┃    ║ │   cream scale, ink ticks, red zone
+ *   │ ║     ╲      ╱         ║ │   right of 80%.
+ *   │ ║       ╲  ╱           ║ │   black needle pivots at the bottom-centre.
+ *   │ ╚══════════════════════╝ │
+ *   │      EMF FIELD METER     │  silkscreen label on the bezel below
+ *   └──────────────────────────┘
+ *
+ * Needle obeys a 200 ms RC ballistic via `frame.galvoNeedleSmooth` so the
+ * sweep glides instead of popping on every magnetometer frame. Without this
+ * the needle would look digital not analog.
+ *
+ * Honest copy — silkscreen says "EMF FIELD METER" / "MAG FLUX". No anomaly
+ * claims; this is the same magnetometer signal the K-II processes.
+ */
+function drawEmfGalvanometer(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  emfZScore: number | undefined,
+  s: number,
+  topY: number,
+  frame: FrameContext,
+): void {
+  const tokens = getMeterTokens(frame);
+
+  // Convert z-score → 0..1 needle level. Sign-stripped because the magnitude
+  // is what matters for an "is there a field nearby" reading.
+  const hasZ = typeof emfZScore === "number" && Number.isFinite(emfZScore);
+  const targetLevel = hasZ
+    ? Math.min(1, Math.abs(emfZScore as number) / GALVO_FULL_SCALE_Z)
+    : 0;
+
+  // RC ballistic — 200 ms time-constant matches the K-II smoother.
+  const nowMs = (typeof performance !== "undefined" && typeof performance.now === "function")
+    ? performance.now()
+    : Date.now();
+  if (!frame.galvoNeedleSmooth) {
+    frame.galvoNeedleSmooth = { value: targetLevel, lastMs: nowMs };
+  } else {
+    const dtMs = Math.max(0, nowMs - frame.galvoNeedleSmooth.lastMs);
+    const alpha = 1 - Math.exp(-dtMs / 200);
+    frame.galvoNeedleSmooth.value += (targetLevel - frame.galvoNeedleSmooth.value) * alpha;
+    frame.galvoNeedleSmooth.lastMs = nowMs;
+  }
+  const needleLevel = Math.max(0, Math.min(1, frame.galvoNeedleSmooth.value));
+  const needleAngle = GALVO_REST_RAD + (GALVO_PEAK_RAD - GALVO_REST_RAD) * needleLevel;
+
+  // Geometry — body anchored to the right edge with a 12 px margin. Stacks
+  // under the REM Pod (88 px below K-II + 8 px gap below REM Pod = 144 px
+  // below the K-II top).
+  const bodyW = Math.round(GALVO_BODY_W * s);
+  const bodyH = Math.round(GALVO_BODY_H * s);
+  const margin = Math.round(12 * s);
+  const x = W - margin - bodyW;
+  const remBottom = topY + Math.round((KII_BODY_H + 8 + REM_BODY_H) * s);
+  const y = remBottom + Math.round(8 * s);
+  const radius = Math.round(5 * s);
+
+  ctx.save();
+
+  // 1. Drop shadow under the bezel.
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.42)";
+  ctx.shadowBlur = 6 * s;
+  ctx.shadowOffsetY = 3 * s;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.01)";
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.fill();
+  ctx.restore();
+
+  // 2. Bezel — brushed aluminum vertical gradient (edge → body → edge).
+  const bezelGrad = ctx.createLinearGradient(0, y, 0, y + bodyH);
+  bezelGrad.addColorStop(0,    tokens.galvoBodyEdge);
+  bezelGrad.addColorStop(0.4,  tokens.galvoBody);
+  bezelGrad.addColorStop(0.6,  tokens.galvoBody);
+  bezelGrad.addColorStop(1,    tokens.galvoBodyEdge);
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.fillStyle = bezelGrad;
+  ctx.fill();
+  ctx.strokeStyle = tokens.galvoBodyEdge;
+  ctx.lineWidth = 1.5;
+  roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
+  ctx.stroke();
+
+  // 3. Cream scale face — recessed window inset into the bezel.
+  const insetX = Math.round(5 * s);
+  const insetTop = Math.round(5 * s);
+  const insetBottom = Math.round(16 * s); // reserve space for silkscreen
+  const faceX = x + insetX;
+  const faceY = y + insetTop;
+  const faceW = bodyW - insetX * 2;
+  const faceH = bodyH - insetTop - insetBottom;
+  const faceR = Math.round(3 * s);
+  const faceGrad = ctx.createLinearGradient(0, faceY, 0, faceY + faceH);
+  faceGrad.addColorStop(0,    tokens.galvoFace);
+  faceGrad.addColorStop(0.7,  tokens.galvoFace);
+  faceGrad.addColorStop(1,    tokens.galvoFaceEdge);
+  roundedRectPath(ctx, faceX, faceY, faceW, faceH, faceR);
+  ctx.fillStyle = faceGrad;
+  ctx.fill();
+
+  // 4. Scale arc geometry — needle pivots at the bottom-centre of the face.
+  const pivotX = faceX + faceW / 2;
+  const pivotY = faceY + faceH + Math.round(1 * s);
+  const arcR = Math.min(faceW * 0.50, faceH * 0.95);
+
+  // 4a. Red overload zone — wedge from 80% to 100%.
+  const overloadStartAngle = GALVO_REST_RAD
+    + (GALVO_PEAK_RAD - GALVO_REST_RAD) * GALVO_REDZONE_FRACTION;
+  const overloadEndAngle = GALVO_PEAK_RAD;
+  const arcInnerR = arcR * 0.78;
+  const arcOuterR = arcR * 1.00;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(pivotX, pivotY, arcOuterR,
+    overloadStartAngle - Math.PI / 2,
+    overloadEndAngle   - Math.PI / 2, false);
+  ctx.arc(pivotX, pivotY, arcInnerR,
+    overloadEndAngle   - Math.PI / 2,
+    overloadStartAngle - Math.PI / 2, true);
+  ctx.closePath();
+  ctx.fillStyle = tokens.galvoRedzone;
+  ctx.globalAlpha = 0.78;
+  ctx.fill();
+  ctx.restore();
+
+  // 4b. Tick marks — five at 0, 25, 50, 75, 100% of the sweep. Short, inked.
+  ctx.save();
+  ctx.strokeStyle = tokens.galvoTick;
+  ctx.lineWidth = Math.max(1, 1.1 * s);
+  ctx.lineCap = "round";
+  for (let i = 0; i <= 4; i++) {
+    const tickLevel = i / 4;
+    const ang = GALVO_REST_RAD + (GALVO_PEAK_RAD - GALVO_REST_RAD) * tickLevel;
+    const cosA = Math.sin(ang);
+    const sinA = -Math.cos(ang);
+    const tickInner = arcR * 0.80;
+    const tickOuter = arcR * 1.00;
+    ctx.beginPath();
+    ctx.moveTo(pivotX + cosA * tickInner, pivotY + sinA * tickInner);
+    ctx.lineTo(pivotX + cosA * tickOuter, pivotY + sinA * tickOuter);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // 5. Needle — black, pivots at (pivotX, pivotY).
+  const needleLen = arcR * 0.92;
+  const tipX = pivotX + Math.sin(needleAngle) * needleLen;
+  const tipY = pivotY - Math.cos(needleAngle) * needleLen;
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
+  ctx.shadowBlur = 2 * s;
+  ctx.shadowOffsetX = 1 * s;
+  ctx.shadowOffsetY = 1 * s;
+  ctx.strokeStyle = tokens.galvoNeedle;
+  ctx.lineWidth = Math.max(1.2, 1.6 * s);
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(pivotX, pivotY);
+  ctx.lineTo(tipX, tipY);
+  ctx.stroke();
+  ctx.restore();
+
+  // 5b. Pivot cap — small dark grey circle so the analog look reads from
+  //     across the room.
+  const pivotR = Math.max(1.8, Math.round(2.5 * s));
+  ctx.beginPath();
+  ctx.arc(pivotX, pivotY, pivotR, 0, Math.PI * 2);
+  ctx.fillStyle = tokens.galvoPivot;
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(pivotX - pivotR * 0.35, pivotY - pivotR * 0.35, pivotR * 0.35, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+  ctx.fill();
+
+  // 6. Silkscreen label below the scale — "EMF FIELD METER" in dark grey.
+  //    Honest gear label, no anomaly claim.
+  const silkPx = Math.max(7, Math.round(8 * s));
+  ctx.font = `700 ${silkPx}px "Inter", system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = tokens.galvoSilkscreen;
+  ctx.fillText("EMF FIELD METER", x + bodyW / 2, y + bodyH - Math.round(10 * s));
 
   ctx.restore();
 }
