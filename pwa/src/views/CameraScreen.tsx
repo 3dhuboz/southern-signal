@@ -38,7 +38,7 @@ import { startVad, type VadHandle } from "../lib/audio/vad";
 import { useLongPress, useDoubleTap, useHorizontalSwipe, composeHandlers } from "../lib/gestures";
 import { CAMERA_WELCOME_KEY } from "../lib/version";
 import { useFocusTrap } from "../hooks/useFocusTrap";
-import { resolvePreflightOverrides, runPreflight, type PreflightCheck, type PreflightLevel, type PreflightReport } from "../lib/system/preflight";
+import { resolvePreflightOverrides, runPreflight, type PreflightCheck, type PreflightReport } from "../lib/system/preflight";
 import { formatTimeToEmpty, projectTimeToEmpty, projectTimeToZero, type BatterySample } from "../lib/system/batteryProjection";
 import { verifyAuditChain, appendAuditEntry } from "../lib/db/auditLog";
 import { usePwaInstall } from "../lib/system/usePwaInstall";
@@ -73,29 +73,26 @@ import { useSpiritBox } from "../lib/itc/useSpiritBox";
 import { useOvilus } from "../lib/itc/useOvilus";
 import { Navigate, useNavigate } from "react-router-dom";
 import s from "./CameraScreen.module.css";
+import {
+  PICKER_CATEGORIES,
+  QUICK_TAGS,
+  SNOOZE_STORAGE_KEY,
+  MARKER_THROTTLE_MS,
+  MARKER_PICKER_MS,
+  WATCHDOG_INTERVAL_MS,
+  WATCHDOG_TOAST_MS,
+  WATCHDOG_SNOOZE_MS,
+  BATTERY_SAMPLE_BUFFER,
+  STORAGE_SAMPLE_BUFFER,
+  type MarkerCategory,
+} from "./cameraScreen/constants";
+import {
+  applyWatchdogSuppression,
+  formatWatchdogChecks,
+  ordinal,
+  watchdogStorageWarn,
+} from "./cameraScreen/watchdogFormat";
 
-/** localStorage key for the watchdog snooze deadline (ms epoch). Versioned
- *  so a future schema change can skip the legacy value cleanly. */
-const SNOOZE_STORAGE_KEY = "ss-watchdog-snooze-until-v1";
-
-// Pre-canned quick-tag chips for the marker picker. Each lands a marker with
-// category + note in one tap. Module-scoped so the array isn't reallocated
-// per render — the picker is part of a long-lived HUD.
-type MarkerCat = "sound" | "movement" | "felt";
-const QUICK_TAGS: ReadonlyArray<{ label: string; category: MarkerCat }> = [
-  { label: "Cold spot",    category: "felt" },
-  { label: "Footstep",     category: "sound" },
-  { label: "Voice",        category: "sound" },
-  { label: "Object moved", category: "movement" },
-  { label: "Touched",      category: "felt" },
-];
-// Long-form category picker chips — same set as MARKER_CATEGORIES upstream
-// but module-scoped here so the picker JSX can map without re-declaring.
-const PICKER_CATEGORIES: ReadonlyArray<{ id: MarkerCat; label: string }> = [
-  { id: "sound",    label: "Sound" },
-  { id: "movement", label: "Movement" },
-  { id: "felt",     label: "Felt" },
-];
 // Viewport gestures:
 //   • long-press anywhere   → push-to-talk (ducks ITC mixer -18dB)
 //   • double-tap anywhere   → drop a moment marker into the audit chain
@@ -110,71 +107,6 @@ const PICKER_CATEGORIES: ReadonlyArray<{ id: MarkerCat; label: string }> = [
 // (rec > live > ready > idle) stays in CameraScreen where the broadcast /
 // session timers already live.
 type TopPillState = "rec" | "live" | "ready" | "idle";
-
-/**
- * Format the failing preflight checks for the watchdog toast. Prefers the
- * numeric `data` snapshot (e.g. "Battery 18%", "212 MB free") over the prose
- * `message` field — a glance-readable number sells the warning's urgency
- * better than a sentence the operator has to parse mid-hunt.
- */
-function formatWatchdogChecks(checks: readonly PreflightCheck[]): string {
-  const parts: string[] = [];
-  for (const c of checks) {
-    if (c.level === "ok") continue;
-    if (c.id === "battery" && c.data?.batteryLevel != null) {
-      const pct = Math.round(c.data.batteryLevel * 100);
-      parts.push(`Battery ${pct}%${c.data.batteryCharging ? " ⚡" : ""}`);
-    } else if (c.id === "storage" && c.data?.storageFreeBytes != null) {
-      const mb = Math.round(c.data.storageFreeBytes / (1024 * 1024));
-      parts.push(`${mb} MB free`);
-    } else if (c.id === "camera" || c.id === "mic") {
-      parts.push(`${c.id} ${c.data?.permission ?? "issue"}`);
-    } else {
-      parts.push(c.message);
-    }
-  }
-  return parts.join(" · ");
-}
-
-/** True when any failing check is the storage one — drives the install CTA. */
-function watchdogStorageWarn(report: PreflightReport): boolean {
-  return report.checks.some((c) => c.id === "storage" && c.level !== "ok");
-}
-
-/**
- * Filter suppressed-by-pref checks out of a watchdog report and recompute
- * the overall severity from what remains. Pre-start preflight never goes
- * through this — the operator's "stop nagging me" pref intentionally only
- * applies mid-session so they can't accidentally hide a battery failure at
- * the moment of starting a session.
- */
-function applyWatchdogSuppression(
-  report: PreflightReport,
-  suppress: { battery: boolean; storage: boolean },
-): PreflightReport {
-  if (!suppress.battery && !suppress.storage) return report;
-  const checks = report.checks.filter((c) =>
-    !((suppress.battery && c.id === "battery") || (suppress.storage && c.id === "storage")),
-  );
-  const overall: PreflightLevel = checks.some((c) => c.level === "block")
-    ? "block"
-    : checks.some((c) => c.level === "warn") ? "warn" : "ok";
-  return { overall, checks };
-}
-
-/** Ordinal formatter for the "Nth warning" counter — short forms that read
- *  cleanly inline. Used by the watchdog toast superscript chip. */
-function ordinal(n: number): string {
-  const mod100 = n % 100;
-  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
-  const mod10 = n % 10;
-  return `${n}${mod10 === 1 ? "st" : mod10 === 2 ? "nd" : mod10 === 3 ? "rd" : "th"}`;
-}
-
-// `mergeWatchdogReports` USED to keep the worst-severity check per id across
-// reports — but each preflight is already a full snapshot, so the new report
-// always contains current state for every active check. Merging just stalled
-// recovered checks at their stale warn level. Use the new report directly.
 
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -390,19 +322,17 @@ export function CameraScreen() {
   // captures `event.marker` per recordEvent's instrumentation.
   //
   // Throttle: rapid-fire taps (operator excited, hands shaky, accidental
-  // double-double-tap) within 600ms of the last marker get swallowed. The
-  // toast still extends so the operator sees their second tap "succeeded"
-  // visually — no marker dupes in the audit chain, no UI mystery.
-  const MARKER_THROTTLE_MS = 600;
+  // double-double-tap) within MARKER_THROTTLE_MS of the last marker get
+  // swallowed. The toast still extends so the operator sees their second
+  // tap "succeeded" visually — no marker dupes in the audit chain, no UI
+  // mystery.
   const [markerToastUntil, setMarkerToastUntil] = useState<number>(0);
   const lastMarkerTsRef = useRef<number>(0);
-  // Marker categories — three operator-affordable types for reviewers to
-  // filter by later in Review. The picker auto-commits as `null` (untagged)
-  // after MARKER_PICKER_MS so a fire-and-forget double-tap still lands a
-  // marker — categorisation is opt-in. NB: changing this set has no schema
-  // impact since metadata is opaque, but Review's filter chips lock to these.
-  type MarkerCategory = "sound" | "movement" | "felt" | null;
-  const MARKER_PICKER_MS = 2200;
+  // MarkerCategory + MARKER_PICKER_MS live in ./cameraScreen/constants. The
+  // picker auto-commits as `null` (untagged) after MARKER_PICKER_MS so a
+  // fire-and-forget double-tap still lands a marker — categorisation is
+  // opt-in. Changing the categories has no schema impact since metadata is
+  // opaque, but Review's filter chips lock to those three values.
   const [markerPicker, setMarkerPicker] = useState<{ until: number; committed: boolean } | null>(null);
   const markerCommittedRef = useRef(false);
   // Session-scoped marker tally — surfaced as a small pill on the camera HUD
@@ -640,9 +570,8 @@ export function CameraScreen() {
   //    Anti-pester: we only fire the toast once per degradation event by
   //    tracking the last-fired overall in a ref; staying degraded doesn't
   //    re-emit. Returning to OK doesn't fire either — it just resets the ref
-  //    so the next degradation event can fire.
-  const WATCHDOG_INTERVAL_MS = 60_000;
-  const WATCHDOG_TOAST_MS = 7000;
+  //    so the next degradation event can fire. Interval / toast lifetimes
+  //    live in ./cameraScreen/constants (WATCHDOG_INTERVAL_MS, _TOAST_MS).
   const [watchdog, setWatchdog] = useState<PreflightReport | null>(null);
   const lastWatchdogLevelRef = useRef<"ok" | "warn" | "block">("ok");
   // Track the set of failing check ids we've already toasted about so a new
@@ -660,14 +589,12 @@ export function CameraScreen() {
   // hint. Keeps the most recent 20 samples (~20 minutes at the 60s tick)
   // so the regression is a recent-trend estimate, not a session-average.
   const batterySamplesRef = useRef<BatterySample[]>([]);
-  const BATTERY_SAMPLE_BUFFER = 20;
   const [batteryProjectionMinutes, setBatteryProjectionMinutes] = useState<number | null>(null);
   // Sibling buffer for storage_free MB samples — same projection helper as
   // the battery path, just looking for "when does free hit 0 MB" instead.
   // Useful on long video sessions where the operator's already lost track
   // of how fast the disk's filling.
   const storageSamplesRef = useRef<{ value: number; ts: string }[]>([]);
-  const STORAGE_SAMPLE_BUFFER = 20;
   const [storageProjectionMinutes, setStorageProjectionMinutes] = useState<number | null>(null);
   // Latest battery/storage readings the watchdog observed — drives the
   // always-on device-state HUD chip. Stored as integers/booleans so React
@@ -730,7 +657,6 @@ export function CameraScreen() {
     return () => window.clearInterval(h);
   }, [watchdogSnoozeUntil]);
   void snoozeTick; // referenced only to satisfy lint; the value drives renders
-  const WATCHDOG_SNOOZE_MS = 10 * 60_000;
   // Suppresses watchdog ticks while the browser install prompt is on screen.
   // Without it, a 60s tick can fire mid-prompt and stack a fresh toast behind
   // the native dialog — confusing the operator when they dismiss the prompt
