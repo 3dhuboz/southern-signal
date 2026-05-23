@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { onRequestPost } from "./connect";
 
 type Context = Parameters<typeof onRequestPost>[0];
@@ -26,7 +27,7 @@ class MemD1Statement {
     this.values = values;
     return this;
   }
-  async run(): Promise<{ success: boolean }> {
+  async run(): Promise<{ success: boolean; meta?: { changes: number } }> {
     if (this.query.startsWith("DELETE FROM fb_live_connect_requests")) {
       return { success: true };
     }
@@ -42,8 +43,9 @@ class MemD1Statement {
           error_json: null,
           expires_at: expiresAt,
         });
+        return { success: true, meta: { changes: 1 } };
       }
-      return { success: true };
+      return { success: true, meta: { changes: 0 } };
     }
     if (this.query.includes("SET status = 'succeeded'")) {
       const [responseJson, _updatedAt, key] = this.values as [string, string, string];
@@ -113,13 +115,20 @@ function ctx(envObj: Env, req: Request): Context {
   };
 }
 
-function installFetchMock(): ReturnType<typeof vi.fn> {
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function installFetchMock(opts: { inputDelayMs?: number; failInputDetail?: string; failOutputDetail?: string } = {}): ReturnType<typeof vi.fn> {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (init?.method === "DELETE") return new Response("{}", { status: 200 });
     if (url.endsWith("/outputs")) {
+      if (opts.failOutputDetail) return new Response(opts.failOutputDetail, { status: 403 });
       return Response.json({ result: { uid: "output-1" } });
     }
+    if (opts.inputDelayMs) await delay(opts.inputDelayMs);
+    if (opts.failInputDetail) return new Response(opts.failInputDetail, { status: 403 });
     return Response.json({ result: { uid: "input-1", webRTC: { url: "https://customer.example/webrtc/publish" } } });
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -162,5 +171,31 @@ describe("/api/live/fb/connect idempotency", () => {
     const conflict = await onRequestPost(ctx(envObj, request({ fb_stream_key: "other-key" }, key)));
 
     expect(conflict.status).toBe(409);
+  });
+
+  it("does not create duplicate Stream resources for concurrent same-key requests", async () => {
+    const fetchMock = installFetchMock({ inputDelayMs: 20 });
+    const envObj = env();
+    const key = "connect-key-race-123";
+
+    const [first, second] = await Promise.all([
+      onRequestPost(ctx(envObj, request({ fb_stream_key: "fb-key" }, key))),
+      onRequestPost(ctx(envObj, request({ fb_stream_key: "fb-key" }, key))),
+    ]);
+
+    expect([first.status, second.status].sort()).toEqual([200, 409]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not leak raw Cloudflare error bodies to the browser", async () => {
+    installFetchMock({ failInputDetail: "streamKey=fb-secret-do-not-leak" });
+
+    const response = await onRequestPost(ctx(env(), request({ fb_stream_key: "fb-key" }, "connect-key-error-123")));
+    const text = await response.text();
+
+    expect(response.status).toBe(502);
+    expect(text).toContain("\"step\":\"live_inputs\"");
+    expect(text).not.toContain("fb-secret-do-not-leak");
+    expect(text).not.toContain("cf_detail");
   });
 });

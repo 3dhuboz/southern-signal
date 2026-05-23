@@ -100,7 +100,7 @@ export function readStoredWhipProvider(): WhipProviderKey {
 
 export function canPersistWhipUrl(provider: WhipProviderKey, url: string): boolean {
   if (!url.trim()) return false;
-  return provider === "cloudflare" || provider === "fb_live_via_cloudflare" || provider === "eyevinn";
+  return provider === "cloudflare" || provider === "eyevinn";
 }
 
 export function readStoredWhipUrl(provider: WhipProviderKey = readStoredWhipProvider()): string {

@@ -19,6 +19,7 @@
 
 import { readFile } from "../opfs";
 import { getPreferences } from "../preferences";
+import { signedMultipart, type MultipartPart } from "../ai/signedFetch";
 import { listDueForUpload, markDone, markFailed, markInFlight, recoverInFlight, getStats } from "./queue";
 import type { SyncItem, SyncStats, UploadItem, UploadResponse } from "./types";
 
@@ -43,13 +44,30 @@ interface SyncSettings {
   token: string | null;
 }
 
-function readSettings(): SyncSettings | null {
+type SyncSettingsResult = SyncSettings | { skippedReason: string };
+
+export function normaliseSameOriginEndpoint(endpoint: string): { endpoint: string } | { skippedReason: string } {
+  if (typeof location === "undefined") return { endpoint };
+  try {
+    const url = new URL(endpoint, location.origin);
+    if (url.origin !== location.origin) {
+      return { skippedReason: "sync endpoint must be same-origin" };
+    }
+    return { endpoint: `${url.pathname}${url.search}${url.hash}` };
+  } catch {
+    return { skippedReason: "sync endpoint URL is invalid" };
+  }
+}
+
+function readSettings(): SyncSettingsResult | null {
   const prefs = getPreferences();
   if (!prefs.sync?.enabled) return null;
   if (prefs.globalCulturalSensitivityFlag) return null;
   const endpoint = prefs.sync?.endpoint?.trim();
   if (!endpoint) return null;
-  return { endpoint, token: prefs.sync?.token ?? null };
+  const sameOrigin = normaliseSameOriginEndpoint(endpoint);
+  if ("skippedReason" in sameOrigin) return sameOrigin;
+  return { endpoint: sameOrigin.endpoint, token: prefs.sync?.token ?? null };
 }
 
 function isOnline(): boolean {
@@ -58,10 +76,10 @@ function isOnline(): boolean {
 }
 
 async function uploadBatch(items: SyncItem[], settings: SyncSettings): Promise<UploadResponse> {
-  // For media_blob items, we send multipart with file blobs; for everything
-  // else a JSON body is enough. To keep the wire format consistent we always
-  // POST multipart, with `items` as a JSON field and zero+ files attached.
-  const form = new FormData();
+  // For media_blob items, we send multipart with file blobs. Build the
+  // multipart bytes ourselves so the device signature covers the exact body
+  // the server receives.
+  const parts: MultipartPart[] = [];
   const wireItems: UploadItem[] = [];
 
   for (const item of items) {
@@ -72,7 +90,7 @@ async function uploadBatch(items: SyncItem[], settings: SyncSettings): Promise<U
         const file = await readFile(item.file_path);
         wire.byte_length = file.size;
         wire.r2_key = `media/${(payload.investigation_id as string) ?? "unknown"}/${item.ref_id}`;
-        form.append(`file:${item.ref_id}`, file, item.ref_id);
+        parts.push({ name: `file:${item.ref_id}`, blob: file, filename: item.ref_id });
       } catch (err) {
         // File is gone (deleted before sync). Treat as a soft fail — server
         // never sees it; client will mark this item failed with a clear msg.
@@ -83,11 +101,11 @@ async function uploadBatch(items: SyncItem[], settings: SyncSettings): Promise<U
     wireItems.push(wire);
   }
 
-  form.append("items", JSON.stringify(wireItems));
+  parts.unshift({ name: "items", value: JSON.stringify(wireItems) });
 
   const headers: Record<string, string> = {};
   if (settings.token) headers["Authorization"] = `Bearer ${settings.token}`;
-  const resp = await fetch(settings.endpoint, { method: "POST", headers, body: form });
+  const resp = await signedMultipart(settings.endpoint, parts, { headers });
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
     throw new Error(`HTTP ${resp.status}: ${text.slice(0, 200)}`);
@@ -100,6 +118,9 @@ async function runDrain(): Promise<DrainResult> {
   const settings = readSettings();
   if (!settings) {
     return { ranAt, attempted: 0, succeeded: 0, failed: 0, skippedReason: "sync disabled", stats: await getStats() };
+  }
+  if ("skippedReason" in settings) {
+    return { ranAt, attempted: 0, succeeded: 0, failed: 0, skippedReason: settings.skippedReason, stats: await getStats() };
   }
   if (!isOnline()) {
     return { ranAt, attempted: 0, succeeded: 0, failed: 0, skippedReason: "offline", stats: await getStats() };

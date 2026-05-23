@@ -35,7 +35,7 @@ describe("GET /api/health", () => {
     expect(body.features).toMatchObject({
       ai_research: { configured: false, has_model_key: false, rate_limit_kv: false },
       ai_transcribe: { configured: false, provider: "none", openrouter_audio_allowed: false },
-      sync: { configured: false, has_kv_token: false, has_d1: false, has_r2: false },
+      sync: { configured: false, has_kv_token: false, has_d1: false, has_r2: false, signed_auth_kv: false },
       radio_proxy: { ok: true },
       live_relay: { configured: false },
       fb_connector: {
@@ -100,22 +100,34 @@ describe("GET /api/health", () => {
     expect(body.features.ai_transcribe).toMatchObject({ configured: false, provider: "none" });
   });
 
-  it("reports sync configured ONLY when all three bindings (token + D1 + R2) are present", async () => {
+  it("reports sync configured ONLY when token, D1, R2, and signing KV are present", async () => {
     // Just the token isn't enough.
     let res = await onRequestGet(mkCtx({ SYNC_TOKEN: "secret" }));
-    let body = await res.json() as { features: { sync: { configured: boolean; has_kv_token: boolean; has_d1: boolean; has_r2: boolean } } };
+    let body = await res.json() as { features: { sync: { configured: boolean; has_kv_token: boolean; has_d1: boolean; has_r2: boolean; signed_auth_kv: boolean } } };
     expect(body.features.sync.configured).toBe(false);
     expect(body.features.sync.has_kv_token).toBe(true);
     expect(body.features.sync.has_d1).toBe(false);
 
-    // All three present.
+    // Token + D1 + R2 still isn't enough without the signing KV.
     res = await onRequestGet(mkCtx({
       SYNC_TOKEN: "secret",
       SYNC_DB: { prepare: () => null },
       MEDIA_BUCKET: { put: async () => undefined },
     }));
-    body = await res.json() as { features: { sync: { configured: boolean; has_kv_token: boolean; has_d1: boolean; has_r2: boolean } } };
+    body = await res.json() as { features: { sync: { configured: boolean; has_kv_token: boolean; has_d1: boolean; has_r2: boolean; signed_auth_kv: boolean } } };
+    expect(body.features.sync.configured).toBe(false);
+    expect(body.features.sync.signed_auth_kv).toBe(false);
+
+    // All four present.
+    res = await onRequestGet(mkCtx({
+      SYNC_TOKEN: "secret",
+      SYNC_DB: { prepare: () => null },
+      MEDIA_BUCKET: { put: async () => undefined },
+      AI_RATE_LIMIT: { get: () => null, put: async () => undefined },
+    }));
+    body = await res.json() as { features: { sync: { configured: boolean; has_kv_token: boolean; has_d1: boolean; has_r2: boolean; signed_auth_kv: boolean } } };
     expect(body.features.sync.configured).toBe(true);
+    expect(body.features.sync.signed_auth_kv).toBe(true);
   });
 
   it("reports live_relay configured ONLY when both token and endpoint are set", async () => {

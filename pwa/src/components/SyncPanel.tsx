@@ -19,6 +19,7 @@ interface RemoteStatus {
   has_token: boolean;
   has_d1: boolean;
   has_r2: boolean;
+  signed_auth_kv: boolean;
   counts?: Record<string, number>;
 }
 
@@ -157,8 +158,8 @@ export function SyncPanel() {
         <input
           id="sync-endpoint"
           className={st.input}
-          type="url"
-          placeholder="https://southern-signal.pages.dev/api/sync/upload"
+          type="text"
+          placeholder="/api/sync/upload"
           value={endpointDraft}
           onChange={(e) => setEndpointDraft(e.target.value)}
           spellCheck={false}
@@ -239,7 +240,7 @@ export function SyncPanel() {
 
       {prefs.sync.enabled && remote && (
         <p className={st.privacyNote}>
-          Server: {remote.configured ? "configured" : "missing bindings"} · D1 {remote.has_d1 ? "✓" : "✗"} · R2 {remote.has_r2 ? "✓" : "✗"} · Token {remote.has_token ? "✓" : "✗"}
+          Server: {remote.configured ? "configured" : "missing bindings"} · D1 {remote.has_d1 ? "✓" : "✗"} · R2 {remote.has_r2 ? "✓" : "✗"} · Token {remote.has_token ? "✓" : "✗"} · Signature KV {remote.signed_auth_kv ? "✓" : "✗"}
           {remote.counts && (
             <> · server rows: investigations={remote.counts.investigations} events={remote.counts.events} media={remote.counts.media} audit={remote.counts.audit}</>
           )}

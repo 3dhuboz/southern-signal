@@ -5,20 +5,25 @@
  *   items   : JSON-encoded array of UploadItem (kind, ref_id, payload, ...)
  *   file:<ref_id> : zero-or-more binary blobs for media_blob items
  *
- * Auth: Bearer token in Authorization header, compared against env.SYNC_TOKEN.
+ * Auth: Bearer token in Authorization header, compared against env.SYNC_TOKEN,
+ * plus the device Ed25519 signature used by /api/ai/*.
  * Storage:
  *   - rows  → D1 (env.SYNC_DB), idempotent via INSERT OR IGNORE
- *   - blobs → R2 (env.MEDIA_BUCKET) under key from item.r2_key
+ *   - blobs → R2 (env.MEDIA_BUCKET) under a server-derived media/<investigation>/<ref_id> key
  *
  * Returns 503 if bindings are missing so client can stay queued cleanly.
  */
 
 import { readLimitedFormData } from "../_body";
+import { authenticate, recordRequest, type AuthKVNamespace } from "../ai/_auth";
 
 interface Env {
   SYNC_TOKEN?: string;
   SYNC_DB?: D1Database;
   MEDIA_BUCKET?: R2Bucket;
+  AI_RATE_LIMIT?: AuthKVNamespace;
+  AI_RATE_LIMIT_SALT?: string;
+  AI_RELAY_ALLOWED_ORIGINS?: string;
 }
 
 interface PagesContext<E = unknown> {
@@ -70,7 +75,7 @@ function jsonResponse(body: unknown, status: number): Response {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, X-SS-Pubkey, X-SS-Timestamp, X-SS-Signature",
     },
   });
 }
@@ -80,7 +85,7 @@ export const onRequestOptions: PagesFn<Env> = async () => new Response(null, {
   headers: {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-SS-Pubkey, X-SS-Timestamp, X-SS-Signature",
     "Access-Control-Max-Age": "86400",
   },
 });
@@ -93,6 +98,50 @@ function authCheck(env: Env, request: Request): Response | null {
     return jsonResponse({ error: "Unauthorized." }, 401);
   }
   return null;
+}
+
+async function signedAuthCheck(env: Env, request: Request, bodyBytes: Uint8Array): Promise<{ response: Response } | { pubkeyHex: string }> {
+  if (!env.AI_RATE_LIMIT) {
+    return {
+      response: jsonResponse({
+        error: "Sync signing rate-limit binding missing",
+        detail: "Cloud sync requires the shared AI_RATE_LIMIT KV binding so device signatures can be registered and rate-limited.",
+      }, 503),
+    };
+  }
+
+  const auth = await authenticate(
+    request,
+    {
+      AI_RATE_LIMIT: env.AI_RATE_LIMIT,
+      AI_RATE_LIMIT_SALT: env.AI_RATE_LIMIT_SALT,
+      AI_RELAY_ALLOWED_ORIGINS: env.AI_RELAY_ALLOWED_ORIGINS,
+    },
+    { bodyBytes },
+  );
+
+  if (!auth.ok) {
+    if (auth.status === 401) {
+      return {
+        response: jsonResponse({
+          error: "Signed sync request required",
+          detail: "Cloud sync uploads must include X-SS-Pubkey, X-SS-Timestamp, and X-SS-Signature headers from this device.",
+        }, 401),
+      };
+    }
+    return { response: jsonResponse({ error: auth.error, detail: auth.detail }, auth.status) };
+  }
+
+  if (!auth.signed || !auth.pubkeyHex) {
+    return {
+      response: jsonResponse({
+        error: "Signed sync request required",
+        detail: "Cloud sync does not allow unsigned rollout mode.",
+      }, 401),
+    };
+  }
+
+  return { pubkeyHex: auth.pubkeyHex };
 }
 
 function bindingsCheck(env: Env): Response | null {
@@ -211,9 +260,23 @@ async function persistRow(db: D1Database, item: UploadItem): Promise<{ ok: true 
   }
 }
 
+function safeR2Segment(value: unknown, fallback: string): string {
+  const segment = String(value ?? "")
+    .trim()
+    .replace(/[^A-Za-z0-9_-]/g, "_")
+    .replace(/_+/g, "_")
+    .slice(0, 128);
+  return segment || fallback;
+}
+
+function mediaR2Key(item: UploadItem): string {
+  const investigation = safeR2Segment(item.payload.investigation_id, "unknown-investigation");
+  const ref = safeR2Segment(item.ref_id, "unknown-media");
+  return `media/${investigation}/${ref}`;
+}
+
 async function persistBlob(bucket: R2Bucket, db: D1Database, item: UploadItem, file: File | undefined): Promise<{ ok: true } | { ok: false; reason: string }> {
   if (!file) return { ok: false, reason: "no file attached for media_blob" };
-  if (!item.r2_key) return { ok: false, reason: "missing r2_key" };
   if (file.size > MAX_BODY_BYTES) return { ok: false, reason: "file too large" };
   if (typeof item.byte_length === "number" && item.byte_length > MAX_BODY_BYTES) {
     return { ok: false, reason: "declared byte_length too large" };
@@ -221,14 +284,15 @@ async function persistBlob(bucket: R2Bucket, db: D1Database, item: UploadItem, f
   const inv = String(item.payload.investigation_id ?? "");
   const mediaType = String(item.payload.media_type ?? "");
   const contentType = mediaType === "audio" ? "audio/wav" : mediaType === "image" ? "image/jpeg" : mediaType === "video" ? "video/webm" : "application/octet-stream";
+  const r2Key = mediaR2Key(item);
   try {
     const buf = await file.arrayBuffer();
-    await bucket.put(item.r2_key, buf, { httpMetadata: { contentType } });
+    await bucket.put(r2Key, buf, { httpMetadata: { contentType } });
     // Stamp the row with R2 key + uploaded_at + size, if the row exists.
     await db.prepare(
       `UPDATE media_assets SET r2_key = ?, byte_length = ?, uploaded_at = ?
        WHERE id = ? AND investigation_id = ?`,
-    ).bind(item.r2_key, buf.byteLength, new Date().toISOString(), item.ref_id, inv).run();
+    ).bind(r2Key, buf.byteLength, new Date().toISOString(), item.ref_id, inv).run();
     return { ok: true };
   } catch (err) {
     return { ok: false, reason: err instanceof Error ? err.message.slice(0, 200) : "r2 error" };
@@ -245,6 +309,9 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
   if (!formResult.ok) {
     return jsonResponse({ error: formResult.status === 413 ? "Upload too large" : formResult.error }, formResult.status);
   }
+  const signed = await signedAuthCheck(env, request, formResult.bytes);
+  if ("response" in signed) return signed.response;
+
   const form = formResult.formData;
   const itemsRaw = form.get("items");
   if (typeof itemsRaw !== "string") return jsonResponse({ error: "Missing items field" }, 400);
@@ -278,5 +345,6 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
   }
 
   const body: UploadResponse = { accepted, rejected };
+  await recordRequest({ AI_RATE_LIMIT: env.AI_RATE_LIMIT }, signed.pubkeyHex).catch(() => { /* best-effort rate counter */ });
   return jsonResponse(body, 200);
 };

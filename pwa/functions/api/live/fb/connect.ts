@@ -82,7 +82,7 @@ interface D1Database {
 
 interface D1PreparedStatement {
   bind(...values: unknown[]): D1PreparedStatement;
-  run(): Promise<{ success: boolean; error?: string }>;
+  run(): Promise<{ success: boolean; error?: string; meta?: { changes?: number } }>;
   first<T = Record<string, unknown>>(): Promise<T | null>;
 }
 
@@ -194,10 +194,10 @@ async function readIdempotencyRow(db: D1Database, key: string): Promise<Idempote
   ).bind(key).first<IdempotencyRow>();
 }
 
-async function reserveIdempotencyKey(db: D1Database, key: string, requestHash: string): Promise<void> {
+async function reserveIdempotencyKey(db: D1Database, key: string, requestHash: string): Promise<boolean> {
   const now = new Date();
   const expires = new Date(now.getTime() + IDEMPOTENCY_TTL_SECONDS * 1000);
-  await db.prepare(
+  const result = await db.prepare(
     `INSERT INTO fb_live_connect_requests (idempotency_key, request_hash, status, created_at, updated_at, expires_at)
      VALUES (?, ?, 'in_progress', ?, ?, ?)
      ON CONFLICT(idempotency_key) DO UPDATE SET
@@ -208,6 +208,8 @@ async function reserveIdempotencyKey(db: D1Database, key: string, requestHash: s
      WHERE fb_live_connect_requests.status = 'failed'
        AND fb_live_connect_requests.request_hash = excluded.request_hash`,
   ).bind(key, requestHash, now.toISOString(), now.toISOString(), expires.toISOString()).run();
+  if (typeof result.meta?.changes === "number") return result.meta.changes > 0;
+  return true;
 }
 
 async function markIdempotencySucceeded(db: D1Database, key: string, response: ConnectResponse): Promise<void> {
@@ -304,7 +306,20 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
       { "Retry-After": String(Math.round(rate.resetMs / 1000)), ...rateLimitHeaders(rate) },
     );
   }
-  await reserveIdempotencyKey(stateDb, idempotencyKey, requestHash);
+  const reserved = await reserveIdempotencyKey(stateDb, idempotencyKey, requestHash);
+  if (!reserved) {
+    const current = await readIdempotencyRow(stateDb, idempotencyKey);
+    if (current?.request_hash !== requestHash) {
+      return jsonResponse({ error: "Idempotency-Key was reused with a different Facebook connector payload." }, 409);
+    }
+    if (current.status === "succeeded" && current.response_json) {
+      return jsonResponse(JSON.parse(current.response_json) as ConnectResponse, 200, { "Idempotency-Replayed": "true" });
+    }
+    if (current.status === "in_progress") {
+      return jsonResponse({ error: "A Facebook connector request with this Idempotency-Key is already in progress." }, 409, { "Retry-After": "10" });
+    }
+    return jsonResponse({ error: "A Facebook connector request with this Idempotency-Key could not be reserved." }, 409);
+  }
 
   const cfHeaders: Record<string, string> = {
     "Authorization": `Bearer ${env.CF_STREAM_API_TOKEN}`,
@@ -321,12 +336,11 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
     }),
   });
   if (!inputResp.ok) {
-    const detail = await inputResp.text().catch(() => "");
     await markIdempotencyFailed(stateDb, idempotencyKey, { step: "live_inputs", status: inputResp.status }).catch(() => { /* ignore */ });
     return jsonResponse({
       error: `Cloudflare rejected live_inputs create (${inputResp.status}). Likely causes: API token lacks Stream:Edit, account has no Stream subscription, or wrong CF_ACCOUNT_ID.`,
       cf_status: inputResp.status,
-      cf_detail: detail.slice(0, 600),
+      step: "live_inputs",
     }, 502);
   }
   const inputJson = await inputResp.json() as { result?: { uid?: string; webRTC?: { url?: string } } };
@@ -348,7 +362,6 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
     }),
   });
   if (!outputResp.ok) {
-    const detail = await outputResp.text().catch(() => "");
     // Best-effort cleanup: delete the input we just made so the operator
     // doesn't accumulate orphaned inputs on their account.
     void fetch(`${CF_API}/accounts/${env.CF_ACCOUNT_ID}/stream/live_inputs/${inputUid}`, {
@@ -359,7 +372,7 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
     return jsonResponse({
       error: `Cloudflare rejected outputs create (${outputResp.status}). Live Input rolled back. Check that the Facebook stream key + URL are valid.`,
       cf_status: outputResp.status,
-      cf_detail: detail.slice(0, 600),
+      step: "outputs",
     }, 502);
   }
   const outputJson = await outputResp.json() as { result?: { uid?: string } };

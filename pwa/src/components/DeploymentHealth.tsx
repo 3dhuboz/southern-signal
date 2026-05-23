@@ -21,7 +21,7 @@ interface Health {
       provider: "groq" | "openai" | "openrouter" | "none";
       openrouter_audio_allowed: boolean;
     };
-    sync: { configured: boolean; has_kv_token: boolean; has_d1: boolean; has_r2: boolean };
+    sync: { configured: boolean; has_kv_token: boolean; has_d1: boolean; has_r2: boolean; signed_auth_kv: boolean };
     radio_proxy: { ok: boolean };
     live_relay: { configured: boolean };
     fb_connector: {
@@ -102,8 +102,9 @@ export function DeploymentHealth() {
               status.data.features.sync.has_kv_token ? "token ✓" : "token ✗",
               status.data.features.sync.has_d1 ? "D1 ✓" : "D1 ✗",
               status.data.features.sync.has_r2 ? "R2 ✓" : "R2 ✗",
+              status.data.features.sync.signed_auth_kv ? "signature KV ✓" : "signature KV ✗",
             ].join(" · ")}
-            envHint="SYNC_TOKEN + SYNC_DB (D1) + MEDIA_BUCKET (R2)"
+            envHint="SYNC_TOKEN + SYNC_DB (D1) + MEDIA_BUCKET (R2) + AI_RATE_LIMIT KV binding"
           />
           <FeatureRow
             label="Radio CORS proxy"

@@ -69,6 +69,14 @@ const CHANNEL_LABELS: Record<keyof OverlayChannels, { name: string; hint: string
   motionDetector:  { name: "PIR motion sense",   hint: "Fresnel dome + trigger LED — driven by accelerometer (not real PIR)" },
 };
 
+function clearFbConnectorSessionSecrets(): void {
+  try {
+    sessionStorage.removeItem(FB_STREAM_KEY_SESSION_KEY);
+    localStorage.removeItem(FB_STREAM_KEY_SESSION_KEY);
+    localStorage.removeItem(FB_CONNECT_TOKEN_LEGACY_KEY);
+  } catch { /* ignore */ }
+}
+
 const CHANNEL_KEYS = Object.keys(CHANNEL_LABELS) as Array<keyof OverlayChannels>;
 
 
@@ -887,24 +895,28 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
         },
         body: JSON.stringify({ fb_stream_key: fbStreamKey.trim() }),
       });
-      const data = await resp.json() as { whip_url?: string; error?: string; cf_detail?: string };
+      const data = await resp.json() as { whip_url?: string; error?: string; cf_status?: number; step?: string };
       if (!resp.ok || !data.whip_url) {
-        const detail = data.cf_detail ? ` · ${data.cf_detail}` : "";
+        const detail = data.step ? ` · step ${data.step}${data.cf_status ? ` (${data.cf_status})` : ""}` : "";
+        clearFbConnectorSessionSecrets();
+        fbConnectIdempotencyKeyRef.current = null;
+        setFbStreamKey("");
+        setFbConnectToken("");
         setFbConnectMsg(`Failed: ${data.error ?? `HTTP ${resp.status}`}${detail}`);
         return;
       }
       setWhipUrl(data.whip_url);
       saveWhipBroadcastConfig({ provider: whipProvider, url: data.whip_url, bearer: whipBearer });
       fbConnectIdempotencyKeyRef.current = null;
-      try {
-        sessionStorage.removeItem(FB_STREAM_KEY_SESSION_KEY);
-        localStorage.removeItem(FB_STREAM_KEY_SESSION_KEY);
-        localStorage.removeItem(FB_CONNECT_TOKEN_LEGACY_KEY);
-      } catch { /* ignore */ }
+      clearFbConnectorSessionSecrets();
       setFbStreamKey("");
       setFbConnectToken("");
       setFbConnectMsg("Connected — WHIP URL above is ready. Click Go live to start broadcasting to Facebook.");
     } catch (err) {
+      clearFbConnectorSessionSecrets();
+      fbConnectIdempotencyKeyRef.current = null;
+      setFbStreamKey("");
+      setFbConnectToken("");
       setFbConnectMsg(`Failed: ${(err as Error).message}`);
     } finally {
       setFbConnecting(false);

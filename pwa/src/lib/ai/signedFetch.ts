@@ -36,6 +36,15 @@ function bytesToHex(bytes: Uint8Array): string {
   return s;
 }
 
+function canonicalPathForTarget(target: string): string {
+  try {
+    const base = typeof location !== "undefined" ? location.origin : "https://southern-signal.local";
+    return new URL(target, base).pathname;
+  } catch {
+    return target;
+  }
+}
+
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", bytes as BufferSource);
   return bytesToHex(new Uint8Array(digest));
@@ -69,10 +78,10 @@ export async function signedFetch(
   // Build canonical envelope and sign.
   const { publicKeyHex } = await getOrCreateSigningKey();
   const bodyHashHex = await sha256Hex(body);
-  // Compute the path the server will see. We accept a relative path
-  // (typical: "/api/ai/chat") and skip URL parsing so dev / prod
-  // behaviour is identical.
-  const canonical = `${publicKeyHex.toLowerCase()}\n${method}\n${path}\n${timestamp}\n${bodyHashHex}`;
+  // Compute the path the server will see. AI calls usually pass a relative
+  // path, while operator-configured sync endpoints are commonly absolute.
+  const canonicalPath = canonicalPathForTarget(path);
+  const canonical = `${publicKeyHex.toLowerCase()}\n${method}\n${canonicalPath}\n${timestamp}\n${bodyHashHex}`;
   const sigBytes = await signBytes(new TextEncoder().encode(canonical));
   const signatureB64 = bytesToBase64(sigBytes);
 

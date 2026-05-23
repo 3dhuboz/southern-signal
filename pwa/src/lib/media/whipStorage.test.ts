@@ -53,6 +53,12 @@ describe("WHIP broadcast storage", () => {
     expect(localStorage.getItem(WHIP_URL_KEY)).toBe("https://customer.example/webrtc/publish");
   });
 
+  it("does not persist Facebook relay WHIP URLs beyond the current session", () => {
+    saveWhipBroadcastConfig({ provider: "fb_live_via_cloudflare", url: "https://customer.example/webrtc/publish", bearer: "" });
+    expect(sessionStorage.getItem(WHIP_URL_KEY)).toBe("https://customer.example/webrtc/publish");
+    expect(localStorage.getItem(WHIP_URL_KEY)).toBeNull();
+  });
+
   it("clears active-session and legacy Facebook connector secrets", () => {
     sessionStorage.setItem(FB_STREAM_KEY_SESSION_KEY, "fb-stream");
     localStorage.setItem(FB_STREAM_KEY_SESSION_KEY, "legacy-fb-stream");

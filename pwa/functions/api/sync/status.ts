@@ -1,7 +1,7 @@
 /**
  * Cloudflare Pages Function — GET /api/sync/status
  *
- * Reports whether the deployment has SYNC_TOKEN + bindings configured, plus
+ * Reports whether the deployment has SYNC_TOKEN + bindings + signing KV configured, plus
  * row counts in D1 (best-effort). Used by the client SyncPanel to confirm
  * the operator wired up the backend before showing "online" UI.
  *
@@ -12,6 +12,7 @@ interface Env {
   SYNC_TOKEN?: string;
   SYNC_DB?: D1Database;
   MEDIA_BUCKET?: R2Bucket;
+  AI_RATE_LIMIT?: unknown;
 }
 
 interface PagesContext<E = unknown> {
@@ -65,12 +66,13 @@ async function tryCount(db: D1Database, table: string): Promise<number> {
 }
 
 export const onRequestGet: PagesFn<Env> = async ({ env }) => {
-  const configured = !!env.SYNC_TOKEN && !!env.SYNC_DB && !!env.MEDIA_BUCKET;
+  const configured = !!env.SYNC_TOKEN && !!env.SYNC_DB && !!env.MEDIA_BUCKET && !!env.AI_RATE_LIMIT;
   const status: Record<string, unknown> = {
     configured,
     has_token: !!env.SYNC_TOKEN,
     has_d1: !!env.SYNC_DB,
     has_r2: !!env.MEDIA_BUCKET,
+    signed_auth_kv: !!env.AI_RATE_LIMIT,
   };
   if (env.SYNC_DB) {
     status.counts = {

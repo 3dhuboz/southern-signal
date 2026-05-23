@@ -41,7 +41,7 @@ export interface AppPreferences {
   /** Cloud sync (R2/D1) — opt-in. Disabled when the cultural-sensitivity flag is on. */
   sync: {
     enabled: boolean;
-    /** Full URL to the upload endpoint, e.g. https://southern-signal.pages.dev/api/sync/upload */
+    /** Same-origin upload endpoint, e.g. /api/sync/upload */
     endpoint: string;
     /** Bearer token (matches env.SYNC_TOKEN on the deployment). */
     token: string | null;

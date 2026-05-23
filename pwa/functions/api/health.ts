@@ -14,7 +14,7 @@
  *     features: {
  *       ai_research: { configured: boolean, has_model_key: boolean, model: string, rate_limit_kv: boolean },
  *       ai_transcribe: { configured: boolean, provider: "groq" | "openai" | "openrouter" | "none", openrouter_audio_allowed: boolean },
- *       sync: { configured: boolean, has_kv_token: boolean, has_d1: boolean, has_r2: boolean },
+ *       sync: { configured: boolean, has_kv_token: boolean, has_d1: boolean, has_r2: boolean, signed_auth_kv: boolean },
  *       radio_proxy: { ok: true },
  *       live_relay: { configured: boolean },
  *       fb_connector: { configured: boolean, has_token: boolean, has_account: boolean, has_stream_token: boolean, has_state_d1: boolean },
@@ -106,10 +106,11 @@ export const onRequestGet: PagesFn<Env> = async ({ env }) => {
         openrouter_audio_allowed: !!env.OPENROUTER_API_KEY && flagEnabled(env.ALLOW_OPENROUTER_AUDIO),
       },
       sync: {
-        configured: !!(env.SYNC_TOKEN && env.SYNC_DB && env.MEDIA_BUCKET),
+        configured: !!(env.SYNC_TOKEN && env.SYNC_DB && env.MEDIA_BUCKET && hasRateLimitKv),
         has_kv_token: !!env.SYNC_TOKEN,
         has_d1: !!env.SYNC_DB,
         has_r2: !!env.MEDIA_BUCKET,
+        signed_auth_kv: hasRateLimitKv,
       },
       radio_proxy: { ok: true },
       live_relay: {
