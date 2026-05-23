@@ -60,7 +60,7 @@ describe("enqueue · cultural-sensitivity gating", () => {
     expect(auditFn).not.toHaveBeenCalled();
   });
 
-  it("hard-blocks ALL non-audit enqueues when globalCulturalSensitivityFlag is on", async () => {
+  it("hard-blocks non-audit enqueues when globalCulturalSensitivityFlag is on and writes a local skip-audit", async () => {
     prefsFn.mockReturnValue({ globalCulturalSensitivityFlag: true });
     await enqueue({
       kind: "event",
@@ -75,26 +75,56 @@ describe("enqueue · cultural-sensitivity gating", () => {
     });
   });
 
-  it("audit-kind rows always enqueue, even when the global flag is on", async () => {
+  it("hard-blocks audit-kind rows when the global flag is on without recursive skip-audits", async () => {
     prefsFn.mockReturnValue({ globalCulturalSensitivityFlag: true });
     await enqueue({
       kind: "audit",
       ref_id: "audit-1",
       payload: { hash: "abc" },
     });
-    expect(execFn).toHaveBeenCalledTimes(1);
+    expect(execFn).not.toHaveBeenCalled();
     expect(auditFn).not.toHaveBeenCalled();
   });
 
-  it("audit-kind rows bypass the per-case gate too", async () => {
+  it("hard-blocks audit-kind rows for sensitive cases when payload_json exposes investigation_id", async () => {
     queryFn.mockResolvedValueOnce([{ culturally_sensitive: 1 }]);
     await enqueue({
       kind: "audit",
       ref_id: "audit-2",
-      payload: { investigation_id: "case-A", hash: "def" },
+      payload: {
+        kind: "evidence.event",
+        payload_json: JSON.stringify({ investigation_id: "case-A", event_type: "marker" }),
+        hash: "def",
+      },
+    });
+    expect(execFn).not.toHaveBeenCalled();
+    expect(queryFn).toHaveBeenCalledTimes(1);
+    expect(auditFn).not.toHaveBeenCalled();
+  });
+
+  it("hard-blocks investigation lifecycle audit rows for sensitive cases when payload_json uses id", async () => {
+    queryFn.mockResolvedValueOnce([{ culturally_sensitive: 1 }]);
+    await enqueue({
+      kind: "audit",
+      ref_id: "audit-3",
+      payload: {
+        kind: "investigation.stop",
+        payload_json: JSON.stringify({ id: "case-A", ended_at: "2026-05-23T00:00:00.000Z" }),
+        hash: "ghi",
+      },
+    });
+    expect(execFn).not.toHaveBeenCalled();
+    expect(queryFn).toHaveBeenCalledTimes(1);
+    expect(auditFn).not.toHaveBeenCalled();
+  });
+
+  it("enqueues audit-kind rows that are not tied to a sensitive case", async () => {
+    await enqueue({
+      kind: "audit",
+      ref_id: "audit-4",
+      payload: { kind: "acknowledgement.country", payload_json: JSON.stringify({ nation: "Yuggera" }) },
     });
     expect(execFn).toHaveBeenCalledTimes(1);
-    // Per-case lookup is short-circuited for audit rows.
     expect(queryFn).not.toHaveBeenCalled();
   });
 

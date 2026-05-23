@@ -149,7 +149,7 @@ interface LiveStreamViewProps {
    * camera permission prompt MUST originate in a user gesture; chaining the
    * open into Begin gives a one-tap flow.
    */
-  startCameraRef?: React.MutableRefObject<(() => Promise<void>) | null>;
+  startCameraRef?: React.MutableRefObject<(() => Promise<boolean>) | null>;
   /**
    * Exposes a synchronous "snap a small JPEG thumbnail of the current frame"
    * callback. CameraScreen wires it into `commitMarker` so every marker drop
@@ -375,11 +375,12 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
     setTorchOn(false);
   }, []);
 
-  const start = useCallback(async () => {
-    if (streamOn || busy) return;
+  const start = useCallback(async (): Promise<boolean> => {
+    if (streamOn) return true;
+    if (busy) return false;
     if (!navigator.mediaDevices?.getUserMedia) {
       setError("This browser doesn't expose a camera/mic API. HTTPS is required.");
-      return;
+      return false;
     }
     setBusy(true);
     setError(null);
@@ -388,6 +389,7 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
       sourceStreamRef.current = stream;
       detectTorchSupport(stream);
       setStreamOn(true);
+      return true;
     } catch (err) {
       const e = err as Error & { name?: string };
       // AbortError / SecurityError fire on Android Chrome when a system
@@ -403,6 +405,7 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
         : e.name === "SecurityError" ? "Camera/mic blocked by browser security. Ensure the site is loaded over HTTPS and that site permissions allow camera + microphone."
         : (e.message || "Camera unavailable");
       setError(msg);
+      return false;
     } finally {
       setBusy(false);
     }

@@ -215,7 +215,7 @@ export function CameraScreen() {
   const flipCameraRef   = useRef<(() => void) | null>(null);
   const torchToggleRef  = useRef<(() => void) | null>(null);
   const refocusRef      = useRef<(() => void) | null>(null);
-  const startCameraRef  = useRef<(() => Promise<void>) | null>(null);
+  const startCameraRef  = useRef<(() => Promise<boolean>) | null>(null);
   // Snap a small JPEG thumbnail of the active camera frame on marker drop.
   // LiveStreamView fills this in once the source <video> is decodable;
   // commitMarker reads it synchronously so the dataUrl can flow into the
@@ -1106,8 +1106,10 @@ export function CameraScreen() {
     // that just happened. iOS Safari especially is strict here: if we await
     // anything before getUserMedia, the user-activation flag may be consumed
     // and the camera permission request silently fails ("no permission dialog").
-    // We don't await this; LiveStreamView's `start` sets its own busy/error state.
-    void startCameraRef.current?.();
+    // We start it now but await the result later. That preserves the browser
+    // user-activation needed for the permission prompt while still refusing
+    // to create a running investigation if camera/mic never actually opens.
+    const cameraStartPromise = startCameraRef.current?.() ?? Promise.resolve(false);
     // Run pre-flight in parallel with the camera open. A blocking failure
     // (camera denied, storage full) surfaces a dialog the operator can
     // resolve before any session state is written. We capture the promise
@@ -1173,6 +1175,8 @@ export function CameraScreen() {
         // The modal is already up via the side-effect .then(); just bail.
         return;
       }
+      const cameraStarted = await cameraStartPromise;
+      if (!cameraStarted) return;
       const inv = await ensureTodayInvestigation();
       // First meaningful write (the investigation row) just landed —
       // ask now so the browser's heuristic sees the storage activity.

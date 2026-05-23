@@ -23,11 +23,10 @@ interface EnqueueInput {
 // ---------------------------------------------------------------------------
 // Per-case cultural-sensitivity gate (v3).
 //
-// When an investigation is flagged sensitive, NONE of its rows or media bytes
-// should leave the device. We check at enqueue() time so the row never even
-// lands in the queue. Audit-log entries (kind === "audit") are NEVER skipped
-// here — the audit chain integrity must hold regardless of sync state, and
-// audit payloads don't carry an investigation_id field anyway.
+// When an investigation is flagged sensitive, NONE of its rows, media bytes,
+// or audit metadata should leave the device. We check at enqueue() time so
+// the row never even lands in the queue. The local audit chain still records
+// the event; the queue mirror for that audit row is what gets suppressed.
 //
 // We cache investigation_id -> sensitive boolean for at most 30s so a burst
 // of enqueues during recording doesn't hammer the DB.
@@ -71,8 +70,28 @@ function extractInvestigationId(input: EnqueueInput): string | null {
     const id = input.payload.id;
     return typeof id === "string" ? id : null;
   }
+  if (input.kind === "audit") {
+    return extractInvestigationIdFromAuditPayload(input.payload);
+  }
   const ref = input.payload.investigation_id;
   return typeof ref === "string" ? ref : null;
+}
+
+function extractInvestigationIdFromAuditPayload(payload: Record<string, unknown>): string | null {
+  const payloadJson = payload.payload_json;
+  if (typeof payloadJson !== "string") return null;
+  try {
+    const auditPayload = JSON.parse(payloadJson) as Record<string, unknown>;
+    if (typeof auditPayload.investigation_id === "string") return auditPayload.investigation_id;
+
+    const auditKind = payload.kind;
+    if (typeof auditKind === "string" && auditKind.startsWith("investigation.")) {
+      return typeof auditPayload.id === "string" ? auditPayload.id : null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -107,8 +126,9 @@ async function logSkip(
   auditKind: "sync.skip_sensitive" | "sync.skip_global_sensitive" = "sync.skip_sensitive",
 ): Promise<void> {
   // Append a hash-chained audit entry recording the sync skip. The audit
-  // module re-enters enqueue() for its own kind="audit" row, but those are
-  // never gated (no investigation_id in payload) so there is no recursion.
+  // module re-enters enqueue() for its own kind="audit" row. Audit sync rows
+  // are now gated too, so enqueue() deliberately avoids calling logSkip for
+  // audit rows to prevent recursive skip-of-skip entries.
   if (!auditLogger) {
     console.warn(`[sync] audit logger not registered; cannot record ${auditKind}`);
     return;
@@ -129,28 +149,28 @@ async function logSkip(
 }
 
 export async function enqueue(input: EnqueueInput): Promise<void> {
-  // Audit-log entries always sync — chain integrity is non-negotiable.
-  if (input.kind !== "audit") {
-    // Global cultural-sensitivity flag: hard-block ALL non-audit enqueues so
-    // rows captured while the flag is on don't sneak out when it's later
-    // toggled off. SyncWorker also refuses to drain in this state, but
-    // stopping at enqueue keeps queue depth honest and matches the per-case
-    // contract below (rows never even land in the queue).
-    if (getPreferences().globalCulturalSensitivityFlag) {
-      const investigationId = extractInvestigationId(input) ?? "global_flag";
+  // Global cultural-sensitivity flag: hard-block ALL enqueues, including
+  // audit sync mirrors, so metadata captured while the flag is on cannot
+  // leave later when sync is re-enabled.
+  if (getPreferences().globalCulturalSensitivityFlag) {
+    const investigationId = extractInvestigationId(input) ?? "global_flag";
+    if (input.kind !== "audit") {
       await logSkip(input, investigationId, "sync.skip_global_sensitive");
+    }
+    return;
+  }
+
+  const investigationId = extractInvestigationId(input);
+  if (investigationId) {
+    const sensitive = await isSensitive(investigationId);
+    if (sensitive) {
+      if (input.kind !== "audit") {
+        await logSkip(input, investigationId);
+      }
       return;
     }
-
-    const investigationId = extractInvestigationId(input);
-    if (investigationId) {
-      const sensitive = await isSensitive(investigationId);
-      if (sensitive) {
-        await logSkip(input, investigationId);
-        return;
-      }
-    }
   }
+
   const ts = new Date().toISOString();
   await exec(
     `INSERT INTO sync_queue (kind, ref_id, payload_json, file_path, status, attempts, enqueued_at, next_attempt_at)
