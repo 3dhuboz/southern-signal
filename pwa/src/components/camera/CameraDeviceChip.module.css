@@ -21,6 +21,7 @@
   font-family: var(--font-mono);
   font-size: 10.5px;
   letter-spacing: 0.4px;
+  opacity: var(--ss-hud-opacity, 1);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   pointer-events: none;

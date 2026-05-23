@@ -138,6 +138,7 @@
   background: var(--chip-bg);
   border: 1px solid var(--chip-rim);
   border-radius: 12px;
+  opacity: var(--ss-hud-opacity, 1);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   padding: 4px 6px;

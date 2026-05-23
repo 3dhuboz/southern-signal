@@ -28,3 +28,7 @@ pwa/yarn.lock
 *.log
 .DS_Store
 Thumbs.db
+
+# Local Codex/agent scratch state
+/.codex/
+/.claude/worktrees/

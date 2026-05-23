@@ -19,6 +19,7 @@
   justify-self: start;
   position: relative;
   margin: 0 0 8px 12px;
+  opacity: var(--ss-hud-opacity, 1);
   pointer-events: auto;
 }
 
