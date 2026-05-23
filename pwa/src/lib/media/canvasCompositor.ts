@@ -42,14 +42,16 @@ import {
   type BroadcastClockSnapshot,
 } from "../../hooks/useBroadcastClock";
 // Phase C — meter sonification cues. The compositor's draw loop calls these
-// at the moment of trigger events (LED step / pulse). Each helper is a
-// no-op when Web Audio is unavailable or the AudioContext hasn't been
-// unlocked yet, so the compositor stays silent in tests / pre-unlock
-// states without throwing.
+// at the moment of trigger events (LED step / pulse / motion / galvo
+// deflection). Each helper is a no-op when Web Audio is unavailable or the
+// AudioContext hasn't been unlocked yet, so the compositor stays silent in
+// tests / pre-unlock states without throwing.
 import {
   clickRateHzFromZScore,
   playKiiClick,
   playRemPodPulse,
+  playMotionChirp,
+  playGalvoTick,
 } from "../audio/meterSonification";
 
 /**
@@ -350,8 +352,13 @@ interface FrameContext {
    * trigger fired (above-threshold delta). `lastMotionAtMs` drives the
    * trigger LED pulse over a 1 s decay window so the LED stays lit briefly
    * after motion stops — the same way a real PIR sensor latches its output.
+   *
+   * Phase C extends with `audioFiredMs` — the wall-clock time at which we
+   * last EMITTED the motion-chirp audio cue. Ensures a sustained shake
+   * produces one chirp/sec rather than a 30 Hz strobe of chirps every
+   * frame the delta crossed the threshold.
    */
-  motionDetector: { lastMag: number; lastMs: number; lastTriggerMs: number } | null;
+  motionDetector: { lastMag: number; lastMs: number; lastTriggerMs: number; audioFiredMs: number } | null;
   /**
    * Phase C — K-II Geiger click scheduler state. `nextClickMs` is the next
    * wall-clock time at which we should emit a click. Drawn frames check
@@ -366,6 +373,14 @@ interface FrameContext {
    * this field tracks audio firing only.
    */
   remPulseAudio: { lastFiredMs: number; lastAbove: boolean } | null;
+  /**
+   * Phase C — EMF galvanometer tick trigger. Tracks the previous frame's
+   * needle level (0..1) so we can detect "noticeable" needle-velocity
+   * steps (delta > 0.05 per frame ≈ visible movement on the meter face).
+   * A throttle window of 120 ms keeps the ticks from queuing up during a
+   * fast deflection.
+   */
+  galvoTickAudio: { lastFiredMs: number; lastLevel: number } | null;
 }
 
 /**
@@ -702,6 +717,7 @@ export function createCanvasCompositor(opts: CanvasCompositorOptions): CanvasCom
     motionDetector: null,
     kiiClicks: null,
     remPulseAudio: null,
+    galvoTickAudio: null,
   };
 
   // Context handle is also stable — getContext returns a cached instance, but
@@ -2219,6 +2235,25 @@ function drawEmfGalvanometer(
   const needleLevel = Math.max(0, Math.min(1, frame.galvoNeedleSmooth.value));
   const needleAngle = GALVO_REST_RAD + (GALVO_PEAK_RAD - GALVO_REST_RAD) * needleLevel;
 
+  // ── Phase C — galvanometer tick audio (soft thunk on needle deflection) ──
+  // Fire when the needle moves more than ~5% in either direction since the
+  // last tick. The 120 ms throttle prevents rapid back-and-forth wobble from
+  // firing a stream of ticks — one tick per visibly-noticeable movement.
+  if (!frame.galvoTickAudio) {
+    frame.galvoTickAudio = { lastFiredMs: 0, lastLevel: needleLevel };
+  } else {
+    const delta = Math.abs(needleLevel - frame.galvoTickAudio.lastLevel);
+    if (delta > 0.05 && (nowMs - frame.galvoTickAudio.lastFiredMs) >= 120) {
+      frame.galvoTickAudio.lastFiredMs = nowMs;
+      frame.galvoTickAudio.lastLevel = needleLevel;
+      playGalvoTick();
+    } else if (delta > 0.05) {
+      // Below the throttle window but still moving — update lastLevel so the
+      // next tick fires off the new position, not the pre-throttle one.
+      frame.galvoTickAudio.lastLevel = needleLevel;
+    }
+  }
+
   // Geometry — body anchored to the right edge with a 12 px margin. Stacks
   // under the REM Pod (88 px below K-II + 8 px gap below REM Pod = 144 px
   // below the K-II top).
@@ -2416,11 +2451,18 @@ function drawMotionDetector(
   const hasMag = typeof motionMag === "number" && Number.isFinite(motionMag);
   const mag = hasMag ? (motionMag as number) : 0;
   if (!frame.motionDetector) {
-    frame.motionDetector = { lastMag: mag, lastMs: nowMs, lastTriggerMs: 0 };
+    frame.motionDetector = { lastMag: mag, lastMs: nowMs, lastTriggerMs: 0, audioFiredMs: 0 };
   } else {
     const delta = Math.abs(mag - frame.motionDetector.lastMag);
     if (delta > MOTION_TRIGGER_DELTA) {
       frame.motionDetector.lastTriggerMs = nowMs;
+      // Audio cue: chirp once per latch window. Re-arms after the latch decays
+      // (1 s) so a sustained shake produces one chirp/sec rather than a 30 Hz
+      // strobe of chirps every frame the delta crossed the threshold.
+      if ((nowMs - frame.motionDetector.audioFiredMs) >= MOTION_TRIGGER_LATCH_MS) {
+        frame.motionDetector.audioFiredMs = nowMs;
+        playMotionChirp();
+      }
     }
     frame.motionDetector.lastMag = mag;
     frame.motionDetector.lastMs = nowMs;

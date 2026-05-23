@@ -20,6 +20,8 @@ import {
   clickRateHzFromZScore,
   playKiiClick,
   playRemPodPulse,
+  playMotionChirp,
+  playGalvoTick,
 } from "./meterSonification";
 import { __resetItcMixerForTests } from "./itcAudioMixer";
 import { closeAudioContext } from "./audioUnlock";
@@ -84,5 +86,17 @@ describe("meter sonification — no-AudioContext guards", () => {
     closeAudioContext();
     __resetItcMixerForTests();
     expect(() => playRemPodPulse()).not.toThrow();
+  });
+
+  it("playMotionChirp is a no-op when Web Audio is unavailable", () => {
+    closeAudioContext();
+    __resetItcMixerForTests();
+    expect(() => playMotionChirp()).not.toThrow();
+  });
+
+  it("playGalvoTick is a no-op when Web Audio is unavailable", () => {
+    closeAudioContext();
+    __resetItcMixerForTests();
+    expect(() => playGalvoTick()).not.toThrow();
   });
 });

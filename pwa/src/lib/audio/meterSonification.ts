@@ -27,8 +27,12 @@
  *
  *   - K-II Geiger:     poisson-style click stream, rate ∝ z-score
  *   - REM Pod warble:  one shot per rising-edge crossing of 2.5σ
+ *   - Motion chirp:    one shot per accel-magnitude delta trigger
+ *   - EMF galvo tick:  fired on noticeable needle-velocity threshold
  *
- * (Additional meters wire into this module in later commits.)
+ * Ovilus blips are emitted by `useOvilus.ts` itself via the existing
+ * `emitOvilusTone` helper in itcAudioMixer (not added here) — they're
+ * already aligned with the per-word cycle, no draw-loop wiring needed.
  *
  * State for the throttles lives on the FrameContext (see canvasCompositor.ts)
  * so each compositor instance keeps its own — no cross-talk between concurrent
@@ -40,6 +44,13 @@
  *   already calls this out).
  * - REM Pod warble: triggered by magnetometer z-score, not a real EM field
  *   threshold detector.
+ * - Motion chirp: triggered by accelerometer-magnitude delta, NOT a real
+ *   PIR sensor — same caveat the silkscreen carries.
+ * - EMF galvanometer tick: the same magnetometer z-score the K-II reads,
+ *   just visualised differently. The tick is a soft thunk that reads as
+ *   the analog meter's needle deflecting; lower timbre than the K-II so
+ *   the two meters reading the same signal don't sound like a single
+ *   doubled click.
  *
  * # Volume / mix philosophy
  *
@@ -159,6 +170,81 @@ export function playRemPodPulse(): void {
   osc.connect(env).connect(dest);
   osc.start(t0);
   osc.stop(t0 + dur + 0.05);
+  osc.onended = () => {
+    try { osc.disconnect(); } catch { /* ignore */ }
+    try { env.disconnect(); } catch { /* ignore */ }
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Motion detector chirp (rising sweep)
+//
+// Fires once per accelerometer-magnitude trigger crossing (drawMotionDetector
+// already detects this and latches its trigger LED for 1s). The sweep goes
+// 200 Hz → 800 Hz over 100 ms — opposite direction from the REM Pod's
+// descending sweep, so the two are audibly distinguishable.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function playMotionChirp(): void {
+  const ctx = getMixerAudioContext();
+  const dest = getMixerChannel("motion");
+  if (!ctx || !dest) return;
+  if (ctx.state === "suspended") void ctx.resume();
+
+  const dur = 0.10;
+  const t0 = ctx.currentTime;
+
+  const osc = ctx.createOscillator();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(200, t0);
+  osc.frequency.exponentialRampToValueAtTime(800, t0 + dur);
+
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(0, t0);
+  env.gain.linearRampToValueAtTime(0.7, t0 + 0.005);
+  env.gain.linearRampToValueAtTime(0,   t0 + dur);
+
+  osc.connect(env).connect(dest);
+  osc.start(t0);
+  osc.stop(t0 + dur + 0.02);
+  osc.onended = () => {
+    try { osc.disconnect(); } catch { /* ignore */ }
+    try { env.disconnect(); } catch { /* ignore */ }
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EMF galvanometer needle tick (analog soft thunk)
+//
+// Real galvanometers produce a faint mechanical sound as the needle deflects
+// — a soft low-pitched thunk. We emit one per noticeable needle-velocity
+// step. Lower timbre than the K-II clicks (so the two meters reading the
+// same magnetometer signal don't sound like a single doubled click).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function playGalvoTick(): void {
+  const ctx = getMixerAudioContext();
+  const dest = getMixerChannel("emfGalvo");
+  if (!ctx || !dest) return;
+  if (ctx.state === "suspended") void ctx.resume();
+
+  const dur = 0.04;
+  const t0 = ctx.currentTime;
+
+  // Triangle wave at 80 Hz gives the soft analog thunk. Higher harmonics are
+  // attenuated by the envelope so it doesn't compete with the Geiger clicks.
+  const osc = ctx.createOscillator();
+  osc.type = "triangle";
+  osc.frequency.value = 80;
+
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(0, t0);
+  env.gain.linearRampToValueAtTime(0.6, t0 + 0.003);
+  env.gain.linearRampToValueAtTime(0,   t0 + dur);
+
+  osc.connect(env).connect(dest);
+  osc.start(t0);
+  osc.stop(t0 + dur + 0.02);
   osc.onended = () => {
     try { osc.disconnect(); } catch { /* ignore */ }
     try { env.disconnect(); } catch { /* ignore */ }
