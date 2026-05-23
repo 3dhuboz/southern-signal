@@ -182,11 +182,11 @@ silently. Budget rationale lives in
 
 ## Deployment
 
-Cloudflare Pages. GitHub `master` is the release branch; the CI deploy step
-currently maps `master` pushes to Cloudflare branch `main` because the Pages
-project's Production branch is still configured as `main`. CI build = `npm run
-build`; output is `dist/`. Pages Functions live in `functions/` (proxy to
-OpenRouter for AI, R2 for media bytes, D1 for rows).
+Cloudflare Pages. GitHub `master` is the release branch and deploys to the
+Pages production branch `master`; do not remap it to `main`, which this Pages
+project treats as a preview alias. CI build = `npm run build`; output is
+`dist/`. Pages Functions live in `functions/` (proxy to OpenRouter for AI, R2
+for media bytes, D1 for rows).
 
 Required Pages environment variables:
 
