@@ -41,6 +41,16 @@ import {
   getBroadcastClockSnapshot,
   type BroadcastClockSnapshot,
 } from "../../hooks/useBroadcastClock";
+// Phase C — meter sonification cues. The compositor's draw loop calls these
+// at the moment of trigger events (LED step / pulse). Each helper is a
+// no-op when Web Audio is unavailable or the AudioContext hasn't been
+// unlocked yet, so the compositor stays silent in tests / pre-unlock
+// states without throwing.
+import {
+  clickRateHzFromZScore,
+  playKiiClick,
+  playRemPodPulse,
+} from "../audio/meterSonification";
 
 /**
  * Per-channel visibility toggles. Operator picks which channels show on
@@ -342,6 +352,20 @@ interface FrameContext {
    * after motion stops — the same way a real PIR sensor latches its output.
    */
   motionDetector: { lastMag: number; lastMs: number; lastTriggerMs: number } | null;
+  /**
+   * Phase C — K-II Geiger click scheduler state. `nextClickMs` is the next
+   * wall-clock time at which we should emit a click. Drawn frames check
+   * `nowMs >= nextClickMs`; if so emit and reschedule based on the current
+   * z-score-derived click rate. Independent per compositor instance.
+   */
+  kiiClicks: { nextClickMs: number } | null;
+  /**
+   * Phase C — REM Pod warble trigger. Tracks whether the previous frame
+   * was above the 2.5σ pulse trigger so rising-edge crossings emit exactly
+   * one warble. The existing `remPulse` state covers visual pulse timing;
+   * this field tracks audio firing only.
+   */
+  remPulseAudio: { lastFiredMs: number; lastAbove: boolean } | null;
 }
 
 /**
@@ -676,6 +700,8 @@ export function createCanvasCompositor(opts: CanvasCompositorOptions): CanvasCom
     vuNeedleSmooth: null,
     galvoNeedleSmooth: null,
     motionDetector: null,
+    kiiClicks: null,
+    remPulseAudio: null,
   };
 
   // Context handle is also stable — getContext returns a cached instance, but
@@ -1725,6 +1751,35 @@ function drawKiiMeter(
   // Round to the nearest LED; the smoother already prevents single-frame pops.
   const litCount = Math.max(0, Math.min(5, Math.round(frame.kiiSmooth.led)));
 
+  // ── Phase C — Geiger click sonification ──
+  // Schedule a click stream whose rate scales with the absolute z-score. We
+  // sample the rate, derive a "next click" timestamp, and fire when wall-clock
+  // catches up. Independent state per compositor instance means the recorder
+  // and WHIP streams don't double-tick.
+  if (!frame.kiiClicks) {
+    frame.kiiClicks = { nextClickMs: nowMs };
+  }
+  if (nowMs >= frame.kiiClicks.nextClickMs) {
+    const zAbs = (typeof emfZScore === "number" && Number.isFinite(emfZScore))
+      ? Math.abs(emfZScore as number)
+      : 0;
+    const rateHz = clickRateHzFromZScore(zAbs);
+    if (rateHz > 0) {
+      // Intensity 0..1 tracks the LED count so click timbre brightens with activity.
+      playKiiClick(Math.min(1, litCount / 5));
+      // Poisson-style interval: average period 1/rate, with ±25% jitter so the
+      // stream doesn't sound metronomic. Real Geiger detectors are exponential-
+      // distributed, but uniform ±25% reads "random enough" without needing a
+      // log-uniform sampler in the hot path.
+      const avgMs = 1000 / rateHz;
+      const jitter = 0.75 + Math.random() * 0.5;
+      frame.kiiClicks.nextClickMs = nowMs + avgMs * jitter;
+    } else {
+      // Quiet — recheck in 200 ms. Avoids spinning the schedule when z is 0.
+      frame.kiiClicks.nextClickMs = nowMs + 200;
+    }
+  }
+
   // Geometry — body anchored against the right edge with a 12 px margin.
   const bodyW = Math.round(KII_BODY_W * s);
   const bodyH = Math.round(KII_BODY_H * s);
@@ -1943,6 +1998,25 @@ function drawRemPod(
     // rising edge is detected correctly when it crosses 2.5σ again.
     frame.remPulse.lastZ = zAbs;
   }
+
+  // ── Phase C — REM Pod warble audio (one shot per rising edge of 2.5σ) ──
+  // The visual pulse state tracks ring expansion timing; here we track the
+  // edge crossing for the audio cue separately so the two can diverge if
+  // future visual tweaks add an animation lead-in. Re-arms once z drops below.
+  if (!frame.remPulseAudio) {
+    frame.remPulseAudio = { lastFiredMs: 0, lastAbove: false };
+  }
+  const above = hasZ && zAbs >= REM_PULSE_TRIGGER_Z;
+  if (above && !frame.remPulseAudio.lastAbove) {
+    // Rising-edge fire. The 600 ms minimum interval protects against a noisy
+    // signal that wobbles right at the threshold — without it a flicker
+    // around 2.5σ would chirp the warble repeatedly.
+    if ((nowMs - frame.remPulseAudio.lastFiredMs) >= REM_PULSE_MS) {
+      frame.remPulseAudio.lastFiredMs = nowMs;
+      playRemPodPulse();
+    }
+  }
+  frame.remPulseAudio.lastAbove = above;
 
   // Geometry — body anchored to the right edge, 12 px margin. Stacks under
   // the K-II (whose height is KII_BODY_H scaled) with an 8 px gap.
