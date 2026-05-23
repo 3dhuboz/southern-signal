@@ -40,7 +40,7 @@ function makeRefs(): Refs {
 }
 
 describe("<CameraDock />", () => {
-  it("renders Scenes + Markers in the left group", () => {
+  it("renders Scenes + HUD + Markers in the left group", () => {
     const refs = makeRefs();
     render(
       <CameraDock
@@ -51,13 +51,16 @@ describe("<CameraDock />", () => {
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={() => {}}
+        onHudOpen={() => {}}
         onMarkersOpen={() => {}}
         investigationId={null}
       />,
     );
     expect(screen.getByRole("button", { name: /open scene picker/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /open hud layout/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /open marker review/i })).toBeInTheDocument();
     expect(screen.getByText("Scenes")).toBeInTheDocument();
+    expect(screen.getByText("HUD")).toBeInTheDocument();
     expect(screen.getByText("Markers")).toBeInTheDocument();
   });
 
@@ -72,6 +75,7 @@ describe("<CameraDock />", () => {
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={() => {}}
+        onHudOpen={() => {}}
         onMarkersOpen={() => {}}
         investigationId={null}
       />,
@@ -99,6 +103,7 @@ describe("<CameraDock />", () => {
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={() => {}}
+        onHudOpen={() => {}}
         onMarkersOpen={() => {}}
         investigationId={null}
       />,
@@ -115,6 +120,7 @@ describe("<CameraDock />", () => {
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={() => {}}
+        onHudOpen={() => {}}
         onMarkersOpen={() => {}}
         investigationId={null}
       />,
@@ -134,6 +140,7 @@ describe("<CameraDock />", () => {
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={() => {}}
+        onHudOpen={() => {}}
         onMarkersOpen={() => {}}
         investigationId={null}
       />,
@@ -153,6 +160,7 @@ describe("<CameraDock />", () => {
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={() => {}}
+        onHudOpen={() => {}}
         onMarkersOpen={() => {}}
         investigationId={null}
       />,
@@ -168,6 +176,7 @@ describe("<CameraDock />", () => {
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={() => {}}
+        onHudOpen={() => {}}
         onMarkersOpen={() => {}}
         investigationId={null}
       />,
@@ -175,7 +184,7 @@ describe("<CameraDock />", () => {
     expect(screen.getByRole("button", { name: /turn torch on/i })).toBeInTheDocument();
   });
 
-  it("simplifiedDock=true hides the right group (Clip / Screen / Lens / Torch) AND the Markers button", () => {
+  it("simplifiedDock=true keeps HUD layout but hides the right group and Markers", () => {
     const refs = makeRefs();
     render(
       <CameraDock
@@ -186,11 +195,13 @@ describe("<CameraDock />", () => {
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={() => {}}
+        onHudOpen={() => {}}
         onMarkersOpen={() => {}}
         investigationId={null}
       />,
     );
     expect(screen.getByRole("button", { name: /open scene picker/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /open hud layout/i })).toBeInTheDocument();
     // Markers shortcut is gated on the right-group visibility — Vigil
     // wants chromeless framing, so it goes away with the rest.
     expect(screen.queryByRole("button", { name: /open marker review/i })).toBeNull();
@@ -214,12 +225,34 @@ describe("<CameraDock />", () => {
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={onScenesOpen}
+        onHudOpen={() => {}}
         onMarkersOpen={() => {}}
         investigationId={null}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /open scene picker/i }));
     expect(onScenesOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("clicking HUD invokes onHudOpen", () => {
+    const refs = makeRefs();
+    const onHudOpen = vi.fn();
+    render(
+      <CameraDock
+        simplifiedDock={false}
+        broadcastRecording={false}
+        cameraState={{ streamOn: true, facingMode: "environment", torchSupported: false, torchOn: false }}
+        recordToggleRef={refs.recordToggleRef}
+        flipCameraRef={refs.flipCameraRef}
+        torchToggleRef={refs.torchToggleRef}
+        onScenesOpen={() => {}}
+        onHudOpen={onHudOpen}
+        onMarkersOpen={() => {}}
+        investigationId={null}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /open hud layout/i }));
+    expect(onHudOpen).toHaveBeenCalledTimes(1);
   });
 
   it("clicking Markers invokes onMarkersOpen (navigation to review)", () => {
@@ -234,6 +267,7 @@ describe("<CameraDock />", () => {
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={() => {}}
+        onHudOpen={() => {}}
         onMarkersOpen={onMarkersOpen}
         investigationId={null}
       />,
@@ -255,6 +289,7 @@ describe("<CameraDock />", () => {
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={() => {}}
+        onHudOpen={() => {}}
         onMarkersOpen={() => {}}
         investigationId={null}
       />,
@@ -276,6 +311,7 @@ describe("<CameraDock />", () => {
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={() => {}}
+        onHudOpen={() => {}}
         onMarkersOpen={() => {}}
         investigationId={null}
       />,
@@ -297,6 +333,7 @@ describe("<CameraDock />", () => {
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={() => {}}
+        onHudOpen={() => {}}
         onMarkersOpen={() => {}}
         investigationId={null}
       />,
@@ -316,6 +353,7 @@ describe("<CameraDock />", () => {
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={() => {}}
+        onHudOpen={() => {}}
         onMarkersOpen={() => {}}
         investigationId={null}
       />,

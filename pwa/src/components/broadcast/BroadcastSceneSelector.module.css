@@ -9,9 +9,11 @@
 
 .chip {
   position: absolute;
-  top: calc(var(--s-12, 12px) + var(--safe-top, 0px));
-  right: calc(var(--s-12, 12px) + var(--safe-right, 0px));
-  display: inline-flex;
+  top: var(--ss-hud-scene-top, calc(var(--s-12, 12px) + var(--safe-top, 0px)));
+  right: var(--ss-hud-scene-right, calc(var(--s-12, 12px) + var(--safe-right, 0px)));
+  bottom: var(--ss-hud-scene-bottom, auto);
+  left: var(--ss-hud-scene-left, auto);
+  display: var(--ss-hud-scene-display, inline-flex);
   align-items: center;
   gap: 10px;
   height: 36px;
@@ -33,6 +35,8 @@
   appearance: none;
   cursor: pointer;
   z-index: 5;
+  opacity: var(--ss-hud-opacity, 1);
+  transform: var(--ss-hud-scene-transform, none);
   -webkit-user-select: none;
   user-select: none;
   transition: background 140ms ease-out, border-color 140ms ease-out, transform 80ms ease-out;
@@ -56,7 +60,7 @@
   background: var(--hud-glass-bg-strong);
   border-color: var(--hud-rim-strong);
 }
-.chip:active { transform: scale(0.97); }
+.chip:active { transform: var(--ss-hud-scene-transform, none) scale(0.97); }
 .chip:focus-visible {
   outline: 2px solid var(--signal, #5DF2C7);
   outline-offset: 3px;

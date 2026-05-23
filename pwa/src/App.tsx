@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef } from "react";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Navigate, Routes, Route, useLocation } from "react-router-dom";
 import { AcknowledgementGate } from "./components/AcknowledgementGate";
 import { OnboardingTour } from "./components/OnboardingTour";
 import { AppHeader } from "./components/AppHeader";
@@ -53,7 +53,7 @@ function RouteFallback() {
 }
 
 /**
- * AppHeader is suppressed on the `/` camera route — the camera surface
+ * AppHeader is suppressed on the camera routes — the camera surface
  * mimics the system camera (Snapchat / iPhone-camera) and floats its
  * own corner pills directly over the live video. Every secondary route
  * (Setup, EVP, Review, Lab, etc.) keeps the standard sticky header so
@@ -61,7 +61,7 @@ function RouteFallback() {
  */
 function ChromeHeader() {
   const location = useLocation();
-  if (location.pathname === "/") return null;
+  if (location.pathname === "/" || location.pathname === "/camera") return null;
   return <AppHeader />;
 }
 
@@ -144,7 +144,8 @@ export default function App() {
       <main id="ss-main-content" tabIndex={-1} aria-label="Primary content">
         <Suspense fallback={<RouteFallback />}>
           <Routes>
-            <Route path="/" element={<CameraScreen />} />
+            <Route path="/" element={<Navigate to="/camera" replace />} />
+            <Route path="/camera" element={<CameraScreen />} />
             <Route path="/hunt-setup" element={<HuntSetup />} />
             {/* MissionControl now lives at /lab — Pro / Lab view, demoted from
                 primary nav so the Camera screen is the entire default surface. */}

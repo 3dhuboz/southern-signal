@@ -12,10 +12,12 @@
   position: absolute;
   /* Above the shutter (88 px) + slim dock + bottom nav. Just below the
      mid-bottom mark so the slate stays in the lower-third proper. */
-  bottom: calc(var(--s-12, 12px) + var(--safe-bottom, 0px) + var(--bottom-nav-height, 64px) + 180px);
-  left: 50%;
+  top: var(--ss-hud-lower-third-top, auto);
+  right: var(--ss-hud-lower-third-right, auto);
+  bottom: var(--ss-hud-lower-third-bottom, calc(var(--s-12, 12px) + var(--safe-bottom, 0px) + var(--bottom-nav-height, 64px) + 180px));
+  left: var(--ss-hud-lower-third-left, 50%);
 
-  display: inline-flex;
+  display: var(--ss-hud-lower-third-display, inline-flex);
   flex-direction: column;
   align-items: center;
   gap: 4px;
@@ -42,18 +44,18 @@
 
   /* Animation: slide + fade. transform: translate combines horizontal
      centring (translateX(-50%)) with vertical slide (translateY). */
-  transform: translate(-50%, 16px);
+  transform: var(--ss-hud-lower-third-transform, translateX(-50%)) translateY(16px);
   opacity: 0;
   transition: transform 250ms ease-out, opacity 220ms ease-out;
 }
 
 .visible {
-  transform: translate(-50%, 0);
-  opacity: 1;
+  transform: var(--ss-hud-lower-third-transform, translateX(-50%)) translateY(0);
+  opacity: var(--ss-hud-opacity, 1);
 }
 
 .hidden {
-  transform: translate(-50%, 16px);
+  transform: var(--ss-hud-lower-third-transform, translateX(-50%)) translateY(16px);
   opacity: 0;
 }
 
@@ -109,11 +111,17 @@
 /* Reduced motion: instant opacity, no slide. */
 @media (prefers-reduced-motion: reduce) {
   .slate {
-    transform: translate(-50%, 0);
+    transform: var(--ss-hud-lower-third-transform, translateX(-50%)) translateY(0);
     transition: opacity 100ms linear;
   }
-  .hidden { opacity: 0; }
-  .visible { opacity: 1; }
+  .hidden {
+    transform: var(--ss-hud-lower-third-transform, translateX(-50%)) translateY(0);
+    opacity: 0;
+  }
+  .visible {
+    transform: var(--ss-hud-lower-third-transform, translateX(-50%)) translateY(0);
+    opacity: var(--ss-hud-opacity, 1);
+  }
 }
 
 /* Compact variant — phones. Tightens horizontal padding and brings the
@@ -124,7 +132,7 @@
     padding: 8px 16px 9px;
     min-width: 180px;
     max-width: 88vw;
-    bottom: calc(var(--s-12, 12px) + var(--safe-bottom, 0px) + var(--bottom-nav-height, 64px) + 168px);
+    bottom: var(--ss-hud-lower-third-bottom, calc(var(--s-12, 12px) + var(--safe-bottom, 0px) + var(--bottom-nav-height, 64px) + 168px));
   }
   .title { font-size: 14px; }
   .subtitle { font-size: 10.5px; gap: 6px; }

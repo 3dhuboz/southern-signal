@@ -63,6 +63,17 @@ function IconMarkers() {
   );
 }
 
+function IconHud() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
+      <rect x="4" y="5" width="16" height="14" rx="2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M8 9h8M8 15h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="10" cy="9" r="1.6" fill="currentColor" />
+      <circle cx="14" cy="15" r="1.6" fill="currentColor" />
+    </svg>
+  );
+}
+
 function IconRecord() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
@@ -114,6 +125,7 @@ export interface CameraDockProps {
   torchToggleRef: RefObject<(() => void) | null>;
   /** Opens the scene picker (parent owns SceneSheet state). */
   onScenesOpen: () => void;
+  onHudOpen: () => void;
   /** Navigates to /review — the marker review tab. */
   onMarkersOpen: () => void;
   /** Investigation id for the embedded ScreenRecordButton (so its
@@ -130,6 +142,7 @@ export function CameraDock({
   flipCameraRef,
   torchToggleRef,
   onScenesOpen,
+  onHudOpen,
   onMarkersOpen,
   investigationId,
 }: CameraDockProps) {
@@ -157,6 +170,17 @@ export function CameraDock({
             editor lives. The HUD pill above the shutter shows the
             session-scoped count; this button is the quick-jump
             affordance for after the session ends. */}
+        <button
+          type="button"
+          className={s.btn}
+          onClick={onHudOpen}
+          aria-label="Open HUD layout"
+          title="HUD layout"
+        >
+          <span className={s.icon} aria-hidden="true"><IconHud /></span>
+          <span className={s.label}>HUD</span>
+        </button>
+
         {!simplifiedDock && (
           <button
             type="button"

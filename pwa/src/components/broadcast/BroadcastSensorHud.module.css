@@ -14,10 +14,12 @@
 .hud {
   position: absolute;
   /* Sits below the BroadcastSceneSelector chip (44 px) + 8 px gap. */
-  top: calc(var(--s-12, 12px) + var(--safe-top, 0px) + 52px);
-  right: calc(var(--s-12, 12px) + var(--safe-right, 0px));
+  top: var(--ss-hud-sensors-top, calc(var(--s-12, 12px) + var(--safe-top, 0px) + 52px));
+  right: var(--ss-hud-sensors-right, calc(var(--s-12, 12px) + var(--safe-right, 0px)));
+  bottom: var(--ss-hud-sensors-bottom, auto);
+  left: var(--ss-hud-sensors-left, auto);
 
-  display: inline-flex;
+  display: var(--ss-hud-sensors-display, inline-flex);
   flex-direction: column;
   gap: 4px;
   min-width: 124px;
@@ -40,6 +42,8 @@
 
   z-index: 5;
   pointer-events: none;
+  opacity: var(--ss-hud-opacity, 1);
+  transform: var(--ss-hud-sensors-transform, none);
   -webkit-user-select: none;
   user-select: none;
 }

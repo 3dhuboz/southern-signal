@@ -22,7 +22,7 @@
  * a back-compat alias.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type CSSProperties, lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { LiveStreamView } from "../components/LiveStreamView";
 import { CameraNoVideoOverlay } from "../components/CameraNoVideoOverlay";
 import { EntertainmentOnlyLabel } from "../components/EntertainmentOnlyLabel";
@@ -70,6 +70,15 @@ import { setCurrent, setPermissionsGranted, useSession } from "../lib/session";
 import { usePreferences } from "../lib/preferences";
 import { useWakeLock } from "../lib/system/wakeLock";
 import type { OverlayChannels } from "../lib/media/canvasCompositor";
+import {
+  getOverlayProfile,
+  getViewportOverlayOrientation,
+  loadOverlayLayoutSettings,
+  saveOverlayLayoutSettings,
+  type OverlayLayoutOrientation,
+  type OverlayLayoutProfile,
+  type OverlayPlacement,
+} from "../lib/media/overlayLayout";
 import { resolveOverlaysFromScene } from "../lib/overlays/registry";
 import {
   BUILT_IN_SCENES,
@@ -110,6 +119,74 @@ type TopPillState = "rec" | "live" | "ready" | "idle";
 
 
 // ── Component ────────────────────────────────────────────────────────────────
+
+type HudStyleVars = CSSProperties & Record<string, string | number>;
+
+const DOM_LAYOUT_TARGETS = {
+  status: "status",
+  mic: "mic",
+  scene: "scene",
+  sensors: "sensors",
+  timecode: "timecode",
+  lowerThird: "lower-third",
+} as const;
+
+const CameraHudLayoutSheet = lazy(() =>
+  import("../components/camera/CameraHudLayoutSheet").then((mod) => ({
+    default: mod.CameraHudLayoutSheet,
+  })),
+);
+
+function px(value: number): string {
+  return `${Math.round(value)}px`;
+}
+
+function assignDomPlacement(
+  style: HudStyleVars,
+  prefix: string,
+  placement: OverlayPlacement,
+): void {
+  const [vertical, horizontal] = placement.anchor.split("-") as [
+    "top" | "middle" | "bottom",
+    "left" | "center" | "right",
+  ];
+  const x = px(placement.offsetX);
+  const y = px(placement.offsetY);
+
+  style[`--ss-hud-${prefix}-top`] =
+    vertical === "top" ? `calc(var(--safe-top, 0px) + ${y})`
+    : vertical === "middle" ? `calc(50% + ${y})`
+    : "auto";
+  style[`--ss-hud-${prefix}-bottom`] =
+    vertical === "bottom" ? `calc(var(--safe-bottom, 0px) + var(--bottom-nav-height, 64px) + ${y})`
+    : "auto";
+  style[`--ss-hud-${prefix}-left`] =
+    horizontal === "left" ? `calc(var(--safe-left, 0px) + ${x})`
+    : horizontal === "center" ? `calc(50% + ${x})`
+    : "auto";
+  style[`--ss-hud-${prefix}-right`] =
+    horizontal === "right" ? `calc(var(--safe-right, 0px) + ${x})`
+    : "auto";
+
+  const translateX = horizontal === "center" ? "-50%" : "0";
+  const translateY = vertical === "middle" ? "-50%" : "0";
+  style[`--ss-hud-${prefix}-transform`] = `translate(${translateX}, ${translateY})`;
+  style[`--ss-hud-${prefix}-display`] = placement.hidden ? "none" : "inline-flex";
+}
+
+function buildHudStyle(profile: OverlayLayoutProfile): HudStyleVars {
+  const style: HudStyleVars = {
+    "--ss-hud-opacity": profile.opacity,
+  };
+  for (const [target, prefix] of Object.entries(DOM_LAYOUT_TARGETS)) {
+    assignDomPlacement(
+      style,
+      prefix,
+      profile.placements[target as keyof typeof DOM_LAYOUT_TARGETS],
+    );
+  }
+  return style;
+}
 
 export function CameraScreen() {
   const session = useSession();
@@ -306,6 +383,33 @@ export function CameraScreen() {
   // The top-right pill opens this — replaces the navigate("/hunt-setup") jump
   // for in-session scene swaps so the operator never leaves the camera.
   const [sceneSheetOpen, setSceneSheetOpen] = useState(false);
+  const [hudLayoutOpen, setHudLayoutOpen] = useState(false);
+  const [hudLayoutSettings, setHudLayoutSettings] = useState(() => loadOverlayLayoutSettings());
+  const [hudOrientation, setHudOrientation] = useState<OverlayLayoutOrientation>(() => getViewportOverlayOrientation());
+  const [editingHudOrientation, setEditingHudOrientation] = useState<OverlayLayoutOrientation>(() => getViewportOverlayOrientation());
+  const activeHudLayout = getOverlayProfile(hudLayoutSettings, hudOrientation);
+  const hudLayoutStyle = buildHudStyle(activeHudLayout);
+
+  useEffect(() => {
+    const syncOrientation = () => setHudOrientation(getViewportOverlayOrientation());
+    syncOrientation();
+    window.addEventListener("resize", syncOrientation);
+    window.addEventListener("orientationchange", syncOrientation);
+    return () => {
+      window.removeEventListener("resize", syncOrientation);
+      window.removeEventListener("orientationchange", syncOrientation);
+    };
+  }, []);
+
+  const handleHudLayoutSettingsChange = useCallback((next: typeof hudLayoutSettings) => {
+    setHudLayoutSettings(next);
+    saveOverlayLayoutSettings(next);
+  }, []);
+
+  const openHudLayout = useCallback(() => {
+    setEditingHudOrientation(getViewportOverlayOrientation());
+    setHudLayoutOpen(true);
+  }, []);
 
   // ── Gesture handlers ─────────────────────────────────────────────────────
   // Long-press anywhere on the camera primes Push-To-Talk — ducks the ITC
@@ -1217,6 +1321,7 @@ export function CameraScreen() {
           isn't running. */}
       <div
         className={s.cameraWrap}
+        style={hudLayoutStyle}
         data-camera-state={cameraOpen.state}
         onPointerDown={composeHandlers(longPressProps.onPointerDown, doubleTapProps.onPointerDown, swipeProps.onPointerDown)}
         onPointerMove={swipeProps.onPointerMove}
@@ -1241,6 +1346,7 @@ export function CameraScreen() {
           emfZScore={sensors.emf?.z}
           externalChannels={channels}
           onExternalChannelChange={handleChannelChange}
+          overlayLayout={activeHudLayout}
           recordToggleRef={recordToggleRef}
           liveToggleRef={liveToggleRef}
           flipCameraRef={flipCameraRef}
@@ -1447,9 +1553,24 @@ export function CameraScreen() {
           flipCameraRef={flipCameraRef}
           torchToggleRef={torchToggleRef}
           onScenesOpen={() => setSceneSheetOpen(true)}
+          onHudOpen={openHudLayout}
           onMarkersOpen={() => navigate("/review")}
           investigationId={session.current?.id ?? null}
         />
+
+        {hudLayoutOpen && (
+          <Suspense fallback={null}>
+            <CameraHudLayoutSheet
+              open
+              settings={hudLayoutSettings}
+              editingOrientation={editingHudOrientation}
+              activeOrientation={hudOrientation}
+              onEditingOrientationChange={setEditingHudOrientation}
+              onSettingsChange={handleHudLayoutSettingsChange}
+              onClose={() => setHudLayoutOpen(false)}
+            />
+          </Suspense>
+        )}
       </div>
 
       {/* Bottom-sheet scene picker — owned by Worker C. Opens when the

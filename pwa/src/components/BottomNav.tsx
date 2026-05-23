@@ -15,7 +15,7 @@ type NavItem = {
 
 const items: NavItem[] = [
   {
-    to: "/",
+    to: "/camera",
     label: "Camera",
     icon: (
       /* Viewfinder ring + record dot — unmistakably "camera-first" */
@@ -192,7 +192,7 @@ export function BottomNav() {
         <NavLink
           key={item.to}
           to={item.to}
-          end={item.to === "/"}
+          end={item.to === "/camera"}
           className={({ isActive }) => (isActive ? `${styles.tab} ${styles.tabActive}` : styles.tab)}
         >
           <span className={styles.icon} aria-hidden="true">

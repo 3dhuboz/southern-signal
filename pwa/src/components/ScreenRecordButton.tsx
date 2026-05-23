@@ -141,7 +141,7 @@ export function ScreenRecordButton({ investigationId, classNames }: ScreenRecord
         >
           <span className={classNames.icon} aria-hidden="true"><IconScreenRec /></span>
           <span className={classNames.label}>
-            {state.status === "saving" ? "Save" : recording ? formatMs(state.durationSeconds) : "SCR"}
+            {state.status === "saving" ? "Save" : recording ? formatMs(state.durationSeconds) : "Screen"}
           </span>
         </button>
       ) : (

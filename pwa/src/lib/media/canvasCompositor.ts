@@ -41,6 +41,11 @@ import {
   getBroadcastClockSnapshot,
   type BroadcastClockSnapshot,
 } from "../../hooks/useBroadcastClock";
+import type {
+  OverlayLayoutProfile,
+  OverlayLayoutTarget,
+  OverlayPlacement,
+} from "./overlayLayout";
 // Phase C — meter sonification cues. The compositor's draw loop calls these
 // at the moment of trigger events (LED step / pulse / overload / motion /
 // galvo deflection). Each helper is a no-op when Web Audio is unavailable
@@ -201,6 +206,7 @@ export interface OverlayState {
   };
   /** Per-channel visibility. Undefined → all channels render (back-compat). */
   channels?: OverlayChannels;
+  layout?: OverlayLayoutProfile;
 }
 
 /**
@@ -234,6 +240,210 @@ function resolveChannels(overlay: OverlayState): OverlayChannels {
 }
 
 /** ITC channel max age — after this many ms the overlay drops the readout. */
+interface OverlayRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+function clampOverlayAlpha(profile: OverlayLayoutProfile | undefined): number {
+  const value = profile?.opacity;
+  if (typeof value !== "number" || !Number.isFinite(value)) return 1;
+  return Math.min(1, Math.max(0.25, value));
+}
+
+function resolvePlacementRect(
+  W: number,
+  H: number,
+  rect: OverlayRect,
+  placement: OverlayPlacement | undefined,
+  s: number,
+): OverlayRect {
+  if (!placement) return rect;
+  const margin = Math.round(12 * s);
+  const ox = typeof placement.offsetX === "number" && Number.isFinite(placement.offsetX)
+    ? placement.offsetX
+    : 0;
+  const oy = typeof placement.offsetY === "number" && Number.isFinite(placement.offsetY)
+    ? placement.offsetY
+    : 0;
+  const [vertical, horizontal] = placement.anchor.split("-") as [
+    "top" | "middle" | "bottom",
+    "left" | "center" | "right",
+  ];
+
+  const x =
+    horizontal === "left" ? margin + ox
+    : horizontal === "right" ? W - margin - rect.w - ox
+    : (W - rect.w) / 2 + ox;
+
+  const y =
+    vertical === "top" ? margin + oy
+    : vertical === "bottom" ? H - margin - rect.h - oy
+    : (H - rect.h) / 2 + oy;
+
+  return {
+    x: Math.round(Math.min(Math.max(x, margin), Math.max(margin, W - margin - rect.w))),
+    y: Math.round(Math.min(Math.max(y, margin), Math.max(margin, H - margin - rect.h))),
+    w: rect.w,
+    h: rect.h,
+  };
+}
+
+function drawLayoutTarget(
+  ctx: CanvasRenderingContext2D,
+  overlay: OverlayState,
+  target: OverlayLayoutTarget,
+  frame: FrameContext,
+  defaultRect: OverlayRect,
+  draw: () => void,
+): void {
+  const placement = overlay.layout?.placements[target];
+  if (placement?.hidden && target !== "status" && target !== "timestamp") return;
+  const desired = resolvePlacementRect(frame.W, frame.H, defaultRect, placement, frame.s);
+  const alpha = clampOverlayAlpha(overlay.layout);
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.translate(desired.x - defaultRect.x, desired.y - defaultRect.y);
+  draw();
+  ctx.restore();
+}
+
+function defaultStatusPillsRect(
+  ctx: CanvasRenderingContext2D,
+  overlay: OverlayState,
+  s: number,
+): OverlayRect {
+  const showOffline = overlay.recording && overlay.online === false;
+  const pillH = Math.round(24 * s);
+  const fontSize = Math.round(13 * s);
+  const dotR = Math.round(4 * s);
+  const padX = Math.round(8 * s);
+  const dotGap = Math.round(6 * s);
+  const rowGap = Math.round(6 * s);
+  const margin = Math.round(12 * s);
+  const labels: string[] = [];
+  if (overlay.recording) labels.push("REC  00:00:00");
+  if (overlay.liveStreaming) labels.push("LIVE  00:00:00");
+  if (showOffline) labels.push("OFFLINE");
+  if (labels.length === 0) labels.push("READY  00:00:00");
+  ctx.save();
+  ctx.font = `700 ${fontSize}px "JetBrains Mono", monospace`;
+  let widest = 0;
+  for (const label of labels) {
+    widest = Math.max(widest, padX + dotR * 2 + dotGap + ctx.measureText(label).width + padX);
+  }
+  ctx.restore();
+  return {
+    x: margin,
+    y: margin,
+    w: Math.ceil(widest),
+    h: labels.length * pillH + Math.max(0, labels.length - 1) * rowGap,
+  };
+}
+
+function defaultTopCenterPillsRect(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  overlay: OverlayState,
+  channels: OverlayChannels,
+  s: number,
+): OverlayRect {
+  const pillH = Math.round(28 * s);
+  const fontSize = Math.round(13 * s);
+  const padX = Math.round(10 * s);
+  const gap = Math.round(8 * s);
+  const topMargin = Math.round(12 * s);
+  const labels: string[] = [];
+  if (channels.activityPill) labels.push(overlay.activityLabel.toUpperCase());
+  if (channels.posteriorPill) labels.push(`P=${overlay.posterior.toFixed(2)}`);
+  if (labels.length === 0) labels.push("ACTIVITY");
+  ctx.save();
+  ctx.font = `700 ${fontSize}px "Space Grotesk", Inter, sans-serif`;
+  const widths = labels.map((label) => Math.max(Math.round(70 * s), ctx.measureText(label).width + padX * 2));
+  ctx.restore();
+  const totalW = widths.reduce((a, w) => a + w, 0) + gap * Math.max(0, widths.length - 1);
+  return {
+    x: Math.round((W - totalW) / 2),
+    y: topMargin,
+    w: Math.ceil(totalW),
+    h: pillH,
+  };
+}
+
+function defaultEvpRect(W: number, s: number): OverlayRect {
+  const margin = Math.round(12 * s);
+  const w = Math.round(190 * s);
+  const h = evpReservedHeight(s);
+  return { x: W - margin - w, y: margin, w, h };
+}
+
+function defaultSensorsRect(W: number, s: number): OverlayRect {
+  const bodyW = Math.round(LAB_PANEL_BODY_W * s);
+  const bodyH = Math.round(LAB_PANEL_BODY_H * s);
+  const margin = Math.round(12 * s);
+  return {
+    x: W - margin - bodyW,
+    y: margin + Math.round(evpReservedHeight(s)),
+    w: bodyW,
+    h: bodyH,
+  };
+}
+
+function defaultEmfStackRect(W: number, H: number, s: number): OverlayRect {
+  const margin = Math.round(12 * s);
+  const w = Math.round(Math.max(KII_BODY_W, REM_BODY_W, GALVO_BODY_W, MOTION_BODY_W) * s);
+  const h = Math.round((KII_BODY_H + 8 + REM_BODY_H + 8 + GALVO_BODY_H + 8 + MOTION_BODY_H) * s);
+  return {
+    x: W - margin - w,
+    y: Math.round(H * 0.30),
+    w,
+    h,
+  };
+}
+
+function defaultAudioStackRect(H: number, s: number): OverlayRect {
+  const margin = Math.round(12 * s);
+  return {
+    x: margin,
+    y: Math.round(H * 0.30),
+    w: Math.round(Math.max(VU_BODY_W, SPIRIT_LCD_BODY_W, OVILUS_LCD_BODY_W) * s),
+    h: Math.round((VU_BODY_H + 8 + SPIRIT_LCD_BODY_H + 8 + OVILUS_LCD_BODY_H) * s),
+  };
+}
+
+function defaultDirectionRect(W: number, H: number): OverlayRect {
+  const orbitR = Math.min(W, H) * 0.30;
+  return {
+    x: W / 2 - orbitR,
+    y: H / 2 - orbitR,
+    w: orbitR * 2,
+    h: orbitR * 2,
+  };
+}
+
+function defaultCaptionRect(W: number, H: number, s: number): OverlayRect {
+  const margin = Math.round(12 * s);
+  const bottomReserved = Math.round(48 * s);
+  const h = Math.round(60 * s);
+  const w = Math.round(W * 0.8);
+  return {
+    x: Math.round((W - w) / 2),
+    y: H - margin - bottomReserved - h,
+    w,
+    h,
+  };
+}
+
+function defaultTimestampRect(W: number, H: number, s: number): OverlayRect {
+  const fontSize = Math.round(15 * s);
+  const padY = Math.round(6 * s);
+  const margin = Math.round(12 * s);
+  const h = fontSize + padY * 2;
+  return { x: margin, y: H - margin - h, w: W - margin * 2, h };
+}
+
 const ITC_MAX_AGE_MS = 30_000;
 /** EVP transcripts get a longer window because they're rarer and meatier. */
 const ITC_EVP_MAX_AGE_MS = 120_000;
@@ -858,25 +1068,33 @@ function renderFrame(
 
   // 3. Status pills (REC / LIVE / OFFLINE) — top-left corner.
   if (channels.statusPills) {
-    drawStatusPills(ctx, W, H, overlay, s);
+    drawLayoutTarget(ctx, overlay, "status", frame, defaultStatusPillsRect(ctx, overlay, s), () => {
+      drawStatusPills(ctx, W, H, overlay, s);
+    });
   }
 
   // 3b. Posterior + Activity band pills — top-center, small. Pro/Lab only;
   //     the proOnly gating happens upstream in resolveOverlaysFromScene.
-  drawTopCenterPills(ctx, W, H, overlay, band, channels, s);
+  drawLayoutTarget(ctx, overlay, "activity", frame, defaultTopCenterPillsRect(ctx, W, overlay, channels, s), () => {
+    drawTopCenterPills(ctx, W, H, overlay, band, channels, s);
+  });
 
   // 3c. EVP transcript readout — top-right corner, sepia paper teletype frame.
   //     Spirit Box + Ovilus moved to dedicated LCDs in A.2, so this widget
   //     is EVP-only now. Toggling the `itc` channel still gates it.
   if (channels.itc) {
-    drawEvpReadout(ctx, W, H, overlay, band, s, frame);
+    drawLayoutTarget(ctx, overlay, "evp", frame, defaultEvpRect(W, s), () => {
+      drawEvpReadout(ctx, W, H, overlay, band, s, frame);
+    });
   }
 
   // 3d. Sensors lab panel — rack-mount anodized steel faceplate with four
   //     mini-LCD rows, tucked under the EVP block in the top-right column so
   //     the data column stays unified on one edge.
   if (channels.sensors) {
-    drawSensorsLabPanel(ctx, W, H, overlay, band, s, frame);
+    drawLayoutTarget(ctx, overlay, "sensors", frame, defaultSensorsRect(W, s), () => {
+      drawSensorsLabPanel(ctx, W, H, overlay, band, s, frame);
+    });
   }
 
   // 4. Right-edge vertical instrument stack — skeuomorphic gear meters.
@@ -887,18 +1105,26 @@ function renderFrame(
   //    glance. Top anchor is shared; each meter owns its own height.
   const meterTopY = Math.round(H * 0.30);
   if (channels.kiiMeter) {
-    drawKiiMeter(ctx, W, overlay.activityBand, overlay.emfZScore, s, meterTopY, frame);
+    drawLayoutTarget(ctx, overlay, "emfStack", frame, defaultEmfStackRect(W, H, s), () => {
+      drawKiiMeter(ctx, W, overlay.activityBand, overlay.emfZScore, s, meterTopY, frame);
+    });
   }
   if (channels.remPod) {
-    drawRemPod(ctx, W, overlay.activityBand, overlay.emfZScore, s, meterTopY, frame);
+    drawLayoutTarget(ctx, overlay, "emfStack", frame, defaultEmfStackRect(W, H, s), () => {
+      drawRemPod(ctx, W, overlay.activityBand, overlay.emfZScore, s, meterTopY, frame);
+    });
   }
   if (channels.emfGalvanometer) {
-    drawEmfGalvanometer(ctx, W, overlay.emfZScore, s, meterTopY, frame);
+    drawLayoutTarget(ctx, overlay, "emfStack", frame, defaultEmfStackRect(W, H, s), () => {
+      drawEmfGalvanometer(ctx, W, overlay.emfZScore, s, meterTopY, frame);
+    });
   }
 
   // 5. VU audio meter — left edge, vintage analog look.
   if (channels.audioMeter) {
-    drawVuMeter(ctx, W, H, overlay.audioRms, s, frame);
+    drawLayoutTarget(ctx, overlay, "audioStack", frame, defaultAudioStackRect(H, s), () => {
+      drawVuMeter(ctx, W, H, overlay.audioRms, s, frame);
+    });
   }
 
   // 5b. Spirit Box amber LCD — left edge, stacked below the VU meter.
@@ -907,14 +1133,18 @@ function renderFrame(
   //     (drawEvpReadout, top-right) do not share data sources — Spirit Box
   //     phonemes never appear in the EVP transcript box.
   if (channels.itc) {
-    drawSpiritBoxLcd(ctx, H, overlay.itc?.spiritBox, s, frame);
+    drawLayoutTarget(ctx, overlay, "audioStack", frame, defaultAudioStackRect(H, s), () => {
+      drawSpiritBoxLcd(ctx, H, overlay.itc?.spiritBox, s, frame);
+    });
   }
 
   // 5c. Ovilus green dot-matrix LCD — left edge, stacked below the Spirit Box.
   //     Shows the word-of-the-moment + a magnetometer-seeded entropy bar so
   //     the operator can see the dictionary RNG state visually.
   if (channels.itc) {
-    drawOvilusLcd(ctx, H, overlay.itc?.ovilus, overlay.sensors?.magnetometer, s, frame);
+    drawLayoutTarget(ctx, overlay, "audioStack", frame, defaultAudioStackRect(H, s), () => {
+      drawOvilusLcd(ctx, H, overlay.itc?.ovilus, overlay.sensors?.magnetometer, s, frame);
+    });
   }
 
   // 5d. PIR motion detector — Fresnel-lens dome + trigger LED, anchored to
@@ -924,17 +1154,25 @@ function renderFrame(
   //     0.5 m/s^2 delta and latches the LED for 1 s before decaying back
   //     to idle — same way a real PIR pulses its output on motion.
   if (channels.motionDetector) {
-    drawMotionDetector(ctx, W, H, overlay.sensors?.motion, s, frame);
+    drawLayoutTarget(ctx, overlay, "emfStack", frame, defaultEmfStackRect(W, H, s), () => {
+      drawMotionDetector(ctx, W, H, overlay.sensors?.motion, s, frame);
+    });
   }
 
   // 6. Direction arrow (only if sector + coherence are valid).
   if (channels.directionArrow && overlay.sector && overlay.coherence >= 0.5) {
-    drawDirectionArrow(ctx, W, H, overlay.sector, overlay.coherence, band);
+    const sector = overlay.sector;
+    drawLayoutTarget(ctx, overlay, "direction", frame, defaultDirectionRect(W, H), () => {
+      drawDirectionArrow(ctx, W, H, sector, overlay.coherence, band);
+    });
   }
 
   // 7. Bottom caption strip (AI co-investigator) — above timestamp row.
   if (channels.caption && overlay.caption) {
-    drawCaption(ctx, W, H, overlay.caption, s);
+    const caption = overlay.caption;
+    drawLayoutTarget(ctx, overlay, "caption", frame, defaultCaptionRect(W, H, s), () => {
+      drawCaption(ctx, W, H, caption, s);
+    });
   }
 
   // 8 + 9. Case ID (bottom-left) + Timestamp (bottom-right). Both consume the
@@ -957,8 +1195,10 @@ function renderFrame(
     // Case ID drawn first so the bottom-right timestamp can still occlude on
     // overlap if anyone ever cranks the case-id font up — chain-of-custody
     // (the timestamp) is forensic-mandatory and must always read last.
-    drawCaseId(ctx, W, H, overlay, clock, s);
-    drawTimestamp(ctx, W, H, overlay, clock, s);
+    drawLayoutTarget(ctx, overlay, "timestamp", frame, defaultTimestampRect(W, H, s), () => {
+      drawCaseId(ctx, W, H, overlay, clock, s);
+      drawTimestamp(ctx, W, H, overlay, clock, s);
+    });
   }
 }
 

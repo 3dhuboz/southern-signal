@@ -33,6 +33,7 @@ import { getItcChannels } from "../lib/itc/itcChannels";
 import { getItcMixer } from "../lib/audio/itcAudioMixer";
 import { usePreferences } from "../lib/preferences";
 import { loadOverlayChannels, saveOverlayChannels } from "../lib/media/overlayChannelStorage";
+import type { OverlayLayoutProfile } from "../lib/media/overlayLayout";
 import {
   WHIP_URL_KEY, WHIP_BEARER_KEY, WHIP_PROVIDER_KEY,
   WHIP_PROVIDERS,
@@ -98,6 +99,8 @@ interface LiveStreamViewProps {
    */
   externalChannels?: OverlayChannels;
   onExternalChannelChange?: (key: keyof OverlayChannels, value: boolean) => void;
+  /** Layout/opacity profile for burned-in overlay widgets. */
+  overlayLayout?: OverlayLayoutProfile;
   /**
    * Fullscreen camera-first mode. Removes card chrome (border, padding,
    * border-radius, header), makes the stage fill its container with flex: 1
@@ -181,7 +184,7 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
   const {
     investigationId, running, posterior, audioRms, sector, coherence, caseId, caseTitle, caption,
     lightLux, magnetometerUt, motionMs2, temperatureC, emfZScore, onStateChange,
-    externalChannels, onExternalChannelChange, fullscreen,
+    externalChannels, onExternalChannelChange, overlayLayout, fullscreen,
     recordToggleRef, liveToggleRef, onCameraState,
     flipCameraRef, startCameraRef, torchToggleRef, refocusRef, onSourceStream,
     snapThumbnailRef,
@@ -338,7 +341,8 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
     overlay.emfZScore = (typeof emfZScore === "number" && Number.isFinite(emfZScore)) ? emfZScore : undefined;
     overlay.sensors = hasAnySensor ? sensors : undefined;
     overlay.channels = activeChannels;
-  }, [posterior, audioRms, sector, coherence, caseId, caseTitle, caption, recording, liveOn, online, recordingStartedAt, liveStartedAt, lightLux, magnetometerUt, motionMs2, temperatureC, emfZScore, activeChannels]);
+    overlay.layout = overlayLayout;
+  }, [posterior, audioRms, sector, coherence, caseId, caseTitle, caption, recording, liveOn, online, recordingStartedAt, liveStartedAt, lightLux, magnetometerUt, motionMs2, temperatureC, emfZScore, activeChannels, overlayLayout]);
 
   const openCamera = useCallback(async (mode: "environment" | "user"): Promise<MediaStream> => {
     try {
