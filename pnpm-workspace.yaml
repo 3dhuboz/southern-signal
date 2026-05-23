@@ -1,0 +1,11 @@
+# Stops pnpm 10.x from walking up the directory tree and finding an unrelated
+# workspace file in the user's home directory, which would otherwise silently
+# install deps into ~/node_modules instead of ./pwa/node_modules. See Phase B
+# PR #7 for the original diagnosis.
+#
+# We list `pwa` (and `pi-hub` for symmetry) so that running `pnpm install` from
+# the repo root, or from `pwa/`, finds a real workspace project here rather
+# than failing with "no projects found".
+packages:
+  - 'pwa'
+  - 'pi-hub'
