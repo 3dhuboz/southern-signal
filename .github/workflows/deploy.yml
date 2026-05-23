@@ -77,9 +77,18 @@ jobs:
           cache: "pnpm"
           cache-dependency-path: pwa/pnpm-lock.yaml
 
+      # `--ignore-workspace` is intentional. The repo has a pnpm-workspace.yaml
+      # at root (added in Phase C to stop pnpm 10.x on Windows from walking up
+      # the directory tree and finding an unrelated workspace file in the
+      # user's home dir — see PR #8 / commit f69942a). Linux CI doesn't have
+      # the home-dir-collision problem, but it DOES need the install to use
+      # pwa/pnpm-lock.yaml rather than a root-level lockfile (which isn't
+      # committed). Passing --ignore-workspace tells pnpm to treat pwa as a
+      # standalone package, just like the dev workflow before the workspace
+      # file existed.
       - name: Install dependencies
         working-directory: pwa
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-workspace
 
       # Lint is now a hard gate on every trigger — including push to dev /
       # master. The earlier `continue-on-error: push` carve-out existed

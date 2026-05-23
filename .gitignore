@@ -18,6 +18,13 @@ pwa/.audit-tmp/
 pwa/package-lock.json
 pwa/yarn.lock
 
+# Repo-root pnpm artifacts. The empty pnpm-workspace.yaml at root exists
+# only to interrupt pnpm 10.x's upward directory walk on Windows (so it
+# doesn't find an unrelated workspace in the user's home dir). The real
+# lock + node_modules live at pwa/pnpm-lock.yaml + pwa/node_modules/.
+/node_modules/
+/pnpm-lock.yaml
+
 *.log
 .DS_Store
 Thumbs.db

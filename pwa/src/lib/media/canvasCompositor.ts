@@ -41,6 +41,19 @@ import {
   getBroadcastClockSnapshot,
   type BroadcastClockSnapshot,
 } from "../../hooks/useBroadcastClock";
+// Phase C — meter sonification cues. The compositor's draw loop calls these
+// at the moment of trigger events (LED step / pulse / overload / motion /
+// galvo deflection). Each helper is a no-op when Web Audio is unavailable
+// or the AudioContext hasn't been unlocked yet, so the compositor stays
+// silent in tests / pre-unlock states without throwing.
+import {
+  clickRateHzFromZScore,
+  playKiiClick,
+  playRemPodPulse,
+  playMotionChirp,
+  playGalvoTick,
+  playVuOverloadChirp,
+} from "../audio/meterSonification";
 
 /**
  * Per-channel visibility toggles. Operator picks which channels show on
@@ -340,8 +353,42 @@ interface FrameContext {
    * trigger fired (above-threshold delta). `lastMotionAtMs` drives the
    * trigger LED pulse over a 1 s decay window so the LED stays lit briefly
    * after motion stops — the same way a real PIR sensor latches its output.
+   *
+   * Phase C extends with `audioFiredMs` — the wall-clock time at which we
+   * last EMITTED the motion-chirp audio cue. Ensures a sustained shake
+   * produces one chirp/sec rather than a 30 Hz strobe of chirps every
+   * frame the delta crossed the threshold.
    */
-  motionDetector: { lastMag: number; lastMs: number; lastTriggerMs: number } | null;
+  motionDetector: { lastMag: number; lastMs: number; lastTriggerMs: number; audioFiredMs: number } | null;
+  /**
+   * Phase C — K-II Geiger click scheduler state. `nextClickMs` is the next
+   * wall-clock time at which we should emit a click. Drawn frames check
+   * `nowMs >= nextClickMs`; if so emit and reschedule based on the current
+   * z-score-derived click rate. Independent per compositor instance.
+   */
+  kiiClicks: { nextClickMs: number } | null;
+  /**
+   * Phase C — REM Pod warble trigger. Tracks whether the previous frame
+   * was above the 2.5σ pulse trigger so rising-edge crossings emit exactly
+   * one warble. The existing `remPulse` state covers visual pulse timing;
+   * this field tracks audio firing only.
+   */
+  remPulseAudio: { lastFiredMs: number; lastAbove: boolean } | null;
+  /**
+   * Phase C — EMF galvanometer tick trigger. Tracks the previous frame's
+   * needle level (0..1) so we can detect "noticeable" needle-velocity
+   * steps (delta > 0.05 per frame ≈ visible movement on the meter face).
+   * A throttle window of 120 ms keeps the ticks from queuing up during a
+   * fast deflection.
+   */
+  galvoTickAudio: { lastFiredMs: number; lastLevel: number } | null;
+  /**
+   * Phase C — VU overload chirp trigger. Tracks rising-edge crossings of
+   * the VU_OVERLOAD_LEVEL boundary. Same shape as `remPulseAudio` — one
+   * chirp per crossing, then mute until the level drops below the
+   * threshold again.
+   */
+  vuOverloadAudio: { lastFiredMs: number; lastAbove: boolean } | null;
 }
 
 /**
@@ -676,6 +723,10 @@ export function createCanvasCompositor(opts: CanvasCompositorOptions): CanvasCom
     vuNeedleSmooth: null,
     galvoNeedleSmooth: null,
     motionDetector: null,
+    kiiClicks: null,
+    remPulseAudio: null,
+    galvoTickAudio: null,
+    vuOverloadAudio: null,
   };
 
   // Context handle is also stable — getContext returns a cached instance, but
@@ -1725,6 +1776,35 @@ function drawKiiMeter(
   // Round to the nearest LED; the smoother already prevents single-frame pops.
   const litCount = Math.max(0, Math.min(5, Math.round(frame.kiiSmooth.led)));
 
+  // ── Phase C — Geiger click sonification ──
+  // Schedule a click stream whose rate scales with the absolute z-score. We
+  // sample the rate, derive a "next click" timestamp, and fire when wall-clock
+  // catches up. Independent state per compositor instance means the recorder
+  // and WHIP streams don't double-tick.
+  if (!frame.kiiClicks) {
+    frame.kiiClicks = { nextClickMs: nowMs };
+  }
+  if (nowMs >= frame.kiiClicks.nextClickMs) {
+    const zAbs = (typeof emfZScore === "number" && Number.isFinite(emfZScore))
+      ? Math.abs(emfZScore as number)
+      : 0;
+    const rateHz = clickRateHzFromZScore(zAbs);
+    if (rateHz > 0) {
+      // Intensity 0..1 tracks the LED count so click timbre brightens with activity.
+      playKiiClick(Math.min(1, litCount / 5));
+      // Poisson-style interval: average period 1/rate, with ±25% jitter so the
+      // stream doesn't sound metronomic. Real Geiger detectors are exponential-
+      // distributed, but uniform ±25% reads "random enough" without needing a
+      // log-uniform sampler in the hot path.
+      const avgMs = 1000 / rateHz;
+      const jitter = 0.75 + Math.random() * 0.5;
+      frame.kiiClicks.nextClickMs = nowMs + avgMs * jitter;
+    } else {
+      // Quiet — recheck in 200 ms. Avoids spinning the schedule when z is 0.
+      frame.kiiClicks.nextClickMs = nowMs + 200;
+    }
+  }
+
   // Geometry — body anchored against the right edge with a 12 px margin.
   const bodyW = Math.round(KII_BODY_W * s);
   const bodyH = Math.round(KII_BODY_H * s);
@@ -1944,6 +2024,25 @@ function drawRemPod(
     frame.remPulse.lastZ = zAbs;
   }
 
+  // ── Phase C — REM Pod warble audio (one shot per rising edge of 2.5σ) ──
+  // The visual pulse state tracks ring expansion timing; here we track the
+  // edge crossing for the audio cue separately so the two can diverge if
+  // future visual tweaks add an animation lead-in. Re-arms once z drops below.
+  if (!frame.remPulseAudio) {
+    frame.remPulseAudio = { lastFiredMs: 0, lastAbove: false };
+  }
+  const above = hasZ && zAbs >= REM_PULSE_TRIGGER_Z;
+  if (above && !frame.remPulseAudio.lastAbove) {
+    // Rising-edge fire. The 600 ms minimum interval protects against a noisy
+    // signal that wobbles right at the threshold — without it a flicker
+    // around 2.5σ would chirp the warble repeatedly.
+    if ((nowMs - frame.remPulseAudio.lastFiredMs) >= REM_PULSE_MS) {
+      frame.remPulseAudio.lastFiredMs = nowMs;
+      playRemPodPulse();
+    }
+  }
+  frame.remPulseAudio.lastAbove = above;
+
   // Geometry — body anchored to the right edge, 12 px margin. Stacks under
   // the K-II (whose height is KII_BODY_H scaled) with an 8 px gap.
   const bodyW = Math.round(REM_BODY_W * s);
@@ -2145,6 +2244,25 @@ function drawEmfGalvanometer(
   const needleLevel = Math.max(0, Math.min(1, frame.galvoNeedleSmooth.value));
   const needleAngle = GALVO_REST_RAD + (GALVO_PEAK_RAD - GALVO_REST_RAD) * needleLevel;
 
+  // ── Phase C — galvanometer tick audio (soft thunk on needle deflection) ──
+  // Fire when the needle moves more than ~5% in either direction since the
+  // last tick. The 120 ms throttle prevents rapid back-and-forth wobble from
+  // firing a stream of ticks — one tick per visibly-noticeable movement.
+  if (!frame.galvoTickAudio) {
+    frame.galvoTickAudio = { lastFiredMs: 0, lastLevel: needleLevel };
+  } else {
+    const delta = Math.abs(needleLevel - frame.galvoTickAudio.lastLevel);
+    if (delta > 0.05 && (nowMs - frame.galvoTickAudio.lastFiredMs) >= 120) {
+      frame.galvoTickAudio.lastFiredMs = nowMs;
+      frame.galvoTickAudio.lastLevel = needleLevel;
+      playGalvoTick();
+    } else if (delta > 0.05) {
+      // Below the throttle window but still moving — update lastLevel so the
+      // next tick fires off the new position, not the pre-throttle one.
+      frame.galvoTickAudio.lastLevel = needleLevel;
+    }
+  }
+
   // Geometry — body anchored to the right edge with a 12 px margin. Stacks
   // under the REM Pod (88 px below K-II + 8 px gap below REM Pod = 144 px
   // below the K-II top).
@@ -2342,11 +2460,18 @@ function drawMotionDetector(
   const hasMag = typeof motionMag === "number" && Number.isFinite(motionMag);
   const mag = hasMag ? (motionMag as number) : 0;
   if (!frame.motionDetector) {
-    frame.motionDetector = { lastMag: mag, lastMs: nowMs, lastTriggerMs: 0 };
+    frame.motionDetector = { lastMag: mag, lastMs: nowMs, lastTriggerMs: 0, audioFiredMs: 0 };
   } else {
     const delta = Math.abs(mag - frame.motionDetector.lastMag);
     if (delta > MOTION_TRIGGER_DELTA) {
       frame.motionDetector.lastTriggerMs = nowMs;
+      // Audio cue: chirp once per latch window. Re-arms after the latch decays
+      // (1 s) so a sustained shake produces one chirp/sec rather than a 30 Hz
+      // strobe of chirps every frame the delta crossed the threshold.
+      if ((nowMs - frame.motionDetector.audioFiredMs) >= MOTION_TRIGGER_LATCH_MS) {
+        frame.motionDetector.audioFiredMs = nowMs;
+        playMotionChirp();
+      }
     }
     frame.motionDetector.lastMag = mag;
     frame.motionDetector.lastMs = nowMs;
@@ -2536,6 +2661,23 @@ function drawVuMeter(
   }
   const needleLevel = Math.max(0, Math.min(1, frame.vuNeedleSmooth.value));
   const needleAngle = VU_NEEDLE_REST_RAD + (VU_NEEDLE_PEAK_RAD - VU_NEEDLE_REST_RAD) * needleLevel;
+
+  // ── Phase C — VU overload chirp (rising-edge crossing of -3 dBFS) ──
+  // The needle's smoothed visual level is what we check, not the raw RMS —
+  // that matches the operator's intuition ("the needle just went into the
+  // red"). Throttle of 250 ms keeps a sustained loud signal from sounding
+  // like a stream of clicks.
+  if (!frame.vuOverloadAudio) {
+    frame.vuOverloadAudio = { lastFiredMs: 0, lastAbove: false };
+  }
+  const overloadAbove = needleLevel >= VU_OVERLOAD_LEVEL;
+  if (overloadAbove && !frame.vuOverloadAudio.lastAbove) {
+    if ((nowMs - frame.vuOverloadAudio.lastFiredMs) >= 250) {
+      frame.vuOverloadAudio.lastFiredMs = nowMs;
+      playVuOverloadChirp();
+    }
+  }
+  frame.vuOverloadAudio.lastAbove = overloadAbove;
 
   // Geometry — body anchored to the left edge with a 12 px margin.
   const bodyW = Math.round(VU_BODY_W * s);
