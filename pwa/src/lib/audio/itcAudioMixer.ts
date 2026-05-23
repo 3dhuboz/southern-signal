@@ -20,7 +20,7 @@
  * extra context wastes a hardware audio path and risks re-tripping the
  * autoplay policy).
  *
- * # Phase C — meter sonification
+ * # Phase C — meter sonification + recording-bus parity guarantee
  *
  * Originally the mixer only routed two ITC tool sources (Spirit Box + Ovilus).
  * Phase C widens it to every sonified meter — K-II, REM Pod, VU overload,
@@ -32,6 +32,28 @@
  * trigger event happens (LED count change, REM pulse, motion delta, VU
  * overload). Throttling lives in the draw functions (edge detect + minimum
  * interval) so the mixer just plays whatever gets handed to it.
+ *
+ * ## Parity guarantee
+ *
+ * The `MediaStream` returned by `getStream()` is added to the outgoing track
+ * set inside `LiveStreamView`, which is then passed to BOTH:
+ *
+ *   1. `MediaRecorder` — produces the saved MP4/WebM file. Burned into the
+ *      forensic chain (timestamp + case ID overlays); the audio it captures
+ *      includes the mixer's mixed track. So every sonified meter cue lands
+ *      in the recording.
+ *   2. `startWhipSession({ stream })` — WebRTC WHIP ingest to YouTube /
+ *      Twitch / Cloudflare Stream. Same outgoing MediaStream, so the WHIP
+ *      audio track is the SAME composite. Every cue lands in the
+ *      livestream too.
+ *
+ * That parity is structural — there's only one mixer destination and only
+ * one outgoing stream. If a future change ever routes a meter cue to
+ * `ctx.destination` directly (skipping the mixer), the cue would be heard
+ * locally but NOT recorded NOT live-streamed. That's a regression. The
+ * itcAudioMixer.test.ts parity test catches it by asserting every channel
+ * id is reachable through `getMixerChannel()` and connected to the
+ * MediaStreamAudioDestinationNode.
  */
 
 import { peekAudioContext, unlockAudio } from "./audioUnlock";
