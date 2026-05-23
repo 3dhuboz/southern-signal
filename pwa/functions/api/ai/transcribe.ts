@@ -29,6 +29,7 @@
  */
 
 import { authenticate, recordRequest, type AuthEnv } from "./_auth";
+import { readLimitedBytes } from "../_body";
 
 interface Env extends AuthEnv {
   GROQ_API_KEY?: string;
@@ -139,15 +140,14 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
     }, 503);
   }
 
-  const contentLength = parseInt(request.headers.get("content-length") ?? "0", 10);
-  if (contentLength > MAX_AUDIO_BYTES) {
-    return jsonResponse({ error: `Audio over the ${(MAX_AUDIO_BYTES / 1_000_000) | 0} MB cap.` }, 413);
-  }
-
   // Read raw bytes once so authentication can hash them. Then replay the
   // bytes into a fresh Request so FormData has something to parse —
   // Workers Request bodies are single-use.
-  const bodyBytes = new Uint8Array(await request.arrayBuffer());
+  const bodyResult = await readLimitedBytes(request, MAX_AUDIO_BYTES);
+  if (!bodyResult.ok) {
+    return jsonResponse({ error: bodyResult.status === 413 ? `Audio over the ${(MAX_AUDIO_BYTES / 1_000_000) | 0} MB cap.` : bodyResult.error }, bodyResult.status);
+  }
+  const bodyBytes = bodyResult.bytes;
   const auth = await authenticate(request, env, { bodyBytes });
   if (!auth.ok) {
     return jsonResponse({ error: auth.error, detail: auth.detail }, auth.status);

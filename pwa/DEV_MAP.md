@@ -650,6 +650,7 @@ Before updating module-level state, check for equality and return early. Prevent
 | `WHIP_RELAY_ENDPOINT` | Pre-configured WHIP ingest URL (optional) |
 | `WHIP_RELAY_TOKEN` | Bearer token for WHIP relay (optional) |
 | `FB_CONNECT_TOKEN` | Facebook live connector bearer token |
+| `FB_CONNECT_STATE` | D1 binding for Facebook live connector idempotency |
 | `COMMUNITY_DB` | D1 binding name for community map database |
 | `PERPLEXITY_API_KEY` | Sonar Pro for Research view (incident/heritage search) |
 

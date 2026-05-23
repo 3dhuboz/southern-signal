@@ -13,6 +13,8 @@
  * Returns 503 if bindings are missing so client can stay queued cleanly.
  */
 
+import { readLimitedFormData } from "../_body";
+
 interface Env {
   SYNC_TOKEN?: string;
   SYNC_DB?: D1Database;
@@ -212,6 +214,10 @@ async function persistRow(db: D1Database, item: UploadItem): Promise<{ ok: true 
 async function persistBlob(bucket: R2Bucket, db: D1Database, item: UploadItem, file: File | undefined): Promise<{ ok: true } | { ok: false; reason: string }> {
   if (!file) return { ok: false, reason: "no file attached for media_blob" };
   if (!item.r2_key) return { ok: false, reason: "missing r2_key" };
+  if (file.size > MAX_BODY_BYTES) return { ok: false, reason: "file too large" };
+  if (typeof item.byte_length === "number" && item.byte_length > MAX_BODY_BYTES) {
+    return { ok: false, reason: "declared byte_length too large" };
+  }
   const inv = String(item.payload.investigation_id ?? "");
   const mediaType = String(item.payload.media_type ?? "");
   const contentType = mediaType === "audio" ? "audio/wav" : mediaType === "image" ? "image/jpeg" : mediaType === "video" ? "video/webm" : "application/octet-stream";
@@ -235,13 +241,11 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
   const bindFail = bindingsCheck(env);
   if (bindFail) return bindFail;
 
-  const contentLength = parseInt(request.headers.get("content-length") ?? "0", 10);
-  if (contentLength > MAX_BODY_BYTES) {
-    return jsonResponse({ error: "Upload too large" }, 413);
+  const formResult = await readLimitedFormData(request, MAX_BODY_BYTES);
+  if (!formResult.ok) {
+    return jsonResponse({ error: formResult.status === 413 ? "Upload too large" : formResult.error }, formResult.status);
   }
-
-  let form: FormData;
-  try { form = await request.formData(); } catch { return jsonResponse({ error: "Invalid multipart body" }, 400); }
+  const form = formResult.formData;
   const itemsRaw = form.get("items");
   if (typeof itemsRaw !== "string") return jsonResponse({ error: "Missing items field" }, 400);
   let items: UploadItem[];

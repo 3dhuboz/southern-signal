@@ -17,6 +17,8 @@
  * and never touches our server.
  */
 
+import { readLimitedJson } from "../_body";
+
 interface PagesContext<E = unknown> {
   request: Request;
   env: E;
@@ -70,16 +72,9 @@ export const onRequestOptions: PagesFn = async () => {
 };
 
 export const onRequestPost: PagesFn = async ({ request }) => {
-  const contentLength = parseInt(request.headers.get("content-length") ?? "0", 10);
-  if (contentLength > MAX_BODY_BYTES) {
-    return jsonResponse({ error: "Payload too large." }, 413);
-  }
-  let body: { code?: string; role?: string; sdp?: unknown; candidates?: unknown };
-  try {
-    body = await request.json() as typeof body;
-  } catch {
-    return jsonResponse({ error: "Invalid JSON body." }, 400);
-  }
+  const bodyResult = await readLimitedJson<{ code?: string; role?: string; sdp?: unknown; candidates?: unknown }>(request, MAX_BODY_BYTES);
+  if (!bodyResult.ok) return jsonResponse({ error: bodyResult.status === 413 ? "Payload too large." : bodyResult.error }, bodyResult.status);
+  const body = bodyResult.value;
   if (!isValidCode(body.code)) return jsonResponse({ error: "Code must be 6 digits." }, 400);
   if (!isValidRole(body.role)) return jsonResponse({ error: "Role must be 'offer' or 'answer'." }, 400);
   if (!body.sdp) return jsonResponse({ error: "Missing sdp." }, 400);

@@ -26,6 +26,7 @@ import {
   validateAndCleanFindings,
 } from "./_research-shared";
 import { authenticate, recordRequest, type AuthEnv } from "./_auth";
+import { readLimitedBytes } from "../_body";
 
 type Env = SharedEnv & AuthEnv;
 
@@ -66,13 +67,10 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
     }, 503);
   }
 
-  const contentLength = parseInt(request.headers.get("content-length") ?? "0", 10);
-  if (contentLength > MAX_BODY_BYTES) {
-    return jsonResponse({ error: "Request body too large." }, 413);
-  }
-
   // Consume body bytes once for signature verification; re-decode for JSON.
-  const bodyBytes = new Uint8Array(await request.arrayBuffer());
+  const bodyResult = await readLimitedBytes(request, MAX_BODY_BYTES);
+  if (!bodyResult.ok) return jsonResponse({ error: bodyResult.error }, bodyResult.status);
+  const bodyBytes = bodyResult.bytes;
   const auth = await authenticate(request, env, { bodyBytes });
   if (!auth.ok) {
     return jsonResponse({ error: auth.error, detail: auth.detail }, auth.status);

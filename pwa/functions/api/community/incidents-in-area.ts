@@ -38,6 +38,7 @@ import {
   readRateLimit,
   recordRateLimitRun,
 } from "./_shared";
+import { readLimitedJson } from "../_body";
 
 interface Env extends CommunityEnv {
   OPENROUTER_API_KEY?: string;
@@ -591,8 +592,9 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
   if (!env.COMMUNITY_DB) return jsonResponse({ error: "Area incident search is not configured on this deployment (COMMUNITY_DB binding missing)." }, 503);
   if (!env.OPENROUTER_API_KEY) return jsonResponse({ error: "Area incident search is not configured on this deployment (OPENROUTER_API_KEY missing)." }, 503);
 
-  let body: Record<string, unknown>;
-  try { body = await request.json() as Record<string, unknown>; } catch { return jsonResponse({ error: "Invalid JSON body." }, 400); }
+  const bodyResult = await readLimitedJson<Record<string, unknown>>(request, 4_000);
+  if (!bodyResult.ok) return jsonResponse({ error: bodyResult.status === 413 ? "Payload too large." : bodyResult.error }, bodyResult.status);
+  const body = bodyResult.value;
   const bbox = body.bbox;
   const region = body.region === "GLOBAL" ? "GLOBAL" : "AU";
   if (!isValidBBox(bbox)) return jsonResponse({ error: "bbox must be {minLat, minLon, maxLat, maxLon} with finite values and min < max." }, 400);

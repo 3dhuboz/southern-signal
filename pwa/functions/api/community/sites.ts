@@ -34,6 +34,7 @@ import {
   recordRateLimitRun,
   sanitiseText,
 } from "./_shared";
+import { readLimitedJson } from "../_body";
 
 interface PinRow {
   id: string;
@@ -70,11 +71,9 @@ export const onRequestOptions: PagesFn<CommunityEnv> = async () => new Response(
 export const onRequestPost: PagesFn<CommunityEnv> = async ({ request, env }) => {
   if (!env.COMMUNITY_DB) return jsonResponse({ error: "Community map is not configured on this deployment." }, 503);
 
-  const contentLength = parseInt(request.headers.get("content-length") ?? "0", 10);
-  if (contentLength > MAX_BODY_BYTES) return jsonResponse({ error: "Payload too large." }, 413);
-
-  let body: Record<string, unknown>;
-  try { body = await request.json() as Record<string, unknown>; } catch { return jsonResponse({ error: "Invalid JSON body." }, 400); }
+  const bodyResult = await readLimitedJson<Record<string, unknown>>(request, MAX_BODY_BYTES);
+  if (!bodyResult.ok) return jsonResponse({ error: bodyResult.status === 413 ? "Payload too large." : bodyResult.error }, bodyResult.status);
+  const body = bodyResult.value;
 
   const venue = sanitiseText(body.venue_name, 120);
   const note = sanitiseText(body.note, 280);
@@ -199,8 +198,9 @@ export const onRequestGet: PagesFn<CommunityEnv> = async ({ request, env }) => {
 export const onRequestDelete: PagesFn<CommunityEnv> = async ({ request, env }) => {
   if (!env.COMMUNITY_DB) return jsonResponse({ error: "Community map is not configured on this deployment." }, 503);
 
-  let body: Record<string, unknown>;
-  try { body = await request.json() as Record<string, unknown>; } catch { return jsonResponse({ error: "Invalid JSON body." }, 400); }
+  const bodyResult = await readLimitedJson<Record<string, unknown>>(request, MAX_BODY_BYTES);
+  if (!bodyResult.ok) return jsonResponse({ error: bodyResult.status === 413 ? "Payload too large." : bodyResult.error }, bodyResult.status);
+  const body = bodyResult.value;
 
   const id = body.id;
   const anonId = body.anonymous_id;

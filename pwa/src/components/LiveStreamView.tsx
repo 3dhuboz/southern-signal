@@ -35,8 +35,13 @@ import { usePreferences } from "../lib/preferences";
 import { loadOverlayChannels, saveOverlayChannels } from "../lib/media/overlayChannelStorage";
 import type { OverlayLayoutProfile } from "../lib/media/overlayLayout";
 import {
-  WHIP_URL_KEY, WHIP_BEARER_KEY, WHIP_PROVIDER_KEY,
+  FB_CONNECT_TOKEN_LEGACY_KEY,
+  FB_STREAM_KEY_SESSION_KEY,
+  WHIP_PROVIDER_KEY,
   WHIP_PROVIDERS,
+  readStoredWhipBearer,
+  readStoredWhipUrl,
+  saveWhipBroadcastConfig,
   type WhipProviderKey,
 } from "../lib/media/whipStorage";
 import s from "./LiveStreamView.module.css";
@@ -201,6 +206,7 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recorderChunksRef = useRef<Blob[]>([]);
   const whipSessionRef = useRef<WhipSession | null>(null);
+  const fbConnectIdempotencyKeyRef = useRef<string | null>(null);
 
   const [streamOn, setStreamOn] = useState(false);
   // Headphone monitor preference — operator opts in via Setup → Broadcast.
@@ -216,10 +222,10 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
   const [recording, setRecording] = useState(false);
   const [liveOn, setLiveOn] = useState(false);
   const [whipUrl, setWhipUrl] = useState<string>(() => {
-    try { return localStorage.getItem(WHIP_URL_KEY) ?? ""; } catch { return ""; }
+    return readStoredWhipUrl();
   });
   const [whipBearer, setWhipBearer] = useState<string>(() => {
-    try { return localStorage.getItem(WHIP_BEARER_KEY) ?? ""; } catch { return ""; }
+    return readStoredWhipBearer();
   });
   const [whipProvider, setWhipProvider] = useState<WhipProviderKey>(() => {
     try {
@@ -244,14 +250,16 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
   const autoTorchPendingRef = useRef<boolean>(defaultTorch === true);
   const [whipState, setWhipState] = useState<WhipState>("idle");
   const [fbStreamKey, setFbStreamKey] = useState<string>(() => {
-    try { return localStorage.getItem("ss-fb-stream-key") ?? ""; } catch { return ""; }
+    try { return sessionStorage.getItem(FB_STREAM_KEY_SESSION_KEY) ?? ""; } catch { return ""; }
   });
   const [fbConnectToken, setFbConnectToken] = useState<string>(() => {
-    try { return localStorage.getItem("ss-fb-connect-token") ?? ""; } catch { return ""; }
+    try { localStorage.removeItem(FB_CONNECT_TOKEN_LEGACY_KEY); } catch { /* ignore */ }
+    return "";
   });
   const [fbConnecting, setFbConnecting] = useState(false);
   const [fbConnectMsg, setFbConnectMsg] = useState<string | null>(null);
   const [whipStats, setWhipStats] = useState<WhipOutboundStats | null>(null);
+  useEffect(() => { fbConnectIdempotencyKeyRef.current = null; }, [fbStreamKey, fbConnectToken]);
   // Network status — feeds the canvas OFFLINE pill (visible when recording locally
   // with no connectivity), proving the frame was captured before any cloud sync.
   const online = useNetworkOnline();
@@ -716,11 +724,7 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
       setError("Paste your WHIP ingest URL first.");
       return;
     }
-    try {
-      localStorage.setItem(WHIP_URL_KEY, whipUrl.trim());
-      if (whipBearer.trim()) localStorage.setItem(WHIP_BEARER_KEY, whipBearer.trim());
-      else localStorage.removeItem(WHIP_BEARER_KEY);
-    } catch { /* ignore */ }
+    saveWhipBroadcastConfig({ provider: whipProvider, url: whipUrl, bearer: whipBearer });
     try {
       setStatusMsg("Connecting WHIP…");
       setWhipState("idle");
@@ -753,7 +757,7 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
       setError(`WHIP failed: ${(err as Error).message}`);
       setStatusMsg(null);
     }
-  }, [liveOn, whipUrl, whipBearer, investigationId]);
+  }, [liveOn, whipUrl, whipBearer, whipProvider, investigationId]);
 
   // Cleanup on unmount.
   useEffect(() => {
@@ -867,15 +871,19 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
     setFbConnecting(true);
     setFbConnectMsg("Provisioning Cloudflare Live Input + FB output…");
     try {
+      const idempotencyKey = fbConnectIdempotencyKeyRef.current ?? crypto.randomUUID();
+      fbConnectIdempotencyKeyRef.current = idempotencyKey;
       try {
-        localStorage.setItem("ss-fb-stream-key", fbStreamKey.trim());
-        localStorage.setItem("ss-fb-connect-token", fbConnectToken.trim());
+        sessionStorage.setItem(FB_STREAM_KEY_SESSION_KEY, fbStreamKey.trim());
+        localStorage.removeItem(FB_STREAM_KEY_SESSION_KEY);
+        localStorage.removeItem(FB_CONNECT_TOKEN_LEGACY_KEY);
       } catch { /* ignore */ }
       const resp = await fetch("/api/live/fb/connect", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${fbConnectToken.trim()}`,
+          "Idempotency-Key": idempotencyKey,
         },
         body: JSON.stringify({ fb_stream_key: fbStreamKey.trim() }),
       });
@@ -886,14 +894,22 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
         return;
       }
       setWhipUrl(data.whip_url);
-      try { localStorage.setItem(WHIP_URL_KEY, data.whip_url); } catch { /* ignore */ }
+      saveWhipBroadcastConfig({ provider: whipProvider, url: data.whip_url, bearer: whipBearer });
+      fbConnectIdempotencyKeyRef.current = null;
+      try {
+        sessionStorage.removeItem(FB_STREAM_KEY_SESSION_KEY);
+        localStorage.removeItem(FB_STREAM_KEY_SESSION_KEY);
+        localStorage.removeItem(FB_CONNECT_TOKEN_LEGACY_KEY);
+      } catch { /* ignore */ }
+      setFbStreamKey("");
+      setFbConnectToken("");
       setFbConnectMsg("Connected — WHIP URL above is ready. Click Go live to start broadcasting to Facebook.");
     } catch (err) {
       setFbConnectMsg(`Failed: ${(err as Error).message}`);
     } finally {
       setFbConnecting(false);
     }
-  }, [fbStreamKey, fbConnectToken]);
+  }, [fbStreamKey, fbConnectToken, whipProvider, whipBearer]);
 
   // Derive fullscreen variant class names once; avoids 3 repeated inline ternaries.
   const wrapCls    = fullscreen ? `${s.wrap} ${s.wrapFullscreen}` : s.wrap;

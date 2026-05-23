@@ -28,6 +28,7 @@ import {
   type SharedEnv,
 } from "./_research-shared";
 import { authenticate, recordRequest, type AuthEnv } from "./_auth";
+import { readLimitedBytes } from "../_body";
 
 type Env = SharedEnv & AuthEnv;
 
@@ -116,10 +117,9 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
 
   // Body parse with hard byte cap — transcripts are usually < 1KB but
   // a malicious caller could send megabytes.
-  const bodyBytes = new Uint8Array(await request.arrayBuffer());
-  if (bodyBytes.byteLength > MAX_BODY_BYTES) {
-    return jsonResponse({ error: `Request body exceeds ${MAX_BODY_BYTES} bytes.` }, 413);
-  }
+  const bodyResult = await readLimitedBytes(request, MAX_BODY_BYTES);
+  if (!bodyResult.ok) return jsonResponse({ error: bodyResult.status === 413 ? `Request body exceeds ${MAX_BODY_BYTES} bytes.` : bodyResult.error }, bodyResult.status);
+  const bodyBytes = bodyResult.bytes;
 
   const auth = await authenticate(request, env, { bodyBytes });
   if (!auth.ok) {

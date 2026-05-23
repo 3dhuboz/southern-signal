@@ -22,6 +22,7 @@
  */
 
 import { authenticate, recordRequest, type AuthEnv } from "./_auth";
+import { readLimitedBytes } from "../_body";
 
 interface Env extends AuthEnv {
   OPENROUTER_API_KEY?: string;
@@ -81,15 +82,11 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
     return jsonResponse({ error: "AI is not configured on this deployment." }, 503);
   }
 
-  // Reject obviously oversized bodies so we don't pay LLM costs on garbage.
-  const contentLength = parseInt(request.headers.get("content-length") ?? "0", 10);
-  if (contentLength > MAX_BODY_BYTES) {
-    return jsonResponse({ error: "Request body too large." }, 413);
-  }
-
   // Consume body bytes ONCE for signature verification, then re-parse as
   // JSON. Workers Request bodies can only be consumed once.
-  const bodyBytes = new Uint8Array(await request.arrayBuffer());
+  const bodyResult = await readLimitedBytes(request, MAX_BODY_BYTES);
+  if (!bodyResult.ok) return jsonResponse({ error: bodyResult.error }, bodyResult.status);
+  const bodyBytes = bodyResult.bytes;
   const auth = await authenticate(request, env, { bodyBytes });
   if (!auth.ok) {
     return jsonResponse({ error: auth.error, detail: auth.detail }, auth.status);

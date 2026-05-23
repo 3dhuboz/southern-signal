@@ -5,7 +5,15 @@ import { startVad, type VadHandle } from "../lib/audio/vad";
 import { usePwaInstall } from "../lib/system/usePwaInstall";
 import { ACTIVE_SCENE_CHANGE_EVENT, getScene, loadActiveSceneId } from "../lib/overlays/scenes";
 import { WHATS_NEW_KEY } from "../lib/version";
-import { WHIP_URL_KEY, WHIP_BEARER_KEY, WHIP_PROVIDER_KEY, WHIP_PROVIDERS } from "../lib/media/whipStorage";
+import {
+  WHIP_PROVIDERS,
+  clearWhipBroadcastConfig,
+  readStoredWhipBearer,
+  readStoredWhipProvider,
+  readStoredWhipUrl,
+  saveWhipBroadcastConfig,
+  type WhipProviderKey,
+} from "../lib/media/whipStorage";
 import { AuditLogInspector } from "../components/AuditLogInspector";
 import { CaseManager } from "../components/CaseManager";
 import { DeploymentHealth } from "../components/DeploymentHealth";
@@ -63,16 +71,13 @@ export function Setup() {
 
   // ── WHIP broadcast config ──────────────────────────────────────────────────
   const [whipUrl, setWhipUrl] = useState(() => {
-    try { return localStorage.getItem(WHIP_URL_KEY) ?? ""; } catch { return ""; }
+    return readStoredWhipUrl();
   });
   const [whipBearer, setWhipBearer] = useState(() => {
-    try { return localStorage.getItem(WHIP_BEARER_KEY) ?? ""; } catch { return ""; }
+    return readStoredWhipBearer();
   });
-  const [whipProvider, setWhipProvider] = useState(() => {
-    try {
-      const stored = localStorage.getItem(WHIP_PROVIDER_KEY) ?? "";
-      return stored in WHIP_PROVIDER_LABELS ? stored : "custom";
-    } catch { return "custom"; }
+  const [whipProvider, setWhipProvider] = useState<WhipProviderKey>(() => {
+    return readStoredWhipProvider();
   });
   const [whipSaved, setWhipSaved] = useState(false);
   const whipSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -81,27 +86,17 @@ export function Setup() {
   useEffect(() => () => { if (whipSavedTimerRef.current) clearTimeout(whipSavedTimerRef.current); }, []);
 
   const handleSaveWhip = useCallback(() => {
-    try {
-      if (trimmedWhipUrl) localStorage.setItem(WHIP_URL_KEY, trimmedWhipUrl);
-      else localStorage.removeItem(WHIP_URL_KEY);
-      if (whipBearer.trim()) localStorage.setItem(WHIP_BEARER_KEY, whipBearer.trim());
-      else localStorage.removeItem(WHIP_BEARER_KEY);
-      localStorage.setItem(WHIP_PROVIDER_KEY, whipProvider);
-      if (whipSavedTimerRef.current) clearTimeout(whipSavedTimerRef.current);
-      setWhipSaved(true);
-      whipSavedTimerRef.current = setTimeout(() => setWhipSaved(false), 2000);
-    } catch { /* swallow — localStorage unavailable */ }
+    saveWhipBroadcastConfig({ provider: whipProvider, url: trimmedWhipUrl, bearer: whipBearer });
+    if (whipSavedTimerRef.current) clearTimeout(whipSavedTimerRef.current);
+    setWhipSaved(true);
+    whipSavedTimerRef.current = setTimeout(() => setWhipSaved(false), 2000);
   }, [trimmedWhipUrl, whipBearer, whipProvider]);
 
   const handleClearWhip = useCallback(() => {
     setWhipUrl("");
     setWhipBearer("");
     setWhipProvider("custom");
-    try {
-      localStorage.removeItem(WHIP_URL_KEY);
-      localStorage.removeItem(WHIP_BEARER_KEY);
-      localStorage.removeItem(WHIP_PROVIDER_KEY);
-    } catch { /* swallow */ }
+    clearWhipBroadcastConfig();
   }, []);
 
   // Stay in sync if the operator finishes the tour in another tab.
@@ -360,7 +355,7 @@ export function Setup() {
           <span className={st.panelBadge}>{trimmedWhipUrl ? "Configured" : "Not set"}</span>
         </header>
         <p className={st.panelLede}>
-          Configure your WHIP live-stream destination. The Go Live button on the Camera screen uses these settings. Supported providers: Cloudflare Stream, Mux, Dolby.io, Restream, and any standards-compliant WHIP endpoint. Bearer token is optional — most Cloudflare and Mux endpoints don't require one.
+          Configure your WHIP live-stream destination. The Go Live button on the Camera screen uses these settings. Supported providers: Cloudflare Stream, Mux, Dolby.io, Restream, and any standards-compliant WHIP endpoint. Bearer tokens and stream-key URLs are kept to this browser session unless the provider URL is safe to persist.
         </p>
         <div className={st.fieldRow}>
           <label className={st.fieldLabel} htmlFor="setup-whip-provider">Provider</label>
@@ -368,7 +363,7 @@ export function Setup() {
             id="setup-whip-provider"
             className={st.input}
             value={whipProvider}
-            onChange={(e) => setWhipProvider(e.target.value)}
+            onChange={(e) => setWhipProvider(e.target.value as WhipProviderKey)}
           >
             {Object.entries(WHIP_PROVIDER_LABELS).map(([key, label]) => (
               <option key={key} value={key}>{label}</option>
