@@ -12,11 +12,12 @@
  *     ok: true,
  *     timestamp: "<ISO>",
  *     features: {
- *       ai_research: { configured: boolean, model: string, rate_limit_kv: boolean },
- *       ai_transcribe: { configured: boolean },
+ *       ai_research: { configured: boolean, has_model_key: boolean, model: string, rate_limit_kv: boolean },
+ *       ai_transcribe: { configured: boolean, provider: "groq" | "openai" | "openrouter" | "none", openrouter_audio_allowed: boolean },
  *       sync: { configured: boolean, has_kv_token: boolean, has_d1: boolean, has_r2: boolean },
  *       radio_proxy: { ok: true },
  *       live_relay: { configured: boolean },
+ *       fb_connector: { configured: boolean, has_token: boolean, has_account: boolean, has_stream_token: boolean, has_state_d1: boolean },
  *     }
  *   }
  *
@@ -30,7 +31,9 @@ interface Env {
   OPENROUTER_RESEARCH_MODEL?: string;
   AI_RATE_LIMIT?: unknown;       // KVNamespace
   // Transcribe
+  GROQ_API_KEY?: string;
   OPENAI_API_KEY?: string;
+  ALLOW_OPENROUTER_AUDIO?: string;
   // Sync
   SYNC_TOKEN?: string;
   SYNC_DB?: unknown;             // D1Database
@@ -38,6 +41,11 @@ interface Env {
   // Live relay
   WHIP_RELAY_TOKEN?: string;
   WHIP_RELAY_ENDPOINT?: string;
+  // Facebook Live connector
+  FB_CONNECT_TOKEN?: string;
+  CF_ACCOUNT_ID?: string;
+  CF_STREAM_API_TOKEN?: string;
+  FB_CONNECT_STATE?: unknown;    // D1Database
 }
 
 interface PagesContext<E = unknown> {
@@ -55,23 +63,47 @@ function corsHeaders(): Record<string, string> {
   };
 }
 
+type TranscribeProvider = "groq" | "openai" | "openrouter" | "none";
+
+function flagEnabled(value: string | undefined): boolean {
+  return /^(1|true|yes)$/i.test(value ?? "");
+}
+
+function transcribeProvider(env: Env): TranscribeProvider {
+  if (env.GROQ_API_KEY) return "groq";
+  if (env.OPENAI_API_KEY) return "openai";
+  if (env.OPENROUTER_API_KEY && flagEnabled(env.ALLOW_OPENROUTER_AUDIO)) return "openrouter";
+  return "none";
+}
+
 export const onRequestOptions: PagesFn<Env> = async () => new Response(null, {
   status: 204,
   headers: { ...corsHeaders(), "Access-Control-Max-Age": "86400" },
 });
 
 export const onRequestGet: PagesFn<Env> = async ({ env }) => {
+  const provider = transcribeProvider(env);
+  const hasAiModelKey = !!env.OPENROUTER_API_KEY;
+  const hasRateLimitKv = !!env.AI_RATE_LIMIT;
+  const hasFbToken = !!env.FB_CONNECT_TOKEN;
+  const hasFbAccount = !!env.CF_ACCOUNT_ID;
+  const hasFbStreamToken = !!env.CF_STREAM_API_TOKEN;
+  const hasFbStateD1 = !!env.FB_CONNECT_STATE;
+
   const body = {
     ok: true,
     timestamp: new Date().toISOString(),
     features: {
       ai_research: {
-        configured: !!env.OPENROUTER_API_KEY,
+        configured: hasAiModelKey && hasRateLimitKv,
+        has_model_key: hasAiModelKey,
         model: env.OPENROUTER_RESEARCH_MODEL || "perplexity/sonar",
-        rate_limit_kv: !!env.AI_RATE_LIMIT,
+        rate_limit_kv: hasRateLimitKv,
       },
       ai_transcribe: {
-        configured: !!env.OPENAI_API_KEY,
+        configured: provider !== "none",
+        provider,
+        openrouter_audio_allowed: !!env.OPENROUTER_API_KEY && flagEnabled(env.ALLOW_OPENROUTER_AUDIO),
       },
       sync: {
         configured: !!(env.SYNC_TOKEN && env.SYNC_DB && env.MEDIA_BUCKET),
@@ -82,6 +114,13 @@ export const onRequestGet: PagesFn<Env> = async ({ env }) => {
       radio_proxy: { ok: true },
       live_relay: {
         configured: !!(env.WHIP_RELAY_TOKEN && env.WHIP_RELAY_ENDPOINT),
+      },
+      fb_connector: {
+        configured: hasFbToken && hasFbAccount && hasFbStreamToken && hasFbStateD1,
+        has_token: hasFbToken,
+        has_account: hasFbAccount,
+        has_stream_token: hasFbStreamToken,
+        has_state_d1: hasFbStateD1,
       },
     },
   };

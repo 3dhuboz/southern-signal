@@ -12,11 +12,10 @@
   //     KV, R2 with specific IDs) are declared here so a fresh checkout
   //     can deploy without re-pointing IDs by hand in the dashboard.
   //
-  //   - SYNC_DB / MEDIA_BUCKET / AI_RATE_LIMIT historically lived only
-  //     in the dashboard. They keep working — wrangler.jsonc bindings
-  //     ADD to dashboard bindings, they don't replace them. If we ever
-  //     re-create this Pages project from scratch we'll want to migrate
-  //     those declarations in here too.
+  //   - SYNC_DB / MEDIA_BUCKET / AI_RATE_LIMIT are source-controlled
+  //     below for both production and preview. This prevents a fresh
+  //     Pages checkout from deploying with sync or cost controls silently
+  //     missing because a binding only existed in the dashboard.
   //
   // Environment split (2026-05-19, panel P0 fix):
   //
@@ -93,6 +92,13 @@
       "database_id": "e0881f5b-b158-4a75-bd16-683d816e531d"
     },
     {
+      // PRODUCTION D1 for /api/sync/upload + /api/sync/status rows.
+      // Created 2026-05-23 in Cloudflare D1 region OC.
+      "binding": "SYNC_DB",
+      "database_name": "southern-signal-sync",
+      "database_id": "98fa699d-b5d7-4ed5-8b64-b954a7200e89"
+    },
+    {
       // PRODUCTION D1 for /api/live/fb/connect idempotency rows.
       // Required so retries cannot create duplicate paid Stream resources.
       "binding": "FB_CONNECT_STATE",
@@ -100,8 +106,28 @@
       "database_id": "0d146272-ec13-4ca7-8b5d-4d34090474ea"
     }
   ],
+  "r2_buckets": [
+    {
+      // PRODUCTION R2 bucket for uploaded investigation media blobs.
+      // Created 2026-05-23 with Cloudflare location hint OC.
+      "binding": "MEDIA_BUCKET",
+      "bucket_name": "southern-signal-media"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      // PRODUCTION shared KV for AI relay, research, community, and
+      // Facebook connector rate-limit counters.
+      "binding": "AI_RATE_LIMIT",
+      "id": "4baae3fe45cd4c4ea9181904ca599a30"
+    }
+  ],
   "env": {
     "preview": {
+      "vars": {
+        // Preview envs do not inherit top-level vars in Wrangler.
+        "AI_RELAY_ALLOW_UNSIGNED": ""
+      },
       "d1_databases": [
         {
           // PREVIEW D1 — dev branch + any preview branch binds this.
@@ -115,10 +141,30 @@
           "database_id": "f1090b65-3f78-4e42-97a6-2ef5df145d6e"
         },
         {
+          // PREVIEW D1 for sync rows. Created 2026-05-23 in region OC.
+          "binding": "SYNC_DB",
+          "database_name": "southern-signal-sync-preview",
+          "database_id": "d4b2b50f-0f8b-4f74-aa95-6085a76941a9"
+        },
+        {
           // PREVIEW D1 for /api/live/fb/connect idempotency rows.
           "binding": "FB_CONNECT_STATE",
           "database_name": "southern-signal-fb-connect-state-preview",
           "database_id": "48a69a14-d046-420d-986c-4e099eb68a52"
+        }
+      ],
+      "r2_buckets": [
+        {
+          // PREVIEW R2 bucket for non-production investigation media blobs.
+          "binding": "MEDIA_BUCKET",
+          "bucket_name": "southern-signal-media-preview"
+        }
+      ],
+      "kv_namespaces": [
+        {
+          // PREVIEW shared KV for non-production rate-limit counters.
+          "binding": "AI_RATE_LIMIT",
+          "id": "272fcbaa91744f649842fe1a67530191"
         }
       ]
     }

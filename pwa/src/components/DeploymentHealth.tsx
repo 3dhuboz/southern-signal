@@ -15,11 +15,22 @@ interface Health {
   ok: boolean;
   timestamp: string;
   features: {
-    ai_research: { configured: boolean; model: string; rate_limit_kv: boolean };
-    ai_transcribe: { configured: boolean };
+    ai_research: { configured: boolean; has_model_key: boolean; model: string; rate_limit_kv: boolean };
+    ai_transcribe: {
+      configured: boolean;
+      provider: "groq" | "openai" | "openrouter" | "none";
+      openrouter_audio_allowed: boolean;
+    };
     sync: { configured: boolean; has_kv_token: boolean; has_d1: boolean; has_r2: boolean };
     radio_proxy: { ok: boolean };
     live_relay: { configured: boolean };
+    fb_connector: {
+      configured: boolean;
+      has_token: boolean;
+      has_account: boolean;
+      has_stream_token: boolean;
+      has_state_d1: boolean;
+    };
   };
 }
 
@@ -75,14 +86,14 @@ export function DeploymentHealth() {
           <FeatureRow
             label="AI Investigator (research)"
             ok={status.data.features.ai_research.configured}
-            detail={`Model: ${status.data.features.ai_research.model.replace(/^.*\//, "")}${status.data.features.ai_research.rate_limit_kv ? " · KV rate-limit on" : " · KV rate-limit OFF"}`}
-            envHint="OPENROUTER_API_KEY (+ optional AI_RATE_LIMIT KV binding)"
+            detail={`Model: ${status.data.features.ai_research.model.replace(/^.*\//, "")}${status.data.features.ai_research.has_model_key ? " · key on" : " · key off"}${status.data.features.ai_research.rate_limit_kv ? " · KV rate-limit on" : " · KV rate-limit OFF"}`}
+            envHint="OPENROUTER_API_KEY + AI_RATE_LIMIT KV binding"
           />
           <FeatureRow
             label="EVP cloud transcribe"
             ok={status.data.features.ai_transcribe.configured}
-            detail={status.data.features.ai_transcribe.configured ? "Whisper available off-device." : "Local Whisper still works regardless."}
-            envHint="OPENAI_API_KEY"
+            detail={status.data.features.ai_transcribe.configured ? `Provider: ${status.data.features.ai_transcribe.provider}.` : "Local Whisper still works regardless."}
+            envHint="GROQ_API_KEY or OPENAI_API_KEY"
           />
           <FeatureRow
             label="Cloud sync"
@@ -105,6 +116,17 @@ export function DeploymentHealth() {
             ok={status.data.features.live_relay.configured}
             detail={status.data.features.live_relay.configured ? "WHIP relay endpoint configured." : "Local recording still works. WHIP broadcast skipped."}
             envHint="WHIP_RELAY_TOKEN + WHIP_RELAY_ENDPOINT"
+          />
+          <FeatureRow
+            label="Facebook Live connector"
+            ok={status.data.features.fb_connector.configured}
+            detail={[
+              status.data.features.fb_connector.has_token ? "token ✓" : "token ✕",
+              status.data.features.fb_connector.has_account ? "account ✓" : "account ✕",
+              status.data.features.fb_connector.has_stream_token ? "stream token ✓" : "stream token ✕",
+              status.data.features.fb_connector.has_state_d1 ? "D1 ✓" : "D1 ✕",
+            ].join(" · ")}
+            envHint="FB_CONNECT_TOKEN + CF_ACCOUNT_ID + CF_STREAM_API_TOKEN + FB_CONNECT_STATE"
           />
         </ul>
       )}

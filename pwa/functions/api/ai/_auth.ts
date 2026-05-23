@@ -398,6 +398,15 @@ export async function authenticate(
     return { ok: false, status: 403, error: "Forbidden origin", detail: originCheck.reason };
   }
 
+  if (!env.AI_RATE_LIMIT) {
+    return {
+      ok: false,
+      status: 503,
+      error: "AI rate-limit binding missing",
+      detail: "This deployment requires the AI_RATE_LIMIT KV binding before /api/ai/* requests can proxy to paid upstream providers.",
+    };
+  }
+
   // 2. Signing headers — if any of the three are present, ALL must be
   //    valid. If none are present, behaviour depends on the permissive
   //    opt-in (AI_RELAY_ALLOW_UNSIGNED, with the legacy

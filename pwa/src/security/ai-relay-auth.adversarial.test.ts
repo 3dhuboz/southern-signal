@@ -479,6 +479,25 @@ describe("/api/ai/* auth — adversarial: bad Origin", () => {
 });
 
 describe("/api/ai/* auth — happy path sanity (proves the rejections above aren't false positives)", () => {
+  it("a valid signed POST is REFUSED when the AI_RATE_LIMIT binding is missing", async () => {
+    // A source-controlled KV binding now exists, but the runtime should
+    // still fail closed if a Pages env ever loses it. Without KV, TOFU
+    // registration and per-device counters silently disappear.
+    const victim = await generateKey();
+    const body = new TextEncoder().encode(JSON.stringify({ system: "s", user: "u" }));
+    const { request } = await buildSignedRequest({ key: victim, body });
+    const out = await authenticate(
+      request,
+      { AI_RATE_LIMIT_SALT: "adversarial-test-salt" },
+      { bodyBytes: body },
+    );
+    expect(out.ok).toBe(false);
+    if (!out.ok) {
+      expect(out.status).toBe(503);
+      expect(out.error.toLowerCase()).toContain("rate-limit");
+    }
+  });
+
   it("a fully valid signed POST passes auth in the DEFAULT (strict) mode", async () => {
     // If THIS goes red, every adversarial test above is suspect — they
     // could be rejecting requests for an unrelated reason.
