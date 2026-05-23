@@ -27,8 +27,10 @@
  *
  *   - K-II Geiger:     poisson-style click stream, rate ∝ z-score
  *   - REM Pod warble:  one shot per rising-edge crossing of 2.5σ
+ *   - VU overload:     one shot per rising-edge crossing of -3 dBFS
  *   - Motion chirp:    one shot per accel-magnitude delta trigger
  *   - EMF galvo tick:  fired on noticeable needle-velocity threshold
+ *   - Spirit Box hiss: continuous loop while the cycle is active
  *
  * Ovilus blips are emitted by `useOvilus.ts` itself via the existing
  * `emitOvilusTone` helper in itcAudioMixer (not added here) — they're
@@ -51,6 +53,12 @@
  *   the analog meter's needle deflecting; lower timbre than the K-II so
  *   the two meters reading the same signal don't sound like a single
  *   doubled click.
+ * - VU overload chirp: a real audio-level cue (the mic IS reading audio);
+ *   no claim of "anomaly", just "you're clipping".
+ * - Spirit Box scan hiss: synthesised pink-ish noise, NOT a real radio
+ *   tuner audio. Honest copy in the silkscreen calls the device a
+ *   "phoneme bank" so the hiss is just an auditory cue that the cycle is
+ *   running, not a claim of radio reception.
  *
  * # Volume / mix philosophy
  *
@@ -249,6 +257,127 @@ export function playGalvoTick(): void {
     try { osc.disconnect(); } catch { /* ignore */ }
     try { env.disconnect(); } catch { /* ignore */ }
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VU overload chirp (brief peak indicator)
+//
+// One shot per rising-edge crossing of -3 dBFS (the VU red-zone boundary).
+// A short ~80 ms 1.2 kHz blip — the same kind of cue a hardware audio rec
+// would make. Distinct from the K-II clicks (which sit in the metallic
+// 2.5-3.5 kHz range).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function playVuOverloadChirp(): void {
+  const ctx = getMixerAudioContext();
+  const dest = getMixerChannel("vuOverload");
+  if (!ctx || !dest) return;
+  if (ctx.state === "suspended") void ctx.resume();
+
+  const dur = 0.08;
+  const t0 = ctx.currentTime;
+
+  const osc = ctx.createOscillator();
+  osc.type = "square";
+  osc.frequency.value = 1200;
+
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(0, t0);
+  env.gain.linearRampToValueAtTime(0.5, t0 + 0.004);
+  env.gain.linearRampToValueAtTime(0,   t0 + dur);
+
+  osc.connect(env).connect(dest);
+  osc.start(t0);
+  osc.stop(t0 + dur + 0.02);
+  osc.onended = () => {
+    try { osc.disconnect(); } catch { /* ignore */ }
+    try { env.disconnect(); } catch { /* ignore */ }
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Spirit Box scan hiss (continuous low-volume background)
+//
+// While the Spirit Box is sweeping, a quiet pink-ish noise hiss runs under
+// the phoneme bursts — the auditory cue of a radio in scan mode. Kicks off
+// on call with `true`, can be torn down with `false`. Routed through the
+// spiritBox channel so push-to-talk ducks the hiss along with the phonemes.
+//
+// Honest copy: the silkscreen still calls the device a "phoneme bank" —
+// the hiss is just an auditory cue that the cycle is running, NOT a claim
+// of real radio tuner audio.
+// ─────────────────────────────────────────────────────────────────────────────
+
+let scanHissNode: { src: AudioBufferSourceNode; env: GainNode } | null = null;
+
+/** Toggle the Spirit Box scan-hiss background. Cheap to call repeatedly with
+ *  the same value — idempotent. */
+export function setSpiritBoxScanHiss(active: boolean): void {
+  if (active) {
+    if (scanHissNode) return; // already running
+    const ctx = getMixerAudioContext();
+    if (!ctx) return;
+    if (ctx.state === "suspended") void ctx.resume();
+    // Spirit Box bank lives on the spiritBox channel — share so push-to-talk
+    // ducks the hiss + bursts together.
+    const dest = getMixerChannel("spiritBox");
+    if (!dest) return;
+
+    // ~2 s noise loop. Bandpass at 1.5 kHz gives the AM-radio-static feel.
+    let buf: AudioBuffer;
+    let src: AudioBufferSourceNode;
+    try {
+      const sr = ctx.sampleRate;
+      const len = Math.max(1, Math.floor(sr * 2.0));
+      buf = ctx.createBuffer(1, len, sr);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * 0.6;
+      src = ctx.createBufferSource();
+      src.buffer = buf;
+    } catch {
+      return;
+    }
+    src.loop = true;
+
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass"; bp.frequency.value = 1500; bp.Q.value = 0.6;
+
+    const env = ctx.createGain();
+    const t0 = ctx.currentTime;
+    env.gain.setValueAtTime(0, t0);
+    env.gain.linearRampToValueAtTime(0.08, t0 + 0.15); // very quiet — sits under the bursts
+
+    src.connect(bp).connect(env).connect(dest);
+    src.start(t0);
+    scanHissNode = { src, env };
+  } else {
+    if (!scanHissNode) return;
+    const ctx = getMixerAudioContext();
+    const { src, env } = scanHissNode;
+    if (ctx) {
+      const t0 = ctx.currentTime;
+      env.gain.cancelScheduledValues(t0);
+      env.gain.setValueAtTime(env.gain.value, t0);
+      env.gain.linearRampToValueAtTime(0, t0 + 0.15);
+      try { src.stop(t0 + 0.16); } catch { /* already stopped */ }
+    } else {
+      try { src.stop(); } catch { /* ignore */ }
+    }
+    src.onended = () => {
+      try { src.disconnect(); } catch { /* ignore */ }
+      try { env.disconnect(); } catch { /* ignore */ }
+    };
+    scanHissNode = null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Generic test-only reset — lets unit tests start each case with a clean
+// throttle / hiss state.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function __resetMeterSonificationForTests(): void {
+  scanHissNode = null;
 }
 
 // Re-export the channel-id type so external callers (tests) can reference

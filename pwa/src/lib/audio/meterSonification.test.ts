@@ -22,6 +22,9 @@ import {
   playRemPodPulse,
   playMotionChirp,
   playGalvoTick,
+  playVuOverloadChirp,
+  setSpiritBoxScanHiss,
+  __resetMeterSonificationForTests,
 } from "./meterSonification";
 import { __resetItcMixerForTests } from "./itcAudioMixer";
 import { closeAudioContext } from "./audioUnlock";
@@ -98,5 +101,22 @@ describe("meter sonification — no-AudioContext guards", () => {
     closeAudioContext();
     __resetItcMixerForTests();
     expect(() => playGalvoTick()).not.toThrow();
+  });
+
+  it("playVuOverloadChirp is a no-op when Web Audio is unavailable", () => {
+    closeAudioContext();
+    __resetItcMixerForTests();
+    expect(() => playVuOverloadChirp()).not.toThrow();
+  });
+
+  it("setSpiritBoxScanHiss is a no-op when Web Audio is unavailable", () => {
+    closeAudioContext();
+    __resetItcMixerForTests();
+    __resetMeterSonificationForTests();
+    expect(() => setSpiritBoxScanHiss(true)).not.toThrow();
+    expect(() => setSpiritBoxScanHiss(false)).not.toThrow();
+    // Idempotent on repeat calls.
+    expect(() => setSpiritBoxScanHiss(true)).not.toThrow();
+    expect(() => setSpiritBoxScanHiss(true)).not.toThrow();
   });
 });

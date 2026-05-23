@@ -42,16 +42,17 @@ import {
   type BroadcastClockSnapshot,
 } from "../../hooks/useBroadcastClock";
 // Phase C — meter sonification cues. The compositor's draw loop calls these
-// at the moment of trigger events (LED step / pulse / motion / galvo
-// deflection). Each helper is a no-op when Web Audio is unavailable or the
-// AudioContext hasn't been unlocked yet, so the compositor stays silent in
-// tests / pre-unlock states without throwing.
+// at the moment of trigger events (LED step / pulse / overload / motion /
+// galvo deflection). Each helper is a no-op when Web Audio is unavailable
+// or the AudioContext hasn't been unlocked yet, so the compositor stays
+// silent in tests / pre-unlock states without throwing.
 import {
   clickRateHzFromZScore,
   playKiiClick,
   playRemPodPulse,
   playMotionChirp,
   playGalvoTick,
+  playVuOverloadChirp,
 } from "../audio/meterSonification";
 
 /**
@@ -381,6 +382,13 @@ interface FrameContext {
    * fast deflection.
    */
   galvoTickAudio: { lastFiredMs: number; lastLevel: number } | null;
+  /**
+   * Phase C — VU overload chirp trigger. Tracks rising-edge crossings of
+   * the VU_OVERLOAD_LEVEL boundary. Same shape as `remPulseAudio` — one
+   * chirp per crossing, then mute until the level drops below the
+   * threshold again.
+   */
+  vuOverloadAudio: { lastFiredMs: number; lastAbove: boolean } | null;
 }
 
 /**
@@ -718,6 +726,7 @@ export function createCanvasCompositor(opts: CanvasCompositorOptions): CanvasCom
     kiiClicks: null,
     remPulseAudio: null,
     galvoTickAudio: null,
+    vuOverloadAudio: null,
   };
 
   // Context handle is also stable — getContext returns a cached instance, but
@@ -2652,6 +2661,23 @@ function drawVuMeter(
   }
   const needleLevel = Math.max(0, Math.min(1, frame.vuNeedleSmooth.value));
   const needleAngle = VU_NEEDLE_REST_RAD + (VU_NEEDLE_PEAK_RAD - VU_NEEDLE_REST_RAD) * needleLevel;
+
+  // ── Phase C — VU overload chirp (rising-edge crossing of -3 dBFS) ──
+  // The needle's smoothed visual level is what we check, not the raw RMS —
+  // that matches the operator's intuition ("the needle just went into the
+  // red"). Throttle of 250 ms keeps a sustained loud signal from sounding
+  // like a stream of clicks.
+  if (!frame.vuOverloadAudio) {
+    frame.vuOverloadAudio = { lastFiredMs: 0, lastAbove: false };
+  }
+  const overloadAbove = needleLevel >= VU_OVERLOAD_LEVEL;
+  if (overloadAbove && !frame.vuOverloadAudio.lastAbove) {
+    if ((nowMs - frame.vuOverloadAudio.lastFiredMs) >= 250) {
+      frame.vuOverloadAudio.lastFiredMs = nowMs;
+      playVuOverloadChirp();
+    }
+  }
+  frame.vuOverloadAudio.lastAbove = overloadAbove;
 
   // Geometry — body anchored to the left edge with a 12 px margin.
   const bodyW = Math.round(VU_BODY_W * s);
