@@ -91,6 +91,13 @@
       "binding": "COMMUNITY_DB",
       "database_name": "southern-signal-community",
       "database_id": "e0881f5b-b158-4a75-bd16-683d816e531d"
+    },
+    {
+      // PRODUCTION D1 for /api/live/fb/connect idempotency rows.
+      // Required so retries cannot create duplicate paid Stream resources.
+      "binding": "FB_CONNECT_STATE",
+      "database_name": "southern-signal-fb-connect-state",
+      "database_id": "0d146272-ec13-4ca7-8b5d-4d34090474ea"
     }
   ],
   "env": {
@@ -106,6 +113,12 @@
           "binding": "COMMUNITY_DB",
           "database_name": "southern-signal-community-preview",
           "database_id": "f1090b65-3f78-4e42-97a6-2ef5df145d6e"
+        },
+        {
+          // PREVIEW D1 for /api/live/fb/connect idempotency rows.
+          "binding": "FB_CONNECT_STATE",
+          "database_name": "southern-signal-fb-connect-state-preview",
+          "database_id": "48a69a14-d046-420d-986c-4e099eb68a52"
         }
       ]
     }

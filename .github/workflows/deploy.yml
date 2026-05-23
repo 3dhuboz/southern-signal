@@ -9,7 +9,7 @@ name: Deploy to Cloudflare Pages
 #
 # The wrangler `--branch` flag determines which Cloudflare Pages alias the
 # build lands on:
-#   master            → production (project's primary URL)
+#   master push       -> production (deployed as Cloudflare branch `main`)
 #   dev               → https://dev.southern-signal.pages.dev (preview alias)
 #   PR (same-repo)    → https://<head-ref>.southern-signal.pages.dev
 #                       e.g. claude/phase-a2-vu-... →
@@ -178,13 +178,16 @@ jobs:
           # pwa/wrangler.jsonc for the project's resource bindings.
           #
           # `--branch=` picks the Cloudflare Pages alias:
-          #   push event:  github.ref_name (master/dev) → production/dev alias
-          #   PR event:    github.head_ref (PR source branch) → per-PR alias
-          # github.head_ref is empty on push events, so `|| github.ref_name`
-          # falls back correctly.
+          #   master push: deploy as `main`, because the Cloudflare Pages
+          #                project still has Production branch = main.
+          #   dev push:    github.ref_name (dev) -> dev alias
+          #   PR event:    github.head_ref (PR source branch) -> per-PR alias
+          # github.head_ref is empty on push events. The expression maps
+          # master pushes to Cloudflare's production branch first, then falls
+          # back to PR head_ref or push ref_name for every other deploy.
           #
           # `--commit-dirty=true` silences the warning about untracked dist/
           # files (dist is gitignored, so the runner always sees them as new).
           packageManager: pnpm
-          command: pages deploy dist --project-name=southern-signal --branch=${{ github.head_ref || github.ref_name }} --commit-dirty=true
+          command: pages deploy dist --project-name=southern-signal --branch=${{ (github.event_name == 'push' && github.ref_name == 'master' && 'main') || github.head_ref || github.ref_name }} --commit-dirty=true
           workingDirectory: pwa

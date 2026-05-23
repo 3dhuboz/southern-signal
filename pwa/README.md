@@ -182,7 +182,9 @@ silently. Budget rationale lives in
 
 ## Deployment
 
-Cloudflare Pages. `master` is the production branch. CI build = `npm run
+Cloudflare Pages. GitHub `master` is the release branch; the CI deploy step
+currently maps `master` pushes to Cloudflare branch `main` because the Pages
+project's Production branch is still configured as `main`. CI build = `npm run
 build`; output is `dist/`. Pages Functions live in `functions/` (proxy to
 OpenRouter for AI, R2 for media bytes, D1 for rows).
 
@@ -230,6 +232,7 @@ dashboard):
 | `AI_RATE_LIMIT`    | KV   | Per-IP soft cap shared across AI Investigator + community/incidents-in-area |
 | `AI_RATE_LIMIT_SALT` | secret | KV-key IP-hash salt (set via `wrangler pages secret put`) |
 | `COMMUNITY_DB`     | D1   | `/api/community/sites` (pins) + `area_incident_cache` (AI-surfaced incidents) |
+| `FB_CONNECT_STATE` | D1   | `/api/live/fb/connect` idempotency rows for Facebook relay setup |
 
 Local dev needs none of those — the operator surface degrades cleanly when
 they're unset (e.g. AI assist shows a "proxy not configured" error).
