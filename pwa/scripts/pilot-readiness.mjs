@@ -196,13 +196,18 @@ async function main() {
       true,
     ));
 
+    const liveRelay = features.live_relay ?? {};
+    const liveRelayConfigured = Boolean(liveRelay.configured);
     result.checks.push(check(
       "live-relay",
       "Live relay / WHIP output",
-      statusFromConfigured(Boolean(features.live_relay?.configured), true),
-      features.live_relay?.configured
-        ? "WHIP relay endpoint configured"
-        : "Missing WHIP_RELAY_TOKEN or WHIP_RELAY_ENDPOINT",
+      statusFromConfigured(liveRelayConfigured, true),
+      liveRelayConfigured
+        ? detailFromBooleans({
+            direct_whip: liveRelay.direct_whip_configured,
+            cloudflare_rtmp: liveRelay.cloudflare_rtmp_configured,
+          })
+        : "Missing WHIP_RELAY_TOKEN + WHIP_RELAY_ENDPOINT or Cloudflare RTMP connector env",
       true,
     ));
 

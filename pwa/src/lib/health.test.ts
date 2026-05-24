@@ -130,14 +130,26 @@ describe("GET /api/health", () => {
     expect(body.features.sync.signed_auth_kv).toBe(true);
   });
 
-  it("reports live_relay configured ONLY when both token and endpoint are set", async () => {
+  it("reports live_relay configured when direct WHIP or Cloudflare RTMP connector is set", async () => {
     let res = await onRequestGet(mkCtx({ WHIP_RELAY_TOKEN: "x" }));
-    let body = await res.json() as { features: { live_relay: { configured: boolean } } };
+    let body = await res.json() as { features: { live_relay: { configured: boolean; direct_whip_configured: boolean; cloudflare_rtmp_configured: boolean } } };
     expect(body.features.live_relay.configured).toBe(false);
 
     res = await onRequestGet(mkCtx({ WHIP_RELAY_TOKEN: "x", WHIP_RELAY_ENDPOINT: "https://relay" }));
-    body = await res.json() as { features: { live_relay: { configured: boolean } } };
+    body = await res.json() as { features: { live_relay: { configured: boolean; direct_whip_configured: boolean; cloudflare_rtmp_configured: boolean } } };
     expect(body.features.live_relay.configured).toBe(true);
+    expect(body.features.live_relay.direct_whip_configured).toBe(true);
+
+    res = await onRequestGet(mkCtx({
+      FB_CONNECT_TOKEN: "fb-secret",
+      CF_ACCOUNT_ID: "account-id",
+      CF_STREAM_API_TOKEN: "stream-secret",
+      FB_CONNECT_STATE: { prepare: () => null },
+    }));
+    body = await res.json() as { features: { live_relay: { configured: boolean; direct_whip_configured: boolean; cloudflare_rtmp_configured: boolean } } };
+    expect(body.features.live_relay.configured).toBe(true);
+    expect(body.features.live_relay.direct_whip_configured).toBe(false);
+    expect(body.features.live_relay.cloudflare_rtmp_configured).toBe(true);
   });
 
   it("reports Facebook connector configured only when token, account, stream token, and state D1 are all set", async () => {

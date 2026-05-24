@@ -4,8 +4,11 @@ import {
   FB_STREAM_KEY_SESSION_KEY,
   WHIP_BEARER_KEY,
   WHIP_PROVIDER_KEY,
+  WHIP_PROVIDERS,
   WHIP_URL_KEY,
   clearWhipBroadcastConfig,
+  getCloudflareRtmpRelayConnector,
+  hasUnresolvedWhipPlaceholder,
   readStoredWhipBearer,
   readStoredWhipUrl,
   saveWhipBroadcastConfig,
@@ -57,6 +60,25 @@ describe("WHIP broadcast storage", () => {
     saveWhipBroadcastConfig({ provider: "fb_live_via_cloudflare", url: "https://customer.example/webrtc/publish", bearer: "" });
     expect(sessionStorage.getItem(WHIP_URL_KEY)).toBe("https://customer.example/webrtc/publish");
     expect(localStorage.getItem(WHIP_URL_KEY)).toBeNull();
+  });
+
+  it("adds YouTube as a Cloudflare RTMP relay provider", () => {
+    expect(WHIP_PROVIDERS.some((provider) => provider.key === "youtube_via_cloudflare")).toBe(true);
+    expect(getCloudflareRtmpRelayConnector("youtube_via_cloudflare")).toMatchObject({
+      platform: "YouTube Live",
+      defaultRtmpUrl: "rtmps://a.rtmps.youtube.com/live2",
+    });
+  });
+
+  it("does not persist unresolved provider template URLs", () => {
+    saveWhipBroadcastConfig({
+      provider: "cloudflare",
+      url: "https://customer-XXXX.cloudflarestream.com/<input-id>/webrtc/publish",
+      bearer: "",
+    });
+    expect(hasUnresolvedWhipPlaceholder("https://example.com/<stream-key>")).toBe(true);
+    expect(localStorage.getItem(WHIP_URL_KEY)).toBeNull();
+    expect(sessionStorage.getItem(WHIP_URL_KEY)).toContain("<input-id>");
   });
 
   it("clears active-session and legacy Facebook connector secrets", () => {

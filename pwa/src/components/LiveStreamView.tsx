@@ -39,6 +39,8 @@ import {
   FB_STREAM_KEY_SESSION_KEY,
   WHIP_PROVIDER_KEY,
   WHIP_PROVIDERS,
+  getCloudflareRtmpRelayConnector,
+  hasUnresolvedWhipPlaceholder,
   readStoredWhipBearer,
   readStoredWhipUrl,
   saveWhipBroadcastConfig,
@@ -260,6 +262,7 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
   const [fbStreamKey, setFbStreamKey] = useState<string>(() => {
     try { return sessionStorage.getItem(FB_STREAM_KEY_SESSION_KEY) ?? ""; } catch { return ""; }
   });
+  const [relayRtmpUrl, setRelayRtmpUrl] = useState<string>("");
   const [fbConnectToken, setFbConnectToken] = useState<string>(() => {
     try { localStorage.removeItem(FB_CONNECT_TOKEN_LEGACY_KEY); } catch { /* ignore */ }
     return "";
@@ -267,7 +270,7 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
   const [fbConnecting, setFbConnecting] = useState(false);
   const [fbConnectMsg, setFbConnectMsg] = useState<string | null>(null);
   const [whipStats, setWhipStats] = useState<WhipOutboundStats | null>(null);
-  useEffect(() => { fbConnectIdempotencyKeyRef.current = null; }, [fbStreamKey, fbConnectToken]);
+  useEffect(() => { fbConnectIdempotencyKeyRef.current = null; }, [fbStreamKey, fbConnectToken, relayRtmpUrl]);
   // Network status — feeds the canvas OFFLINE pill (visible when recording locally
   // with no connectivity), proving the frame was captured before any cloud sync.
   const online = useNetworkOnline();
@@ -713,7 +716,10 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
   }, [recording, investigationId]);
 
   const toggleLive = useCallback(async () => {
-    if (!compositorStreamRef.current) return;
+    if (!compositorStreamRef.current) {
+      setError("Camera composite is not ready yet. Open the camera and wait for the preview before going live.");
+      return;
+    }
     if (liveOn) {
       if (whipSessionRef.current) await whipSessionRef.current.stop().catch(() => { /* ignore */ });
       whipSessionRef.current = null;
@@ -730,6 +736,10 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
     }
     if (!whipUrl.trim()) {
       setError("Paste your WHIP ingest URL first.");
+      return;
+    }
+    if (hasUnresolvedWhipPlaceholder(whipUrl)) {
+      setError("Replace the placeholder values in the WHIP URL before going live.");
       return;
     }
     saveWhipBroadcastConfig({ provider: whipProvider, url: whipUrl, bearer: whipBearer });
@@ -814,7 +824,7 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
   // so the dock buttons can show correct enabled/disabled state.
   // Derived here so the effect only fires when the boolean boundary is crossed,
   // not on every keystroke in the WHIP URL input.
-  const whipConfigured = whipUrl.trim().length > 0;
+  const whipConfigured = whipUrl.trim().length > 0 && !hasUnresolvedWhipPlaceholder(whipUrl);
   useEffect(() => {
     onCameraState?.({ streamOn, whipConfigured, torchSupported, torchOn, facingMode });
   }, [onCameraState, streamOn, whipConfigured, torchSupported, torchOn, facingMode]);
@@ -865,11 +875,28 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
   }, []);
 
   const activeProvider = WHIP_PROVIDERS.find((p) => p.key === whipProvider);
-  const showFbConnector = whipProvider === "fb_live_via_cloudflare";
+  const relayConnector = getCloudflareRtmpRelayConnector(whipProvider);
+
+  useEffect(() => {
+    fbConnectIdempotencyKeyRef.current = null;
+    setFbConnectMsg(null);
+    setFbStreamKey("");
+    setFbConnectToken("");
+    setRelayRtmpUrl(relayConnector?.defaultRtmpUrl ?? "");
+  }, [relayConnector?.provider, relayConnector?.defaultRtmpUrl]);
 
   const handleFbConnect = useCallback(async () => {
+    if (!relayConnector) {
+      setFbConnectMsg("Pick a Cloudflare relay provider first.");
+      return;
+    }
     if (!fbStreamKey.trim()) {
-      setFbConnectMsg("Paste the Facebook stream key first (from facebook.com/live/producer → Use Stream Key).");
+      setFbConnectMsg(`Paste the ${relayConnector.streamKeyLabel} first.`);
+      return;
+    }
+    const targetRtmpUrl = relayRtmpUrl.trim() || relayConnector.defaultRtmpUrl;
+    if (!/^rtmps?:\/\//i.test(targetRtmpUrl)) {
+      setFbConnectMsg(`${relayConnector.rtmpUrlLabel} must start with rtmp:// or rtmps://.`);
       return;
     }
     if (!fbConnectToken.trim()) {
@@ -877,7 +904,7 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
       return;
     }
     setFbConnecting(true);
-    setFbConnectMsg("Provisioning Cloudflare Live Input + FB output…");
+    setFbConnectMsg(`Provisioning Cloudflare Live Input + ${relayConnector.platform} output...`);
     try {
       const idempotencyKey = fbConnectIdempotencyKeyRef.current ?? crypto.randomUUID();
       fbConnectIdempotencyKeyRef.current = idempotencyKey;
@@ -893,7 +920,13 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
           "Authorization": `Bearer ${fbConnectToken.trim()}`,
           "Idempotency-Key": idempotencyKey,
         },
-        body: JSON.stringify({ fb_stream_key: fbStreamKey.trim() }),
+        body: JSON.stringify({
+          stream_key: fbStreamKey.trim(),
+          fb_stream_key: fbStreamKey.trim(),
+          fb_rtmp_url: targetRtmpUrl,
+          platform: relayConnector.platform,
+          name: `Southern Signal - ${relayConnector.platform} ${new Date().toISOString()}`,
+        }),
       });
       const data = await resp.json() as { whip_url?: string; error?: string; cf_status?: number; step?: string };
       if (!resp.ok || !data.whip_url) {
@@ -911,7 +944,7 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
       clearFbConnectorSessionSecrets();
       setFbStreamKey("");
       setFbConnectToken("");
-      setFbConnectMsg("Connected — WHIP URL above is ready. Click Go live to start broadcasting to Facebook.");
+      setFbConnectMsg(`Connected - WHIP URL above is ready. Click Go live to start broadcasting to ${relayConnector.platform}.`);
     } catch (err) {
       clearFbConnectorSessionSecrets();
       fbConnectIdempotencyKeyRef.current = null;
@@ -921,7 +954,7 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
     } finally {
       setFbConnecting(false);
     }
-  }, [fbStreamKey, fbConnectToken, whipProvider, whipBearer]);
+  }, [relayConnector, relayRtmpUrl, fbStreamKey, fbConnectToken, whipProvider, whipBearer]);
 
   // Derive fullscreen variant class names once; avoids 3 repeated inline ternaries.
   const wrapCls    = fullscreen ? `${s.wrap} ${s.wrapFullscreen}` : s.wrap;
@@ -1080,7 +1113,7 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
               type="button"
               className={`${s.action} ${liveOn ? s.actionLive : ""}`.trim()}
               onClick={toggleLive}
-              disabled={!whipUrl.trim()}
+              disabled={!whipConfigured}
               aria-pressed={liveOn}
             >
               {liveOn ? "End live" : "Go live"}
@@ -1138,23 +1171,38 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
               hintClassName={s.providerHint}
             />
 
-            {showFbConnector && (
-              <div className={s.fbConnector}>
-                <p className={s.fbConnectorIntro}>
-                  <strong>Quick setup.</strong> Paste your Facebook stream key and we'll create a Cloudflare Live Input + Facebook output for you, then fill the WHIP URL above. Needs <code>CF_ACCOUNT_ID</code>, <code>CF_STREAM_API_TOKEN</code> and <code>FB_CONNECT_TOKEN</code> in your Pages env.
+            {relayConnector && (
+              <div className={s.relayConnector} data-provider={relayConnector.provider}>
+                <p className={s.relayConnectorIntro}>
+                  <strong>Quick setup.</strong> Paste your {relayConnector.platform} stream key and we'll create a Cloudflare Live Input + RTMP output for you, then fill the WHIP URL above. Needs <code>CF_ACCOUNT_ID</code>, <code>CF_STREAM_API_TOKEN</code> and <code>FB_CONNECT_TOKEN</code> in your Pages env.
                 </p>
                 <label className={s.field}>
-                  <span className={s.fieldLabel}>Facebook stream key</span>
+                  <span className={s.fieldLabel}>{relayConnector.streamKeyLabel}</span>
                   <input
                     type="password"
                     className={s.input}
                     value={fbStreamKey}
                     onChange={(e) => setFbStreamKey(e.target.value)}
-                    placeholder="from facebook.com/live/producer → Use Stream Key"
+                    placeholder={relayConnector.streamKeyPlaceholder}
                     autoComplete="off"
                     spellCheck={false}
                     disabled={liveOn || fbConnecting}
                   />
+                  <p className={s.providerHint}>{relayConnector.streamKeyHint}</p>
+                </label>
+                <label className={s.field}>
+                  <span className={s.fieldLabel}>{relayConnector.rtmpUrlLabel}</span>
+                  <input
+                    type="text"
+                    className={s.input}
+                    value={relayRtmpUrl}
+                    onChange={(e) => setRelayRtmpUrl(e.target.value)}
+                    placeholder={relayConnector.rtmpUrlPlaceholder}
+                    autoComplete="off"
+                    spellCheck={false}
+                    disabled={liveOn || fbConnecting}
+                  />
+                  <p className={s.providerHint}>{relayConnector.rtmpUrlHint}</p>
                 </label>
                 <label className={s.field}>
                   <span className={s.fieldLabel}>Connector bearer token</span>
@@ -1175,7 +1223,7 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
                   onClick={handleFbConnect}
                   disabled={liveOn || fbConnecting || !fbStreamKey.trim() || !fbConnectToken.trim()}
                 >
-                  {fbConnecting ? "Connecting…" : "Connect to Facebook Live"}
+                  {fbConnecting ? "Connecting..." : `Connect to ${relayConnector.platform}`}
                 </button>
                 {fbConnectMsg && <p className={s.providerHint}>{fbConnectMsg}</p>}
               </div>
@@ -1272,8 +1320,9 @@ function SimpleProviderSetup({
           hintClassName={hintClassName}
         />
       );
+    case "youtube_via_cloudflare":
     case "fb_live_via_cloudflare":
-      // Existing Facebook quick-connector path stays above this block;
+      // Cloudflare RTMP relay quick-connector path stays above this block;
       // nothing extra to render here.
       return null;
     case "fb_live_via_restream":

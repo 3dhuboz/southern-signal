@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
 import { onRequestPost } from "./connect";
 
 type Context = Parameters<typeof onRequestPost>[0];
@@ -162,6 +161,29 @@ describe("/api/live/fb/connect idempotency", () => {
     await expect(second.json()).resolves.toMatchObject({ input_uid: "input-1", output_uid: "output-1" });
   });
 
+  it("accepts a generic stream_key and custom RTMP target for YouTube relay", async () => {
+    const fetchMock = installFetchMock();
+    const envObj = env();
+
+    const response = await onRequestPost(ctx(envObj, request({
+      stream_key: "youtube-key",
+      fb_rtmp_url: "rtmps://a.rtmps.youtube.com/live2",
+      platform: "YouTube Live",
+    }, "connect-key-youtube-123")));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      fb_rtmp_url: "rtmps://a.rtmps.youtube.com/live2",
+    });
+    const outputCall = fetchMock.mock.calls.find(([input]) => String(input).endsWith("/outputs"));
+    expect(outputCall).toBeTruthy();
+    expect(JSON.parse(String(outputCall?.[1]?.body))).toMatchObject({
+      url: "rtmps://a.rtmps.youtube.com/live2",
+      streamKey: "youtube-key",
+      enabled: true,
+    });
+  });
+
   it("rejects the same key with a different stream key", async () => {
     installFetchMock();
     const envObj = env();
@@ -197,5 +219,19 @@ describe("/api/live/fb/connect idempotency", () => {
     expect(text).toContain("\"step\":\"live_inputs\"");
     expect(text).not.toContain("fb-secret-do-not-leak");
     expect(text).not.toContain("cf_detail");
+  });
+
+  it("counts failed Cloudflare create attempts toward the connector rate limit", async () => {
+    const fetchMock = installFetchMock({ failInputDetail: "streamKey=fb-secret-do-not-leak" });
+    const envObj = env();
+
+    for (const key of ["connect-key-fail-001", "connect-key-fail-002", "connect-key-fail-003"]) {
+      const response = await onRequestPost(ctx(envObj, request({ fb_stream_key: "fb-key" }, key)));
+      expect(response.status).toBe(502);
+    }
+
+    const blocked = await onRequestPost(ctx(envObj, request({ fb_stream_key: "fb-key" }, "connect-key-fail-004")));
+    expect(blocked.status).toBe(429);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 });

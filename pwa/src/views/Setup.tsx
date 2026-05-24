@@ -6,8 +6,12 @@ import { usePwaInstall } from "../lib/system/usePwaInstall";
 import { ACTIVE_SCENE_CHANGE_EVENT, getScene, loadActiveSceneId } from "../lib/overlays/scenes";
 import { WHATS_NEW_KEY } from "../lib/version";
 import {
+  FB_CONNECT_TOKEN_LEGACY_KEY,
+  FB_STREAM_KEY_SESSION_KEY,
   WHIP_PROVIDERS,
   clearWhipBroadcastConfig,
+  getCloudflareRtmpRelayConnector,
+  hasUnresolvedWhipPlaceholder,
   readStoredWhipBearer,
   readStoredWhipProvider,
   readStoredWhipUrl,
@@ -37,6 +41,14 @@ const ONBOARDING_KEY = "ss-onboarding-completed-v1";
 // Derive a key→label lookup from the shared WHIP_PROVIDERS list so the
 // provider <select> stays in sync with LiveStreamView without manual duplication.
 const WHIP_PROVIDER_LABELS = Object.fromEntries(WHIP_PROVIDERS.map((p) => [p.key, p.label]));
+
+function clearRelayConnectorSessionSecrets(): void {
+  try {
+    sessionStorage.removeItem(FB_STREAM_KEY_SESSION_KEY);
+    localStorage.removeItem(FB_STREAM_KEY_SESSION_KEY);
+    localStorage.removeItem(FB_CONNECT_TOKEN_LEGACY_KEY);
+  } catch { /* ignore */ }
+}
 
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "—";
@@ -80,24 +92,138 @@ export function Setup() {
     return readStoredWhipProvider();
   });
   const [whipSaved, setWhipSaved] = useState(false);
+  const [whipSaveError, setWhipSaveError] = useState<string | null>(null);
+  const [relayStreamKey, setRelayStreamKey] = useState("");
+  const [relayRtmpUrl, setRelayRtmpUrl] = useState("");
+  const [relayConnectToken, setRelayConnectToken] = useState("");
+  const [relayConnecting, setRelayConnecting] = useState(false);
+  const [relayConnectMsg, setRelayConnectMsg] = useState<string | null>(null);
   const whipSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const relayConnectIdempotencyKeyRef = useRef<string | null>(null);
   // Derive once per render — used in badge, Clear-button guard, and save handler.
   const trimmedWhipUrl = whipUrl.trim();
+  const whipUrlHasPlaceholder = hasUnresolvedWhipPlaceholder(trimmedWhipUrl);
+  const relayConnector = getCloudflareRtmpRelayConnector(whipProvider);
   useEffect(() => () => { if (whipSavedTimerRef.current) clearTimeout(whipSavedTimerRef.current); }, []);
 
+  useEffect(() => {
+    relayConnectIdempotencyKeyRef.current = null;
+    setRelayConnectMsg(null);
+    setRelayStreamKey("");
+    setRelayConnectToken("");
+    setRelayRtmpUrl(relayConnector?.defaultRtmpUrl ?? "");
+  }, [relayConnector?.provider, relayConnector?.defaultRtmpUrl]);
+
+  useEffect(() => {
+    relayConnectIdempotencyKeyRef.current = null;
+  }, [relayStreamKey, relayRtmpUrl, relayConnectToken]);
+
   const handleSaveWhip = useCallback(() => {
+    if (trimmedWhipUrl && whipUrlHasPlaceholder) {
+      setWhipSaveError("Replace the placeholder values in the WHIP URL before saving.");
+      return;
+    }
+    setWhipSaveError(null);
     saveWhipBroadcastConfig({ provider: whipProvider, url: trimmedWhipUrl, bearer: whipBearer });
     if (whipSavedTimerRef.current) clearTimeout(whipSavedTimerRef.current);
     setWhipSaved(true);
     whipSavedTimerRef.current = setTimeout(() => setWhipSaved(false), 2000);
-  }, [trimmedWhipUrl, whipBearer, whipProvider]);
+  }, [trimmedWhipUrl, whipUrlHasPlaceholder, whipBearer, whipProvider]);
 
   const handleClearWhip = useCallback(() => {
     setWhipUrl("");
     setWhipBearer("");
     setWhipProvider("custom");
+    setWhipSaveError(null);
+    setRelayStreamKey("");
+    setRelayRtmpUrl("");
+    setRelayConnectToken("");
+    setRelayConnectMsg(null);
+    relayConnectIdempotencyKeyRef.current = null;
     clearWhipBroadcastConfig();
   }, []);
+
+  const handleWhipProviderChange = useCallback((nextProvider: WhipProviderKey) => {
+    setWhipProvider(nextProvider);
+    setWhipSaveError(null);
+    const provider = WHIP_PROVIDERS.find((item) => item.key === nextProvider);
+    setWhipUrl(nextProvider === "custom" ? "" : provider?.url ?? "");
+  }, []);
+
+  const handleRelayConnect = useCallback(async () => {
+    if (!relayConnector) {
+      setRelayConnectMsg("Pick a Cloudflare relay provider first.");
+      return;
+    }
+    if (!relayStreamKey.trim()) {
+      setRelayConnectMsg(`Paste the ${relayConnector.streamKeyLabel} first.`);
+      return;
+    }
+    const targetRtmpUrl = relayRtmpUrl.trim() || relayConnector.defaultRtmpUrl;
+    if (!/^rtmps?:\/\//i.test(targetRtmpUrl)) {
+      setRelayConnectMsg(`${relayConnector.rtmpUrlLabel} must start with rtmp:// or rtmps://.`);
+      return;
+    }
+    if (!relayConnectToken.trim()) {
+      setRelayConnectMsg("Connector bearer token required. It must match FB_CONNECT_TOKEN in Cloudflare Pages.");
+      return;
+    }
+    setRelayConnecting(true);
+    setRelayConnectMsg(`Provisioning Cloudflare Live Input + ${relayConnector.platform} output...`);
+    try {
+      const idempotencyKey = relayConnectIdempotencyKeyRef.current ?? crypto.randomUUID();
+      relayConnectIdempotencyKeyRef.current = idempotencyKey;
+      try {
+        sessionStorage.setItem(FB_STREAM_KEY_SESSION_KEY, relayStreamKey.trim());
+        localStorage.removeItem(FB_STREAM_KEY_SESSION_KEY);
+        localStorage.removeItem(FB_CONNECT_TOKEN_LEGACY_KEY);
+      } catch { /* ignore */ }
+
+      const resp = await fetch("/api/live/fb/connect", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${relayConnectToken.trim()}`,
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify({
+          stream_key: relayStreamKey.trim(),
+          fb_stream_key: relayStreamKey.trim(),
+          fb_rtmp_url: targetRtmpUrl,
+          platform: relayConnector.platform,
+          name: `Southern Signal - ${relayConnector.platform} ${new Date().toISOString()}`,
+        }),
+      });
+      const data = await resp.json() as { whip_url?: string; error?: string; cf_status?: number; step?: string };
+      if (!resp.ok || !data.whip_url) {
+        const detail = data.step ? ` - step ${data.step}${data.cf_status ? ` (${data.cf_status})` : ""}` : "";
+        clearRelayConnectorSessionSecrets();
+        relayConnectIdempotencyKeyRef.current = null;
+        setRelayStreamKey("");
+        setRelayConnectToken("");
+        setRelayConnectMsg(`Failed: ${data.error ?? `HTTP ${resp.status}`}${detail}`);
+        return;
+      }
+
+      setWhipUrl(data.whip_url);
+      setWhipBearer("");
+      setWhipSaveError(null);
+      saveWhipBroadcastConfig({ provider: whipProvider, url: data.whip_url, bearer: "" });
+      clearRelayConnectorSessionSecrets();
+      relayConnectIdempotencyKeyRef.current = null;
+      setRelayStreamKey("");
+      setRelayConnectToken("");
+      setRelayConnectMsg(`Connected - WHIP URL is ready for ${relayConnector.platform}.`);
+    } catch (err) {
+      clearRelayConnectorSessionSecrets();
+      relayConnectIdempotencyKeyRef.current = null;
+      setRelayStreamKey("");
+      setRelayConnectToken("");
+      setRelayConnectMsg(`Failed: ${(err as Error).message}`);
+    } finally {
+      setRelayConnecting(false);
+    }
+  }, [relayConnector, relayStreamKey, relayRtmpUrl, relayConnectToken, whipProvider]);
 
   // Stay in sync if the operator finishes the tour in another tab.
   useEffect(() => {
@@ -352,7 +478,7 @@ export function Setup() {
       <section className={st.panel}>
         <header className={st.panelHeader}>
           <h2 className={st.panelTitle}>Broadcast</h2>
-          <span className={st.panelBadge}>{trimmedWhipUrl ? "Configured" : "Not set"}</span>
+          <span className={st.panelBadge}>{trimmedWhipUrl ? (whipUrlHasPlaceholder ? "Needs edit" : "Configured") : "Not set"}</span>
         </header>
         <p className={st.panelLede}>
           Configure your WHIP live-stream destination. The Go Live button on the Camera screen uses these settings. Supported providers: Cloudflare Stream, Mux, Dolby.io, Restream, and any standards-compliant WHIP endpoint. Bearer tokens and stream-key URLs are kept to this browser session unless the provider URL is safe to persist.
@@ -363,13 +489,75 @@ export function Setup() {
             id="setup-whip-provider"
             className={st.input}
             value={whipProvider}
-            onChange={(e) => setWhipProvider(e.target.value as WhipProviderKey)}
+            onChange={(e) => handleWhipProviderChange(e.target.value as WhipProviderKey)}
           >
             {Object.entries(WHIP_PROVIDER_LABELS).map(([key, label]) => (
               <option key={key} value={key}>{label}</option>
             ))}
           </select>
         </div>
+        {relayConnector && (
+          <div className={st.relayConnector} data-provider={relayConnector.provider}>
+            <p className={st.panelLede}>
+              <strong>Quick setup:</strong> paste the {relayConnector.platform} stream key and connector token. The app creates a Cloudflare Live Input, adds the RTMP output, and fills the WHIP URL below.
+            </p>
+            <div className={st.fieldRow}>
+              <label className={st.fieldLabel} htmlFor="setup-relay-stream-key">{relayConnector.streamKeyLabel}</label>
+              <input
+                id="setup-relay-stream-key"
+                type="password"
+                className={st.input}
+                value={relayStreamKey}
+                onChange={(e) => setRelayStreamKey(e.target.value)}
+                placeholder={relayConnector.streamKeyPlaceholder}
+                autoComplete="off"
+                spellCheck={false}
+                disabled={relayConnecting}
+              />
+              <span className={st.toggleHint}>{relayConnector.streamKeyHint}</span>
+            </div>
+            <div className={st.fieldRow}>
+              <label className={st.fieldLabel} htmlFor="setup-relay-rtmp-url">{relayConnector.rtmpUrlLabel}</label>
+              <input
+                id="setup-relay-rtmp-url"
+                type="text"
+                className={st.input}
+                value={relayRtmpUrl}
+                onChange={(e) => setRelayRtmpUrl(e.target.value)}
+                placeholder={relayConnector.rtmpUrlPlaceholder}
+                autoComplete="off"
+                spellCheck={false}
+                disabled={relayConnecting}
+              />
+              <span className={st.toggleHint}>{relayConnector.rtmpUrlHint}</span>
+            </div>
+            <div className={st.fieldRow}>
+              <label className={st.fieldLabel} htmlFor="setup-relay-token">Connector bearer token</label>
+              <input
+                id="setup-relay-token"
+                type="password"
+                className={st.input}
+                value={relayConnectToken}
+                onChange={(e) => setRelayConnectToken(e.target.value)}
+                placeholder="Matches FB_CONNECT_TOKEN in Pages env"
+                autoComplete="off"
+                spellCheck={false}
+                disabled={relayConnecting}
+              />
+            </div>
+            <div className={st.actionRow}>
+              <button
+                type="button"
+                className={st.linkBtn}
+                onClick={handleRelayConnect}
+                disabled={relayConnecting || !relayStreamKey.trim() || !relayConnectToken.trim()}
+              >
+                {relayConnecting ? "Connecting..." : `Connect to ${relayConnector.platform}`}
+              </button>
+            </div>
+            {relayConnectMsg && <p className={st.statusLine}>{relayConnectMsg}</p>}
+          </div>
+        )}
         <div className={st.fieldRow}>
           <label className={st.fieldLabel} htmlFor="setup-whip-url">WHIP endpoint URL</label>
           <input
@@ -405,6 +593,7 @@ export function Setup() {
             </button>
           )}
         </div>
+        {whipSaveError && <p className={st.errorLine}>{whipSaveError}</p>}
       </section>
 
       {/* Cloud sync (R2 + D1) */}

@@ -23,7 +23,7 @@ interface Health {
     };
     sync: { configured: boolean; has_kv_token: boolean; has_d1: boolean; has_r2: boolean; signed_auth_kv: boolean };
     radio_proxy: { ok: boolean };
-    live_relay: { configured: boolean };
+    live_relay: { configured: boolean; direct_whip_configured?: boolean; cloudflare_rtmp_configured?: boolean };
     fb_connector: {
       configured: boolean;
       has_token: boolean;
@@ -113,13 +113,19 @@ export function DeploymentHealth() {
             envHint={null}
           />
           <FeatureRow
-            label="Live broadcast relay (WHIP)"
+            label="Live broadcast relay"
             ok={status.data.features.live_relay.configured}
-            detail={status.data.features.live_relay.configured ? "WHIP relay endpoint configured." : "Local recording still works. WHIP broadcast skipped."}
-            envHint="WHIP_RELAY_TOKEN + WHIP_RELAY_ENDPOINT"
+            detail={
+              status.data.features.live_relay.direct_whip_configured
+                ? "Direct WHIP relay endpoint configured."
+                : status.data.features.live_relay.cloudflare_rtmp_configured
+                  ? "Cloudflare RTMP relay connector configured."
+                  : "Local recording still works. WHIP broadcast skipped."
+            }
+            envHint="WHIP_RELAY_TOKEN + WHIP_RELAY_ENDPOINT or Cloudflare RTMP connector env"
           />
           <FeatureRow
-            label="Facebook Live connector"
+            label="Cloudflare RTMP connector"
             ok={status.data.features.fb_connector.configured}
             detail={[
               status.data.features.fb_connector.has_token ? "token ✓" : "token ✕",

@@ -110,6 +110,24 @@
   transition: background 120ms;
 }
 .linkBtn:hover { background: var(--bg-overlay); }
+.linkBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.relayConnector {
+  --relay-brand: 24, 119, 242;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-8);
+  padding: var(--s-12);
+  border-radius: var(--r-md);
+  background: rgba(var(--relay-brand), 0.06);
+  border: 1px solid rgba(var(--relay-brand), 0.35);
+}
+.relayConnector[data-provider="youtube_via_cloudflare"] {
+  --relay-brand: 255, 0, 0;
+}
 
 .errorLine {
   margin: var(--s-8) 0 0;

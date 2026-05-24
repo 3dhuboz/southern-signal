@@ -1,8 +1,10 @@
-/* Brand-asset color: Facebook Live's official blue (#1877F2). This is not
-   chrome — it's a third-party brand mark, so it should NOT shift with
-   theme. Keep hardcoded but isolated so future audits don't sweep it. */
-.fbConnector {
-  --fb-brand: 24, 119, 242;
+/* Brand-asset color for RTMP relay destinations. These are third-party
+   brand signals, so they stay isolated from the app theme. */
+.relayConnector {
+  --relay-brand: 24, 119, 242;
+}
+.relayConnector[data-provider="youtube_via_cloudflare"] {
+  --relay-brand: 255, 0, 0;
 }
 
 .wrap {
@@ -320,22 +322,22 @@
 .advanced[open] .advancedSummary::before { transform: rotate(90deg); }
 .advancedSummary:hover { color: var(--text-secondary); }
 
-.fbConnector {
+.relayConnector {
   display: flex;
   flex-direction: column;
   gap: var(--s-8);
   padding: var(--s-12);
-  background: rgba(var(--fb-brand), 0.06);
-  border: 1px solid rgba(var(--fb-brand), 0.35);
+  background: rgba(var(--relay-brand), 0.06);
+  border: 1px solid rgba(var(--relay-brand), 0.35);
   border-radius: var(--r-sm);
 }
-.fbConnectorIntro {
+.relayConnectorIntro {
   margin: 0;
   font-size: 11px;
   line-height: 1.45;
   color: var(--text-secondary);
 }
-.fbConnectorIntro code {
+.relayConnectorIntro code {
   font-size: 10px;
   padding: 1px var(--s-4);
   background: var(--bg-inset);

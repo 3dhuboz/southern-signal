@@ -58,8 +58,10 @@ interface PagesContext<E = unknown> {
 type PagesFn<E = unknown> = (ctx: PagesContext<E>) => Response | Promise<Response>;
 
 interface ConnectBody {
+  stream_key?: string;
   fb_stream_key?: string;
   fb_rtmp_url?: string;
+  platform?: string;
   name?: string;
 }
 
@@ -241,7 +243,7 @@ export const onRequestOptions: PagesFn<Env> = async () => new Response(null, {
 export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
   if (!env.FB_CONNECT_TOKEN || !env.CF_ACCOUNT_ID || !env.CF_STREAM_API_TOKEN) {
     return jsonResponse({
-      error: "Facebook Live connector isn't configured on this deployment. Add CF_ACCOUNT_ID, CF_STREAM_API_TOKEN (Stream:Edit), and FB_CONNECT_TOKEN to Cloudflare Pages → southern-signal → Settings → Environment variables.",
+      error: "Cloudflare RTMP connector isn't configured on this deployment. Add CF_ACCOUNT_ID, CF_STREAM_API_TOKEN (Stream:Edit), and FB_CONNECT_TOKEN to Cloudflare Pages settings.",
     }, 503);
   }
 
@@ -253,21 +255,22 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
 
   if (!env.FB_CONNECT_STATE) {
     return jsonResponse({
-      error: "Facebook Live connector requires the FB_CONNECT_STATE D1 binding so repeated calls cannot create duplicate paid Stream resources.",
+      error: "Cloudflare RTMP connector requires the FB_CONNECT_STATE D1 binding so repeated calls cannot create duplicate paid Stream resources.",
     }, 503);
   }
 
   const bodyResult = await readLimitedJson<ConnectBody>(request, MAX_BODY_BYTES);
   if (!bodyResult.ok) return jsonResponse({ error: bodyResult.status === 413 ? "Body too large." : bodyResult.error }, bodyResult.status);
   const body = bodyResult.value;
-  const fbStreamKey = body.fb_stream_key?.trim();
-  if (!fbStreamKey) return jsonResponse({ error: "fb_stream_key is required." }, 400);
-  if (fbStreamKey.length > 200) return jsonResponse({ error: "fb_stream_key looks too long." }, 400);
+  const fbStreamKey = (body.stream_key?.trim() || body.fb_stream_key?.trim() || "");
+  if (!fbStreamKey) return jsonResponse({ error: "stream_key is required." }, 400);
+  if (fbStreamKey.length > 200) return jsonResponse({ error: "stream_key looks too long." }, 400);
   const fbRtmpUrl = (body.fb_rtmp_url?.trim() || DEFAULT_FB_RTMP);
   if (!fbRtmpUrl.startsWith("rtmp://") && !fbRtmpUrl.startsWith("rtmps://")) {
     return jsonResponse({ error: "fb_rtmp_url must start with rtmp:// or rtmps://." }, 400);
   }
-  const name = (body.name?.trim() || `Southern Signal — FB Live ${new Date().toISOString()}`).slice(0, 120);
+  const platform = (body.platform?.trim() || (fbRtmpUrl.includes("youtube") ? "YouTube Live" : "Facebook Live")).slice(0, 40);
+  const name = (body.name?.trim() || `Southern Signal - ${platform} ${new Date().toISOString()}`).slice(0, 120);
 
   const idempotencyKey = normaliseIdempotencyKey(request);
   if (!idempotencyKey) {
@@ -281,6 +284,7 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
   const requestHash = await sha256Hex(JSON.stringify({
     fb_stream_key: fbStreamKey,
     fb_rtmp_url: fbRtmpUrl,
+    platform,
     name: body.name?.trim() ?? "",
   }));
   const existing = await readIdempotencyRow(stateDb, idempotencyKey);
@@ -301,7 +305,7 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
   const rate = await readRateLimit(env.AI_RATE_LIMIT, ipHash);
   if (rate.used >= rate.cap) {
     return jsonResponse(
-      { error: "Facebook Live connector rate limit reached.", retry_after_seconds: Math.round(rate.resetMs / 1000) },
+      { error: "Cloudflare RTMP connector rate limit reached.", retry_after_seconds: Math.round(rate.resetMs / 1000) },
       429,
       { "Retry-After": String(Math.round(rate.resetMs / 1000)), ...rateLimitHeaders(rate) },
     );
@@ -320,6 +324,8 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
     }
     return jsonResponse({ error: "A Facebook connector request with this Idempotency-Key could not be reserved." }, 409);
   }
+  const consumedRate = { ...rate, used: rate.used + 1 };
+  await recordRateLimitRun(env.AI_RATE_LIMIT, rate).catch(() => { /* best effort */ });
 
   const cfHeaders: Record<string, string> = {
     "Authorization": `Bearer ${env.CF_STREAM_API_TOKEN}`,
@@ -351,7 +357,7 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
     return jsonResponse({ error: "Cloudflare returned no input UID or WebRTC URL.", cf_response: inputJson }, 502);
   }
 
-  // 2. Add Facebook as an RTMP output on the input.
+  // 2. Add the platform as an RTMP output on the input.
   const outputResp = await fetch(`${CF_API}/accounts/${env.CF_ACCOUNT_ID}/stream/live_inputs/${inputUid}/outputs`, {
     method: "POST",
     headers: cfHeaders,
@@ -370,7 +376,7 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
     }).catch(() => { /* swallow */ });
     await markIdempotencyFailed(stateDb, idempotencyKey, { step: "outputs", status: outputResp.status }).catch(() => { /* ignore */ });
     return jsonResponse({
-      error: `Cloudflare rejected outputs create (${outputResp.status}). Live Input rolled back. Check that the Facebook stream key + URL are valid.`,
+      error: `Cloudflare rejected outputs create (${outputResp.status}). Live Input rolled back. Check that the ${platform} stream key + RTMP URL are valid.`,
       cf_status: outputResp.status,
       step: "outputs",
     }, 502);
@@ -385,6 +391,5 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
     fb_rtmp_url: fbRtmpUrl,
   };
   await markIdempotencySucceeded(stateDb, idempotencyKey, responseBody);
-  await recordRateLimitRun(env.AI_RATE_LIMIT, rate).catch(() => { /* best effort */ });
-  return jsonResponse(responseBody, 200, rateLimitHeaders({ ...rate, used: rate.used + 1 }));
+  return jsonResponse(responseBody, 200, rateLimitHeaders(consumedRate));
 };

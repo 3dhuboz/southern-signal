@@ -18,6 +18,7 @@ export const FB_CONNECT_TOKEN_LEGACY_KEY = "ss-fb-connect-token";
 
 export type WhipProviderKey =
   | "cloudflare"
+  | "youtube_via_cloudflare"
   | "fb_live_via_cloudflare"
   | "fb_live_via_restream"
   | "mux"
@@ -34,6 +35,54 @@ export interface WhipProviderTemplate {
   note: string;
 }
 
+export interface CloudflareRtmpRelayConnector {
+  provider: WhipProviderKey;
+  platform: "YouTube Live" | "Facebook Live";
+  streamKeyLabel: string;
+  streamKeyPlaceholder: string;
+  streamKeyHint: string;
+  rtmpUrlLabel: string;
+  rtmpUrlPlaceholder: string;
+  rtmpUrlHint: string;
+  defaultRtmpUrl: string;
+}
+
+export const FACEBOOK_RTMPS_INGEST_URL = "rtmps://live-api-s.facebook.com:443/rtmp/";
+export const YOUTUBE_RTMPS_INGEST_URL = "rtmps://a.rtmps.youtube.com/live2";
+
+export const CLOUDFLARE_RTMP_RELAY_CONNECTORS: Partial<Record<WhipProviderKey, CloudflareRtmpRelayConnector>> = {
+  youtube_via_cloudflare: {
+    provider: "youtube_via_cloudflare",
+    platform: "YouTube Live",
+    streamKeyLabel: "YouTube stream key",
+    streamKeyPlaceholder: "Paste YouTube stream key",
+    streamKeyHint: "Use a fresh stream key from YouTube Live Control Room. For scheduled streams, copy the key tied to that event.",
+    rtmpUrlLabel: "YouTube RTMPS server URL",
+    rtmpUrlPlaceholder: YOUTUBE_RTMPS_INGEST_URL,
+    rtmpUrlHint: "YouTube shows this in Live Control Room. The default RTMPS ingest works for standard YouTube Live streams; paste a different RTMPS URL if Studio shows one.",
+    defaultRtmpUrl: YOUTUBE_RTMPS_INGEST_URL,
+  },
+  fb_live_via_cloudflare: {
+    provider: "fb_live_via_cloudflare",
+    platform: "Facebook Live",
+    streamKeyLabel: "Facebook stream key",
+    streamKeyPlaceholder: "Paste Facebook stream key",
+    streamKeyHint: "Use the stream key from Live Producer for the page/profile/event you are broadcasting to.",
+    rtmpUrlLabel: "Facebook RTMPS server URL",
+    rtmpUrlPlaceholder: FACEBOOK_RTMPS_INGEST_URL,
+    rtmpUrlHint: "Facebook's standard Live Producer RTMPS ingest URL. Paste a custom RTMP/RTMPS URL only if Live Producer gives you one.",
+    defaultRtmpUrl: FACEBOOK_RTMPS_INGEST_URL,
+  },
+};
+
+export function getCloudflareRtmpRelayConnector(provider: WhipProviderKey): CloudflareRtmpRelayConnector | null {
+  return CLOUDFLARE_RTMP_RELAY_CONNECTORS[provider] ?? null;
+}
+
+export function hasUnresolvedWhipPlaceholder(url: string): boolean {
+  return /<[^>]+>/.test(url);
+}
+
 // URL templates with placeholders intentionally preserved — the user replaces
 // the <bracketed> bits with their stream-specific values.
 //
@@ -47,6 +96,12 @@ export const WHIP_PROVIDERS: WhipProviderTemplate[] = [
     label: "Cloudflare Stream Live",
     url: "https://customer-XXXX.cloudflarestream.com/<input-id>/webrtc/publish",
     note: "From Cloudflare dashboard → Stream → Live Inputs → WebRTC URL. Bearer token not required.",
+  },
+  {
+    key: "youtube_via_cloudflare",
+    label: "YouTube Live (via Cloudflare relay)",
+    url: "https://customer-XXXX.cloudflarestream.com/<input-id>/webrtc/publish",
+    note: "YouTube Live uses an encoder Stream URL + stream key. Use Quick setup to create a Cloudflare Live Input and YouTube RTMPS output, then broadcast the phone's composited WHIP feed through Cloudflare to YouTube.",
   },
   {
     key: "fb_live_via_cloudflare",
@@ -100,6 +155,7 @@ export function readStoredWhipProvider(): WhipProviderKey {
 
 export function canPersistWhipUrl(provider: WhipProviderKey, url: string): boolean {
   if (!url.trim()) return false;
+  if (hasUnresolvedWhipPlaceholder(url)) return false;
   return provider === "cloudflare" || provider === "eyevinn";
 }
 

@@ -16,7 +16,7 @@
  *       ai_transcribe: { configured: boolean, provider: "groq" | "openai" | "openrouter" | "none", openrouter_audio_allowed: boolean },
  *       sync: { configured: boolean, has_kv_token: boolean, has_d1: boolean, has_r2: boolean, signed_auth_kv: boolean },
  *       radio_proxy: { ok: true },
- *       live_relay: { configured: boolean },
+ *       live_relay: { configured: boolean, direct_whip_configured: boolean, cloudflare_rtmp_configured: boolean },
  *       fb_connector: { configured: boolean, has_token: boolean, has_account: boolean, has_stream_token: boolean, has_state_d1: boolean },
  *     }
  *   }
@@ -114,7 +114,9 @@ export const onRequestGet: PagesFn<Env> = async ({ env }) => {
       },
       radio_proxy: { ok: true },
       live_relay: {
-        configured: !!(env.WHIP_RELAY_TOKEN && env.WHIP_RELAY_ENDPOINT),
+        configured: !!(env.WHIP_RELAY_TOKEN && env.WHIP_RELAY_ENDPOINT) || (hasFbToken && hasFbAccount && hasFbStreamToken && hasFbStateD1),
+        direct_whip_configured: !!(env.WHIP_RELAY_TOKEN && env.WHIP_RELAY_ENDPOINT),
+        cloudflare_rtmp_configured: hasFbToken && hasFbAccount && hasFbStreamToken && hasFbStateD1,
       },
       fb_connector: {
         configured: hasFbToken && hasFbAccount && hasFbStreamToken && hasFbStateD1,
