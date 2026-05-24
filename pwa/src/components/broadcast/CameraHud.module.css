@@ -143,3 +143,10 @@
   -webkit-backdrop-filter: blur(10px);
   padding: 4px 6px;
 }
+
+@media (max-width: 520px) {
+  .evpDockSlot {
+    max-width: min(230px, 58vw);
+    padding: 3px;
+  }
+}

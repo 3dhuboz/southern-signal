@@ -117,6 +117,16 @@
   color: #ffd37a;
 }
 
+.scenesBtn,
+.hudBtn,
+.markerBtn,
+.clipBtn,
+.liveBtn,
+.lensBtn,
+.torchBtn {
+  flex-shrink: 0;
+}
+
 .icon {
   display: inline-flex;
   align-items: center;
@@ -136,6 +146,33 @@
 }
 
 @media (max-width: 520px) {
+  .dock {
+    height: 52px;
+    padding: 0 12px;
+  }
+
+  .group {
+    max-width: calc(50% - 54px);
+    gap: 6px;
+    overflow: hidden;
+  }
+
+  .btn {
+    width: 44px;
+    min-width: 44px;
+    padding: 0;
+    border-radius: 16px;
+  }
+
+  .label {
+    display: none;
+  }
+
+  .hudBtn,
+  .markerBtn,
+  .liveBtn,
+  .lensBtn,
+  .torchBtn,
   .screenRecordBtn {
     display: none;
   }

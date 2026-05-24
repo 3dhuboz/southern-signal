@@ -126,6 +126,7 @@ export function BroadcastSensorHud({
   return (
     <div
       className={s.hud}
+      data-hud-drag-target="sensors"
       role="group"
       aria-label="Live sensor readings"
     >

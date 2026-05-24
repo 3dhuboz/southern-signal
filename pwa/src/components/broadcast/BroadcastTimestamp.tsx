@@ -74,6 +74,7 @@ export function BroadcastTimestamp({ running, elapsedSec }: Props) {
   return (
     <div
       className={`${s.slate} ${running ? s.running : ""}`.trim()}
+      data-hud-drag-target="timecode"
       role="timer"
       aria-label={`Timecode ${local} local`}
       aria-live="off"

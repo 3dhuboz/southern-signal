@@ -70,6 +70,45 @@
   user-select: none;
 }
 
+.cameraWrap[data-hud-dragging="true"] {
+  touch-action: none;
+}
+
+.cameraWrap :global([data-hud-drag-target]) {
+  cursor: grab;
+  touch-action: none;
+}
+
+.cameraWrap[data-hud-dragging="true"] :global([data-hud-drag-target]),
+.cameraWrap :global([data-hud-drag-active="true"]) {
+  cursor: grabbing;
+}
+
+.burnInDragLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.burnInDragHandle {
+  position: absolute;
+  width: var(--ss-drag-w);
+  height: var(--ss-drag-h);
+  border: 1px dashed transparent;
+  border-radius: 12px;
+  pointer-events: auto;
+  touch-action: none;
+  background: transparent;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.burnInDragHandle:hover,
+.burnInDragHandle[data-hud-drag-active="true"] {
+  border-color: rgba(93, 242, 199, 0.42);
+  background: rgba(93, 242, 199, 0.06);
+}
+
 /* HUD chrome dim — applied via attribute selector so we don't have to plumb
    a dimmed prop through every Broadcast* component. When the camera isn't
    streaming we drop the HUD to 55% opacity so it reads as "muted / waiting"

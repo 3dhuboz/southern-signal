@@ -76,6 +76,7 @@ export function BroadcastLowerThird({ running, title, location, startedAt }: Pro
   return (
     <div
       className={`${s.slate} ${running ? s.visible : s.hidden}`.trim()}
+      data-hud-drag-target="lowerThird"
       aria-hidden={!running}
       role="region"
       aria-label="Investigation slate"

@@ -36,6 +36,8 @@ interface Props {
    * re-firing if the parent rerenders.
    */
   autoStart?: boolean;
+  /** Live camera mic level for the on-screen EVP meter, linear 0..1. */
+  level?: number;
   /**
    * Mirror flag — when this transitions from true → false, the recorder
    * stops + saves. Lets a session-end (running flips off) flush a clip
@@ -52,7 +54,7 @@ function formatDuration(seconds: number): string {
   return `${m.toString().padStart(2, "0")}:${sec.toString().padStart(2, "0")}`;
 }
 
-export function EvpRecorderControl({ investigationId, onSaved, variant = "default", autoStart = false, active }: Props) {
+export function EvpRecorderControl({ investigationId, onSaved, variant = "default", autoStart = false, active, level = 0 }: Props) {
   const recorderRef = useRef<EvpRecorder | null>(null);
   if (!recorderRef.current) recorderRef.current = new EvpRecorder();
 
@@ -310,12 +312,24 @@ export function EvpRecorderControl({ investigationId, onSaved, variant = "defaul
   const isStarting = state.status === "starting";
   const isStopping = state.status === "stopping";
   const wrapClass = variant === "compact" ? `${s.wrap} ${s.compact}` : s.wrap;
+  const levelPct = Math.round(Math.max(0, Math.min(1, level)) * 100);
 
   return (
     <div className={wrapClass}>
       <div className={s.head}>
         <span className={s.eyebrow}>EVP CAPTURE</span>
         <span className={s.note}>16-bit · 48 kHz · mono · raw PCM (no AGC, no AEC).</span>
+      </div>
+
+      <div
+        className={s.levelMeter}
+        role="meter"
+        aria-label="EVP microphone level"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={levelPct}
+      >
+        <span className={s.levelFill} style={{ width: `${levelPct}%` }} />
       </div>
 
       <div className={s.row}>

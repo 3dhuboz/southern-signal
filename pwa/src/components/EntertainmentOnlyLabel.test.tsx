@@ -35,4 +35,10 @@ describe("<EntertainmentOnlyLabel />", () => {
     const node = getByTestId("entertainment-only-label");
     expect(node.className).toMatch(/inline/);
   });
+
+  it("camera variant uses the low-priority camera strip", () => {
+    const { getByTestId } = render(<EntertainmentOnlyLabel variant="camera" />);
+    const node = getByTestId("entertainment-only-label");
+    expect(node.className).toMatch(/camera/);
+  });
 });

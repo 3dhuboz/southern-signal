@@ -8,6 +8,7 @@ import {
   normalizeOverlayLayoutSettings,
   saveOverlayLayoutSettings,
   getOverlayTargetOpacity,
+  moveOverlayPlacementByPointerDelta,
   updateOverlayOpacity,
   updateOverlayPlacement,
 } from "./overlayLayout";
@@ -83,5 +84,22 @@ describe("overlayLayout storage", () => {
     const afterTargetOpacity = updateOverlayPlacement(afterOpacity, "landscape", "caption", { opacity: 0.42 });
     expect(getOverlayTargetOpacity(afterTargetOpacity.landscape, "caption")).toBe(0.42);
     expect(getOverlayTargetOpacity(afterTargetOpacity.landscape, "status")).toBe(0.7);
+  });
+
+  it("converts pointer drag deltas into anchor-aware placement offsets", () => {
+    expect(moveOverlayPlacementByPointerDelta(
+      { anchor: "top-left", offsetX: 10, offsetY: 20 },
+      { deltaX: 12, deltaY: 8 },
+    )).toMatchObject({ anchor: "top-left", offsetX: 22, offsetY: 28 });
+
+    expect(moveOverlayPlacementByPointerDelta(
+      { anchor: "bottom-right", offsetX: 10, offsetY: 20 },
+      { deltaX: 12, deltaY: 8 },
+    )).toMatchObject({ anchor: "bottom-right", offsetX: -2, offsetY: 12 });
+
+    expect(moveOverlayPlacementByPointerDelta(
+      { anchor: "middle-center", offsetX: 470, offsetY: -470 },
+      { deltaX: 40, deltaY: -40 },
+    )).toMatchObject({ anchor: "middle-center", offsetX: 480, offsetY: -480 });
   });
 });

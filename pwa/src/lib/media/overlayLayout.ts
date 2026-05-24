@@ -134,7 +134,7 @@ const DEFAULT_PORTRAIT_PLACEMENTS: Record<OverlayLayoutTarget, OverlayPlacement>
   status: { anchor: "top-left", offsetX: 12, offsetY: 12 },
   mic: { anchor: "middle-left", offsetX: 12, offsetY: -30 },
   scene: { anchor: "top-right", offsetX: 12, offsetY: 12 },
-  timecode: { anchor: "bottom-left", offsetX: 12, offsetY: 24 },
+  timecode: { anchor: "bottom-left", offsetX: 12, offsetY: 132 },
   lowerThird: { anchor: "bottom-center", offsetX: 0, offsetY: 166 },
   activity: { anchor: "top-center", offsetX: 0, offsetY: 58 },
   evp: { anchor: "top-right", offsetX: 12, offsetY: 70 },
@@ -286,5 +286,24 @@ export function updateOverlayPlacement(
         [target]: normalizePlacement({ ...current, ...placement }, current),
       },
     },
+  };
+}
+
+export function moveOverlayPlacementByPointerDelta(
+  placement: OverlayPlacement,
+  delta: { deltaX: number; deltaY: number },
+): OverlayPlacement {
+  const [vertical, horizontal] = placement.anchor.split("-") as [
+    "top" | "middle" | "bottom",
+    "left" | "center" | "right",
+  ];
+
+  const xSign = horizontal === "right" ? -1 : 1;
+  const ySign = vertical === "bottom" ? -1 : 1;
+
+  return {
+    ...placement,
+    offsetX: clampOverlayOffset(placement.offsetX + delta.deltaX * xSign),
+    offsetY: clampOverlayOffset(placement.offsetY + delta.deltaY * ySign),
   };
 }

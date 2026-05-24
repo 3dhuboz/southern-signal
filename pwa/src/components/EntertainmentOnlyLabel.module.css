@@ -9,7 +9,8 @@
    var(--bg-deep) with var(--text-secondary). */
 
 .inline,
-.fixed {
+.fixed,
+.camera {
   font-family: var(--font-mono, "VT323", ui-monospace, monospace);
   font-size: 11px;
   font-weight: 600;
@@ -53,6 +54,25 @@
   user-select: none;
 }
 
+.camera {
+  position: fixed;
+  right: 12px;
+  bottom: calc(var(--bottom-nav-height, 64px) + env(safe-area-inset-bottom, 0px));
+  left: 12px;
+  z-index: 3;
+  max-height: 30px;
+  overflow: hidden;
+  padding: 4px 8px;
+  border-color: transparent;
+  border-radius: 0;
+  background: linear-gradient(to top, rgba(7, 9, 12, 0.72), rgba(7, 9, 12, 0.32));
+  color: rgba(194, 202, 214, 0.82);
+  font-size: 9px;
+  line-height: 1.2;
+  pointer-events: none;
+  user-select: none;
+}
+
 .inline {
   margin: 16px auto;
   display: inline-block;
@@ -62,7 +82,8 @@
    the deep-red surface, but the text colour needs the scotopic palette
    to avoid white-against-red. */
 :global([data-theme="scotopic"]) .inline,
-:global([data-theme="scotopic"]) .fixed {
+:global([data-theme="scotopic"]) .fixed,
+:global([data-theme="scotopic"]) .camera {
   color: var(--scotopic-text, #c43c3c);
   background: rgba(10, 0, 0, 0.82);
   border-color: rgba(196, 60, 60, 0.18);

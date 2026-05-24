@@ -140,6 +140,7 @@ export function BroadcastAudioMeter({ rms, vadActive = false }: Props) {
   return (
     <div
       className={`${s.meter} ${vadActive ? s.active : ""}`.trim()}
+      data-hud-drag-target="mic"
       role="meter"
       aria-label={`Microphone level: ${ariaLevel} dBFS${vadSuffix}`}
       aria-valuemin={MIN_DB}

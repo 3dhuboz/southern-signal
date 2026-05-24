@@ -38,7 +38,7 @@
   line-height: 1;
 
   z-index: 5;
-  pointer-events: none;
+  pointer-events: auto;
   opacity: var(--ss-hud-timecode-opacity, var(--ss-hud-opacity, 1));
   transform: var(--ss-hud-timecode-transform, none);
   -webkit-user-select: none;
@@ -119,9 +119,14 @@
    left third of a 390-wide phone without crowding the marker pill. */
 @media (max-width: 420px) {
   .slate {
-    padding: 8px 12px 7px;
-    gap: 3px;
+    max-width: 142px;
+    padding: 7px 10px 6px;
+    gap: 2px;
   }
-  .local { font-size: 24px; }
-  .utc, .elapsed { font-size: 10.5px; }
+  .local { font-size: 22px; }
+  .utc, .elapsed { font-size: 10px; }
+  .eyebrow {
+    min-width: 20px;
+    font-size: 8.5px;
+  }
 }

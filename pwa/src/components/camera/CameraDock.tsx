@@ -198,7 +198,7 @@ export function CameraDock({
       <div className={`${s.group} ${s.groupLeft}`}>
         <button
           type="button"
-          className={s.btn}
+          className={`${s.btn} ${s.scenesBtn}`}
           onClick={onScenesOpen}
           aria-label="Open scene picker"
           title="Scenes"
@@ -213,7 +213,7 @@ export function CameraDock({
             affordance for after the session ends. */}
         <button
           type="button"
-          className={s.btn}
+          className={`${s.btn} ${s.hudBtn}`}
           onClick={onHudOpen}
           aria-label="Open HUD layout"
           title="HUD layout"
@@ -225,7 +225,7 @@ export function CameraDock({
         {!simplifiedDock && (
           <button
             type="button"
-            className={s.btn}
+            className={`${s.btn} ${s.markerBtn}`}
             onClick={onMarkersOpen}
             aria-label="Open marker review"
             title="Markers"
@@ -247,7 +247,7 @@ export function CameraDock({
               tapping it does without prior context. */}
           <button
             type="button"
-            className={`${s.btn} ${broadcastRecording ? s.btnActive : ""}`.trim()}
+            className={`${s.btn} ${s.clipBtn} ${broadcastRecording ? s.btnActive : ""}`.trim()}
             onClick={() => recordToggleRef.current?.()}
             disabled={!cameraState.streamOn}
             aria-pressed={broadcastRecording}
@@ -260,7 +260,7 @@ export function CameraDock({
 
           <button
             type="button"
-            className={`${s.btn} ${broadcastLive ? s.btnLive : !hasLiveDestination ? s.btnAttention : ""}`.trim()}
+            className={`${s.btn} ${s.liveBtn} ${broadcastLive ? s.btnLive : !hasLiveDestination ? s.btnAttention : ""}`.trim()}
             onClick={handleLiveClick}
             disabled={!broadcastLive && hasLiveDestination && !cameraState.streamOn}
             aria-pressed={broadcastLive}
@@ -291,7 +291,7 @@ export function CameraDock({
               AT users get the more useful announcement. */}
           <button
             type="button"
-            className={s.btn}
+            className={`${s.btn} ${s.lensBtn}`}
             onClick={() => flipCameraRef.current?.()}
             disabled={!cameraState.streamOn}
             aria-label={cameraState.facingMode === "environment" ? "Switch to front camera" : "Switch to rear camera"}
@@ -306,7 +306,7 @@ export function CameraDock({
           {cameraState.torchSupported && (
             <button
               type="button"
-              className={`${s.btn} ${cameraState.torchOn ? s.btnActive : ""}`.trim()}
+              className={`${s.btn} ${s.torchBtn} ${cameraState.torchOn ? s.btnActive : ""}`.trim()}
               onClick={() => torchToggleRef.current?.()}
               aria-pressed={cameraState.torchOn}
               aria-label={cameraState.torchOn ? "Turn torch off" : "Turn torch on"}

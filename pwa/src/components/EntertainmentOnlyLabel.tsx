@@ -18,6 +18,8 @@
  *  - `variant="fixed"` (default) — fixed-position chip at the bottom
  *    centre of the viewport. Use on the Camera surface where the live
  *    video must remain visible behind the chip.
+ *  - `variant="camera"` — a low-priority camera strip that stays visible
+ *    without competing with the shutter, dock, or timecode.
  *  - `variant="inline"` — flows inline with surrounding content. Use on
  *    document-flow surfaces like Case Cards, Setup, Review where there
  *    is no live video to overlay.
@@ -32,7 +34,7 @@ import s from "./EntertainmentOnlyLabel.module.css";
 
 interface Props {
   /** Layout mode. Defaults to "fixed" for camera surfaces. */
-  variant?: "fixed" | "inline";
+  variant?: "fixed" | "inline" | "camera";
   /** Optional className passthrough so callers can nudge positioning. */
   className?: string;
 }
@@ -40,7 +42,7 @@ interface Props {
 export function EntertainmentOnlyLabel({ variant = "fixed", className }: Props) {
   const label = getEntertainmentOnlyLabel();
   const wrapClass = [
-    variant === "fixed" ? s.fixed : s.inline,
+    variant === "inline" ? s.inline : variant === "camera" ? s.camera : s.fixed,
     className ?? "",
   ]
     .filter(Boolean)

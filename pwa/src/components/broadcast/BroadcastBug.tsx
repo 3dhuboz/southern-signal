@@ -85,6 +85,7 @@ export function BroadcastBug({ state, elapsedSec }: Props) {
   return (
     <div
       className={`${s.bug} ${stateClass}`.trim()}
+      data-hud-drag-target="status"
       role="status"
       aria-live="polite"
       aria-label={`Broadcast status: ${LABELS[state]}${state !== "idle" ? `, ${fmt(elapsedSec)} elapsed` : ""}`}

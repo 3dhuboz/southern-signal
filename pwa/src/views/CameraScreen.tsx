@@ -75,10 +75,13 @@ import {
   getOverlayTargetOpacity,
   getViewportOverlayOrientation,
   loadOverlayLayoutSettings,
+  moveOverlayPlacementByPointerDelta,
   saveOverlayLayoutSettings,
   type OverlayLayoutOrientation,
   type OverlayLayoutProfile,
+  type OverlayLayoutTarget,
   type OverlayPlacement,
+  updateOverlayPlacement,
 } from "../lib/media/overlayLayout";
 import { resolveOverlaysFromScene } from "../lib/overlays/registry";
 import {
@@ -132,6 +135,27 @@ const DOM_LAYOUT_TARGETS = {
   lowerThird: "lower-third",
 } as const;
 
+const DOM_DRAG_TARGETS = Object.keys(DOM_LAYOUT_TARGETS) as OverlayLayoutTarget[];
+
+const BURN_IN_DRAG_TARGETS: Array<{
+  target: OverlayLayoutTarget;
+  width: string;
+  height: string;
+}> = [
+  { target: "activity", width: "min(260px, calc(100vw - 32px))", height: "54px" },
+  { target: "evp", width: "min(220px, calc(100vw - 32px))", height: "86px" },
+  { target: "emfStack", width: "170px", height: "230px" },
+  { target: "audioStack", width: "220px", height: "270px" },
+  { target: "direction", width: "128px", height: "128px" },
+  { target: "caption", width: "min(560px, calc(100vw - 32px))", height: "74px" },
+  { target: "timestamp", width: "min(320px, calc(100vw - 32px))", height: "72px" },
+];
+
+const DRAGGABLE_LAYOUT_TARGETS = new Set<OverlayLayoutTarget>([
+  ...DOM_DRAG_TARGETS,
+  ...BURN_IN_DRAG_TARGETS.map((entry) => entry.target),
+]);
+
 const CameraHudLayoutSheet = lazy(() =>
   import("../components/camera/CameraHudLayoutSheet").then((mod) => ({
     default: mod.CameraHudLayoutSheet,
@@ -173,6 +197,44 @@ function assignDomPlacement(
   const translateY = vertical === "middle" ? "-50%" : "0";
   style[`--ss-hud-${prefix}-transform`] = `translate(${translateX}, ${translateY})`;
   style[`--ss-hud-${prefix}-display`] = placement.hidden ? "none" : "inline-flex";
+}
+
+type DragHandleStyle = CSSProperties & Record<"--ss-drag-h" | "--ss-drag-w", string>;
+
+function buildDragHandleStyle(
+  placement: OverlayPlacement,
+  width: string,
+  height: string,
+): DragHandleStyle {
+  const [vertical, horizontal] = placement.anchor.split("-") as [
+    "top" | "middle" | "bottom",
+    "left" | "center" | "right",
+  ];
+
+  return {
+    "--ss-drag-h": height,
+    "--ss-drag-w": width,
+    top: vertical === "top" ? `calc(var(--safe-top, 0px) + ${px(placement.offsetY)})`
+      : vertical === "middle" ? `calc(50% + ${px(placement.offsetY)})`
+      : "auto",
+    bottom: vertical === "bottom"
+      ? `calc(var(--safe-bottom, 0px) + var(--bottom-nav-height, 64px) + ${px(placement.offsetY)})`
+      : "auto",
+    left: horizontal === "left" ? `calc(var(--safe-left, 0px) + ${px(placement.offsetX)})`
+      : horizontal === "center" ? `calc(50% + ${px(placement.offsetX)})`
+      : "auto",
+    right: horizontal === "right" ? `calc(var(--safe-right, 0px) + ${px(placement.offsetX)})`
+      : "auto",
+    display: placement.hidden ? "none" : "block",
+    transform: `translate(${horizontal === "center" ? "-50%" : "0"}, ${vertical === "middle" ? "-50%" : "0"})`,
+  };
+}
+
+function readHudDragTarget(target: EventTarget | null): OverlayLayoutTarget | null {
+  if (!(target instanceof Element)) return null;
+  const raw = target.closest<HTMLElement>("[data-hud-drag-target]")?.dataset.hudDragTarget;
+  if (!raw || !DRAGGABLE_LAYOUT_TARGETS.has(raw as OverlayLayoutTarget)) return null;
+  return raw as OverlayLayoutTarget;
 }
 
 function buildHudStyle(profile: OverlayLayoutProfile): HudStyleVars {
@@ -392,10 +454,26 @@ export function CameraScreen() {
   const [hudLayoutOpen, setHudLayoutOpen] = useState(false);
   const [liveSetupHintOpen, setLiveSetupHintOpen] = useState(false);
   const [hudLayoutSettings, setHudLayoutSettings] = useState(() => loadOverlayLayoutSettings());
+  const hudLayoutSettingsRef = useRef(hudLayoutSettings);
   const [hudOrientation, setHudOrientation] = useState<OverlayLayoutOrientation>(() => getViewportOverlayOrientation());
   const [editingHudOrientation, setEditingHudOrientation] = useState<OverlayLayoutOrientation>(() => getViewportOverlayOrientation());
+  const [draggingHudTarget, setDraggingHudTarget] = useState<OverlayLayoutTarget | null>(null);
+  const hudDragRef = useRef<{
+    moved: boolean;
+    orientation: OverlayLayoutOrientation;
+    pointerId: number;
+    startPlacement: OverlayPlacement;
+    startX: number;
+    startY: number;
+    target: OverlayLayoutTarget;
+  } | null>(null);
+  const suppressNextHudClickRef = useRef(false);
   const activeHudLayout = getOverlayProfile(hudLayoutSettings, hudOrientation);
   const hudLayoutStyle = buildHudStyle(activeHudLayout);
+
+  useEffect(() => {
+    hudLayoutSettingsRef.current = hudLayoutSettings;
+  }, [hudLayoutSettings]);
 
   useEffect(() => {
     const syncOrientation = () => setHudOrientation(getViewportOverlayOrientation());
@@ -409,6 +487,7 @@ export function CameraScreen() {
   }, []);
 
   const handleHudLayoutSettingsChange = useCallback((next: typeof hudLayoutSettings) => {
+    hudLayoutSettingsRef.current = next;
     setHudLayoutSettings(next);
     saveOverlayLayoutSettings(next);
   }, []);
@@ -417,6 +496,81 @@ export function CameraScreen() {
     setEditingHudOrientation(getViewportOverlayOrientation());
     setHudLayoutOpen(true);
   }, []);
+
+  const beginHudDrag = useCallback((event: React.PointerEvent<HTMLDivElement>): boolean => {
+    if (hudLayoutOpen || sceneSheetOpen || liveSetupHintOpen) return false;
+    if (event.pointerType === "mouse" && event.button !== 0) return false;
+
+    const target = readHudDragTarget(event.target);
+    if (!target) return false;
+
+    const settings = hudLayoutSettingsRef.current;
+    const placement = settings[hudOrientation].placements[target];
+    if (!placement || placement.hidden) return false;
+
+    hudDragRef.current = {
+      moved: false,
+      orientation: hudOrientation,
+      pointerId: event.pointerId,
+      startPlacement: placement,
+      startX: event.clientX,
+      startY: event.clientY,
+      target,
+    };
+    setDraggingHudTarget(target);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Some test/browser surfaces do not expose capture for synthetic events.
+    }
+    event.stopPropagation();
+    return true;
+  }, [hudLayoutOpen, hudOrientation, liveSetupHintOpen, sceneSheetOpen]);
+
+  const moveHudDrag = useCallback((event: React.PointerEvent<HTMLDivElement>): boolean => {
+    const drag = hudDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return false;
+
+    const deltaX = event.clientX - drag.startX;
+    const deltaY = event.clientY - drag.startY;
+    if (Math.abs(deltaX) + Math.abs(deltaY) >= 4) drag.moved = true;
+
+    const nextPlacement = moveOverlayPlacementByPointerDelta(drag.startPlacement, { deltaX, deltaY });
+    setHudLayoutSettings((prev) => {
+      const next = updateOverlayPlacement(prev, drag.orientation, drag.target, nextPlacement);
+      hudLayoutSettingsRef.current = next;
+      return next;
+    });
+
+    event.preventDefault();
+    event.stopPropagation();
+    return true;
+  }, []);
+
+  const endHudDrag = useCallback((event: React.PointerEvent<HTMLDivElement>): boolean => {
+    const drag = hudDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return false;
+
+    hudDragRef.current = null;
+    setDraggingHudTarget(null);
+    if (drag.moved) {
+      suppressNextHudClickRef.current = true;
+      saveOverlayLayoutSettings(hudLayoutSettingsRef.current);
+      event.preventDefault();
+    }
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture may already be released if the browser cancelled it.
+    }
+    event.stopPropagation();
+    return true;
+  }, []);
+
+  const cancelHudDrag = useCallback((event: React.PointerEvent<HTMLDivElement>): boolean => {
+    const handled = endHudDrag(event);
+    return handled;
+  }, [endHudDrag]);
 
   // ── Gesture handlers ─────────────────────────────────────────────────────
   // Long-press anywhere on the camera primes Push-To-Talk — ducks the ITC
@@ -606,6 +760,38 @@ export function CameraScreen() {
   }, [activeSceneId]);
   const swipeProps = useHorizontalSwipe(cycleScene);
 
+  const handleCameraPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (beginHudDrag(event)) return;
+    composeHandlers(longPressProps.onPointerDown, doubleTapProps.onPointerDown, swipeProps.onPointerDown)(event);
+  }, [beginHudDrag, doubleTapProps.onPointerDown, longPressProps.onPointerDown, swipeProps.onPointerDown]);
+
+  const handleCameraPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (moveHudDrag(event)) return;
+    swipeProps.onPointerMove(event);
+  }, [moveHudDrag, swipeProps]);
+
+  const handleCameraPointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (endHudDrag(event)) return;
+    composeHandlers(longPressProps.onPointerUp, swipeProps.onPointerUp)(event);
+  }, [endHudDrag, longPressProps.onPointerUp, swipeProps.onPointerUp]);
+
+  const handleCameraPointerCancel = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (cancelHudDrag(event)) return;
+    longPressProps.onPointerCancel(event);
+  }, [cancelHudDrag, longPressProps]);
+
+  const handleCameraPointerLeave = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (hudDragRef.current) return;
+    longPressProps.onPointerLeave(event);
+  }, [longPressProps]);
+
+  const handleCameraClickCapture = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (!suppressNextHudClickRef.current) return;
+    suppressNextHudClickRef.current = false;
+    event.preventDefault();
+    event.stopPropagation();
+  }, []);
+
   // Marker toast — visible flag flips off via a setTimeout. Keeping the
   // expiry in state (vs imperative timer) lets the toast survive React
   // re-renders without flashing.
@@ -625,6 +811,7 @@ export function CameraScreen() {
   const [focusPulse, setFocusPulse] = useState<{ x: number; y: number; key: number } | null>(null);
   const handleFocusTap = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!cameraState.streamOn) return;
+    if (readHudDragTarget(e.target)) return;
     const rect = e.currentTarget.getBoundingClientRect();
     setFocusPulse({ x: e.clientX - rect.left, y: e.clientY - rect.top, key: Date.now() });
     void refocusRef.current?.();
@@ -1312,7 +1499,7 @@ export function CameraScreen() {
           module-load constant in src/lib/legal/disclaimers.ts so it cannot
           be removed at runtime. The chip is fixed-position bottom-centre
           and does not eat the live video frame. */}
-      <EntertainmentOnlyLabel variant="fixed" />
+      <EntertainmentOnlyLabel variant="camera" />
       {/* Mandatory disposition prompt — appears immediately after a session
           stops so the operator can't wander off without classifying. Mirrors
           MissionControl's post-stop flow; without this the base-rate
@@ -1334,11 +1521,13 @@ export function CameraScreen() {
         className={s.cameraWrap}
         style={hudLayoutStyle}
         data-camera-state={cameraOpen.state}
-        onPointerDown={composeHandlers(longPressProps.onPointerDown, doubleTapProps.onPointerDown, swipeProps.onPointerDown)}
-        onPointerMove={swipeProps.onPointerMove}
-        onPointerUp={composeHandlers(longPressProps.onPointerUp, swipeProps.onPointerUp)}
-        onPointerCancel={longPressProps.onPointerCancel}
-        onPointerLeave={longPressProps.onPointerLeave}
+        data-hud-dragging={draggingHudTarget ? "true" : "false"}
+        onPointerDown={handleCameraPointerDown}
+        onPointerMove={handleCameraPointerMove}
+        onPointerUp={handleCameraPointerUp}
+        onPointerCancel={handleCameraPointerCancel}
+        onPointerLeave={handleCameraPointerLeave}
+        onClickCapture={handleCameraClickCapture}
         onClick={handleFocusTap}
       >
         <LiveStreamView
@@ -1409,17 +1598,34 @@ export function CameraScreen() {
           caseLocation={session.current?.location_name ?? null}
           caseStartedAt={session.current?.started_at ?? null}
           evpDock={
-            activeScene?.evp?.showRecorder && running && session.current ? (
+            activeScene?.evp?.showRecorder ? (
               <EvpRecorderControl
-                investigationId={session.current.id}
+                investigationId={session.current?.id ?? null}
                 variant="compact"
-                autoStart={activeScene.evp.autoRecord === true}
+                autoStart={running && activeScene.evp.autoRecord === true}
                 active={running}
+                level={audioRmsCoarse}
               />
             ) : null
           }
           proMode={proMode}
         />
+
+        <div className={s.burnInDragLayer} aria-hidden="true">
+          {BURN_IN_DRAG_TARGETS.map(({ target, width, height }) => {
+            const placement = activeHudLayout.placements[target];
+            if (!placement || placement.hidden) return null;
+            return (
+              <div
+                key={target}
+                className={s.burnInDragHandle}
+                data-hud-drag-target={target}
+                data-hud-drag-active={draggingHudTarget === target ? "true" : "false"}
+                style={buildDragHandleStyle(placement, width, height)}
+              />
+            );
+          })}
+        </div>
 
         {/* ── First-run welcome card. Surfaces the four gestures that aren't
              discoverable from the chrome alone (double-tap markers, swipe

@@ -59,6 +59,7 @@ export function BroadcastSceneSelector({ sceneName, eyebrow = "SCENE", onOpen }:
     <button
       type="button"
       className={s.chip}
+      data-hud-drag-target="scene"
       onClick={onOpen}
       aria-label={`Scene: ${sceneName}. Tap to change.`}
       aria-haspopup="dialog"

@@ -41,7 +41,7 @@
   line-height: 1;
 
   z-index: 5;
-  pointer-events: none;
+  pointer-events: auto;
   opacity: var(--ss-hud-sensors-opacity, var(--ss-hud-opacity, 1));
   transform: var(--ss-hud-sensors-transform, none);
   -webkit-user-select: none;
