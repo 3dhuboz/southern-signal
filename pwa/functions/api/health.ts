@@ -13,7 +13,7 @@
  *     timestamp: "<ISO>",
  *     features: {
  *       ai_research: { configured: boolean, has_model_key: boolean, model: string, rate_limit_kv: boolean },
- *       ai_transcribe: { configured: boolean, provider: "groq" | "openai" | "openrouter" | "none", openrouter_audio_allowed: boolean },
+ *       ai_transcribe: { configured: boolean, provider: "groq" | "openai" | "workers-ai" | "openrouter" | "none", openrouter_audio_allowed: boolean },
  *       sync: { configured: boolean, has_kv_token: boolean, has_d1: boolean, has_r2: boolean, signed_auth_kv: boolean },
  *       radio_proxy: { ok: true },
  *       live_relay: { configured: boolean, direct_whip_configured: boolean, cloudflare_rtmp_configured: boolean },
@@ -34,6 +34,7 @@ interface Env {
   GROQ_API_KEY?: string;
   OPENAI_API_KEY?: string;
   ALLOW_OPENROUTER_AUDIO?: string;
+  AI?: unknown;                    // Workers AI binding
   // Sync
   SYNC_TOKEN?: string;
   SYNC_DB?: unknown;             // D1Database
@@ -63,7 +64,7 @@ function corsHeaders(): Record<string, string> {
   };
 }
 
-type TranscribeProvider = "groq" | "openai" | "openrouter" | "none";
+type TranscribeProvider = "groq" | "openai" | "workers-ai" | "openrouter" | "none";
 
 function flagEnabled(value: string | undefined): boolean {
   return /^(1|true|yes)$/i.test(value ?? "");
@@ -72,6 +73,7 @@ function flagEnabled(value: string | undefined): boolean {
 function transcribeProvider(env: Env): TranscribeProvider {
   if (env.GROQ_API_KEY) return "groq";
   if (env.OPENAI_API_KEY) return "openai";
+  if (env.AI) return "workers-ai";
   if (env.OPENROUTER_API_KEY && flagEnabled(env.ALLOW_OPENROUTER_AUDIO)) return "openrouter";
   return "none";
 }

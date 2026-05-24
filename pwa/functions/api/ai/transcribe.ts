@@ -13,18 +13,21 @@
  *                          POST https://api.groq.com/openai/v1/audio/transcriptions
  *   OPENAI_API_KEY      → OpenAI's whisper-1 directly
  *                          POST https://api.openai.com/v1/audio/transcriptions
+ *   AI binding          → Cloudflare Workers AI @cf/openai/whisper
+ *                          No third-party audio key required.
  *   OPENROUTER_API_KEY  → ONLY when ALLOW_OPENROUTER_AUDIO is set, because
  *                          OpenRouter's audio path is currently broken: their
  *                          gateway JSON-parses the body instead of accepting
  *                          multipart, returning 400 "No number after minus
  *                          sign in JSON at position 1" for every request.
  *
- * If none of GROQ_API_KEY / OPENAI_API_KEY / (allowed) OPENROUTER_API_KEY
- * are set, the operator sees a 503 with a pointer to either set one or
- * enable on-device transcription in Setup.
+ * If none of GROQ_API_KEY / OPENAI_API_KEY / AI binding /
+ * (allowed) OPENROUTER_API_KEY are set, the operator sees a 503 with a
+ * pointer to either set one or enable on-device transcription in Setup.
  *
  * Optional env:
  *   TRANSCRIBE_MODEL          — explicit upstream model id (overrides defaults)
+ *   WORKERS_AI_TRANSCRIBE_MODEL — explicit Workers AI model id
  *   ALLOW_OPENROUTER_AUDIO    — "1" / "true" to opt into the broken OR path
  */
 
@@ -36,7 +39,9 @@ interface Env extends AuthEnv {
   OPENAI_API_KEY?: string;
   OPENROUTER_API_KEY?: string;
   TRANSCRIBE_MODEL?: string;
+  WORKERS_AI_TRANSCRIBE_MODEL?: string;
   ALLOW_OPENROUTER_AUDIO?: string;
+  AI?: CloudflareAiBinding;
 }
 
 interface PagesContext<E = unknown> {
@@ -78,12 +83,16 @@ export const onRequestOptions: PagesFn<Env> = async () => {
   });
 };
 
-type ProviderKey = "groq" | "openai" | "openrouter";
+interface CloudflareAiBinding {
+  run(model: string, input: unknown): Promise<unknown>;
+}
+
+type ProviderKey = "groq" | "openai" | "openrouter" | "workers-ai";
 
 interface Provider {
   key: ProviderKey;
-  url: string;
-  authKey: string;
+  url?: string;
+  authKey?: string;
   defaultModel: string;
   extraHeaders: Record<string, string>;
 }
@@ -104,6 +113,13 @@ function pickProvider(env: Env, origin: string): Provider | null {
       url: "https://api.openai.com/v1/audio/transcriptions",
       authKey: env.OPENAI_API_KEY,
       defaultModel: "whisper-1",
+      extraHeaders: {},
+    };
+  }
+  if (env.AI) {
+    return {
+      key: "workers-ai",
+      defaultModel: "@cf/openai/whisper",
       extraHeaders: {},
     };
   }
@@ -175,52 +191,71 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
 
   const language = (form.get("language") as string | null) ?? "en";
   const prompt = (form.get("prompt") as string | null) ?? undefined;
-  const model = env.TRANSCRIBE_MODEL || provider.defaultModel;
-
-  const upstreamForm = new FormData();
-  upstreamForm.append("file", file, (file as File).name || "audio.wav");
-  upstreamForm.append("model", model);
-  upstreamForm.append("language", language);
-  upstreamForm.append("response_format", "verbose_json");
-  if (prompt) upstreamForm.append("prompt", prompt);
-
-  const upstream = await fetch(provider.url, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${provider.authKey}`,
-      ...provider.extraHeaders,
-    },
-    body: upstreamForm,
-  });
-
-  const upstreamText = await upstream.text();
-  if (!upstream.ok) {
-    // OpenRouter's audio endpoint is currently broken — its gateway JSON-parses
-    // the multipart body and returns 400 "No number after minus sign in JSON at
-    // position 1" for every single request, regardless of payload. If we detect
-    // that exact signature, convert the raw 400 into a 503 with the actionable
-    // hint so the operator gets a useful message instead of debugging a JSON
-    // parse error from a system that should be accepting multipart binary.
-    if (provider.key === "openrouter" && /No number after minus sign in JSON/i.test(upstreamText)) {
-      return jsonResponse({
-        error: "Cloud transcription is not available on this deployment.",
-        detail:
-          "OpenRouter's /audio/transcriptions endpoint is currently broken — it returns 400 because the gateway JSON-parses the multipart body instead of accepting binary. Set GROQ_API_KEY (free, fast) or OPENAI_API_KEY in Cloudflare Pages → Settings → Environment variables, or enable on-device transcription in the app's Setup screen for a fully local path.",
-        provider: provider.key,
-      }, 503);
-    }
-    return jsonResponse({
-      error: `Upstream ${upstream.status}`,
-      provider: provider.key,
-      detail: upstreamText.slice(0, 800),
-    }, upstream.status);
-  }
+  const model = provider.key === "workers-ai"
+    ? env.WORKERS_AI_TRANSCRIBE_MODEL || env.TRANSCRIBE_MODEL || provider.defaultModel
+    : env.TRANSCRIBE_MODEL || provider.defaultModel;
 
   let parsed: { text?: string; segments?: { start: number; end: number; text: string; avg_logprob?: number }[]; language?: string; duration?: number };
-  try {
-    parsed = JSON.parse(upstreamText);
-  } catch {
-    return jsonResponse({ error: "Upstream returned non-JSON.", detail: upstreamText.slice(0, 200) }, 502);
+  if (provider.key === "workers-ai") {
+    if (!env.AI) {
+      return jsonResponse({ error: "Workers AI binding is missing." }, 503);
+    }
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const workersAiResult = await env.AI.run(model, { audio: Array.from(bytes) });
+      parsed = normalizeWorkersAiTranscript(workersAiResult, language);
+    } catch (err) {
+      return jsonResponse({
+        error: "Workers AI transcription failed.",
+        provider: provider.key,
+        detail: (err as Error).message.slice(0, 800),
+      }, 502);
+    }
+  } else {
+    const upstreamForm = new FormData();
+    upstreamForm.append("file", file, (file as File).name || "audio.wav");
+    upstreamForm.append("model", model);
+    upstreamForm.append("language", language);
+    upstreamForm.append("response_format", "verbose_json");
+    if (prompt) upstreamForm.append("prompt", prompt);
+
+    const upstream = await fetch(provider.url!, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${provider.authKey!}`,
+        ...provider.extraHeaders,
+      },
+      body: upstreamForm,
+    });
+
+    const upstreamText = await upstream.text();
+    if (!upstream.ok) {
+      // OpenRouter's audio endpoint is currently broken — its gateway JSON-parses
+      // the multipart body and returns 400 "No number after minus sign in JSON at
+      // position 1" for every single request, regardless of payload. If we detect
+      // that exact signature, convert the raw 400 into a 503 with the actionable
+      // hint so the operator gets a useful message instead of debugging a JSON
+      // parse error from a system that should be accepting multipart binary.
+      if (provider.key === "openrouter" && /No number after minus sign in JSON/i.test(upstreamText)) {
+        return jsonResponse({
+          error: "Cloud transcription is not available on this deployment.",
+          detail:
+            "OpenRouter's /audio/transcriptions endpoint is currently broken — it returns 400 because the gateway JSON-parses the multipart body instead of accepting binary. Set GROQ_API_KEY (free, fast) or OPENAI_API_KEY in Cloudflare Pages → Settings → Environment variables, or enable on-device transcription in the app's Setup screen for a fully local path.",
+          provider: provider.key,
+        }, 503);
+      }
+      return jsonResponse({
+        error: `Upstream ${upstream.status}`,
+        provider: provider.key,
+        detail: upstreamText.slice(0, 800),
+      }, upstream.status);
+    }
+
+    try {
+      parsed = JSON.parse(upstreamText);
+    } catch {
+      return jsonResponse({ error: "Upstream returned non-JSON.", detail: upstreamText.slice(0, 200) }, 502);
+    }
   }
   if (typeof parsed.text !== "string") {
     return jsonResponse({ error: "Upstream returned no text." }, 502);
@@ -241,3 +276,30 @@ export const onRequestPost: PagesFn<Env> = async ({ request, env }) => {
     provider: provider.key,
   }, 200);
 };
+
+function normalizeWorkersAiTranscript(value: unknown, language: string): {
+  text?: string;
+  segments: { start: number; end: number; text: string }[];
+  language: string;
+  duration: number | null;
+} {
+  const result = value as {
+    text?: unknown;
+    words?: { word?: unknown; start?: unknown; end?: unknown }[];
+  };
+  const segments = Array.isArray(result.words)
+    ? result.words
+      .filter((word): word is { word: string; start: number; end: number } =>
+        typeof word.word === "string" &&
+        typeof word.start === "number" &&
+        typeof word.end === "number")
+      .map((word) => ({ start: word.start, end: word.end, text: word.word }))
+    : [];
+
+  return {
+    text: typeof result.text === "string" ? result.text : undefined,
+    segments,
+    language,
+    duration: null,
+  };
+}

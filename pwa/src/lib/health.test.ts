@@ -11,6 +11,7 @@ interface Env {
   GROQ_API_KEY?: string;
   OPENAI_API_KEY?: string;
   ALLOW_OPENROUTER_AUDIO?: string;
+  AI?: unknown;
   SYNC_TOKEN?: string;
   SYNC_DB?: unknown;
   MEDIA_BUCKET?: unknown;
@@ -94,6 +95,10 @@ describe("GET /api/health", () => {
     res = await onRequestGet(mkCtx({ OPENROUTER_API_KEY: "sk-or", ALLOW_OPENROUTER_AUDIO: "1" }));
     body = await res.json() as { features: { ai_transcribe: { configured: boolean; provider: string } } };
     expect(body.features.ai_transcribe).toMatchObject({ configured: true, provider: "openrouter" });
+
+    res = await onRequestGet(mkCtx({ AI: { run: async () => ({ text: "ok" }) } }));
+    body = await res.json() as { features: { ai_transcribe: { configured: boolean; provider: string } } };
+    expect(body.features.ai_transcribe).toMatchObject({ configured: true, provider: "workers-ai" });
 
     res = await onRequestGet(mkCtx({ OPENROUTER_API_KEY: "sk-or" }));
     body = await res.json() as { features: { ai_transcribe: { configured: boolean; provider: string } } };

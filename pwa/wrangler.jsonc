@@ -81,6 +81,12 @@
     // rollout window.
     "AI_RELAY_ALLOW_UNSIGNED": ""
   },
+  "ai": {
+    // Cloud fallback for /api/ai/transcribe. Groq/OpenAI secrets still
+    // take precedence when present, but this keeps production launchable
+    // without another third-party audio key.
+    "binding": "AI"
+  },
   "d1_databases": [
     {
       // PRODUCTION D1 — only the master-branch deploy binds this.
@@ -127,6 +133,9 @@
       "vars": {
         // Preview envs do not inherit top-level vars in Wrangler.
         "AI_RELAY_ALLOW_UNSIGNED": ""
+      },
+      "ai": {
+        "binding": "AI"
       },
       "d1_databases": [
         {

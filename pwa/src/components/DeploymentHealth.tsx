@@ -18,7 +18,7 @@ interface Health {
     ai_research: { configured: boolean; has_model_key: boolean; model: string; rate_limit_kv: boolean };
     ai_transcribe: {
       configured: boolean;
-      provider: "groq" | "openai" | "openrouter" | "none";
+      provider: "groq" | "openai" | "workers-ai" | "openrouter" | "none";
       openrouter_audio_allowed: boolean;
     };
     sync: { configured: boolean; has_kv_token: boolean; has_d1: boolean; has_r2: boolean; signed_auth_kv: boolean };
@@ -93,7 +93,7 @@ export function DeploymentHealth() {
             label="EVP cloud transcribe"
             ok={status.data.features.ai_transcribe.configured}
             detail={status.data.features.ai_transcribe.configured ? `Provider: ${status.data.features.ai_transcribe.provider}.` : "Local Whisper still works regardless."}
-            envHint="GROQ_API_KEY or OPENAI_API_KEY"
+            envHint="Workers AI binding, GROQ_API_KEY, or OPENAI_API_KEY"
           />
           <FeatureRow
             label="Cloud sync"

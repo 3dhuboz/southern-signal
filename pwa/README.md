@@ -85,7 +85,9 @@ presentation changes.
   environment secret — end users never see it. BYOK Anthropic SDK path is
   preserved as a developer escape hatch.
 - **Cloud transcription:** A Cloudflare Pages Function at `/api/ai/transcribe`
-  proxies to Whisper (server-side). Gated by the cultural-sensitivity flag.
+  proxies to server-side Whisper. Groq/OpenAI keys take precedence when set;
+  otherwise the Cloudflare Workers AI binding runs `@cf/openai/whisper`.
+  Gated by the cultural-sensitivity flag.
 - **On-device transcription:** Whisper-tiny.en (~40 MB) runs in a Web Worker
   via `@huggingface/transformers`. Opt-in from Setup → "On-device
   transcription" → "Download model"; the model caches on the browser side
@@ -193,8 +195,10 @@ Required Pages environment variables:
 | Name                       | Where it's used                              | Required if…                                                          |
 |----------------------------|----------------------------------------------|------------------------------------------------------------------------|
 | `OPENROUTER_API_KEY`       | `/api/ai/chat`                               | AI assist (questions, debunker) is enabled. **Not used for audio.**    |
-| `GROQ_API_KEY`             | `/api/ai/transcribe`                         | Cloud transcription via Groq's Whisper-large-v3-turbo (fast, generous free tier). Preferred. |
+| Workers AI binding `AI`    | `/api/ai/transcribe`                         | Cloud transcription via Cloudflare-hosted `@cf/openai/whisper`. Configured in `wrangler.jsonc`. |
+| `GROQ_API_KEY`             | `/api/ai/transcribe`                         | Cloud transcription via Groq's Whisper-large-v3-turbo (fast, generous free tier). Preferred when set. |
 | `OPENAI_API_KEY`           | `/api/ai/transcribe`                         | Cloud transcription via OpenAI Whisper-1 directly. Used if `GROQ_API_KEY` is unset. |
+| `WORKERS_AI_TRANSCRIBE_MODEL` | `/api/ai/transcribe`                      | Optional override for the Workers AI model. Defaults to `@cf/openai/whisper`. |
 | `SYNC_TOKEN`               | `/api/sync/upload`                           | Cloud sync enabled.                                                    |
 | `ALLOW_OPENROUTER_AUDIO`   | `/api/ai/transcribe`                         | `1` to opt back into the OpenRouter audio path. **Currently broken** — OpenRouter's gateway JSON-parses the multipart body and returns 400. Use Groq or OpenAI instead. |
 | `CF_ACCOUNT_ID`       | `/api/live/fb/connect`                       | Facebook Live one-click setup is used.    |
@@ -227,6 +231,7 @@ dashboard):
 
 | Binding            | Type | Where it's used                                       |
 |--------------------|------|-------------------------------------------------------|
+| `AI`               | Workers AI | `/api/ai/transcribe` Cloudflare Whisper fallback |
 | `SYNC_DB`          | D1   | `/api/sync/upload` mirror tables                      |
 | `MEDIA_BUCKET`     | R2   | `/api/sync/upload` blob storage                       |
 | `AI_RATE_LIMIT`    | KV   | Per-IP soft cap shared across AI Investigator + community/incidents-in-area |
