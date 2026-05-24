@@ -18,7 +18,7 @@
   Referrer-Policy: strict-origin-when-cross-origin
   X-Frame-Options: DENY
   Strict-Transport-Security: max-age=31536000; includeSubDomains
-  Permissions-Policy: camera=(self), microphone=(self), geolocation=(self), accelerometer=(self), gyroscope=(self), magnetometer=(self), ambient-light-sensor=(self), screen-wake-lock=(self), display-capture=(self), browsing-topics=()
+  Permissions-Policy: camera=(self), microphone=(self), geolocation=(self), accelerometer=(self), gyroscope=(self), magnetometer=(self), screen-wake-lock=(self), display-capture=(self), browsing-topics=()
 
 # Service worker — never cache the SW registration; let updates ship fast.
 /sw.js
