@@ -69,7 +69,14 @@ const distAssets = resolve(__dirname, "..", "dist", "assets");
 // with a translucent overlay, halved the Fresnel-arc count), then bumped
 // the budget 80 → 85 KB so the next incidental utility doesn't bust it.
 // ~4.6 KB headroom matches the same buffer A.2's bump targeted.
-const INDEX_BUDGET_BYTES = 85 * 1024; // 87,040 bytes
+//
+// 2026-05-24 launch push - the fullscreen camera route gained core Go Live
+// controls, a WHIP setup recovery sheet, per-widget HUD opacity plumbing, and
+// pilot-readiness launch gating. These sit on the first-screen camera path by
+// design, so route-lazying them would make the live workflow feel broken. The
+// measured index landed at ~85.6 KB gzip; bump 85 -> 90 KB to keep CI honest
+// while preserving a small headroom buffer for follow-up bugfixes.
+const INDEX_BUDGET_BYTES = 90 * 1024; // 92,160 bytes
 
 function fail(msg) {
   process.stderr.write(`[31m[check-bundle-size] FAIL[0m ${msg}\n`);

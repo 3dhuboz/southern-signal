@@ -41,10 +41,11 @@ import {
   getBroadcastClockSnapshot,
   type BroadcastClockSnapshot,
 } from "../../hooks/useBroadcastClock";
-import type {
-  OverlayLayoutProfile,
-  OverlayLayoutTarget,
-  OverlayPlacement,
+import {
+  getOverlayTargetOpacity,
+  type OverlayLayoutProfile,
+  type OverlayLayoutTarget,
+  type OverlayPlacement,
 } from "./overlayLayout";
 // Phase C — meter sonification cues. The compositor's draw loop calls these
 // at the moment of trigger events (LED step / pulse / overload / motion /
@@ -247,10 +248,9 @@ interface OverlayRect {
   h: number;
 }
 
-function clampOverlayAlpha(profile: OverlayLayoutProfile | undefined): number {
-  const value = profile?.opacity;
-  if (typeof value !== "number" || !Number.isFinite(value)) return 1;
-  return Math.min(1, Math.max(0.25, value));
+function clampOverlayAlpha(profile: OverlayLayoutProfile | undefined, target: OverlayLayoutTarget): number {
+  if (!profile) return 1;
+  return getOverlayTargetOpacity(profile, target);
 }
 
 function resolvePlacementRect(
@@ -302,7 +302,7 @@ function drawLayoutTarget(
   const placement = overlay.layout?.placements[target];
   if (placement?.hidden && target !== "status" && target !== "timestamp") return;
   const desired = resolvePlacementRect(frame.W, frame.H, defaultRect, placement, frame.s);
-  const alpha = clampOverlayAlpha(overlay.layout);
+  const alpha = clampOverlayAlpha(overlay.layout, target);
   ctx.save();
   ctx.globalAlpha *= alpha;
   ctx.translate(desired.x - defaultRect.x, desired.y - defaultRect.y);

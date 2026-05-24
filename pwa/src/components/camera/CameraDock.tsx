@@ -82,6 +82,16 @@ function IconRecord() {
   );
 }
 
+function IconLive() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
+      <circle cx="12" cy="12" r="3" fill="currentColor" />
+      <path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M5.5 5.5a9.2 9.2 0 0 0 0 13M18.5 5.5a9.2 9.2 0 0 1 0 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.8" />
+    </svg>
+  );
+}
+
 function IconLens() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" fill="none">
@@ -110,15 +120,20 @@ export interface CameraDockProps {
   /** Broadcast-state slice the dock cares about: whether an in-app clip
    *  is recording so the Clip button can reflect it. */
   broadcastRecording: boolean;
+  /** True while WHIP is actively broadcasting. */
+  broadcastLive: boolean;
   /** Camera-state slice: stream open + facing + torch availability. */
   cameraState: {
     streamOn: boolean;
+    whipConfigured: boolean;
     facingMode: "environment" | "user";
     torchSupported: boolean;
     torchOn: boolean;
   };
   /** Inline clip-record toggle — fires LiveStreamView's MediaRecorder. */
   recordToggleRef: RefObject<(() => void) | null>;
+  /** WHIP broadcast toggle — fires LiveStreamView's live workflow. */
+  liveToggleRef: RefObject<(() => void) | null>;
   /** Flip-camera toggle. */
   flipCameraRef: RefObject<(() => void) | null>;
   /** Torch on/off — only renders when cameraState.torchSupported. */
@@ -126,6 +141,8 @@ export interface CameraDockProps {
   /** Opens the scene picker (parent owns SceneSheet state). */
   onScenesOpen: () => void;
   onHudOpen: () => void;
+  /** Opens the broadcast setup surface when no WHIP destination is ready. */
+  onLiveSetupOpen: () => void;
   /** Navigates to /review — the marker review tab. */
   onMarkersOpen: () => void;
   /** Investigation id for the embedded ScreenRecordButton (so its
@@ -137,15 +154,39 @@ export interface CameraDockProps {
 export function CameraDock({
   simplifiedDock,
   broadcastRecording,
+  broadcastLive,
   cameraState,
   recordToggleRef,
+  liveToggleRef,
   flipCameraRef,
   torchToggleRef,
   onScenesOpen,
   onHudOpen,
+  onLiveSetupOpen,
   onMarkersOpen,
   investigationId,
 }: CameraDockProps) {
+  const hasLiveDestination = cameraState.whipConfigured;
+  const liveLabel = broadcastLive ? "End live" : hasLiveDestination ? "Go live" : "Live setup";
+  const liveTitle = broadcastLive
+    ? "End live broadcast"
+    : hasLiveDestination
+      ? cameraState.streamOn ? "Go live" : "Start camera before going live"
+      : "Configure live broadcast";
+  const liveAria = broadcastLive
+    ? "End live broadcast"
+    : hasLiveDestination
+      ? "Start live broadcast"
+      : "Open live broadcast setup";
+  const handleLiveClick = () => {
+    if (!broadcastLive && !hasLiveDestination) {
+      onLiveSetupOpen();
+      return;
+    }
+    if (!cameraState.streamOn && !broadcastLive) return;
+    liveToggleRef.current?.();
+  };
+
   return (
     <div
       className={`${s.dock} ${simplifiedDock ? s.dockSimplified : ""}`.trim()}
@@ -217,6 +258,19 @@ export function CameraDock({
             <span className={s.label}>{broadcastRecording ? "Stop" : "Record clip"}</span>
           </button>
 
+          <button
+            type="button"
+            className={`${s.btn} ${broadcastLive ? s.btnLive : !hasLiveDestination ? s.btnAttention : ""}`.trim()}
+            onClick={handleLiveClick}
+            disabled={!broadcastLive && hasLiveDestination && !cameraState.streamOn}
+            aria-pressed={broadcastLive}
+            aria-label={liveAria}
+            title={liveTitle}
+          >
+            <span className={s.icon} aria-hidden="true"><IconLive /></span>
+            <span className={s.label}>{liveLabel}</span>
+          </button>
+
           {/* Screen record — full-word label, dock-chrome styling. The
               ScreenRecordButton owns the iOS-tip dialog vs Android
               MediaRecorder branching; we just hand it dock classes so
@@ -224,8 +278,8 @@ export function CameraDock({
           <ScreenRecordButton
             investigationId={investigationId}
             classNames={{
-              idle:   s.btn,
-              active: `${s.btn} ${s.btnActive}`,
+              idle:   `${s.btn} ${s.screenRecordBtn}`,
+              active: `${s.btn} ${s.btnActive} ${s.screenRecordBtn}`,
               icon:   s.icon,
               label:  s.label,
             }}

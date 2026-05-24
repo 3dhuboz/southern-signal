@@ -93,6 +93,7 @@ export interface OverlayPlacement {
   anchor: OverlayAnchor;
   offsetX: number;
   offsetY: number;
+  opacity?: number;
   hidden?: boolean;
 }
 
@@ -176,12 +177,15 @@ function isOverlayAnchor(value: unknown): value is OverlayAnchor {
 function normalizePlacement(value: unknown, fallback: OverlayPlacement): OverlayPlacement {
   if (!value || typeof value !== "object") return { ...fallback };
   const input = value as Partial<OverlayPlacement>;
-  return {
+  const placement: OverlayPlacement = {
     anchor: isOverlayAnchor(input.anchor) ? input.anchor : fallback.anchor,
     offsetX: clampOverlayOffset(input.offsetX ?? fallback.offsetX),
     offsetY: clampOverlayOffset(input.offsetY ?? fallback.offsetY),
     hidden: input.hidden === true,
   };
+  const opacity = input.opacity ?? fallback.opacity;
+  if (opacity !== undefined) placement.opacity = clampOverlayOpacity(opacity);
+  return placement;
 }
 
 function normalizeProfile(value: unknown, fallback: OverlayLayoutProfile): OverlayLayoutProfile {
@@ -256,6 +260,13 @@ export function updateOverlayOpacity(
       opacity: clampOverlayOpacity(opacity),
     },
   };
+}
+
+export function getOverlayTargetOpacity(
+  profile: OverlayLayoutProfile,
+  target: OverlayLayoutTarget,
+): number {
+  return clampOverlayOpacity(profile.placements[target]?.opacity ?? profile.opacity);
 }
 
 export function updateOverlayPlacement(

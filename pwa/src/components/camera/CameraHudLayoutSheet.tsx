@@ -4,6 +4,7 @@ import {
   OVERLAY_ANCHORS,
   OVERLAY_LAYOUT_ORIENTATIONS,
   OVERLAY_LAYOUT_TARGET_LABELS,
+  getOverlayTargetOpacity,
   type OverlayAnchor,
   type OverlayLayoutOrientation,
   type OverlayLayoutSettings,
@@ -76,7 +77,9 @@ function TargetRow({
   orientation: OverlayLayoutOrientation;
   onSettingsChange: (settings: OverlayLayoutSettings) => void;
 }) {
-  const placement = settings[orientation].placements[target];
+  const profile = settings[orientation];
+  const placement = profile.placements[target];
+  const targetTransparencyPct = Math.round((1 - getOverlayTargetOpacity(profile, target)) * 100);
 
   const setAnchor = (anchor: OverlayAnchor) => {
     onSettingsChange(updateOverlayPlacement(settings, orientation, target, { anchor }));
@@ -84,6 +87,12 @@ function TargetRow({
 
   const setOffset = (axis: "offsetX" | "offsetY", value: string) => {
     onSettingsChange(updateOverlayPlacement(settings, orientation, target, { [axis]: Number(value) }));
+  };
+
+  const setTargetTransparency = (value: string) => {
+    onSettingsChange(updateOverlayPlacement(settings, orientation, target, {
+      opacity: 1 - Number(value) / 100,
+    }));
   };
 
   return (
@@ -101,6 +110,19 @@ function TargetRow({
             }}
           />
           <span>Show</span>
+        </label>
+        <label className={s.targetOpacity}>
+          <span>Fade</span>
+          <input
+            aria-label={`${OVERLAY_LAYOUT_TARGET_LABELS[target]} transparency`}
+            type="range"
+            min="0"
+            max="75"
+            step="1"
+            value={targetTransparencyPct}
+            onChange={(event) => setTargetTransparency(event.currentTarget.value)}
+          />
+          <strong>{targetTransparencyPct}%</strong>
         </label>
       </div>
 
@@ -269,6 +291,7 @@ export function CameraHudLayoutSheet({
         <label className={s.opacityControl}>
           <span>Transparency</span>
           <input
+            aria-label="Display transparency"
             type="range"
             min="0"
             max="75"

@@ -7,6 +7,7 @@ import {
   loadOverlayLayoutSettings,
   normalizeOverlayLayoutSettings,
   saveOverlayLayoutSettings,
+  getOverlayTargetOpacity,
   updateOverlayOpacity,
   updateOverlayPlacement,
 } from "./overlayLayout";
@@ -29,7 +30,7 @@ describe("overlayLayout storage", () => {
         opacity: 2,
         placements: {
           audioStack: { anchor: "not-real", offsetX: 9999, offsetY: -9999 },
-          emfStack: { anchor: "bottom-right", offsetX: 24, offsetY: 18 },
+          emfStack: { anchor: "bottom-right", offsetX: 24, offsetY: 18, opacity: 0.33 },
         },
       },
     }));
@@ -40,6 +41,7 @@ describe("overlayLayout storage", () => {
     expect(loaded.landscape.placements.audioStack.offsetX).toBe(480);
     expect(loaded.landscape.placements.audioStack.offsetY).toBe(-480);
     expect(loaded.landscape.placements.emfStack.anchor).toBe("bottom-right");
+    expect(loaded.landscape.placements.emfStack.opacity).toBe(0.33);
     expect(loaded.portrait.placements.scene.anchor).toBe("top-right");
   });
 
@@ -72,5 +74,14 @@ describe("overlayLayout storage", () => {
     const raw = localStorage.getItem(OVERLAY_LAYOUT_STORAGE_KEY);
     expect(raw).toBeTruthy();
     expect(JSON.parse(raw ?? "{}").landscape.opacity).toBe(0.4);
+  });
+
+  it("falls back from per-target opacity to orientation opacity", () => {
+    const afterOpacity = updateOverlayOpacity(DEFAULT_OVERLAY_LAYOUT_SETTINGS, "landscape", 0.7);
+    expect(getOverlayTargetOpacity(afterOpacity.landscape, "caption")).toBe(0.7);
+
+    const afterTargetOpacity = updateOverlayPlacement(afterOpacity, "landscape", "caption", { opacity: 0.42 });
+    expect(getOverlayTargetOpacity(afterTargetOpacity.landscape, "caption")).toBe(0.42);
+    expect(getOverlayTargetOpacity(afterTargetOpacity.landscape, "status")).toBe(0.7);
   });
 });

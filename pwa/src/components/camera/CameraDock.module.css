@@ -105,6 +105,18 @@
   color: var(--dock-rec-text);
 }
 
+.btnLive {
+  border-color: rgba(93, 242, 199, 0.72);
+  background: rgba(93, 242, 199, 0.22);
+  color: var(--signal);
+}
+
+.btnAttention {
+  border-color: rgba(255, 193, 7, 0.5);
+  background: rgba(255, 193, 7, 0.16);
+  color: #ffd37a;
+}
+
 .icon {
   display: inline-flex;
   align-items: center;
@@ -121,4 +133,10 @@
 .label {
   white-space: nowrap;
   line-height: 1;
+}
+
+@media (max-width: 520px) {
+  .screenRecordBtn {
+    display: none;
+  }
 }

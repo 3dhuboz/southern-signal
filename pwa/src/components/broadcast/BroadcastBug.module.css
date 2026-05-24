@@ -43,7 +43,7 @@
 
   z-index: 5;
   pointer-events: none;
-  opacity: var(--ss-hud-opacity, 1);
+  opacity: var(--ss-hud-status-opacity, var(--ss-hud-opacity, 1));
   transform: var(--ss-hud-status-transform, none);
   -webkit-user-select: none;
   user-select: none;

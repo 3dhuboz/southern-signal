@@ -982,7 +982,7 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
         <>
           <div className={stageCls}>
             <video ref={previewVideoRef} className={s.preview} playsInline muted />
-            {(recording || liveOn) && (
+            {!fullscreen && (recording || liveOn) && (
               <div className={s.statusBadges}>
                 {recording && <span className={`${s.badge} ${s.badgeRec}`}>● REC</span>}
                 {liveOn && <span className={`${s.badge} ${s.badgeLive}`}>◉ LIVE</span>}

@@ -28,12 +28,14 @@ afterEach(() => {
 
 interface Refs {
   recordToggleRef: ReturnType<typeof createRef<(() => void) | null>>;
+  liveToggleRef: ReturnType<typeof createRef<(() => void) | null>>;
   flipCameraRef: ReturnType<typeof createRef<(() => void) | null>>;
   torchToggleRef: ReturnType<typeof createRef<(() => void) | null>>;
 }
 function makeRefs(): Refs {
   return {
     recordToggleRef: createRef<(() => void) | null>(),
+    liveToggleRef: createRef<(() => void) | null>(),
     flipCameraRef: createRef<(() => void) | null>(),
     torchToggleRef: createRef<(() => void) | null>(),
   };
@@ -46,12 +48,15 @@ describe("<CameraDock />", () => {
       <CameraDock
         simplifiedDock={false}
         broadcastRecording={false}
-        cameraState={{ streamOn: true, facingMode: "environment", torchSupported: false, torchOn: false }}
+        broadcastLive={false}
+        cameraState={{ streamOn: true, whipConfigured: true, facingMode: "environment", torchSupported: false, torchOn: false }}
         recordToggleRef={refs.recordToggleRef}
+        liveToggleRef={refs.liveToggleRef}
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={() => {}}
         onHudOpen={() => {}}
+        onLiveSetupOpen={() => {}}
         onMarkersOpen={() => {}}
         investigationId={null}
       />,
@@ -70,12 +75,15 @@ describe("<CameraDock />", () => {
       <CameraDock
         simplifiedDock={false}
         broadcastRecording={false}
-        cameraState={{ streamOn: true, facingMode: "environment", torchSupported: true, torchOn: false }}
+        broadcastLive={false}
+        cameraState={{ streamOn: true, whipConfigured: true, facingMode: "environment", torchSupported: true, torchOn: false }}
         recordToggleRef={refs.recordToggleRef}
+        liveToggleRef={refs.liveToggleRef}
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={() => {}}
         onHudOpen={() => {}}
+        onLiveSetupOpen={() => {}}
         onMarkersOpen={() => {}}
         investigationId={null}
       />,
@@ -98,12 +106,15 @@ describe("<CameraDock />", () => {
       <CameraDock
         simplifiedDock={false}
         broadcastRecording={false}
-        cameraState={{ streamOn: true, facingMode: "environment", torchSupported: false, torchOn: false }}
+        broadcastLive={false}
+        cameraState={{ streamOn: true, whipConfigured: true, facingMode: "environment", torchSupported: false, torchOn: false }}
         recordToggleRef={refs.recordToggleRef}
+        liveToggleRef={refs.liveToggleRef}
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={() => {}}
         onHudOpen={() => {}}
+        onLiveSetupOpen={() => {}}
         onMarkersOpen={() => {}}
         investigationId={null}
       />,
@@ -115,12 +126,15 @@ describe("<CameraDock />", () => {
       <CameraDock
         simplifiedDock={false}
         broadcastRecording
-        cameraState={{ streamOn: true, facingMode: "environment", torchSupported: false, torchOn: false }}
+        broadcastLive={false}
+        cameraState={{ streamOn: true, whipConfigured: true, facingMode: "environment", torchSupported: false, torchOn: false }}
         recordToggleRef={refs.recordToggleRef}
+        liveToggleRef={refs.liveToggleRef}
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={() => {}}
         onHudOpen={() => {}}
+        onLiveSetupOpen={() => {}}
         onMarkersOpen={() => {}}
         investigationId={null}
       />,
@@ -129,18 +143,177 @@ describe("<CameraDock />", () => {
     expect(screen.getByText("Stop")).toBeInTheDocument();
   });
 
+  it("shows Go live when the camera stream has a WHIP destination", () => {
+    const refs = makeRefs();
+    render(
+      <CameraDock
+        simplifiedDock={false}
+        broadcastRecording={false}
+        broadcastLive={false}
+        cameraState={{ streamOn: true, whipConfigured: true, facingMode: "environment", torchSupported: false, torchOn: false }}
+        recordToggleRef={refs.recordToggleRef}
+        liveToggleRef={refs.liveToggleRef}
+        flipCameraRef={refs.flipCameraRef}
+        torchToggleRef={refs.torchToggleRef}
+        onScenesOpen={() => {}}
+        onHudOpen={() => {}}
+        onLiveSetupOpen={() => {}}
+        onMarkersOpen={() => {}}
+        investigationId={null}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /start live broadcast/i })).toBeInTheDocument();
+    expect(screen.getByText("Go live")).toBeInTheDocument();
+  });
+
+  it("clicking Go live invokes the liveToggleRef function", () => {
+    const refs = makeRefs();
+    const toggleLive = vi.fn();
+    refs.liveToggleRef.current = toggleLive;
+    render(
+      <CameraDock
+        simplifiedDock={false}
+        broadcastRecording={false}
+        broadcastLive={false}
+        cameraState={{ streamOn: true, whipConfigured: true, facingMode: "environment", torchSupported: false, torchOn: false }}
+        recordToggleRef={refs.recordToggleRef}
+        liveToggleRef={refs.liveToggleRef}
+        flipCameraRef={refs.flipCameraRef}
+        torchToggleRef={refs.torchToggleRef}
+        onScenesOpen={() => {}}
+        onHudOpen={() => {}}
+        onLiveSetupOpen={() => {}}
+        onMarkersOpen={() => {}}
+        investigationId={null}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /start live broadcast/i }));
+    expect(toggleLive).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows disabled Go live when WHIP is ready but the camera stream is off", () => {
+    const refs = makeRefs();
+    render(
+      <CameraDock
+        simplifiedDock={false}
+        broadcastRecording={false}
+        broadcastLive={false}
+        cameraState={{ streamOn: false, whipConfigured: true, facingMode: "environment", torchSupported: false, torchOn: false }}
+        recordToggleRef={refs.recordToggleRef}
+        liveToggleRef={refs.liveToggleRef}
+        flipCameraRef={refs.flipCameraRef}
+        torchToggleRef={refs.torchToggleRef}
+        onScenesOpen={() => {}}
+        onHudOpen={() => {}}
+        onLiveSetupOpen={() => {}}
+        onMarkersOpen={() => {}}
+        investigationId={null}
+      />,
+    );
+
+    const liveButton = screen.getByRole("button", { name: /start live broadcast/i });
+    expect(liveButton).toBeDisabled();
+    expect(liveButton).toHaveAttribute("title", "Start camera before going live");
+    expect(screen.getByText("Go live")).toBeInTheDocument();
+  });
+
+  it("opens live setup instead of silently failing when WHIP is not configured", () => {
+    const refs = makeRefs();
+    const toggleLive = vi.fn();
+    const onLiveSetupOpen = vi.fn();
+    refs.liveToggleRef.current = toggleLive;
+    render(
+      <CameraDock
+        simplifiedDock={false}
+        broadcastRecording={false}
+        broadcastLive={false}
+        cameraState={{ streamOn: true, whipConfigured: false, facingMode: "environment", torchSupported: false, torchOn: false }}
+        recordToggleRef={refs.recordToggleRef}
+        liveToggleRef={refs.liveToggleRef}
+        flipCameraRef={refs.flipCameraRef}
+        torchToggleRef={refs.torchToggleRef}
+        onScenesOpen={() => {}}
+        onHudOpen={() => {}}
+        onLiveSetupOpen={onLiveSetupOpen}
+        onMarkersOpen={() => {}}
+        investigationId={null}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /open live broadcast setup/i }));
+    expect(onLiveSetupOpen).toHaveBeenCalledTimes(1);
+    expect(toggleLive).not.toHaveBeenCalled();
+    expect(screen.getByText("Live setup")).toBeInTheDocument();
+  });
+
+  it("opens live setup even before the camera stream is on", () => {
+    const refs = makeRefs();
+    const onLiveSetupOpen = vi.fn();
+    render(
+      <CameraDock
+        simplifiedDock={false}
+        broadcastRecording={false}
+        broadcastLive={false}
+        cameraState={{ streamOn: false, whipConfigured: false, facingMode: "environment", torchSupported: false, torchOn: false }}
+        recordToggleRef={refs.recordToggleRef}
+        liveToggleRef={refs.liveToggleRef}
+        flipCameraRef={refs.flipCameraRef}
+        torchToggleRef={refs.torchToggleRef}
+        onScenesOpen={() => {}}
+        onHudOpen={() => {}}
+        onLiveSetupOpen={onLiveSetupOpen}
+        onMarkersOpen={() => {}}
+        investigationId={null}
+      />,
+    );
+
+    const setupButton = screen.getByRole("button", { name: /open live broadcast setup/i });
+    expect(setupButton).not.toBeDisabled();
+    fireEvent.click(setupButton);
+    expect(onLiveSetupOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows End live while broadcasting", () => {
+    const refs = makeRefs();
+    render(
+      <CameraDock
+        simplifiedDock={false}
+        broadcastRecording={false}
+        broadcastLive
+        cameraState={{ streamOn: true, whipConfigured: true, facingMode: "environment", torchSupported: false, torchOn: false }}
+        recordToggleRef={refs.recordToggleRef}
+        liveToggleRef={refs.liveToggleRef}
+        flipCameraRef={refs.flipCameraRef}
+        torchToggleRef={refs.torchToggleRef}
+        onScenesOpen={() => {}}
+        onHudOpen={() => {}}
+        onLiveSetupOpen={() => {}}
+        onMarkersOpen={() => {}}
+        investigationId={null}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /end live broadcast/i })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("End live")).toBeInTheDocument();
+  });
+
   it("Lens button is disabled when streamOn=false (no camera open)", () => {
     const refs = makeRefs();
     render(
       <CameraDock
         simplifiedDock={false}
         broadcastRecording={false}
-        cameraState={{ streamOn: false, facingMode: "environment", torchSupported: false, torchOn: false }}
+        broadcastLive={false}
+        cameraState={{ streamOn: false, whipConfigured: true, facingMode: "environment", torchSupported: false, torchOn: false }}
         recordToggleRef={refs.recordToggleRef}
+        liveToggleRef={refs.liveToggleRef}
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={() => {}}
         onHudOpen={() => {}}
+        onLiveSetupOpen={() => {}}
         onMarkersOpen={() => {}}
         investigationId={null}
       />,
@@ -155,12 +328,15 @@ describe("<CameraDock />", () => {
       <CameraDock
         simplifiedDock={false}
         broadcastRecording={false}
-        cameraState={{ streamOn: true, facingMode: "environment", torchSupported: false, torchOn: false }}
+        broadcastLive={false}
+        cameraState={{ streamOn: true, whipConfigured: true, facingMode: "environment", torchSupported: false, torchOn: false }}
         recordToggleRef={refs.recordToggleRef}
+        liveToggleRef={refs.liveToggleRef}
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={() => {}}
         onHudOpen={() => {}}
+        onLiveSetupOpen={() => {}}
         onMarkersOpen={() => {}}
         investigationId={null}
       />,
@@ -171,12 +347,15 @@ describe("<CameraDock />", () => {
       <CameraDock
         simplifiedDock={false}
         broadcastRecording={false}
-        cameraState={{ streamOn: true, facingMode: "environment", torchSupported: true, torchOn: false }}
+        broadcastLive={false}
+        cameraState={{ streamOn: true, whipConfigured: true, facingMode: "environment", torchSupported: true, torchOn: false }}
         recordToggleRef={refs.recordToggleRef}
+        liveToggleRef={refs.liveToggleRef}
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={() => {}}
         onHudOpen={() => {}}
+        onLiveSetupOpen={() => {}}
         onMarkersOpen={() => {}}
         investigationId={null}
       />,
@@ -190,12 +369,15 @@ describe("<CameraDock />", () => {
       <CameraDock
         simplifiedDock
         broadcastRecording={false}
-        cameraState={{ streamOn: true, facingMode: "environment", torchSupported: true, torchOn: false }}
+        broadcastLive={false}
+        cameraState={{ streamOn: true, whipConfigured: true, facingMode: "environment", torchSupported: true, torchOn: false }}
         recordToggleRef={refs.recordToggleRef}
+        liveToggleRef={refs.liveToggleRef}
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={() => {}}
         onHudOpen={() => {}}
+        onLiveSetupOpen={() => {}}
         onMarkersOpen={() => {}}
         investigationId={null}
       />,
@@ -220,12 +402,15 @@ describe("<CameraDock />", () => {
       <CameraDock
         simplifiedDock={false}
         broadcastRecording={false}
-        cameraState={{ streamOn: true, facingMode: "environment", torchSupported: false, torchOn: false }}
+        broadcastLive={false}
+        cameraState={{ streamOn: true, whipConfigured: true, facingMode: "environment", torchSupported: false, torchOn: false }}
         recordToggleRef={refs.recordToggleRef}
+        liveToggleRef={refs.liveToggleRef}
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={onScenesOpen}
         onHudOpen={() => {}}
+        onLiveSetupOpen={() => {}}
         onMarkersOpen={() => {}}
         investigationId={null}
       />,
@@ -241,12 +426,15 @@ describe("<CameraDock />", () => {
       <CameraDock
         simplifiedDock={false}
         broadcastRecording={false}
-        cameraState={{ streamOn: true, facingMode: "environment", torchSupported: false, torchOn: false }}
+        broadcastLive={false}
+        cameraState={{ streamOn: true, whipConfigured: true, facingMode: "environment", torchSupported: false, torchOn: false }}
         recordToggleRef={refs.recordToggleRef}
+        liveToggleRef={refs.liveToggleRef}
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={() => {}}
         onHudOpen={onHudOpen}
+        onLiveSetupOpen={() => {}}
         onMarkersOpen={() => {}}
         investigationId={null}
       />,
@@ -262,12 +450,15 @@ describe("<CameraDock />", () => {
       <CameraDock
         simplifiedDock={false}
         broadcastRecording={false}
-        cameraState={{ streamOn: true, facingMode: "environment", torchSupported: false, torchOn: false }}
+        broadcastLive={false}
+        cameraState={{ streamOn: true, whipConfigured: true, facingMode: "environment", torchSupported: false, torchOn: false }}
         recordToggleRef={refs.recordToggleRef}
+        liveToggleRef={refs.liveToggleRef}
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={() => {}}
         onHudOpen={() => {}}
+        onLiveSetupOpen={() => {}}
         onMarkersOpen={onMarkersOpen}
         investigationId={null}
       />,
@@ -284,12 +475,15 @@ describe("<CameraDock />", () => {
       <CameraDock
         simplifiedDock={false}
         broadcastRecording={false}
-        cameraState={{ streamOn: true, facingMode: "environment", torchSupported: false, torchOn: false }}
+        broadcastLive={false}
+        cameraState={{ streamOn: true, whipConfigured: true, facingMode: "environment", torchSupported: false, torchOn: false }}
         recordToggleRef={refs.recordToggleRef}
+        liveToggleRef={refs.liveToggleRef}
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={() => {}}
         onHudOpen={() => {}}
+        onLiveSetupOpen={() => {}}
         onMarkersOpen={() => {}}
         investigationId={null}
       />,
@@ -306,12 +500,15 @@ describe("<CameraDock />", () => {
       <CameraDock
         simplifiedDock={false}
         broadcastRecording={false}
-        cameraState={{ streamOn: true, facingMode: "environment", torchSupported: false, torchOn: false }}
+        broadcastLive={false}
+        cameraState={{ streamOn: true, whipConfigured: true, facingMode: "environment", torchSupported: false, torchOn: false }}
         recordToggleRef={refs.recordToggleRef}
+        liveToggleRef={refs.liveToggleRef}
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={() => {}}
         onHudOpen={() => {}}
+        onLiveSetupOpen={() => {}}
         onMarkersOpen={() => {}}
         investigationId={null}
       />,
@@ -328,12 +525,15 @@ describe("<CameraDock />", () => {
       <CameraDock
         simplifiedDock={false}
         broadcastRecording={false}
-        cameraState={{ streamOn: true, facingMode: "environment", torchSupported: true, torchOn: false }}
+        broadcastLive={false}
+        cameraState={{ streamOn: true, whipConfigured: true, facingMode: "environment", torchSupported: true, torchOn: false }}
         recordToggleRef={refs.recordToggleRef}
+        liveToggleRef={refs.liveToggleRef}
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={() => {}}
         onHudOpen={() => {}}
+        onLiveSetupOpen={() => {}}
         onMarkersOpen={() => {}}
         investigationId={null}
       />,
@@ -348,12 +548,15 @@ describe("<CameraDock />", () => {
       <CameraDock
         simplifiedDock={false}
         broadcastRecording={false}
-        cameraState={{ streamOn: true, facingMode: "environment", torchSupported: false, torchOn: false }}
+        broadcastLive={false}
+        cameraState={{ streamOn: true, whipConfigured: true, facingMode: "environment", torchSupported: false, torchOn: false }}
         recordToggleRef={refs.recordToggleRef}
+        liveToggleRef={refs.liveToggleRef}
         flipCameraRef={refs.flipCameraRef}
         torchToggleRef={refs.torchToggleRef}
         onScenesOpen={() => {}}
         onHudOpen={() => {}}
+        onLiveSetupOpen={() => {}}
         onMarkersOpen={() => {}}
         investigationId={null}
       />,

@@ -72,6 +72,7 @@ import { useWakeLock } from "../lib/system/wakeLock";
 import type { OverlayChannels } from "../lib/media/canvasCompositor";
 import {
   getOverlayProfile,
+  getOverlayTargetOpacity,
   getViewportOverlayOrientation,
   loadOverlayLayoutSettings,
   saveOverlayLayoutSettings,
@@ -179,10 +180,15 @@ function buildHudStyle(profile: OverlayLayoutProfile): HudStyleVars {
     "--ss-hud-opacity": profile.opacity,
   };
   for (const [target, prefix] of Object.entries(DOM_LAYOUT_TARGETS)) {
+    const placement = profile.placements[target as keyof typeof DOM_LAYOUT_TARGETS];
     assignDomPlacement(
       style,
       prefix,
-      profile.placements[target as keyof typeof DOM_LAYOUT_TARGETS],
+      placement,
+    );
+    style[`--ss-hud-${prefix}-opacity`] = getOverlayTargetOpacity(
+      profile,
+      target as keyof typeof DOM_LAYOUT_TARGETS,
     );
   }
   return style;
@@ -384,6 +390,7 @@ export function CameraScreen() {
   // for in-session scene swaps so the operator never leaves the camera.
   const [sceneSheetOpen, setSceneSheetOpen] = useState(false);
   const [hudLayoutOpen, setHudLayoutOpen] = useState(false);
+  const [liveSetupHintOpen, setLiveSetupHintOpen] = useState(false);
   const [hudLayoutSettings, setHudLayoutSettings] = useState(() => loadOverlayLayoutSettings());
   const [hudOrientation, setHudOrientation] = useState<OverlayLayoutOrientation>(() => getViewportOverlayOrientation());
   const [editingHudOrientation, setEditingHudOrientation] = useState<OverlayLayoutOrientation>(() => getViewportOverlayOrientation());
@@ -1552,15 +1559,55 @@ export function CameraScreen() {
         <CameraDock
           simplifiedDock={activeScene?.simplifiedDock === true}
           broadcastRecording={broadcastState.recording}
+          broadcastLive={broadcastState.broadcasting}
           cameraState={cameraState}
           recordToggleRef={recordToggleRef}
+          liveToggleRef={liveToggleRef}
           flipCameraRef={flipCameraRef}
           torchToggleRef={torchToggleRef}
           onScenesOpen={() => setSceneSheetOpen(true)}
           onHudOpen={openHudLayout}
+          onLiveSetupOpen={() => setLiveSetupHintOpen(true)}
           onMarkersOpen={() => navigate("/review")}
           investigationId={session.current?.id ?? null}
         />
+
+        {liveSetupHintOpen && (
+          <div
+            className={s.liveSetupBackdrop}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="camera-live-setup-title"
+            data-novideo-pinned
+          >
+            <div className={s.liveSetupSheet}>
+              <p className={s.liveSetupEyebrow}>Live destination</p>
+              <h2 id="camera-live-setup-title" className={s.liveSetupTitle}>Connect broadcast output</h2>
+              <p className={s.liveSetupBody}>
+                Go Live needs a WHIP destination first: Cloudflare Stream, a YouTube relay, Restream, Mux, Dolby, or a custom WHIP endpoint.
+              </p>
+              <div className={s.liveSetupActions}>
+                <button
+                  type="button"
+                  className={s.liveSetupSecondary}
+                  onClick={() => setLiveSetupHintOpen(false)}
+                >
+                  Stay here
+                </button>
+                <button
+                  type="button"
+                  className={s.liveSetupPrimary}
+                  onClick={() => {
+                    setLiveSetupHintOpen(false);
+                    navigate("/setup");
+                  }}
+                >
+                  Open setup
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {hudLayoutOpen && (
           <Suspense fallback={null}>

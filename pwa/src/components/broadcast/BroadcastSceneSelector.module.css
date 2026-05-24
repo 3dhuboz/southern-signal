@@ -35,7 +35,7 @@
   appearance: none;
   cursor: pointer;
   z-index: 5;
-  opacity: var(--ss-hud-opacity, 1);
+  opacity: var(--ss-hud-scene-opacity, var(--ss-hud-opacity, 1));
   transform: var(--ss-hud-scene-transform, none);
   -webkit-user-select: none;
   user-select: none;

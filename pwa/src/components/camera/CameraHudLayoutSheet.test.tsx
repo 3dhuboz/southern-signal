@@ -56,11 +56,26 @@ describe("<CameraHudLayoutSheet />", () => {
     const onSettingsChange = vi.fn();
     renderSheet({ editingOrientation: "landscape", onSettingsChange });
 
-    fireEvent.change(screen.getByRole("slider"), { target: { value: "50" } });
+    fireEvent.change(screen.getByRole("slider", { name: /display transparency/i }), { target: { value: "50" } });
 
     const next = onSettingsChange.mock.calls.at(-1)?.[0] as OverlayLayoutSettings;
     expect(next.landscape.opacity).toBe(0.5);
     expect(next.portrait.opacity).toBe(DEFAULT_OVERLAY_LAYOUT_SETTINGS.portrait.opacity);
+  });
+
+  it("changing target transparency updates only that target in the edited orientation", () => {
+    const onSettingsChange = vi.fn();
+    renderSheet({ editingOrientation: "landscape", onSettingsChange });
+
+    fireEvent.change(screen.getByRole("slider", { name: /status.*transparency/i }), {
+      target: { value: "60" },
+    });
+
+    const next = onSettingsChange.mock.calls.at(-1)?.[0] as OverlayLayoutSettings;
+    expect(next.landscape.placements.status.opacity).toBeCloseTo(0.4);
+    expect(next.landscape.placements.mic.opacity).toBeUndefined();
+    expect(next.portrait.placements.status.opacity).toBeUndefined();
+    expect(next.landscape.opacity).toBe(DEFAULT_OVERLAY_LAYOUT_SETTINGS.landscape.opacity);
   });
 
   it("show toggle hides the first phone HUD target for the edited orientation", () => {

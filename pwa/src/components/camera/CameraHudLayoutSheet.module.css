@@ -204,6 +204,30 @@
   accent-color: var(--signal, #5df2c7);
 }
 
+.targetOpacity {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 38px;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-secondary, #9ba6b8);
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.targetOpacity input {
+  min-width: 0;
+  width: 100%;
+  accent-color: var(--signal, #5df2c7);
+}
+
+.targetOpacity strong {
+  color: var(--text-primary, #e7ecf3);
+  text-align: right;
+}
+
 .anchorGrid {
   width: 144px;
   display: grid;

@@ -51,7 +51,7 @@
 
 .visible {
   transform: var(--ss-hud-lower-third-transform, translateX(-50%)) translateY(0);
-  opacity: var(--ss-hud-opacity, 1);
+  opacity: var(--ss-hud-lower-third-opacity, var(--ss-hud-opacity, 1));
 }
 
 .hidden {
@@ -120,7 +120,7 @@
   }
   .visible {
     transform: var(--ss-hud-lower-third-transform, translateX(-50%)) translateY(0);
-    opacity: var(--ss-hud-opacity, 1);
+    opacity: var(--ss-hud-lower-third-opacity, var(--ss-hud-opacity, 1));
   }
 }
 
