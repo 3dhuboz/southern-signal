@@ -18,6 +18,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
+import WebSocket from "ws";
 
 const DEFAULT_BASE_URL = "https://southern-signal.pages.dev";
 const MOBILE = { width: 390, height: 844, deviceScaleFactor: 2 };
