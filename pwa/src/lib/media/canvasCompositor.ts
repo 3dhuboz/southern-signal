@@ -1134,7 +1134,7 @@ function renderFrame(
   //     phonemes never appear in the EVP transcript box.
   if (channels.itc) {
     drawLayoutTarget(ctx, overlay, "audioStack", frame, defaultAudioStackRect(H, s), () => {
-      drawSpiritBoxLcd(ctx, H, overlay.itc?.spiritBox, s, frame);
+      drawSpiritBoxLcd(ctx, H, overlay.itc?.spiritBox, s, frame, channels.audioMeter === true);
     });
   }
 
@@ -1143,7 +1143,12 @@ function renderFrame(
   //     the operator can see the dictionary RNG state visually.
   if (channels.itc) {
     drawLayoutTarget(ctx, overlay, "audioStack", frame, defaultAudioStackRect(H, s), () => {
-      drawOvilusLcd(ctx, H, overlay.itc?.ovilus, overlay.sensors?.magnetometer, s, frame);
+      const hasFreshSpiritBox = Boolean(
+        overlay.itc?.spiritBox
+        && overlay.itc.spiritBox.ageMs <= ITC_MAX_AGE_MS
+        && overlay.itc.spiritBox.text,
+      );
+      drawOvilusLcd(ctx, H, overlay.itc?.ovilus, overlay.sensors?.magnetometer, s, frame, channels.audioMeter === true, hasFreshSpiritBox);
     });
   }
 
@@ -3235,7 +3240,10 @@ function drawSpiritBoxLcd(
   spiritBox: ItcChannelView | undefined,
   s: number,
   frame: FrameContext,
+  hasVuMeter: boolean,
 ): void {
+  if (!spiritBox || spiritBox.ageMs > ITC_MAX_AGE_MS || !spiritBox.text) return;
+
   const tokens = getMeterTokens(frame);
 
   // Geometry — anchored to the left edge, stacked below the VU meter.
@@ -3243,9 +3251,10 @@ function drawSpiritBoxLcd(
   const bodyH = Math.round(SPIRIT_LCD_BODY_H * s);
   const margin = Math.round(12 * s);
   const x = margin;
-  // VU meter sits at H * 0.30, height VU_BODY_H. Stack this 8 px below.
-  const vuBottom = Math.round(H * 0.30) + Math.round(VU_BODY_H * s);
-  const y = vuBottom + Math.round(8 * s);
+  const stackTop = Math.round(H * 0.30);
+  const y = hasVuMeter
+    ? stackTop + Math.round(VU_BODY_H * s) + Math.round(8 * s)
+    : stackTop;
   const radius = Math.round(5 * s);
 
   ctx.save();
@@ -3374,12 +3383,9 @@ function drawSpiritBoxLcd(
   const phonemeY = lcdY + Math.round(lcdH * 0.66);
   const phonemeH = lcdH - (phonemeY - lcdY) - Math.round(2 * s);
   const phonemePx = Math.max(8, Math.round(11 * s));
-  // Build the readout string — show "PH: <text>" so the operator immediately
-  // reads it as "phoneme" not as a word from a ghost. Empty / stale data
-  // collapses to the resting "-- --" placeholder so the LCD isn't ever blank.
-  const phonemeText = spiritBox && spiritBox.ageMs <= ITC_MAX_AGE_MS && spiritBox.text
-    ? spiritBox.text.trim().toUpperCase().slice(0, 22)
-    : "-- --";
+  // Build the readout string only from fresh Spirit Box output. The whole LCD
+  // is hidden when idle so the camera view does not collect fake-looking props.
+  const phonemeText = spiritBox.text.trim().toUpperCase().slice(0, 22);
   ctx.save();
   // Clip to the phoneme strip so any scroll can't bleed past the LCD pane.
   ctx.beginPath();
@@ -3523,7 +3529,11 @@ function drawOvilusLcd(
   magnetometer: number | undefined,
   s: number,
   frame: FrameContext,
+  hasVuMeter: boolean,
+  hasSpiritBox: boolean,
 ): void {
+  if (!ovilus || ovilus.ageMs > ITC_MAX_AGE_MS || !ovilus.text) return;
+
   const tokens = getMeterTokens(frame);
 
   // Geometry — anchored to the left edge, 8 px below the Spirit Box LCD.
@@ -3532,9 +3542,13 @@ function drawOvilusLcd(
   const bodyH = Math.round(OVILUS_LCD_BODY_H * s);
   const margin = Math.round(12 * s);
   const x = margin;
-  const vuBottom = Math.round(H * 0.30) + Math.round(VU_BODY_H * s);
-  const spiritBottom = vuBottom + Math.round(8 * s) + Math.round(SPIRIT_LCD_BODY_H * s);
-  const y = spiritBottom + Math.round(8 * s);
+  const stackTop = Math.round(H * 0.30);
+  const afterVu = hasVuMeter
+    ? stackTop + Math.round(VU_BODY_H * s) + Math.round(8 * s)
+    : stackTop;
+  const y = hasSpiritBox
+    ? afterVu + Math.round(SPIRIT_LCD_BODY_H * s) + Math.round(8 * s)
+    : afterVu;
   const radius = Math.round(5 * s);
 
   ctx.save();
@@ -3583,11 +3597,8 @@ function drawOvilusLcd(
 
   // 4. Word display — uppercased text from the Ovilus hook, rendered in the
   //    5×7 dot-matrix font. Centre-aligned in the upper 60% of the LCD pane.
-  //    Placeholder "????" when there's no fresh emission so the LCD never
-  //    reads blank — looks broken otherwise.
-  const word = ovilus && ovilus.ageMs <= ITC_MAX_AGE_MS && ovilus.text
-    ? ovilus.text.trim().toUpperCase().slice(0, 10)
-    : "????";
+  //    The whole LCD is hidden when idle; no fake placeholder readouts.
+  const word = ovilus.text.trim().toUpperCase().slice(0, 10);
 
   // Pick a dot size that fits the longest plausible word across the width.
   // Each glyph is 5 dots wide + 1 dot gap = 6 dots per char. Max 10 chars

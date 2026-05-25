@@ -15,22 +15,22 @@
   left: var(--ss-hud-scene-left, auto);
   display: var(--ss-hud-scene-display, inline-flex);
   align-items: center;
-  gap: 10px;
-  height: 36px;
-  padding: 0 12px 0 14px;
+  gap: 9px;
+  height: 34px;
+  padding: 0 12px 0 13px;
 
-  background: var(--hud-glass-bg);
-  backdrop-filter: blur(14px) saturate(140%);
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
-  border: 1px solid var(--hud-rim);
-  border-radius: 10px;
+  background: rgba(8, 10, 11, 0.88);
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
   box-shadow:
-    0 6px 16px rgba(0, 0, 0, 0.55),
-    0 1px 0 rgba(255, 255, 255, 0.04) inset;
+    0 12px 22px rgba(0, 0, 0, 0.32),
+    0 1px 0 rgba(255, 255, 255, 0.08) inset;
 
   color: var(--text-primary, #E7ECF3);
-  font-family: var(--font-display, "Space Grotesk", "Inter", sans-serif);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  font-family: var(--font-sans, "Inter", system-ui, sans-serif);
+  text-shadow: none;
 
   appearance: none;
   cursor: pointer;
@@ -57,8 +57,8 @@
 }
 
 .chip:hover {
-  background: var(--hud-glass-bg-strong);
-  border-color: var(--hud-rim-strong);
+  background: rgba(8, 10, 11, 0.94);
+  border-color: rgba(255, 255, 255, 0.24);
 }
 .chip:active { transform: var(--ss-hud-scene-transform, none) scale(0.97); }
 .chip:focus-visible {
@@ -81,19 +81,19 @@
 
 .eyebrow {
   font-family: var(--font-mono, "JetBrains Mono", monospace);
-  font-size: 9px;
+  font-size: 8.5px;
   font-weight: 700;
-  letter-spacing: 1.6px;
+  letter-spacing: 1.2px;
   text-transform: uppercase;
-  color: var(--signal, #5DF2C7);
+  color: rgba(174, 230, 212, 0.82);
   line-height: 1;
 }
 
 .name {
-  font-family: var(--font-display, "Space Grotesk", "Inter", sans-serif);
-  font-size: 12.5px;
-  font-weight: 600;
-  letter-spacing: 0.3px;
+  font-family: var(--font-sans, "Inter", system-ui, sans-serif);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
   line-height: 1.1;
   color: var(--text-primary, #E7ECF3);
   /* Truncate over-long scene names so the chip doesn't blow past its
@@ -108,16 +108,16 @@
   width: 12px;
   height: 8px;
   flex-shrink: 0;
-  color: var(--text-secondary, #9BA6B8);
+  color: rgba(223, 229, 236, 0.78);
   transition: color 140ms ease-out;
 }
-.chip:hover .chevron { color: var(--signal, #5DF2C7); }
+.chip:hover .chevron { color: rgba(239, 243, 247, 0.9); }
 
 /* Compact variant for narrow viewports — drops the eyebrow + tightens
    padding so the chip still fits beside the sensor HUD column. */
 @media (max-width: 420px) {
   .chip {
-    gap: 8px;
+    gap: 7px;
     height: 32px;
     padding: 0 10px 0 12px;
     max-width: min(54vw, 220px);

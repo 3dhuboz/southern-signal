@@ -101,6 +101,19 @@ describe("BUILT_IN_SCENES — manifest invariants", () => {
     expect(getScene("spirit_box_session")?.evp).toEqual({ showRecorder: true, autoRecord: false });
   });
 
+  it("spirit_box_session ships as a clean camera scene with ITC and recorder only", () => {
+    expect(getScene("spirit_box_session")?.overlays).toMatchObject({
+      audioMeter: false,
+      caption: false,
+      directionArrow: false,
+      kiiMeter: false,
+      nightVision: true,
+      remPod: false,
+      sensors: false,
+    });
+    expect(getScene("spirit_box_session")?.tools).toEqual({ spiritBox: true, ovilus: false });
+  });
+
   it("vigil flags simplifiedDock for cinematic framing", () => {
     expect(getScene("vigil")?.simplifiedDock).toBe(true);
   });
@@ -225,5 +238,33 @@ describe("resolveSceneOverlayChannels", () => {
 
     expect(channels.caption).toBe(false);
     expect(channels.kiiMeter).toBe(false);
+  });
+
+  it("keeps Spirit Box Session clean even when stale localStorage tries to re-enable prop overlays", () => {
+    saveSceneOverrides("spirit_box_session", {
+      audioMeter: true,
+      caption: true,
+      directionArrow: true,
+      emfGalvanometer: true,
+      kiiMeter: true,
+      motionDetector: true,
+      remPod: true,
+      sensors: true,
+    });
+
+    const channels = resolveSceneOverlayChannels("spirit_box_session");
+
+    expect(channels.itc).toBe(true);
+    expect(channels.nightVision).toBe(true);
+    expect(channels.audioMeter).toBe(false);
+    expect(channels.caption).toBe(false);
+    expect(channels.directionArrow).toBe(false);
+    expect(channels.emfGalvanometer).toBe(false);
+    expect(channels.kiiMeter).toBe(false);
+    expect(channels.motionDetector).toBe(false);
+    expect(channels.remPod).toBe(false);
+    expect(channels.sensors).toBe(false);
+    expect(channels.statusPills).toBe(true);
+    expect(channels.timestamp).toBe(true);
   });
 });

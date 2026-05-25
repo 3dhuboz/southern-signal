@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { queryFn, execFn, enqueueFn } = vi.hoisted(() => ({
+const { queryFn, execFn, enqueueFn, withTransactionFn } = vi.hoisted(() => ({
   queryFn: vi.fn(),
   execFn: vi.fn(),
   enqueueFn: vi.fn(),
+  withTransactionFn: vi.fn(),
 }));
 
 // Inline withTransaction in tests so we don't have to assert on
@@ -13,7 +14,7 @@ const { queryFn, execFn, enqueueFn } = vi.hoisted(() => ({
 vi.mock("./db", () => ({
   query: queryFn,
   exec: execFn,
-  withTransaction: async <T>(body: () => Promise<T>): Promise<T> => body(),
+  withTransaction: withTransactionFn,
 }));
 vi.mock("../sync/queue", () => ({ enqueue: enqueueFn, setAuditLogger: vi.fn() }));
 
@@ -26,6 +27,7 @@ beforeEach(() => {
   queryFn.mockReset();
   execFn.mockReset().mockResolvedValue(undefined);
   enqueueFn.mockReset().mockResolvedValue(undefined);
+  withTransactionFn.mockReset().mockImplementation(async <T>(body: () => Promise<T>): Promise<T> => body());
 });
 
 describe("appendAuditEntry", () => {
@@ -161,5 +163,25 @@ describe("verifyAuditChain", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.brokenAtSeq).toBe(3);
+  });
+});
+
+describe("appendAuditEntry transaction boundaries", () => {
+  it("reads the chain tail inside the transaction so concurrent appends serialize correctly", async () => {
+    const order: string[] = [];
+    withTransactionFn.mockImplementation(async <T>(body: () => Promise<T>): Promise<T> => {
+      order.push("tx:start");
+      const result = await body();
+      order.push("tx:end");
+      return result;
+    });
+    queryFn.mockImplementation(async () => {
+      order.push("query:last-entry");
+      return [];
+    });
+
+    await appendAuditEntry({ actor: "system", kind: "ev", payload: { x: 1 }, ts: "2026-05-10T00:00:00.000Z" });
+
+    expect(order).toEqual(["tx:start", "query:last-entry", "tx:end"]);
   });
 });

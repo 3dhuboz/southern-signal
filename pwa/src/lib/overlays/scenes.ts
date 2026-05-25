@@ -136,12 +136,14 @@ export const BUILT_IN_SCENES: readonly Scene[] = [
   {
     id: "spirit_box_session",
     name: "Spirit Box Session",
-    description: "Stationary, ITC running, NV on. Camera focused on the investigator's face and the phone's auto-running phoneme cycle.",
+    description: "Stationary, ITC running, NV on. A clean phone-camera scene with the Spirit Box as the only burn-in instrument, plus the camera-side EVP control for intentional clip capture.",
     overlays: {
-      kiiMeter: true,
-      remPod: true,
+      sensors: false,
+      audioMeter: false,
+      kiiMeter: false,
+      remPod: false,
       nightVision: true,
-      directionArrow: true,
+      directionArrow: false,
       caption: false,         // Don't compete with the ITC text for attention.
       cornerBrackets: true,
     },
@@ -355,17 +357,34 @@ export function saveSceneOverrides(
 }
 
 function applySceneSafetyFloor(sceneId: SceneId, channels: OverlayChannels): OverlayChannels {
-  if (sceneId !== "evp_session") return channels;
-  return {
-    ...channels,
-    audioMeter: false,
-    caption: false,
-    directionArrow: false,
-    itc: false,
-    kiiMeter: false,
-    remPod: false,
-    sensors: false,
-  };
+  if (sceneId === "evp_session") {
+    return {
+      ...channels,
+      audioMeter: false,
+      caption: false,
+      directionArrow: false,
+      itc: false,
+      kiiMeter: false,
+      remPod: false,
+      sensors: false,
+    };
+  }
+
+  if (sceneId === "spirit_box_session") {
+    return {
+      ...channels,
+      audioMeter: false,
+      caption: false,
+      directionArrow: false,
+      emfGalvanometer: false,
+      kiiMeter: false,
+      motionDetector: false,
+      remPod: false,
+      sensors: false,
+    };
+  }
+
+  return channels;
 }
 
 export function resolveSceneOverlayChannels(

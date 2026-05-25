@@ -133,14 +133,17 @@
 .compact {
   width: min(156px, 46vw);
   box-sizing: border-box;
-  padding: 6px;
-  gap: 4px;
-  background: rgba(7, 9, 12, 0.66);
-  border-color: var(--hud-rim);
-  border-radius: 10px;
+  padding: 8px;
+  gap: 6px;
+  background: rgba(8, 10, 11, 0.9);
+  border-color: rgba(255, 255, 255, 0.16);
+  border-radius: 13px;
   overflow: hidden;
-  backdrop-filter: blur(10px) saturate(130%);
-  -webkit-backdrop-filter: blur(10px) saturate(130%);
+  box-shadow:
+    0 12px 24px rgba(0, 0, 0, 0.34),
+    0 1px 0 rgba(255, 255, 255, 0.08) inset;
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
 }
 
 .compact .head {
@@ -155,15 +158,21 @@
 
 .compact .eyebrow {
   font-size: 8.5px;
-  letter-spacing: 1.1px;
+  letter-spacing: 1px;
   line-height: 1;
+  color: rgba(174, 230, 212, 0.84);
   white-space: nowrap;
 }
 
 .compact .levelMeter {
   height: 4px;
   border: 0;
-  background: rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.compact .levelFill {
+  background: linear-gradient(90deg, rgba(174, 230, 212, 0.92), rgba(248, 176, 126, 0.92));
+  box-shadow: none;
 }
 
 .compact .row {
@@ -184,7 +193,19 @@
   text-transform: uppercase;
   white-space: nowrap;
   overflow: hidden;
-  border-radius: 9px;
+  border-radius: 10px;
+}
+
+.compact .startBtn {
+  background: rgba(20, 24, 24, 0.82);
+  border-color: rgba(255, 255, 255, 0.13);
+  color: rgba(239, 243, 247, 0.9);
+}
+
+.compact .stopBtn {
+  background: rgba(65, 30, 28, 0.78);
+  border-color: rgba(239, 110, 110, 0.5);
+  color: #ff9b8c;
 }
 
 .compact .dot,
@@ -194,11 +215,21 @@
   flex-shrink: 0;
 }
 
+.compact .dot {
+  background: #ff9b8c;
+  box-shadow: none;
+}
+
 .compact .timer {
   min-width: 0;
   font-size: 12px;
   letter-spacing: 0.25px;
   white-space: nowrap;
+  color: rgba(239, 243, 247, 0.72);
+}
+
+.compact .timerActive {
+  color: #ff9b8c;
 }
 
 .compact .error,

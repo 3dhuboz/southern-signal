@@ -44,14 +44,8 @@ export interface AuditAppendResult {
 
 export async function appendAuditEntry({ actor, kind, payload, ts }: AuditAppendInput): Promise<AuditAppendResult> {
   const tsUtc = ts ?? new Date().toISOString();
-  const prior = await getLastEntry();
-  const prevHash = prior?.entry_hash ?? GENESIS_HASH;
-  const seq = (prior?.seq ?? 0) + 1;
   const payloadCanon = canonicalJson(payload);
-
-  // Per-entry hash binds: seq + ts + actor + kind + canonical-payload + prev_hash.
-  const message = `${seq}|${tsUtc}|${actor}|${kind}|${payloadCanon}|${prevHash}`;
-  const entryHash = await sha256Hex(message);
+  let appended: AuditAppendResult | null = null;
 
   // v15: the audit_log INSERT and its sync_queue mirror commit together.
   // If the chain insert fails (UNIQUE seq collision, FK violation, table
@@ -66,6 +60,14 @@ export async function appendAuditEntry({ actor, kind, payload, ts }: AuditAppend
   // sync is downstream) so a transient enqueue error doesn't ROLLBACK
   // the chain entry.
   await withTransaction(async () => {
+    const prior = await getLastEntry();
+    const prevHash = prior?.entry_hash ?? GENESIS_HASH;
+    const seq = (prior?.seq ?? 0) + 1;
+
+    // Per-entry hash binds: seq + ts + actor + kind + canonical-payload + prev_hash.
+    const message = `${seq}|${tsUtc}|${actor}|${kind}|${payloadCanon}|${prevHash}`;
+    const entryHash = await sha256Hex(message);
+
     await exec(
       "INSERT INTO audit_log (seq, ts_utc, actor, kind, payload_json, prev_hash, entry_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
       [seq, tsUtc, actor, kind, payloadCanon, prevHash, entryHash],
@@ -79,9 +81,12 @@ export async function appendAuditEntry({ actor, kind, payload, ts }: AuditAppend
     } catch (err) {
       console.warn("[sync] failed to enqueue audit entry", err);
     }
+
+    appended = { seq, ts_utc: tsUtc, prev_hash: prevHash, entry_hash: entryHash };
   });
 
-  return { seq, ts_utc: tsUtc, prev_hash: prevHash, entry_hash: entryHash };
+  if (!appended) throw new Error("audit append transaction completed without a result");
+  return appended;
 }
 
 // Register ourselves as the audit logger for queue.ts. This breaks the cycle

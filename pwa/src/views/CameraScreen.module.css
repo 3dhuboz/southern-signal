@@ -103,7 +103,6 @@
   transition: border-color 120ms ease, background 120ms ease;
 }
 
-.burnInDragHandle:hover,
 .burnInDragHandle[data-hud-drag-active="true"] {
   border-color: rgba(93, 242, 199, 0.42);
   background: rgba(93, 242, 199, 0.06);

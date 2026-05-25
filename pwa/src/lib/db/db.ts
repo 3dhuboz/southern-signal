@@ -336,6 +336,7 @@ export async function exec(sql: string, bind: BindValue[] = []): Promise<void> {
 // ---------------------------------------------------------------------------
 
 let inTransaction = false;
+let transactionTail: Promise<void> = Promise.resolve();
 
 /**
  * Run `body` inside a SQLite transaction. Use for any function that does
@@ -347,17 +348,29 @@ export async function withTransaction<T>(body: () => Promise<T>): Promise<T> {
     // Already inside a tx — just run inline, the outer caller commits.
     return body();
   }
-  const fn = await getExec();
-  await fn("BEGIN", [], false);
-  inTransaction = true;
+  const previous = transactionTail;
+  let release!: () => void;
+  transactionTail = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await previous;
+
+  let fn: InitResult["exec"] | null = null;
   try {
+    fn = await getExec();
+    await fn("BEGIN", [], false);
+    inTransaction = true;
     const result = await body();
     await fn("COMMIT", [], false);
     inTransaction = false;
     return result;
   } catch (err) {
     inTransaction = false;
-    try { await fn("ROLLBACK", [], false); } catch { /* best effort */ }
+    if (fn) {
+      try { await fn("ROLLBACK", [], false); } catch { /* best effort */ }
+    }
     throw err;
+  } finally {
+    release();
   }
 }
