@@ -18,7 +18,8 @@
     "check:bundle": "node scripts/check-bundle-size.mjs",
     "check:pilot": "node scripts/pilot-readiness.mjs",
     "check:camera-live": "node scripts/camera-live-smoke.mjs",
-    "check:launch": "node scripts/launch-gates.mjs"
+    "check:launch": "node scripts/launch-gates.mjs",
+    "rollout:lead": "node scripts/rollout-lead.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.1",

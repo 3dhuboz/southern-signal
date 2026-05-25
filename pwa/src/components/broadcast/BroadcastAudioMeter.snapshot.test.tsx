@@ -42,6 +42,7 @@ describe("<BroadcastAudioMeter /> DOM snapshot", () => {
         aria-valuemin="-60"
         aria-valuenow="-60"
         class="meter"
+        data-hud-drag-target="mic"
         role="meter"
       >
         <span
@@ -174,6 +175,7 @@ describe("<BroadcastAudioMeter /> DOM snapshot", () => {
         aria-valuemin="-60"
         aria-valuenow="-26"
         class="meter"
+        data-hud-drag-target="mic"
         role="meter"
       >
         <span
@@ -306,6 +308,7 @@ describe("<BroadcastAudioMeter /> DOM snapshot", () => {
         aria-valuemin="-60"
         aria-valuenow="-6"
         class="meter"
+        data-hud-drag-target="mic"
         role="meter"
       >
         <span
@@ -438,6 +441,7 @@ describe("<BroadcastAudioMeter /> DOM snapshot", () => {
         aria-valuemin="-60"
         aria-valuenow="-26"
         class="meter active"
+        data-hud-drag-target="mic"
         role="meter"
       >
         <span

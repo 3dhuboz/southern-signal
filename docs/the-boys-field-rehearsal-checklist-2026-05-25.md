@@ -48,11 +48,13 @@ Run from `pwa/`:
 
 ```bash
 pnpm install
-pnpm check:launch
+pnpm rollout:lead
 ```
 
 Capture these artifacts after the run:
 
+- `dist/rollout-go-no-go-report.md`
+- `dist/rollout-go-no-go-report.json`
 - `dist/launch-gates-report.json`
 - `dist/camera-live-smoke.json`
 - `dist/camera-live-smoke.png`

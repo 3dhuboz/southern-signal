@@ -1,0 +1,90 @@
+name: Creator Rollout Lead
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Deployed URL to verify. Defaults to production."
+        required: false
+        default: "https://southern-signal.pages.dev"
+      intent:
+        description: "creator-demo or public-episode"
+        required: false
+        default: "creator-demo"
+      real_phone_rehearsal:
+        description: "pass once the real phone rehearsal evidence is recorded"
+        required: false
+        default: "pending"
+      evp_through_camera:
+        description: "pass once EVP through camera has been proven"
+        required: false
+        default: "pending"
+      endurance_run:
+        description: "pass once the 10-minute endurance run has been proven"
+        required: false
+        default: "pending"
+      private_live_dry_run:
+        description: "pass once the private live dry run has been proven"
+        required: false
+        default: "pending"
+      external_bayesian_signoff:
+        description: "recorded once the external Bayesian sign-off exists"
+        required: false
+        default: "pending"
+      external_acoustician_signoff:
+        description: "recorded once the external acoustician sign-off exists"
+        required: false
+        default: "pending"
+
+jobs:
+  rollout-lead:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+          package_json_file: pwa/package.json
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: pwa/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: pwa
+        run: pnpm install --frozen-lockfile --ignore-workspace
+
+      - name: Run rollout lead
+        working-directory: pwa
+        env:
+          ROLLOUT_MODE: full
+          ROLLOUT_BASE_URL: ${{ inputs.base_url }}
+          ROLLOUT_INTENT: ${{ inputs.intent }}
+          ROLLOUT_REAL_PHONE_REHEARSAL: ${{ inputs.real_phone_rehearsal }}
+          ROLLOUT_EVP_THROUGH_CAMERA: ${{ inputs.evp_through_camera }}
+          ROLLOUT_ENDURANCE_RUN: ${{ inputs.endurance_run }}
+          ROLLOUT_PRIVATE_LIVE_DRY_RUN: ${{ inputs.private_live_dry_run }}
+          ROLLOUT_EXTERNAL_BAYESIAN_SIGNOFF: ${{ inputs.external_bayesian_signoff }}
+          ROLLOUT_EXTERNAL_ACOUSTICIAN_SIGNOFF: ${{ inputs.external_acoustician_signoff }}
+        run: pnpm rollout:lead -- --mode full --base-url "${{ inputs.base_url }}" --intent "${{ inputs.intent }}"
+
+      - name: Upload rollout evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: creator-rollout-evidence-${{ github.run_id }}
+          if-no-files-found: error
+          path: |
+            pwa/dist/rollout-go-no-go-report.md
+            pwa/dist/rollout-go-no-go-report.json
+            pwa/dist/launch-gates-report.json
+            pwa/dist/camera-live-smoke.json
+            pwa/dist/camera-live-smoke.png

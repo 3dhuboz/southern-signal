@@ -54,6 +54,7 @@ describe("<BroadcastTimestamp /> DOM snapshot", () => {
         aria-label="Timecode 12:34:56 local"
         aria-live="off"
         class="slate"
+        data-hud-drag-target="timecode"
         role="timer"
       >
         <span
@@ -129,6 +130,7 @@ describe("<BroadcastTimestamp /> DOM snapshot", () => {
         aria-label="Timecode 12:34:56 local"
         aria-live="off"
         class="slate running"
+        data-hud-drag-target="timecode"
         role="timer"
       >
         <span
@@ -204,6 +206,7 @@ describe("<BroadcastTimestamp /> DOM snapshot", () => {
         aria-label="Timecode 12:34:56 local"
         aria-live="off"
         class="slate running"
+        data-hud-drag-target="timecode"
         role="timer"
       >
         <span

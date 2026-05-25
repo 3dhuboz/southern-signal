@@ -63,6 +63,7 @@ describe("<BroadcastLowerThird /> DOM snapshot", () => {
         aria-hidden="false"
         aria-label="Investigation slate"
         class="slate visible"
+        data-hud-drag-target="lowerThird"
         role="region"
       >
         <h2
@@ -108,6 +109,7 @@ describe("<BroadcastLowerThird /> DOM snapshot", () => {
         aria-hidden="false"
         aria-label="Investigation slate"
         class="slate visible"
+        data-hud-drag-target="lowerThird"
         role="region"
       >
         <h2
@@ -150,6 +152,7 @@ describe("<BroadcastLowerThird /> DOM snapshot", () => {
         aria-hidden="true"
         aria-label="Investigation slate"
         class="slate hidden"
+        data-hud-drag-target="lowerThird"
         role="region"
       >
         <h2

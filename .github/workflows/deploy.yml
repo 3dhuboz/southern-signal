@@ -107,7 +107,7 @@ jobs:
 
       # Bundle-size budget gate. Reads pwa/dist after the build step and
       # fails the workflow if the main index-*.js chunk crosses the gzipped
-      # budget (75 KB) or if the lazy SDK chunk has been re-bundled into
+      # budget (90 KB) or if the lazy SDK chunk has been re-bundled into
       # the main entry. Budget rationale + implementation details live in
       # pwa/scripts/check-bundle-size.mjs. No continue-on-error — blocking
       # on bust is the whole point.
@@ -167,6 +167,7 @@ jobs:
         if: |
           github.event_name == 'push' ||
           (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+        id: deploy
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -191,3 +192,44 @@ jobs:
           wranglerVersion: "4.78.0"
           command: pages deploy dist --project-name=southern-signal --branch=${{ github.head_ref || github.ref_name }} --commit-dirty=true
           workingDirectory: pwa
+
+      - name: Resolve rollout URL
+        if: |
+          github.event_name == 'push' ||
+          (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+        shell: bash
+        run: |
+          BRANCH="${{ github.head_ref || github.ref_name }}"
+          if [ "$BRANCH" = "master" ]; then
+            URL="https://southern-signal.pages.dev"
+          else
+            SLUG="$(printf '%s' "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9-]+/-/g; s/-+/-/g; s/^-//; s/-$//' | cut -c1-63)"
+            URL="https://${SLUG}.southern-signal.pages.dev"
+          fi
+          echo "ROLLOUT_BRANCH=$BRANCH" >> "$GITHUB_ENV"
+          echo "ROLLOUT_BASE_URL=$URL" >> "$GITHUB_ENV"
+          echo "Resolved rollout URL: $URL"
+
+      - name: Rollout lead post-deploy smoke
+        if: |
+          github.event_name == 'push' ||
+          (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+        working-directory: pwa
+        env:
+          ROLLOUT_MODE: post-deploy
+          ROLLOUT_INTENT: creator-demo
+        run: pnpm rollout:lead -- --mode post-deploy --base-url "$ROLLOUT_BASE_URL" --branch "$ROLLOUT_BRANCH"
+
+      - name: Upload rollout evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rollout-evidence-${{ github.run_id }}
+          if-no-files-found: ignore
+          path: |
+            pwa/dist/rollout-go-no-go-report.md
+            pwa/dist/rollout-go-no-go-report.json
+            pwa/dist/pilot-readiness.json
+            pwa/dist/camera-live-smoke.json
+            pwa/dist/camera-live-smoke.png
+            pwa/dist/launch-gates-report.json

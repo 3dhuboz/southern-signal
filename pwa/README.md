@@ -168,6 +168,7 @@ pnpm check:bundle  # bundle-size budget gate (run after `pnpm build`)
 pnpm check:pilot   # production launch/env gate
 pnpm check:camera-live # deployed mobile camera smoke test (run after build + deploy)
 pnpm check:launch  # lint + build + bundle + production readiness + live camera smoke
+pnpm rollout:lead  # run the rollout lead and write go/no-go evidence
 ```
 
 Tests run fully on Node — no browser. Vitest 4 with `vi.hoisted` for module
@@ -193,13 +194,26 @@ real-phone rehearsal in
 [`../docs/the-boys-field-rehearsal-checklist-2026-05-25.md`](../docs/the-boys-field-rehearsal-checklist-2026-05-25.md)
 before the app is treated as ready for an actual ghost hunt.
 
+**Rollout lead.** `pnpm rollout:lead` runs the launch gate, then writes
+`dist/rollout-go-no-go-report.md` and
+`dist/rollout-go-no-go-report.json`. Use this after a deploy when local
+lint/build/tests have already passed:
+
+```bash
+pnpm rollout:lead -- --mode post-deploy --base-url https://southern-signal.pages.dev --branch master
+```
+
+GitHub Actions runs that post-deploy mode automatically and uploads the
+evidence packet.
+
 ## Deployment
 
 Cloudflare Pages. GitHub `master` is the release branch and deploys to the
 Pages production branch `master`; do not remap it to `main`, which this Pages
-project treats as a preview alias. CI build = `npm run build`; output is
-`dist/`. Pages Functions live in `functions/` (proxy to OpenRouter for AI, R2
-for media bytes, D1 for rows).
+project treats as a preview alias. CI build = `pnpm build`; output is `dist/`.
+Pages Functions live in `functions/` (proxy to OpenRouter for AI, R2 for media
+bytes, D1 for rows). The deploy workflow runs a rollout-lead post-deploy smoke
+against the resolved Pages URL and uploads the go/no-go evidence packet.
 
 Required Pages environment variables:
 

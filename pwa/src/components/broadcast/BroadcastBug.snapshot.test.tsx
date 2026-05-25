@@ -34,6 +34,7 @@ describe("<BroadcastBug /> DOM snapshot", () => {
         aria-label="Broadcast status: STANDBY"
         aria-live="polite"
         class="bug idle"
+        data-hud-drag-target="status"
         role="status"
       >
         <span
@@ -99,6 +100,7 @@ describe("<BroadcastBug /> DOM snapshot", () => {
         aria-label="Broadcast status: READY, 00:05 elapsed"
         aria-live="polite"
         class="bug ready"
+        data-hud-drag-target="status"
         role="status"
       >
         <span
@@ -169,6 +171,7 @@ describe("<BroadcastBug /> DOM snapshot", () => {
         aria-label="Broadcast status: LIVE, 00:47 elapsed"
         aria-live="polite"
         class="bug live"
+        data-hud-drag-target="status"
         role="status"
       >
         <span
@@ -239,6 +242,7 @@ describe("<BroadcastBug /> DOM snapshot", () => {
         aria-label="Broadcast status: REC, 02:05 elapsed"
         aria-live="polite"
         class="bug rec"
+        data-hud-drag-target="status"
         role="status"
       >
         <span

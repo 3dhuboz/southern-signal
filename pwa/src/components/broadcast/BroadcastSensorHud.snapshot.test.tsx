@@ -58,6 +58,7 @@ describe("<BroadcastSensorHud /> DOM snapshot", () => {
       <div
         aria-label="Live sensor readings"
         class="hud"
+        data-hud-drag-target="sensors"
         role="group"
       >
         <div
@@ -155,6 +156,7 @@ describe("<BroadcastSensorHud /> DOM snapshot", () => {
       <div
         aria-label="Live sensor readings"
         class="hud"
+        data-hud-drag-target="sensors"
         role="group"
       >
         <div
@@ -228,6 +230,7 @@ describe("<BroadcastSensorHud /> DOM snapshot", () => {
       <div
         aria-label="Live sensor readings"
         class="hud"
+        data-hud-drag-target="sensors"
         role="group"
       >
         <div
@@ -317,6 +320,7 @@ describe("<BroadcastSensorHud /> DOM snapshot", () => {
       <div
         aria-label="Live sensor readings"
         class="hud"
+        data-hud-drag-target="sensors"
         role="group"
       >
         <div

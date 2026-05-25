@@ -26,7 +26,7 @@ The PWA lives in `pwa/` in this repo. The repo also contains `pi-hub/` (FastAPI 
 
 - **Cloudflare Pages project:** `southern-signal` (account `6700423b76671a05d196916b43410458`).
 - **No GitHub provider connection.** Deploys are pushed via `wrangler pages deploy` from CI/CD, not auto-built by Cloudflare from GitHub commits.
-- The Pages project's Production branch is currently `main`, but the GitHub repo's default branch is `master`. Deploys against `master`/`dev` land in the Preview environment. The last actual Production deploy was a week ago on `main`. This is a known mismatch to resolve — either point the Pages project's Production branch at `master`, or rename `master` to `main` everywhere, or push specifically to a `main` branch when promoting.
+- Current release source of truth is `.github/workflows/deploy.yml`: pushes to `master` run `wrangler pages deploy dist --project-name=southern-signal --branch=master --commit-dirty=true`, then the rollout lead runs deployed smoke against `https://southern-signal.pages.dev` and uploads the go/no-go evidence packet. Do not remap this project to `main`; older notes saying `main` was production are stale unless a fresh Cloudflare dashboard check proves otherwise.
 - Public preview URL pattern: `https://<deploy-id>.southern-signal.pages.dev`. Apex is `southern-signal.pages.dev`.
 
 ## Codebase reconciliation
@@ -82,7 +82,7 @@ There is a parallel Expo / React Native scaffold at `C:\Users\Steve\Desktop\GitH
 
 - Reviewer outreach Wave 1 — drafts exist for Drovandi, Grant, Cabrera, Howard, Biddle; not yet sent.
 - Math PDF — skeleton only; needs real content before the next wave of outreach.
-- Cloudflare Pages branch mismatch — the Production branch on the Pages project is `main` but development happens on `master`/`dev`. Either reconfigure Pages or change the deploy target.
+- Cloudflare rollout evidence — after every deploy, confirm the GitHub Actions artifact includes `rollout-go-no-go-report.md`, `pilot-readiness.json`, `camera-live-smoke.json`, and `camera-live-smoke.png`.
 - `ghost-app-feasibility/app/` — pre-pivot RN scaffold; keep-or-archive decision pending.
 - PR #143 on `3dhuboz/SocialAI-Studio` (`claude/keen-vaughan-e42cc6`) was in `CONFLICTING` / `DIRTY` state as of 2026-05-21 — not Southern Signal but tracked here because it shares the SocialAI Cloudflare account.
 

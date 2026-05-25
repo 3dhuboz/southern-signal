@@ -46,6 +46,7 @@ describe("<BroadcastSceneSelector /> DOM snapshot", () => {
         aria-haspopup="dialog"
         aria-label="Scene: Walkthrough. Tap to change."
         class="chip"
+        data-hud-drag-target="scene"
         title="Change scene"
         type="button"
       >
@@ -92,6 +93,7 @@ describe("<BroadcastSceneSelector /> DOM snapshot", () => {
         aria-haspopup="dialog"
         aria-label="Scene: Cold Spot Sweep. Tap to change."
         class="chip"
+        data-hud-drag-target="scene"
         title="Change scene"
         type="button"
       >
