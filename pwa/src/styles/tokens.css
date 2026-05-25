@@ -204,13 +204,13 @@
   --vu-silkscreen:   #f0e6c8;      /* "VU" label over the scale */
   --vu-glow:         rgba(255, 200, 80, 0.35);  /* warm internal lamp glow */
 
-  /* Spirit Box amber 7-segment LCD — Radio Shack PRO-2055 era */
-  --spirit-lcd-bezel:    #050505;     /* deep black bezel */
-  --spirit-lcd-bg:       #1a0d00;     /* near-black amber backplane */
-  --spirit-lcd-off:      #2a1700;     /* unlit segment shadow */
-  --spirit-lcd-amber:    #ffb020;     /* lit segment colour */
-  --spirit-lcd-glow:     rgba(255, 176, 32, 0.55);  /* segment halo */
-  --spirit-lcd-silkscreen: #b8b8b8;   /* "SPIRIT BOX" label on bezel */
+  /* Spirit Box field receiver LCD */
+  --spirit-lcd-bezel:    #0b1111;     /* graphite field receiver body */
+  --spirit-lcd-bg:       #111816;     /* low-glare display backplane */
+  --spirit-lcd-off:      #29312c;     /* unlit segment shadow */
+  --spirit-lcd-amber:    #f4c57f;     /* muted lit segment colour */
+  --spirit-lcd-glow:     rgba(244, 197, 127, 0.24);  /* restrained segment halo */
+  --spirit-lcd-silkscreen: #aee6d4;   /* module label on bezel */
 
   /* Ovilus green dot-matrix LCD — Game Boy era */
   --ovilus-lcd-bezel:    #1a1a1a;     /* dark bezel */

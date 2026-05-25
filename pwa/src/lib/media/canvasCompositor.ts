@@ -734,12 +734,12 @@ const METER_TOKEN_FALLBACK: MeterTokens = {
   vuOverload:    "#c41e1e",
   vuSilkscreen:  "#f0e6c8",
   vuGlow:        "rgba(255, 200, 80, 0.35)",
-  spiritLcdBezel:       "#050505",
-  spiritLcdBg:          "#1a0d00",
-  spiritLcdOff:         "#2a1700",
-  spiritLcdAmber:       "#ffb020",
-  spiritLcdGlow:        "rgba(255, 176, 32, 0.55)",
-  spiritLcdSilkscreen:  "#b8b8b8",
+  spiritLcdBezel:       "#0b1111",
+  spiritLcdBg:          "#111816",
+  spiritLcdOff:         "#29312c",
+  spiritLcdAmber:       "#f4c57f",
+  spiritLcdGlow:        "rgba(244, 197, 127, 0.24)",
+  spiritLcdSilkscreen:  "#aee6d4",
   ovilusLcdBezel:       "#1a1a1a",
   ovilusLcdBg:          "#0a1a08",
   ovilusLcdOff:         "#143018",
@@ -941,7 +941,7 @@ export function createCanvasCompositor(opts: CanvasCompositorOptions): CanvasCom
 
   // Context handle is also stable — getContext returns a cached instance, but
   // we hoist the call so the hot path doesn't even round-trip through it.
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
 
   const sizeCanvas = () => {
     const w = opts.width ?? (video.videoWidth || 1280);
@@ -3164,8 +3164,8 @@ const SEVEN_SEG_DIGITS: Record<string, ReadonlyArray<"a" | "b" | "c" | "d" | "e"
 
 /** Spirit Box LCD body dimensions (logical px @ s=1). Landscape, fits two
  *  rows: top = 7-segment freq, bottom = scrolling phoneme text. */
-const SPIRIT_LCD_BODY_W = 152;
-const SPIRIT_LCD_BODY_H = 70;
+const SPIRIT_LCD_BODY_W = 158;
+const SPIRIT_LCD_BODY_H = 58;
 /** Cadence of the simulated scanning frequency cycle — wrapping range of
  *  100 MHz worth of phoneme-sweep visualisation in 6 seconds, matching the
  *  spirit-box "you can almost catch a word" feel. The number is presentational
@@ -3255,40 +3255,39 @@ function drawSpiritBoxLcd(
   const y = hasVuMeter
     ? stackTop + Math.round(VU_BODY_H * s) + Math.round(8 * s)
     : stackTop;
-  const radius = Math.round(5 * s);
+  const radius = Math.round(10 * s);
 
   ctx.save();
 
   // 1. Drop shadow under the bezel.
   ctx.save();
-  ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
-  ctx.shadowBlur = 6 * s;
-  ctx.shadowOffsetY = 3 * s;
+  ctx.shadowColor = "rgba(0, 0, 0, 0.28)";
+  ctx.shadowBlur = 14 * s;
+  ctx.shadowOffsetY = 5 * s;
   ctx.fillStyle = "rgba(0, 0, 0, 0.01)";
   roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
   ctx.fill();
   ctx.restore();
 
-  // 2. Bezel — deep black with a subtle top highlight so it reads as moulded
-  //    plastic, not flat fill. Lit segments on near-black bg gives the LCD
-  //    real estate the depth a Radio Shack tuner casing has.
+  // 2. Graphite receiver body with a subtle top highlight. It should read as
+  //    a deliberate broadcast overlay, not a toy prop or heavy plastic meter.
   const bezelGrad = ctx.createLinearGradient(0, y, 0, y + bodyH);
-  bezelGrad.addColorStop(0, "#1a1a1a");
+  bezelGrad.addColorStop(0, "rgba(28, 37, 37, 0.86)");
   bezelGrad.addColorStop(0.5, tokens.spiritLcdBezel);
-  bezelGrad.addColorStop(1, "#1a1a1a");
+  bezelGrad.addColorStop(1, "rgba(4, 8, 8, 0.88)");
   roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
   ctx.fillStyle = bezelGrad;
   ctx.fill();
-  ctx.strokeStyle = "#000";
+  ctx.strokeStyle = "rgba(174, 230, 212, 0.24)";
   ctx.lineWidth = 1;
   roundedRectPath(ctx, x, y, bodyW, bodyH, radius);
   ctx.stroke();
 
   // 3. Recessed LCD pane — black inset rounded rect. The amber segments
   //    light up against this near-black backplane.
-  const insetX = Math.round(6 * s);
-  const insetTopY = Math.round(6 * s);
-  const insetBottomMargin = Math.round(13 * s); // leave space for silkscreen
+  const insetX = Math.round(7 * s);
+  const insetTopY = Math.round(7 * s);
+  const insetBottomMargin = Math.round(9 * s);
   const lcdX = x + insetX;
   const lcdY = y + insetTopY;
   const lcdW = bodyW - insetX * 2;
@@ -3300,7 +3299,7 @@ function drawSpiritBoxLcd(
 
   // 4. Subtle inner-shadow rim so the LCD reads as inset into the bezel.
   ctx.save();
-  ctx.strokeStyle = "rgba(0, 0, 0, 0.7)";
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.06)";
   ctx.lineWidth = 1;
   roundedRectPath(ctx, lcdX + 0.5, lcdY + 0.5, lcdW - 1, lcdH - 1, lcdR);
   ctx.stroke();
@@ -3327,15 +3326,15 @@ function drawSpiritBoxLcd(
   digitChars.push({ char: decPart, dot: false });
 
   // Digit cell dimensions — fit 4 cells across the LCD with comfortable padding.
-  const segRowH = Math.round(lcdH * 0.55);
-  const segRowY = lcdY + Math.round(3 * s);
-  const segPaddingX = Math.round(6 * s);
+  const segRowH = Math.round(lcdH * 0.46);
+  const segRowY = lcdY + Math.round(5 * s);
+  const segPaddingX = Math.round(7 * s);
   const cellGap = Math.round(2 * s);
   const cellCount = digitChars.length;
   const totalGap = cellGap * (cellCount - 1);
-  const cellW = Math.max(4, Math.floor((lcdW - segPaddingX * 2 - totalGap) * 0.62 / cellCount));
+  const cellW = Math.max(4, Math.floor((lcdW - segPaddingX * 2 - totalGap) * 0.54 / cellCount));
   const cellH = segRowH;
-  const segPx = Math.max(1.5, Math.round(2 * s));
+  const segPx = Math.max(1.2, Math.round(1.4 * s));
 
   // Lay out from left.
   let cx = lcdX + segPaddingX;
@@ -3343,7 +3342,7 @@ function drawSpiritBoxLcd(
   // Add a soft amber halo behind the segment row so lit segments bloom — fakes
   // the LCD backlight without a real bloom pass.
   ctx.shadowColor = tokens.spiritLcdGlow;
-  ctx.shadowBlur = Math.round(3 * s);
+  ctx.shadowBlur = Math.round(1.8 * s);
   for (const { char, dot } of digitChars) {
     drawSevenSegmentGlyph(
       ctx, char.trim() === "" ? " " : char,
@@ -3364,10 +3363,10 @@ function drawSpiritBoxLcd(
 
   // 5b. "MHz" suffix label — small monospace text to the right of the digits,
   //     still amber so it reads as part of the LCD.
-  const suffixPx = Math.max(7, Math.round(9 * s));
+  const suffixPx = Math.max(7, Math.round(8 * s));
   ctx.save();
   ctx.shadowColor = tokens.spiritLcdGlow;
-  ctx.shadowBlur = Math.round(2 * s);
+  ctx.shadowBlur = Math.round(1.4 * s);
   ctx.font = `700 ${suffixPx}px "JetBrains Mono", monospace`;
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
@@ -3380,12 +3379,12 @@ function drawSpiritBoxLcd(
   //    a hand-curated phoneme bank, no real ASR / no audio leakage). The text
   //    scrolls horizontally if it's longer than the LCD width, so longer
   //    phonemes don't truncate the trailing characters.
-  const phonemeY = lcdY + Math.round(lcdH * 0.66);
+  const phonemeY = lcdY + Math.round(lcdH * 0.58);
   const phonemeH = lcdH - (phonemeY - lcdY) - Math.round(2 * s);
-  const phonemePx = Math.max(8, Math.round(11 * s));
+  const phonemePx = Math.max(7, Math.round(8 * s));
   // Build the readout string only from fresh Spirit Box output. The whole LCD
   // is hidden when idle so the camera view does not collect fake-looking props.
-  const phonemeText = spiritBox.text.trim().toUpperCase().slice(0, 22);
+  const phonemeText = spiritBox.text.trim().toUpperCase().replace(/\s+/g, " ").slice(0, 22);
   ctx.save();
   // Clip to the phoneme strip so any scroll can't bleed past the LCD pane.
   ctx.beginPath();
@@ -3395,7 +3394,7 @@ function drawSpiritBoxLcd(
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
   ctx.shadowColor = tokens.spiritLcdGlow;
-  ctx.shadowBlur = Math.round(3 * s);
+  ctx.shadowBlur = Math.round(1.5 * s);
   ctx.fillStyle = tokens.spiritLcdAmber;
   const textW = ctx.measureText(phonemeText).width;
   const stripW = lcdW - Math.round(6 * s);
@@ -3410,13 +3409,13 @@ function drawSpiritBoxLcd(
   ctx.restore();
 
   // 7. "SPIRIT BOX" silkscreen on the bezel below the LCD.
-  const silkPx = Math.max(7, Math.round(8 * s));
+  const silkPx = Math.max(6, Math.round(7 * s));
   ctx.save();
   ctx.font = `700 ${silkPx}px "Inter", system-ui, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillStyle = tokens.spiritLcdSilkscreen;
-  ctx.fillText("SPIRIT BOX", x + bodyW / 2, y + bodyH - Math.round(7 * s));
+  ctx.fillText("SPIRIT BOX", x + bodyW / 2, y + bodyH - Math.round(5 * s));
   ctx.restore();
 
   ctx.restore();
@@ -3973,11 +3972,14 @@ function applyNightVision(
   const imageData = ctx.getImageData(0, 0, W, H);
   const d = imageData.data;
   for (let i = 0; i < d.length; i += 4) {
-    const luma = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
-    const boosted = Math.min(255, luma * 2.1 + 12);
-    d[i]     = Math.round(boosted * 0.06); // R — near zero
-    d[i + 1] = Math.round(boosted);         // G — full signal
-    d[i + 2] = Math.round(boosted * 0.06); // B — near zero
+    const r = d[i];
+    const g = d[i + 1];
+    const b = d[i + 2];
+    const luma = r * 0.299 + g * 0.587 + b * 0.114;
+    const lifted = Math.min(255, Math.max(0, (luma - 12) * 1.18 + 24));
+    d[i] = Math.round(r * 0.46 + lifted * 0.16);
+    d[i + 1] = Math.round(g * 0.48 + lifted * 0.48);
+    d[i + 2] = Math.round(b * 0.42 + lifted * 0.20);
   }
   ctx.putImageData(imageData, 0, 0);
 }

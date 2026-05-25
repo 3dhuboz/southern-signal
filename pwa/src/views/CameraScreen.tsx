@@ -90,6 +90,7 @@ import {
 } from "../lib/overlays/scenes";
 import { useSpiritBox } from "../lib/itc/useSpiritBox";
 import { useOvilus } from "../lib/itc/useOvilus";
+import { unlockAudio } from "../lib/audio/audioUnlock";
 import { Navigate, useNavigate } from "react-router-dom";
 import s from "./CameraScreen.module.css";
 import {
@@ -142,7 +143,7 @@ const BURN_IN_DRAG_TARGETS: Array<{
   height: string;
 }> = [
   { target: "activity", width: "min(260px, calc(100vw - 32px))", height: "54px" },
-  { target: "evp", width: "min(220px, calc(100vw - 32px))", height: "86px" },
+  { target: "evp", width: "min(180px, calc(100vw - 32px))", height: "76px" },
   { target: "emfStack", width: "170px", height: "230px" },
   { target: "audioStack", width: "220px", height: "270px" },
   { target: "direction", width: "128px", height: "128px" },
@@ -1292,6 +1293,7 @@ export function CameraScreen() {
   // ── Session handlers ────────────────────────────────────────────────────────
 
   const handleBegin = useCallback(async () => {
+    unlockAudio();
     setBusy(true);
     // Fire camera open FIRST — synchronously inside the click handler — so the
     // browser's getUserMedia permission prompt is anchored to the user gesture
