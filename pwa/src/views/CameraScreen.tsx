@@ -1762,6 +1762,7 @@ export function CameraScreen() {
              MediaRecorder branch the button owns stays one level deep. */}
         <CameraDock
           simplifiedDock={activeScene?.simplifiedDock === true}
+          evpMode={activeScene?.evp?.showRecorder === true}
           broadcastRecording={broadcastState.recording}
           broadcastLive={broadcastState.broadcasting}
           cameraState={cameraState}

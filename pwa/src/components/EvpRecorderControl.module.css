@@ -131,16 +131,16 @@
 }
 
 .compact {
-  width: min(176px, 48vw);
+  width: min(156px, 46vw);
   box-sizing: border-box;
-  padding: 7px;
-  gap: 5px;
-  background: rgba(7, 9, 12, 0.72);
+  padding: 6px;
+  gap: 4px;
+  background: rgba(7, 9, 12, 0.66);
   border-color: var(--hud-rim);
-  border-radius: 12px;
+  border-radius: 10px;
   overflow: hidden;
-  backdrop-filter: blur(12px) saturate(140%);
-  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  backdrop-filter: blur(10px) saturate(130%);
+  -webkit-backdrop-filter: blur(10px) saturate(130%);
 }
 
 .compact .head {
@@ -154,33 +154,33 @@
 }
 
 .compact .eyebrow {
-  font-size: 9px;
-  letter-spacing: 1.3px;
+  font-size: 8.5px;
+  letter-spacing: 1.1px;
   line-height: 1;
   white-space: nowrap;
 }
 
 .compact .levelMeter {
-  height: 5px;
+  height: 4px;
   border: 0;
   background: rgba(255, 255, 255, 0.09);
 }
 
 .compact .row {
   display: grid;
-  grid-template-columns: minmax(58px, 1fr) 44px;
+  grid-template-columns: minmax(52px, 1fr) 40px;
   width: 100%;
-  gap: 6px;
+  gap: 5px;
 }
 
 .compact .startBtn,
 .compact .stopBtn {
-  min-height: 30px;
-  height: 30px;
-  padding: 0 7px;
-  gap: 5px;
-  font-size: 10px;
-  letter-spacing: 0.5px;
+  min-height: 28px;
+  height: 28px;
+  padding: 0 6px;
+  gap: 4px;
+  font-size: 9.5px;
+  letter-spacing: 0.4px;
   text-transform: uppercase;
   white-space: nowrap;
   overflow: hidden;
@@ -196,8 +196,8 @@
 
 .compact .timer {
   min-width: 0;
-  font-size: 13px;
-  letter-spacing: 0.35px;
+  font-size: 12px;
+  letter-spacing: 0.25px;
   white-space: nowrap;
 }
 

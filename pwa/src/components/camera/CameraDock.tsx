@@ -117,6 +117,9 @@ export interface CameraDockProps {
   /** Active scene — drives the simplifiedDock visibility gate. Null when no
    *  scene is resolved (defensive default, falls through to full dock). */
   simplifiedDock: boolean;
+  /** EVP capture already has its own camera HUD; on narrow phones, suppress
+   *  the secondary dock so the recorded frame stays presenter-clean. */
+  evpMode?: boolean;
   /** Broadcast-state slice the dock cares about: whether an in-app clip
    *  is recording so the Clip button can reflect it. */
   broadcastRecording: boolean;
@@ -153,6 +156,7 @@ export interface CameraDockProps {
 
 export function CameraDock({
   simplifiedDock,
+  evpMode = false,
   broadcastRecording,
   broadcastLive,
   cameraState,
@@ -189,7 +193,7 @@ export function CameraDock({
 
   return (
     <div
-      className={`${s.dock} ${simplifiedDock ? s.dockSimplified : ""}`.trim()}
+      className={`${s.dock} ${simplifiedDock ? s.dockSimplified : ""} ${evpMode ? s.dockEvp : ""}`.trim()}
       role="toolbar"
       aria-label="Camera secondary controls"
     >

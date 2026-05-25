@@ -133,8 +133,8 @@
    bottom of the rail's available space, OR sits immediately after the
    sensor HUD if there isn't enough space for both. */
 .evpDockSlot {
-  margin-top: 46px;
-  max-width: min(188px, 48vw);
+  margin-top: 54px;
+  max-width: min(164px, 46vw);
   background: transparent;
   border: 0;
   border-radius: 0;
@@ -170,7 +170,7 @@
   }
 
   .evpDockSlot {
-    margin-top: 42px;
-    max-width: min(176px, 48vw);
+    margin-top: 58px;
+    max-width: min(156px, 46vw);
   }
 }

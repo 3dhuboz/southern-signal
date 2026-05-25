@@ -52,6 +52,11 @@
   gap: 24px;
 }
 
+.dockEvp {
+  /* Desktop/tablet keeps the full dock for production control; mobile EVP
+     capture suppresses it below so the camera frame stays presenter-clean. */
+}
+
 .group {
   pointer-events: none;
   display: inline-flex;
@@ -175,10 +180,15 @@
 
   .hudBtn,
   .markerBtn,
+  .clipBtn,
   .liveBtn,
   .lensBtn,
   .torchBtn,
   .screenRecordBtn {
     display: none !important;
+  }
+
+  .dockEvp {
+    display: none;
   }
 }
