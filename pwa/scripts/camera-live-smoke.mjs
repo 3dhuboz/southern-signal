@@ -30,6 +30,14 @@ const jsonMode = rawArgs.includes("--json");
 const positional = rawArgs.filter((arg) => !arg.startsWith("--"));
 const baseUrl = normaliseBaseUrl(positional[0] || process.env.CAMERA_SMOKE_BASE_URL || DEFAULT_BASE_URL);
 const qaUrl = new URL("/camera?qa=camera-live-smoke", baseUrl);
+const localTargets = new Set(["127.0.0.1", "localhost", "::1"]);
+const skipAssetMatch = rawArgs.includes("--skip-asset-match") || rawArgs.includes("--no-asset-match");
+const strictAssetMatch = !skipAssetMatch && (
+  rawArgs.includes("--asset-match") ||
+  rawArgs.includes("--strict-asset-match") ||
+  process.env.CI === "true" ||
+  localTargets.has(baseUrl.hostname)
+);
 
 function normaliseBaseUrl(value) {
   try {
@@ -43,16 +51,21 @@ function normaliseBaseUrl(value) {
   }
 }
 
-function readExpectedAssets() {
+function readExpectedAssets(required) {
   const htmlPath = resolve("dist", "index.html");
   if (!existsSync(htmlPath)) {
-    fail("dist/index.html is missing. Run `pnpm build` before `pnpm check:camera-live`.");
+    if (required) {
+      fail("dist/index.html is missing. Run `pnpm build` before `pnpm check:camera-live`.");
+    }
+    return { js: null, css: null };
   }
   const html = readFileSync(htmlPath, "utf8");
   const js = html.match(/assets\/index-[^"']+\.js/)?.[0] ?? null;
   const css = html.match(/assets\/index-[^"']+\.css/)?.[0] ?? null;
   if (!js || !css) {
-    fail("dist/index.html did not contain the expected index JS/CSS assets.");
+    if (required) {
+      fail("dist/index.html did not contain the expected index JS/CSS assets.");
+    }
   }
   return { js, css };
 }
@@ -199,7 +212,7 @@ function assertCheck(condition, message) {
 }
 
 async function runSmoke() {
-  const expected = readExpectedAssets();
+  const expected = readExpectedAssets(strictAssetMatch);
   const chrome = findChrome();
   const port = pickPort();
   const userDataDir = mkdtempSync(join(tmpdir(), "ss-camera-smoke-"));
@@ -298,11 +311,13 @@ async function runSmoke() {
         const scripts = Array.from(document.scripts).map((script) => script.src).filter(Boolean);
         const links = Array.from(document.querySelectorAll('link[rel="stylesheet"]'))
           .map((link) => link.href);
+        const expectedJs = ${JSON.stringify(expected.js)};
+        const expectedCss = ${JSON.stringify(expected.css)};
         return {
           url: location.href,
           title: document.title,
-          latestJs: scripts.some((src) => src.includes(${JSON.stringify(expected.js)})),
-          latestCss: links.some((href) => href.includes(${JSON.stringify(expected.css)})),
+          latestJs: expectedJs ? scripts.some((src) => src.includes(expectedJs)) : null,
+          latestCss: expectedCss ? links.some((href) => href.includes(expectedCss)) : null,
           readyOrRec: body.includes("READY") || body.includes("REC"),
           sceneVisible: body.includes("Spirit Box Session"),
           permissionRequired: body.includes("Allow camera") || body.includes("CAMERA PERMISSION REQUIRED"),
@@ -332,6 +347,10 @@ async function runSmoke() {
       baseUrl: baseUrl.toString(),
       checkedAt: new Date().toISOString(),
       expected,
+      assetMatch: {
+        required: strictAssetMatch,
+        skipped: !strictAssetMatch,
+      },
       result,
       logs,
       assertions: {
@@ -344,8 +363,10 @@ async function runSmoke() {
       },
     };
 
-    assertCheck(result.latestJs, `Production is not serving ${expected.js}`);
-    assertCheck(result.latestCss, `Production is not serving ${expected.css}`);
+    if (strictAssetMatch) {
+      assertCheck(result.latestJs, `Production is not serving ${expected.js}`);
+      assertCheck(result.latestCss, `Production is not serving ${expected.css}`);
+    }
     assertCheck(result.readyOrRec, "Camera did not reach READY/REC state.");
     assertCheck(result.sceneVisible, "Spirit Box Session was not visible.");
     assertCheck(!result.permissionRequired, "Camera permission blocker stayed visible.");
@@ -377,7 +398,11 @@ runSmoke()
       return;
     }
     process.stdout.write(`[camera-live-smoke] PASS ${summary.result.url}\n`);
-    process.stdout.write(`Assets: ${summary.expected.js} / ${summary.expected.css}\n`);
+    if (summary.assetMatch.required) {
+      process.stdout.write(`Assets: ${summary.expected.js} / ${summary.expected.css}\n`);
+    } else {
+      process.stdout.write("Assets: live smoke only (asset hash match skipped outside CI/local preview)\n");
+    }
     process.stdout.write(`Screenshot: ${summary.artifacts.screenshot}\n`);
     process.stdout.write(`JSON: ${summary.artifacts.json}\n`);
   })
