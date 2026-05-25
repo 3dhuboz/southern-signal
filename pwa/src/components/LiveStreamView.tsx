@@ -225,6 +225,7 @@ function LiveStreamViewImpl(props: LiveStreamViewProps) {
   // itself toggles. Until either of those fires, getItcMixer() may throw
   // (autoplay rejected); the catch swallows that case silently.
   useEffect(() => {
+    if (!streamOn) return;
     try { getItcMixer().setMonitor(prefs.itcMonitor === true); }
     catch { /* mixer unavailable yet — picked up on next gesture */ }
   }, [prefs.itcMonitor, streamOn]);

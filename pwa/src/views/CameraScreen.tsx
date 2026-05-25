@@ -42,6 +42,7 @@ import { CameraPreflightBlocker } from "../components/camera/CameraPreflightBloc
 import { useLiveBroadcastState } from "../lib/system/liveBroadcast";
 import { usePushToTalk } from "../lib/audio/usePushToTalk";
 import { startVad, type VadHandle } from "../lib/audio/vad";
+import { unlockAudio } from "../lib/audio/audioUnlock";
 import { useLongPress, useDoubleTap, useHorizontalSwipe, composeHandlers } from "../lib/gestures";
 import { CAMERA_WELCOME_KEY } from "../lib/version";
 import { useFocusTrap } from "../hooks/useFocusTrap";
@@ -90,7 +91,6 @@ import {
 } from "../lib/overlays/scenes";
 import { useSpiritBox } from "../lib/itc/useSpiritBox";
 import { useOvilus } from "../lib/itc/useOvilus";
-import { unlockAudio } from "../lib/audio/audioUnlock";
 import { Navigate, useNavigate } from "react-router-dom";
 import s from "./CameraScreen.module.css";
 import {
@@ -1293,8 +1293,8 @@ export function CameraScreen() {
   // ── Session handlers ────────────────────────────────────────────────────────
 
   const handleBegin = useCallback(async () => {
-    unlockAudio();
     setBusy(true);
+    unlockAudio();
     // Fire camera open FIRST — synchronously inside the click handler — so the
     // browser's getUserMedia permission prompt is anchored to the user gesture
     // that just happened. iOS Safari especially is strict here: if we await

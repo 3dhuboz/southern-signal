@@ -13,16 +13,12 @@
  */
 
 import { useEffect } from "react";
-import { getItcMixer } from "./itcAudioMixer";
+import { getItcMixerIfUnlocked } from "./itcAudioMixer";
 
 export function usePushToTalk(active: boolean, duckedGain = 0.15): void {
   useEffect(() => {
-    let mixer;
-    try {
-      mixer = getItcMixer();
-    } catch {
-      return;
-    }
+    const mixer = getItcMixerIfUnlocked();
+    if (!mixer) return;
     if (active) {
       mixer.setMasterGain(duckedGain, 50);
       // Restore on unmount if we left mid-duck — otherwise a route change

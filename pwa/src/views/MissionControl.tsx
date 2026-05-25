@@ -33,6 +33,7 @@ import {
   type CalibrationState,
 } from "../lib/audio/calibration";
 import { LiveAnalyzer } from "../lib/audio/liveAnalyzer";
+import { unlockAudio } from "../lib/audio/audioUnlock";
 import { type SectorReading } from "../lib/audio/sectorIndicator";
 import { ensureTodayInvestigation } from "../lib/bootstrap";
 import { requestPersistentStorage } from "../lib/opfs";
@@ -399,6 +400,7 @@ export function MissionControl() {
 
   const handleBegin = useCallback(async () => {
     setBusy(true);
+    unlockAudio();
     try {
       const perm = await requestSensorPermissionsForUserGesture();
       if (perm.motion === "denied" || perm.orientation === "denied") {

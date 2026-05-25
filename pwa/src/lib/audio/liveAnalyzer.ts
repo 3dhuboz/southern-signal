@@ -13,6 +13,7 @@
 import { ASI_CONSTANTS, aggregateSector, processFrame, type SectorReading } from "./sectorIndicator";
 import { applyHann, bandCrossSpectrum, fft, hzToBin } from "./fft";
 import { InfrasoundDetector, type InfrasoundDetection } from "./infrasound";
+import { peekAudioContext } from "./audioUnlock";
 
 const PHONE_MIC_SPACING_MM = 146; // iPhone 14 default; Pixel 8 ~10 mm — caller can override.
 
@@ -37,6 +38,7 @@ export interface AnalyzerEvents {
 
 interface AnalyzerInternals {
   audioCtx: AudioContext;
+  ownsAudioContext: boolean;
   workletNode: AudioWorkletNode;
   mediaStream: MediaStream;
   source: MediaStreamAudioSourceNode;
@@ -77,7 +79,9 @@ export class LiveAnalyzer {
       this.events.onError(err as Error);
       throw err;
     }
-    const audioCtx = new AudioContext({ sampleRate: 48000 });
+    const sharedCtx = peekAudioContext();
+    const audioCtx = sharedCtx ?? new AudioContext({ sampleRate: 48000 });
+    const ownsAudioContext = sharedCtx == null;
     try {
       await audioCtx.audioWorklet.addModule("/sector-worklet.js");
     } catch (err) {
@@ -94,16 +98,18 @@ export class LiveAnalyzer {
     workletNode.port.onmessage = (event) => this.handleFrame(event.data);
     source.connect(workletNode);
 
-    this.internals = { audioCtx, workletNode, mediaStream, source };
+    this.internals = { audioCtx, ownsAudioContext, workletNode, mediaStream, source };
   }
 
   async stop(): Promise<void> {
     if (!this.internals) return;
-    const { audioCtx, mediaStream, source, workletNode } = this.internals;
+    const { audioCtx, ownsAudioContext, mediaStream, source, workletNode } = this.internals;
     try { source.disconnect(); } catch { /* ignore */ }
     try { workletNode.disconnect(); } catch { /* ignore */ }
     try { mediaStream.getTracks().forEach((t) => t.stop()); } catch { /* ignore */ }
-    try { await audioCtx.close(); } catch { /* ignore */ }
+    if (ownsAudioContext) {
+      try { await audioCtx.close(); } catch { /* ignore */ }
+    }
     this.internals = null;
   }
 

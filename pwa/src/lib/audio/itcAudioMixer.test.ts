@@ -31,6 +31,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  getItcMixerIfUnlocked,
   getMixerChannel,
   getMixerAudioContext,
   __resetItcMixerForTests,
@@ -159,6 +160,11 @@ describe("itcAudioMixer — recording-bus parity", () => {
   it("getMixerAudioContext returns null before unlockAudio is called", () => {
     // The mixer never auto-creates a context — that would re-trip the
     // autoplay policy. Callers must `unlockAudio()` from a gesture first.
+    expect(getMixerAudioContext()).toBeNull();
+  });
+
+  it("getItcMixerIfUnlocked does not create an AudioContext before unlock", () => {
+    expect(getItcMixerIfUnlocked()).toBeNull();
     expect(getMixerAudioContext()).toBeNull();
   });
 

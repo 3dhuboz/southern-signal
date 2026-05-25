@@ -183,6 +183,15 @@ export function getItcMixer(): ItcMixer {
   return cached;
 }
 
+/**
+ * Return the mixer only if a prior user gesture has already unlocked the
+ * shared AudioContext. Effect-time callers, such as push-to-talk ducking,
+ * must use this form so they never create an AudioContext during mount.
+ */
+export function getItcMixerIfUnlocked(): ItcMixer | null {
+  return peekMixer();
+}
+
 /** Internal — used by the tone-burst helpers below to skip work when no
  *  AudioContext has been unlocked yet (the mixer can't synthesise without a
  *  gesture). Public callers should use getItcMixer(). */
