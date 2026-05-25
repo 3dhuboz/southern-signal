@@ -165,6 +165,8 @@ pnpm test:watch    # vitest watch
 pnpm build         # tsc -b && vite build
 pnpm lint
 pnpm check:bundle  # bundle-size budget gate (run after `pnpm build`)
+pnpm check:pilot   # production launch/env gate
+pnpm check:camera-live # deployed mobile camera smoke test (run after build + deploy)
 ```
 
 Tests run fully on Node — no browser. Vitest 4 with `vi.hoisted` for module
