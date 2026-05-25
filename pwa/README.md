@@ -167,6 +167,7 @@ pnpm lint
 pnpm check:bundle  # bundle-size budget gate (run after `pnpm build`)
 pnpm check:pilot   # production launch/env gate
 pnpm check:camera-live # deployed mobile camera smoke test (run after build + deploy)
+pnpm check:launch  # lint + build + bundle + production readiness + live camera smoke
 ```
 
 Tests run fully on Node — no browser. Vitest 4 with `vi.hoisted` for module
@@ -174,8 +175,8 @@ mocks. The audio / video / WHIP layers are not unit-tested (they need a real
 browser); everything pure (likelihoods, posterior, baseline math, audit
 chain, forensic helpers, AHT verdict) is covered.
 
-**Bundle budget.** The main entry chunk is budgeted at **75 KB gzipped**
-(currently 65.8 KB, ~9 KB headroom). The `pnpm check:bundle` script reads
+**Bundle budget.** The main entry chunk is budgeted at **90 KB gzipped**
+(currently 88.2 KB, ~1.8 KB headroom). The `pnpm check:bundle` script reads
 `dist/assets/index-*.js`, gzips it, and exits 1 if it crosses the budget;
 CI runs it after `pnpm build` and blocks the deploy on bust. The script
 also asserts that the Anthropic SDK stays in its own `sdk-*.js` lazy
@@ -183,6 +184,14 @@ chunk — the panel work to lazy-load it (335 KB → 211 KB raw) is a
 load-bearing perf win we don't want a static-import slip to undo
 silently. Budget rationale lives in
 [`scripts/check-bundle-size.mjs`](scripts/check-bundle-size.mjs).
+
+**Launch gate.** Before a creator-facing rehearsal, run `pnpm check:launch`
+from this `pwa/` directory. It writes `dist/launch-gates-report.json` and
+reuses the deployed mobile-camera screenshot at
+`dist/camera-live-smoke.png`. That laptop-side gate must be paired with the
+real-phone rehearsal in
+[`../docs/the-boys-field-rehearsal-checklist-2026-05-25.md`](../docs/the-boys-field-rehearsal-checklist-2026-05-25.md)
+before the app is treated as ready for an actual ghost hunt.
 
 ## Deployment
 
