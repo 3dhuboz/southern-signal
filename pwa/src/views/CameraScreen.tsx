@@ -83,10 +83,9 @@ import {
   type OverlayPlacement,
   updateOverlayPlacement,
 } from "../lib/media/overlayLayout";
-import { resolveOverlaysFromScene } from "../lib/overlays/registry";
 import {
   BUILT_IN_SCENES,
-  hasPickedSceneEver, loadActiveSceneId, saveActiveSceneId, getScene, loadSceneOverrides,
+  hasPickedSceneEver, loadActiveSceneId, saveActiveSceneId, getScene, resolveSceneOverlayChannels,
   type SceneId,
 } from "../lib/overlays/scenes";
 import { useSpiritBox } from "../lib/itc/useSpiritBox";
@@ -430,7 +429,7 @@ export function CameraScreen() {
   useEffect(() => { preflightPrefRef.current = prefs.preflight; }, [prefs.preflight]);
   const activeScene = getScene(activeSceneId);
   const [channels, setChannels] = useState<OverlayChannels>(() =>
-    resolveOverlaysFromScene({ ...(activeScene?.overlays ?? {}), ...loadSceneOverrides(activeSceneId) }, { proMode }),
+    resolveSceneOverlayChannels(activeSceneId, { proMode }),
   );
   // Whenever the active scene changes (operator picked a different one from
   // the dock chip or HuntSetup) OR Pro mode flips, re-resolve channels.
@@ -440,8 +439,7 @@ export function CameraScreen() {
   // and `getScene` returns a stable reference, but pinning to the id keeps
   // the effect from re-firing if registry internals ever reshape the lookup.
   useEffect(() => {
-    const scene = getScene(activeSceneId);
-    setChannels(resolveOverlaysFromScene({ ...(scene?.overlays ?? {}), ...loadSceneOverrides(activeSceneId) }, { proMode }));
+    setChannels(resolveSceneOverlayChannels(activeSceneId, { proMode }));
   }, [activeSceneId, proMode]);
   const handleChannelChange = useCallback((key: keyof OverlayChannels, value: boolean) => {
     setChannels((prev) => prev[key] === value ? prev : { ...prev, [key]: value });

@@ -131,41 +131,86 @@
 }
 
 .compact {
-  width: min(230px, 58vw);
+  width: min(176px, 48vw);
+  box-sizing: border-box;
+  padding: 7px;
+  gap: 5px;
   background: rgba(7, 9, 12, 0.72);
   border-color: var(--hud-rim);
+  border-radius: 12px;
+  overflow: hidden;
   backdrop-filter: blur(12px) saturate(140%);
   -webkit-backdrop-filter: blur(12px) saturate(140%);
 }
 
 .compact .head {
   align-items: center;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
 }
 
 .compact .note {
   display: none;
 }
 
+.compact .eyebrow {
+  font-size: 9px;
+  letter-spacing: 1.3px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.compact .levelMeter {
+  height: 5px;
+  border: 0;
+  background: rgba(255, 255, 255, 0.09);
+}
+
 .compact .row {
-  gap: 8px;
+  display: grid;
+  grid-template-columns: minmax(58px, 1fr) 44px;
+  width: 100%;
+  gap: 6px;
 }
 
 .compact .startBtn,
 .compact .stopBtn {
-  min-height: 34px;
-  padding: 7px 10px;
-  font-size: 11px;
+  min-height: 30px;
+  height: 30px;
+  padding: 0 7px;
+  gap: 5px;
+  font-size: 10px;
   letter-spacing: 0.5px;
   text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  border-radius: 9px;
+}
+
+.compact .dot,
+.compact .square {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
 }
 
 .compact .timer {
-  min-width: 48px;
-  font-size: 15px;
+  min-width: 0;
+  font-size: 13px;
+  letter-spacing: 0.35px;
+  white-space: nowrap;
 }
 
 .compact .error,
 .compact .success {
-  font-size: 10px;
-  line-height: 1.25;
+  margin: -1px 0 0;
+  max-width: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  font-size: 8.5px;
+  line-height: 1.1;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }

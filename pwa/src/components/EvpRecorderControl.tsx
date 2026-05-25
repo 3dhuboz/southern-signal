@@ -311,13 +311,23 @@ export function EvpRecorderControl({ investigationId, onSaved, variant = "defaul
   const isRecording = state.status === "recording";
   const isStarting = state.status === "starting";
   const isStopping = state.status === "stopping";
-  const wrapClass = variant === "compact" ? `${s.wrap} ${s.compact}` : s.wrap;
+  const compact = variant === "compact";
+  const wrapClass = compact ? `${s.wrap} ${s.compact}` : s.wrap;
   const levelPct = Math.round(Math.max(0, Math.min(1, level)) * 100);
+  const compactStatusMessage = compact ? lastError ?? state.error ?? savingMessage ?? transcribeStatus ?? undefined : undefined;
+  let startLabel = compact ? "Standby" : "Begin a session first";
+  if (isStarting) {
+    startLabel = compact ? "Mic" : "Opening mic…";
+  } else if (investigationId) {
+    startLabel = compact ? "Start" : "Start recording";
+  }
+  const stopLabel = compact ? "Stop" : "Stop & save";
+  const eyebrowLabel = compact ? (isRecording ? "EVP REC" : "EVP") : "EVP CAPTURE";
 
   return (
-    <div className={wrapClass}>
+    <div className={wrapClass} title={compactStatusMessage}>
       <div className={s.head}>
-        <span className={s.eyebrow}>EVP CAPTURE</span>
+        <span className={s.eyebrow}>{eyebrowLabel}</span>
         <span className={s.note}>16-bit · 48 kHz · mono · raw PCM (no AGC, no AEC).</span>
       </div>
 
@@ -342,7 +352,7 @@ export function EvpRecorderControl({ investigationId, onSaved, variant = "defaul
             aria-label="Start EVP recording"
           >
             <span className={s.dot} aria-hidden="true" />
-            <span>{isStarting ? "Opening mic…" : investigationId ? "Start recording" : "Begin a session first"}</span>
+            <span>{startLabel}</span>
           </button>
         ) : (
           <button
@@ -352,7 +362,7 @@ export function EvpRecorderControl({ investigationId, onSaved, variant = "defaul
             aria-label="Stop EVP recording"
           >
             <span className={s.square} aria-hidden="true" />
-            <span>Stop & save</span>
+            <span>{stopLabel}</span>
           </button>
         )}
 

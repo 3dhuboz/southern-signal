@@ -137,3 +137,9 @@
   .title { font-size: 14px; }
   .subtitle { font-size: 10.5px; gap: 6px; }
 }
+
+@media (max-width: 520px) and (orientation: portrait) {
+  .slate {
+    display: none;
+  }
+}

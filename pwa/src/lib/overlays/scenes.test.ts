@@ -41,6 +41,7 @@ import {
   loadActiveSceneId,
   loadSceneOverrides,
   markSceneEverPicked,
+  resolveSceneOverlayChannels,
   saveActiveSceneId,
   saveSceneOverrides,
   type SceneId,
@@ -189,5 +190,40 @@ describe("scene overrides — load/save round trip", () => {
   it("returns empty when the persisted payload is an array (defensive)", () => {
     localStorage.setItem("ss-scene-overrides:walkthrough", JSON.stringify([1, 2, 3]));
     expect(loadSceneOverrides("walkthrough")).toEqual({});
+  });
+});
+
+describe("resolveSceneOverlayChannels", () => {
+  it("keeps EVP Session presentation-safe even when stale localStorage tries to re-enable clutter", () => {
+    saveSceneOverrides("evp_session", {
+      audioMeter: true,
+      caption: true,
+      directionArrow: true,
+      itc: true,
+      kiiMeter: true,
+      remPod: true,
+      sensors: true,
+    });
+
+    const channels = resolveSceneOverlayChannels("evp_session");
+
+    expect(channels.audioMeter).toBe(false);
+    expect(channels.caption).toBe(false);
+    expect(channels.directionArrow).toBe(false);
+    expect(channels.itc).toBe(false);
+    expect(channels.kiiMeter).toBe(false);
+    expect(channels.remPod).toBe(false);
+    expect(channels.sensors).toBe(false);
+    expect(channels.statusPills).toBe(true);
+    expect(channels.timestamp).toBe(true);
+  });
+
+  it("still honors ordinary overrides for non-EVP scenes", () => {
+    saveSceneOverrides("walkthrough", { caption: false, kiiMeter: false });
+
+    const channels = resolveSceneOverlayChannels("walkthrough");
+
+    expect(channels.caption).toBe(false);
+    expect(channels.kiiMeter).toBe(false);
   });
 });

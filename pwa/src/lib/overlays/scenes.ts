@@ -11,7 +11,8 @@
  * SceneOverride records) but the built-in set is the curated baseline.
  */
 
-import type { OverlayId } from "./registry";
+import { resolveOverlaysFromScene, type OverlayId } from "./registry";
+import type { OverlayChannels } from "../media/canvasCompositor";
 import type { PreflightOverrides } from "../system/preflight";
 
 export type SceneId =
@@ -115,14 +116,16 @@ export const BUILT_IN_SCENES: readonly Scene[] = [
     description: "Stationary, mic is the instrument. Auto-starts a forensic 16-bit / 48 kHz capture the moment the session begins; the recorder sits on the camera HUD so you can pause / stop without leaving the scene.",
     overlays: {
       // Mic is the centrepiece — keep the visual HUD calm so the operator's
-      // ear can do the work. Sensors visible but no ITC noise.
-      sensors: true,
+      // ear can do the work. The compact recorder meter is the phone UI;
+      // the old canvas VU/sensor instruments stay off in this scene.
+      sensors: false,
       itc: false,
+      audioMeter: false,
       kiiMeter: false,
       remPod: false,
       nightVision: false,
       directionArrow: false,
-      caption: true,            // Captions are critical when the audience is listening.
+      caption: false,           // EVP mode needs quiet frame space; the audio is the event.
       cornerBrackets: true,
     },
     tools: { spiritBox: false, ovilus: false },
@@ -349,4 +352,33 @@ export function saveSceneOverrides(
     }
     localStorage.setItem(SCENE_OVERRIDES_KEY_PREFIX + sceneId, JSON.stringify(overrides));
   } catch { /* ignore */ }
+}
+
+function applySceneSafetyFloor(sceneId: SceneId, channels: OverlayChannels): OverlayChannels {
+  if (sceneId !== "evp_session") return channels;
+  return {
+    ...channels,
+    audioMeter: false,
+    caption: false,
+    directionArrow: false,
+    itc: false,
+    kiiMeter: false,
+    remPod: false,
+    sensors: false,
+  };
+}
+
+export function resolveSceneOverlayChannels(
+  sceneId: SceneId,
+  options: { proMode?: boolean } = {},
+): OverlayChannels {
+  const scene = getScene(sceneId);
+  const merged = {
+    ...(scene?.overlays ?? {}),
+    ...loadSceneOverrides(sceneId),
+  };
+  return applySceneSafetyFloor(
+    sceneId,
+    resolveOverlaysFromScene(merged, options),
+  );
 }

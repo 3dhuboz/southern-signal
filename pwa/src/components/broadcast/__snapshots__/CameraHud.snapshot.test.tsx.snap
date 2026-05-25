@@ -11,6 +11,7 @@ exports[`<CameraHud /> grid structure snapshot > idle — only scene chip in sen
       aria-label="Broadcast status: STANDBY"
       aria-live="polite"
       class="bug idle"
+      data-hud-drag-target="status"
       role="status"
     >
       <span
@@ -74,6 +75,7 @@ exports[`<CameraHud /> grid structure snapshot > idle — only scene chip in sen
       aria-haspopup="dialog"
       aria-label="Scene: Walkthrough. Tap to change."
       class="chip"
+      data-hud-drag-target="scene"
       title="Change scene"
       type="button"
     >
@@ -126,6 +128,7 @@ exports[`<CameraHud /> grid structure snapshot > running — Pro mode shows Broa
       aria-label="Broadcast status: READY, 00:42 elapsed"
       aria-live="polite"
       class="bug ready"
+      data-hud-drag-target="status"
       role="status"
     >
       <span
@@ -192,6 +195,7 @@ exports[`<CameraHud /> grid structure snapshot > running — Pro mode shows Broa
       aria-valuemin="-60"
       aria-valuenow="-26"
       class="meter"
+      data-hud-drag-target="mic"
       role="meter"
     >
       <span
@@ -359,6 +363,7 @@ exports[`<CameraHud /> grid structure snapshot > running — Pro mode shows Broa
       aria-haspopup="dialog"
       aria-label="Scene: Walkthrough. Tap to change."
       class="chip"
+      data-hud-drag-target="scene"
       title="Change scene"
       type="button"
     >
@@ -396,6 +401,7 @@ exports[`<CameraHud /> grid structure snapshot > running — Pro mode shows Broa
     <div
       aria-label="Live sensor readings"
       class="hud"
+      data-hud-drag-target="sensors"
       role="group"
     >
       <div
@@ -484,6 +490,7 @@ exports[`<CameraHud /> grid structure snapshot > running — Pro mode shows Broa
       aria-hidden="false"
       aria-label="Investigation slate"
       class="slate visible"
+      data-hud-drag-target="lowerThird"
       role="region"
     >
       <h2
@@ -527,6 +534,7 @@ exports[`<CameraHud /> grid structure snapshot > running — Simple mode suppres
       aria-label="Broadcast status: READY, 00:42 elapsed"
       aria-live="polite"
       class="bug ready"
+      data-hud-drag-target="status"
       role="status"
     >
       <span
@@ -593,6 +601,7 @@ exports[`<CameraHud /> grid structure snapshot > running — Simple mode suppres
       aria-valuemin="-60"
       aria-valuenow="-26"
       class="meter"
+      data-hud-drag-target="mic"
       role="meter"
     >
       <span
@@ -760,6 +769,7 @@ exports[`<CameraHud /> grid structure snapshot > running — Simple mode suppres
       aria-haspopup="dialog"
       aria-label="Scene: Walkthrough. Tap to change."
       class="chip"
+      data-hud-drag-target="scene"
       title="Change scene"
       type="button"
     >
@@ -812,6 +822,7 @@ exports[`<CameraHud /> grid structure snapshot > running — marker pill closed 
       aria-label="Broadcast status: READY, 00:42 elapsed"
       aria-live="polite"
       class="bug ready"
+      data-hud-drag-target="status"
       role="status"
     >
       <span
@@ -878,6 +889,7 @@ exports[`<CameraHud /> grid structure snapshot > running — marker pill closed 
       aria-valuemin="-60"
       aria-valuenow="-26"
       class="meter"
+      data-hud-drag-target="mic"
       role="meter"
     >
       <span
@@ -1009,6 +1021,7 @@ exports[`<CameraHud /> grid structure snapshot > running — marker pill closed 
       aria-haspopup="dialog"
       aria-label="Scene: Walkthrough. Tap to change."
       class="chip"
+      data-hud-drag-target="scene"
       title="Change scene"
       type="button"
     >
@@ -1090,6 +1103,7 @@ exports[`<CameraHud /> grid structure snapshot > running — marker pill open: p
       aria-label="Broadcast status: READY, 00:42 elapsed"
       aria-live="polite"
       class="bug ready"
+      data-hud-drag-target="status"
       role="status"
     >
       <span
@@ -1156,6 +1170,7 @@ exports[`<CameraHud /> grid structure snapshot > running — marker pill open: p
       aria-valuemin="-60"
       aria-valuenow="-26"
       class="meter"
+      data-hud-drag-target="mic"
       role="meter"
     >
       <span
@@ -1287,6 +1302,7 @@ exports[`<CameraHud /> grid structure snapshot > running — marker pill open: p
       aria-haspopup="dialog"
       aria-label="Scene: Walkthrough. Tap to change."
       class="chip"
+      data-hud-drag-target="scene"
       title="Change scene"
       type="button"
     >
@@ -1410,6 +1426,7 @@ exports[`<CameraHud /> grid structure snapshot > running — snooze chip rendere
       aria-label="Broadcast status: READY, 00:42 elapsed"
       aria-live="polite"
       class="bug ready"
+      data-hud-drag-target="status"
       role="status"
     >
       <span
@@ -1476,6 +1493,7 @@ exports[`<CameraHud /> grid structure snapshot > running — snooze chip rendere
       aria-valuemin="-60"
       aria-valuenow="-26"
       class="meter"
+      data-hud-drag-target="mic"
       role="meter"
     >
       <span
@@ -1627,6 +1645,7 @@ exports[`<CameraHud /> grid structure snapshot > running — snooze chip rendere
       aria-haspopup="dialog"
       aria-label="Scene: Walkthrough. Tap to change."
       class="chip"
+      data-hud-drag-target="scene"
       title="Change scene"
       type="button"
     >

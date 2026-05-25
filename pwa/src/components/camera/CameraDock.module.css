@@ -147,25 +147,30 @@
 
 @media (max-width: 520px) {
   .dock {
-    height: 52px;
-    padding: 0 12px;
+    bottom: calc(var(--safe-bottom, 0px) + var(--bottom-nav-height, 64px) + 18px);
+    height: 44px;
+    padding: 0 18px;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.44), transparent);
   }
 
   .group {
-    max-width: calc(50% - 54px);
-    gap: 6px;
+    max-width: calc(50% - 50px);
+    gap: 8px;
     overflow: hidden;
   }
 
   .btn {
-    width: 44px;
-    min-width: 44px;
+    width: 42px;
+    min-width: 42px;
+    min-height: 42px;
+    height: 42px;
     padding: 0;
-    border-radius: 16px;
+    border-radius: 14px;
+    background: rgba(7, 9, 12, 0.64);
   }
 
   .label {
-    display: none;
+    display: none !important;
   }
 
   .hudBtn,
@@ -174,6 +179,6 @@
   .lensBtn,
   .torchBtn,
   .screenRecordBtn {
-    display: none;
+    display: none !important;
   }
 }

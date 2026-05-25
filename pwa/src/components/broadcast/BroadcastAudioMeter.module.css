@@ -178,3 +178,9 @@
 }
 .active .label { color: var(--signal, #5DF2C7); }
 .active .barTrack { border-color: var(--hud-rim-strong); }
+
+@media (max-width: 520px) {
+  .meter {
+    display: none;
+  }
+}

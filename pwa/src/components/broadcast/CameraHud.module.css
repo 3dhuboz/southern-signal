@@ -133,20 +133,44 @@
    bottom of the rail's available space, OR sits immediately after the
    sensor HUD if there isn't enough space for both. */
 .evpDockSlot {
-  margin-top: auto;
-  max-width: 60vw;
-  background: var(--chip-bg);
-  border: 1px solid var(--chip-rim);
-  border-radius: 12px;
+  margin-top: 46px;
+  max-width: min(188px, 48vw);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   opacity: var(--ss-hud-opacity, 1);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  padding: 4px 6px;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  padding: 0;
 }
 
 @media (max-width: 520px) {
+  .hud {
+    grid-template-columns: minmax(120px, 1fr) minmax(0, 1fr);
+    grid-template-rows:
+      calc(116px + var(--safe-top, 0px))
+      1fr
+      0
+      88px
+      calc(54px + var(--safe-bottom, 0px) + var(--bottom-nav-height, 64px));
+  }
+
+  .statusRail {
+    grid-column: 1;
+    padding: calc(var(--safe-top, 0px) + 10px) 0 0 12px;
+  }
+
+  .senseRail {
+    grid-column: 2;
+    padding: calc(var(--safe-top, 0px) + 10px) 12px 0 0;
+  }
+
+  .deviceChipSlot {
+    display: none;
+  }
+
   .evpDockSlot {
-    max-width: min(230px, 58vw);
-    padding: 3px;
+    margin-top: 42px;
+    max-width: min(176px, 48vw);
   }
 }
